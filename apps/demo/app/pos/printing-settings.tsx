@@ -9,6 +9,12 @@ const HARDWARE: PrinterProfile[] = [
   { id: 'front-counter', name: 'Front counter', connectionType: 'network', vendor: 'epson', address: '192.168.1.40', port: 9100 },
   { id: 'kitchen', name: 'Kitchen', connectionType: 'bluetooth', address: '00:11:62:AA:BB:CC' },
 ];
+const TEMPLATES = [
+  { id: 'thermal-80', kind: 'receipt', title: 'Thermal receipt', engine: 'thermal', paper: '80mm' },
+  { id: 'html-receipt', kind: 'receipt', title: 'Standard receipt', engine: 'html' },
+  { id: 'z-report', kind: 'report', title: 'Z report', engine: 'thermal', paper: '58mm' },
+  { id: 'closure', kind: 'closure', title: 'Register closure', engine: 'html' },
+] as const;
 
 // The app passes its `printer_profiles` and opens its own add/edit dialog; the demo keeps the printers in state.
 // `?empty=1` shows only the Print Dialog (the empty state).
@@ -16,6 +22,14 @@ export default function PrintingSettingsScreen() {
   const { empty } = useLocalSearchParams<{ empty?: string }>();
   const [printers, setPrinters] = useState<PrinterProfile[]>(() => (empty === '1' ? [PRINT_DIALOG] : [PRINT_DIALOG, ...HARDWARE]));
   const [testingIds, setTestingIds] = useState<ReadonlySet<string>>(new Set());
+  // 'gone' names no printer, so the Standard receipt row shows "Unavailable printer".
+  const [routing, setRouting] = useState<Record<string, string>>({ 'html-receipt': 'gone' });
+  const onRoutingChange = (templateId: string, printerId: string | null) => setRouting((current) => {
+    const next = { ...current };
+    if (printerId === null) delete next[templateId];
+    else next[templateId] = printerId;
+    return next;
+  });
 
   const onTest = (printer: PrinterProfile) => {
     setTestingIds((ids) => new Set(ids).add(printer.id));
@@ -34,6 +48,7 @@ export default function PrintingSettingsScreen() {
         <PrintingSettings
           printers={printers} testingIds={testingIds}
           onTest={onTest} onEdit={() => undefined} onSetDefault={onSetDefault} onDelete={onDelete} onAdd={onAdd}
+          templates={TEMPLATES} routing={routing} onRoutingChange={onRoutingChange}
         />
       </ScrollView>
     </>
