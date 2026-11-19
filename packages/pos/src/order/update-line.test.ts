@@ -77,6 +77,13 @@ describe('OrderBuilder.updateLine (ADR-092 6b/6c)', () => {
     const before = builder.getSnapshot();
     expect(() => builder.updateLine(unknown ? 'nope' : id, patch)).toThrow(error);
     expect(builder.getSnapshot()).toEqual(before);
+    if (unknown) return;
+    // A valid patch emits; a refused patch must not have leaked into the line's fields.
+    builder.updateLine(id, { regularUnitPriceMinor: 1500 });
+    const { name, sku, catalogueSku } = before.lineItems[0];
+    const after = builder.getSnapshot().lineItems[0];
+    expect(after).toMatchObject({ name, sku });
+    expect(after.catalogueSku).toBe(catalogueSku);
   });
 
   it('L6: two unedited scans of the same product still merge', () => {
