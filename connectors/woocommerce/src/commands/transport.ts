@@ -117,7 +117,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     const micros = net / divisor;
     return `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
   };
-  // 2.10 PR4 (vets/2026-11-19-2.10-pr4-includes-tax.md): an exclusive store gets a charge's 6-dp net when it is not a whole cent.
+  // 2.10 PR4: an exclusive store gets a charge's 6-dp net when it is not a whole cent.
   const chargeTotal = (amountMinor: number, netMicros: string | undefined, id: string) =>
     p.pricesIncludeTax || (netMicros !== undefined && BigInt(netMicros) !== BigInt(amountMinor) * 1000000n)
       ? inclusiveNet(netMicros, id) : major(amountMinor);
