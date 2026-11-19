@@ -287,6 +287,11 @@ it('accepts the same lineId twice with different fields (P2)', () => {
   expect(parseCommandResult(lineFigures(lines)).warnings).toEqual([{ code: 'line_figures_mismatch', lines }])
 })
 
+it('accepts two lines with the same field (P2b)', () => {
+  const lines = [{ lineId: 'l1', field: 'totalMinor', tillMinor: 1000, serverMinor: 990 }, { lineId: 'l2', field: 'totalMinor', tillMinor: 500, serverMinor: 495 }]
+  expect(parseCommandResult(lineFigures(lines)).warnings).toEqual([{ code: 'line_figures_mismatch', lines }])
+})
+
 it('drops extra keys in a line_figures_mismatch entry (P3)', () => {
   expect(parseCommandResult(lineFigures([{ ...lineTotal, note: 'x' }])).warnings).toEqual([{ code: 'line_figures_mismatch', lines: [lineTotal] }])
 })

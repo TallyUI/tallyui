@@ -166,6 +166,14 @@ describe('knownWarnings', () => {
       expect(knownWarnings([lineFigures([lineTotal, { ...lineTotal, tillMinor: 1100 }])])).toEqual([]);
     });
 
+    it('keeps two lines with the same field (K4b)', () => {
+      const warning = lineFigures([
+        { lineId: 'l1', field: 'totalMinor', tillMinor: 1000, serverMinor: 990 },
+        { lineId: 'l2', field: 'totalMinor', tillMinor: 500, serverMinor: 495 },
+      ]);
+      expect(knownWarnings([warning])).toEqual([warning]);
+    });
+
     it('drops a warning whose entry has equal values (K5)', () => {
       expect(knownWarnings([lineFigures([{ ...lineTotal, serverMinor: 1000 }])])).toEqual([]);
     });
