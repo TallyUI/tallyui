@@ -1,0 +1,47 @@
+---
+title: CatalogueSettingsForm
+description: WCPOS v2's product settings, with Tile Size and a Tile Fields switch for each word a grid tile shows.
+---
+
+## Import
+
+```tsx
+import { CatalogueSettingsForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useState } from 'react';
+import { DEFAULT_CATALOGUE_VIEW_STATE, useAppSettings, type CatalogueViewState } from '@tallyui/pos';
+import { Catalogue, CatalogueSettingsForm } from '@tallyui/components';
+
+const [view, setView] = useState<CatalogueViewState>(DEFAULT_CATALOGUE_VIEW_STATE);
+const { settings, setSetting } = useAppSettings(collection);
+const tileFields = settings['catalogue.tileFields'];
+
+<CatalogueSettingsForm
+  gridColumns={view.gridColumns}
+  onGridColumnsChange={(gridColumns) => setView({ ...view, gridColumns })}
+  tileFields={tileFields}
+  onTileFieldsChange={(next) => setSetting('catalogue.tileFields', next)}
+  showReset
+/>
+<Catalogue viewState={view} onStateChange={setView} tileFields={tileFields} />
+```
+
+The form is WCPOS v2's product settings. Tile Size starts with an Auto switch: while it is on, the grid fits as many products per row as the width allows (`gridColumns: 'auto'`). Turning it off sets 4 per row, v2's default, and shows a slider from 2 to 8. Tile Fields has one switch per word a grid tile shows, in v2's order: Product Name, Price, On Sale, Categories, SKU, Barcode and Stock. View mode stays on the [Catalogue](/docs/components/catalogue)'s own toggle.
+
+The two settings live in different stores, so the form has two callbacks: `gridColumns` belongs to the app's catalogue view state, and `tileFields` is saved per device through `setSetting`. The form is controlled: each switch emits a fresh, full `TileFields` and the form stores nothing. With `showReset`, a Restore Default Settings button at the end emits `'auto'` and `DEFAULT_TILE_FIELDS`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `gridColumns` | `CatalogueGridColumns` | `'auto'` | The products-per-row setting, from the app's `CatalogueViewState` |
+| `onGridColumnsChange` | `(next: CatalogueGridColumns) => void` | — | Called with `'auto'` or a number from 2 to 8 |
+| `tileFields` | `Partial<TileFields>` | `DEFAULT_TILE_FIELDS` | The saved tile fields, merged over the default (today's tile) |
+| `onTileFieldsChange` | `(next: TileFields) => void` | — | Called with a fresh, full `TileFields` on every switch |
+| `showReset` | `boolean` | `false` | Draws Restore Default Settings, which emits `'auto'` and `DEFAULT_TILE_FIELDS` |
+| `className` | `string` | — | Override container styles |
+| `testID` | `string` | `catalogue-settings` | Prefix for the form's test IDs |
