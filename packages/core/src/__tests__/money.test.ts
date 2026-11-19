@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from '../money';
+import { formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, normalizeMoneyText, resolvePrice, resolvePriceRange } from '../money';
 import type { ProductPrice } from '../types';
 
 describe('minorUnitDigits', () => {
@@ -287,5 +287,46 @@ describe('resolvePriceRange', () => {
 
   it('returns undefined when no variant resolves', () => {
     expect(resolvePriceRange([{ prices: [] }, { prices: [] }])).toBeUndefined();
+  });
+});
+
+describe('normalizeMoneyText (#672)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const SPACE = { decimalSeparator: ',', thousandSeparator: ' ' };
+
+  it.each([
+    ['1,234.50', DOT, '1234.50'],
+    ['1.234,50', COMMA, '1234.50'],
+    ['1,5', COMMA, '1.5'],
+    ['9.99', COMMA, '9.99'],
+    ['1,5', DOT, '1.5'],
+    ['1,234,567', DOT, '1234567'],
+    ['1 234,50', SPACE, '1234.50'],
+    ['-12.5', DOT, '-12.5'],
+    [' 12,75 ', COMMA, '12.75'],
+  ])('NM1: reads v2 case %j', (text, format, expected) => {
+    expect(normalizeMoneyText(text, format)).toBe(expected);
+  });
+
+  it.each(['1.2.3,4', '12abc', '1,2,3.4.5', '$12', '', '-'])('NM2: returns unreadable %j unchanged', (text) => {
+    expect(normalizeMoneyText(text, DOT)).toBe(text);
+  });
+
+  it('NM3: gives a leading separator a 0 and drops a trailing one', () => {
+    expect(normalizeMoneyText('.5', DOT)).toBe('0.5');
+    expect(normalizeMoneyText('-.5', DOT)).toBe('-0.5');
+    expect(normalizeMoneyText('1.', DOT)).toBe('1');
+    expect(normalizeMoneyText('1,', COMMA)).toBe('1');
+  });
+
+  it('NM4: never rounds or guesses grouping', () => {
+    expect(normalizeMoneyText('1,000', DOT)).toBe('1.000');
+    expect(normalizeMoneyText('12.345', DOT)).toBe('12.345');
+  });
+
+  it.each([[undefined], [{}], [{ symbol: '€' }]])('NM5: returns the same string with format %j', (format) => {
+    expect(normalizeMoneyText(' 1,234.50 ', format)).toBe(' 1,234.50 ');
+    expect(normalizeMoneyText('1.234,50', format)).toBe('1.234,50');
   });
 });

@@ -1,6 +1,6 @@
 import { useRef, useState, type JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { useFormatMoney, type OrderRefundPayload } from '@tallyui/core';
+import { useFormatMoney, useMoneyFormat, type MoneyFormat, type OrderRefundPayload } from '@tallyui/core';
 import { priceRefund, refundableLines, type EarlierRefund, type RefundableOrderLine } from '@tallyui/pos';
 import { QuantityStepper } from '../input/quantity-stepper';
 import { errorText } from '../lib/error-text';
@@ -42,11 +42,11 @@ export interface RefundFormProps {
   onCancel: () => void;
 }
 
-function parseAmount(text: string, currency: string, signed = false): number | string {
+function parseAmount(text: string, currency: string, signed = false, format?: MoneyFormat): number | string {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   const negative = signed && trimmed.startsWith('-');
-  const parsed = parsePrice(negative ? trimmed.slice(1) : trimmed, currency);
+  const parsed = parsePrice(negative ? trimmed.slice(1) : trimmed, currency, format);
   return negative && typeof parsed === 'number' && parsed !== 0 ? -parsed : parsed;
 }
 
@@ -57,6 +57,7 @@ export function RefundForm({
   error, onConfirm, onCancel,
 }: RefundFormProps): JSX.Element {
   const formatMoney = useFormatMoney();
+  const format = useMoneyFormat();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [restock, setRestock] = useState<Record<string, boolean>>({});
   const [shippingText, setShippingText] = useState('');
@@ -75,8 +76,8 @@ export function RefundForm({
     restock: restock[orderLineId] ?? defaultRestock,
   })).filter(({ quantity }) => quantity > 0);
   const priced = priceRefund(lines, refunds, request);
-  const shippingMinor = refundableShippingMinor > 0 ? parseAmount(shippingText, currency) : 0;
-  const adjustmentMinor = parseAmount(adjustmentText, currency, true);
+  const shippingMinor = refundableShippingMinor > 0 ? parseAmount(shippingText, currency, false, format) : 0;
+  const adjustmentMinor = parseAmount(adjustmentText, currency, true, format);
   const totalMinor = typeof shippingMinor === 'number' && typeof adjustmentMinor === 'number'
     ? priced.totalMinor + shippingMinor + adjustmentMinor : undefined;
   const destination = originalMethod?.available ? (picked ?? 'original_method') : 'cash';

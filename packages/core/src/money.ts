@@ -151,6 +151,26 @@ function formatMoneyWith(money: Money, format: MoneyFormat, locale?: string): st
 }
 
 /**
+ * A typed amount in the store's separators as plain decimal text ('1.234,50' → '1234.50'); ported from WCPOS v2 typed-field.tsx parseNumber.
+ * Without a format the text is untouched; it never rounds, so too many places stay the caller's refusal (#672).
+ */
+export function normalizeMoneyText(text: string, format?: MoneyFormat): string {
+  if (format === undefined || (!format.decimalSeparator && !format.thousandSeparator)) return text;
+  const decimal = format.decimalSeparator || '.';
+  const thousands = format.thousandSeparator || '';
+  let t = text.trim();
+  if (thousands && thousands !== decimal && t.includes(thousands) && t.includes(decimal)) {
+    t = t.split(thousands).join('').replace(decimal, '.');
+  } else {
+    if (thousands && thousands !== '.' && thousands !== ',') t = t.split(thousands).join('');
+    for (const sep of ['.', ',']) if (t.split(sep).length > 2) t = t.split(sep).join('');
+    t = t.replace(',', '.');
+  }
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return text;
+  return t.replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.$/, '');
+}
+
+/**
  * Picks the price to charge from a price list, in `currency` if given, else in
  * the first currency listed. A sale entry wins over the base entry.
  */

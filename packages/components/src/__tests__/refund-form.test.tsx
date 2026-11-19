@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, MoneyFormatProvider } from '@tallyui/core';
 import { refundPayloadErrors } from '@tallyui/core/server';
 import { PortalHost } from '@tallyui/primitives';
 import { RefundForm, type RefundFormProps } from '../order/refund-form';
@@ -167,4 +167,17 @@ it('RefundModal titles the order and closes from Cancel', () => {
   expect(screen.getByText('Refund Order #1042')).toBeTruthy();
   fireEvent.click(screen.getByTestId('refund-cancel'));
   expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+
+it('RF1: reads a typed amount in the provider format (#672)', async () => {
+  const onConfirm = vi.fn();
+  render(<MoneyFormatProvider format={{ decimalSeparator: ',', thousandSeparator: '.' }}>
+    <RefundForm {...fixture} orderTotalMinor={200000} refundedMinor={0} onConfirm={onConfirm} onCancel={vi.fn()} />
+  </MoneyFormatProvider>);
+  fireEvent.change(screen.getByTestId('refund-adjustment'), { target: { value: '1.234,50' } });
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Goodwill' } });
+  fireEvent.click(screen.getByTestId('refund-submit'));
+  fireEvent.click(screen.getByTestId('refund-confirm'));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+  expect(onConfirm.mock.calls[0][0]).toMatchObject({ adjustmentMinor: 123450, totalMinor: 123450 });
 });

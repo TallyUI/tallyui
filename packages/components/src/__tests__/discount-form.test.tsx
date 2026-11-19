@@ -324,3 +324,13 @@ describe('DiscountChips', () => {
     expect(onRemove).toHaveBeenCalledWith('d1');
   });
 });
+
+describe('parseDiscount with the store separators (#672)', () => {
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+
+  it('DF1: reads the format, and without one is unchanged', () => {
+    expect(parseDiscount('fixed', '1.234,50', 'EUR', COMMA)).toEqual({ type: 'fixed', value: 123450 });
+    expect(parseDiscount('percentage', '12,75', 'EUR', COMMA)).toEqual({ type: 'percentage', value: 12.75 });
+    expect(parseDiscount('fixed', '1,234.50', 'EUR')).toBe('Enter a number.');
+  });
+});

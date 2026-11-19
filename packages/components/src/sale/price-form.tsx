@@ -1,10 +1,10 @@
 import { useState, type JSX } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { useFormatMoney, minorUnitDigits, moneyFromDecimalString } from '@tallyui/core';
+import { useFormatMoney, useMoneyFormat, minorUnitDigits, moneyFromDecimalString, normalizeMoneyText, type MoneyFormat } from '@tallyui/core';
 
 /** The cashier's entry as integer minor units of `currency` (0 allowed), or the inline error to show. */
-export function parsePrice(text: string, currency: string): number | string {
-  const raw = text.trim();
+export function parsePrice(text: string, currency: string, format?: MoneyFormat): number | string {
+  const raw = normalizeMoneyText(text, format).trim();
   const trimmed = raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
   if (!trimmed) return 'Enter a price.';
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return 'Enter a number.';
@@ -45,6 +45,7 @@ export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, 
   quickDiscounts?: readonly number[];
 }): JSX.Element {
   const formatMoney = useFormatMoney();
+  const format = useMoneyFormat();
   const [text, setText] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, 
   const current = formatMoney({ amount: currentMinor, currency });
   const draft = percent === undefined ? undefined : lessPercent(currentMinor, percent);
   function apply() {
-    const parsed = draft ?? parsePrice(text, currency);
+    const parsed = draft ?? parsePrice(text, currency, format);
     const refused = typeof parsed === 'string' ? parsed : onApply(parsed, reason.trim() || undefined);
     setError(refused);
     if (refused === null) onClose();

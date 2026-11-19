@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, MoneyFormatProvider } from '@tallyui/core';
 import { parsePrice, PriceForm } from '../sale/price-form';
 
 afterEach(() => cleanup());
@@ -109,5 +109,37 @@ describe('PriceForm', () => {
     fireEvent.click(screen.getByTestId('price-cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onApply).not.toHaveBeenCalled();
+  });
+});
+
+describe('parsePrice with the store separators (#672)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+
+  it('PF1: reads grouped amounts and still refuses extra places', () => {
+    expect(parsePrice('1.234,50', 'EUR', COMMA)).toBe(123450);
+    expect(parsePrice('1,234.50', 'USD', DOT)).toBe(123450);
+    expect(parsePrice('1,000', 'USD', DOT)).toBe('Use at most 2 decimal places.');
+    expect(parsePrice('1,000', 'JPY', DOT)).toBe('Use a whole amount.');
+    expect(parsePrice('12.345', 'USD', DOT)).toBe('Use at most 2 decimal places.');
+    expect(parsePrice('1,000', 'KWD', DOT)).toBe(1000);
+  });
+
+  it.each([
+    ['1,234.50', 'Enter a number.'], ['1,5', 150], ['.5', 'Enter a number.'], ['12,75', 1275],
+    ['', 'Enter a price.'], ['abc', 'Enter a number.'], ['-1', 'Enter a price of 0 or more.'],
+  ])('PF2: without a format parses %j as today', (text, expected) => {
+    expect(parsePrice(text, 'USD')).toBe(expected);
+    expect(parsePrice(text, 'USD', undefined)).toBe(expected);
+  });
+
+  it('PF3: PriceForm reads the provider format', () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<MoneyFormatProvider format={COMMA}>
+      <PriceForm lineName="Shirt" currency="EUR" currentMinor={1500} onApply={onApply} onClose={vi.fn()} />
+    </MoneyFormatProvider>);
+    fireEvent.change(screen.getByTestId('price-input'), { target: { value: '1.234,50' } });
+    fireEvent.click(screen.getByTestId('price-apply'));
+    expect(onApply).toHaveBeenCalledWith(123450, undefined);
   });
 });

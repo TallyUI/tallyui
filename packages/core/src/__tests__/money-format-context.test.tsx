@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MoneyFormatProvider, useCurrencySymbol, useFormatMoney } from '../context/money-format-context';
+import { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, useMoneyFormat } from '../context/money-format-context';
 import { currencySymbol, formatMoney } from '../money';
 import type { Money } from '../types/money';
 
@@ -32,5 +32,20 @@ describe('MoneyFormatProvider', () => {
     expect(screen.getByTestId('money').textContent).toBe(formatMoney(money, 'de-DE'));
     rerender(<MoneyFormatProvider locale="de-DE"><Probe money={money} locale="en" /></MoneyFormatProvider>);
     expect(screen.getByTestId('money').textContent).toBe(formatMoney(money, 'en'));
+  });
+});
+
+describe('useMoneyFormat (#672)', () => {
+  it('MF1: is undefined outside a provider or without a format, and the provider format inside one', () => {
+    let seen: unknown = 'unset';
+    function FormatProbe() { seen = useMoneyFormat(); return null; }
+    render(<FormatProbe />);
+    expect(seen).toBeUndefined();
+    seen = 'unset';
+    render(<MoneyFormatProvider locale="en"><FormatProbe /></MoneyFormatProvider>);
+    expect(seen).toBeUndefined();
+    const format = { decimalSeparator: ',', thousandSeparator: '.' };
+    render(<MoneyFormatProvider format={format}><FormatProbe /></MoneyFormatProvider>);
+    expect(seen).toBe(format);
   });
 });

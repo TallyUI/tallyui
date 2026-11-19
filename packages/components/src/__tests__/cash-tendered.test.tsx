@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MoneyFormatProvider } from '@tallyui/core';
 import { CashTendered } from '../checkout/cash-tendered';
 
 const total = { amount: 3451, currency: 'EUR' };
@@ -113,5 +114,23 @@ describe('CashTendered', () => {
     expect(screen.getByText('¥105')).toBeDefined();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1.5' } });
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('101');
+  });
+});
+
+describe('CashTendered with the store separators (#672)', () => {
+  it('CT1: keeps a comma amount inside a COMMA provider, and not without one', () => {
+    const onChange = vi.fn();
+    const { unmount } = render(<MoneyFormatProvider format={{ decimalSeparator: ',', thousandSeparator: '.' }}>
+      <CashTendered total={total} locale="en" onChangeAmount={onChange} />
+    </MoneyFormatProvider>);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '12,5' } });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('12,5');
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 1250, currency: 'EUR' });
+    unmount();
+    const bare = vi.fn();
+    render(<CashTendered total={total} locale="en" onChangeAmount={bare} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '12,5' } });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('34.51');
+    expect(bare).not.toHaveBeenCalled();
   });
 });
