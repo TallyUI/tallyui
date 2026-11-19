@@ -346,6 +346,15 @@ it.each([null, { name: 'No id' }, { id: '42' }, { id: 'bad\u0000id', name: 'Bad 
   expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toBeNull();
 });
 
+it('keeps the stored customer addresses on the reopened draft (vendurepos gap 5.2)', async () => {
+  const stored = storedOrder();
+  const customer = { ...stored.customer!, billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } };
+  const order: PosOrder = { ...stored, customer, taxAddress: 'shipping' };
+  await db.pos_orders.insert(order);
+  expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
+});
+
 it.each([
   ['keeps the note', 'Keep the receipt', undefined],
   ['changes the note', 'Keep the receipt', 'Leave at the door'],
