@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
-import type { PaymentMethodDescriptor } from '@tallyui/core';
+import { useFormatMoney, type PaymentMethodDescriptor } from '@tallyui/core';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
 import { CartChargeLine } from '../cart/cart-charge-line';
 import { CartLineStrip } from '../cart/cart-line-strip';
@@ -16,9 +16,10 @@ import { LinePopover } from './line-popover';
 import { OrderNoteSheet } from './order-note-sheet';
 import { TenderLedger } from './tender-ledger';
 import { ShoppingCartIcon } from '../ui';
+import { useT } from '../i18n';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, picker, lineEditor = 'inline',
   lineCommit = 'apply', columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
@@ -50,6 +51,13 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     noteSheet?: { label?: string };
     /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. `confirmVoid` asks v2's "Cancel this payment?" before a leg is voided (default `false`). */
     tenderLedger?: { methods?: PaymentMethodDescriptor[]; confirmVoid?: boolean };
+    /** WCPOS v2's split-by-item bill (stilled-cart.tsx): the cart is read-only, and each line whose quantity is a positive
+     * whole number, whose total is not negative and that has units left unpaid shows this payment's `− n of unpaid +`
+     * stepper in its quantity cell, with what the picked units add under it. `picked`: this payment's units per line id;
+     * `paid`: the units earlier live payments took per line id; `unitMinor(lineId, units)`: the minor units `units` more
+     * of that line add after the paid ones; `onPick(lineId, units)` sets this payment's units. */
+    picker?: { picked: Readonly<Record<string, number>>; paid: Readonly<Record<string, number>>;
+      unitMinor: (lineId: string, units: number) => number; onPick: (lineId: string, units: number) => void };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
@@ -91,11 +99,14 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   // A line's price refused on a popover close (lineCommit="close"), shown under it until that line's next price write.
   const [priceError, setPriceError] = useState<{ lineId: string; message: string } | null>(null);
   // One open form: a line's discount or price, the order's discount (lineId null), a new charge, or a charge's edit.
-  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
+  const [openForm, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
     | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
+  // The picker's bill is read-only: no form shows, nor any control that opens one.
+  const form = picker ? null : openForm;
+  const ChargeStrip = picker ? ReadOnlyStrip : CartLineStrip;
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
-  const showOrderDiscount = order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
-  const showCharge = orderActions && chargesOffered;
+  const showOrderDiscount = !picker && order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
+  const showCharge = !picker && orderActions && chargesOffered;
   const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
       onApply={(discount) => sale.applyDiscount(lineId, discount)} /> : null;
@@ -114,19 +125,23 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     if (refused === null) setPriceError((now) => (now?.lineId === line.id ? null : now));
     return refused;
   };
+  const unpaid = (line: typeof order.lineItems[number]) => line.quantity - (picker?.paid[line.id] ?? 0);
+  const pickable = (line: typeof order.lineItems[number]) => Number.isInteger(line.quantity) && line.quantity > 0
+    && display(line.id).amountMinor >= 0 && unpaid(line) > 0;
   const renderItem = (line: typeof order.lineItems[number]) => <>
     <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
-      columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={() => split(line.id)}
-      quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
+      columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={picker ? undefined : () => split(line.id)}
+      quantitySlot={picker ? pickable(line) ? <PickStepper picker={picker} id={line.id} name={line.name} unpaid={unpaid(line)}
+        currency={order.currency} /> : undefined : lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
         value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} commit={lineCommit}
         onRemove={lineCommit === 'close' ? () => sale.remove(line.id) : undefined} actions={[
           ...(!pricePopover ? [{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }] : []),
           ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
           ...(lineCommit === 'close' ? [] : [{ id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) }]),
         ]} /> : undefined}
-      priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
+      priceSlot={pricePopover && !picker ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
         quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)}
         commit={lineCommit} onCloseRefused={(message) => setPriceError({ lineId: line.id, message })} /> : undefined} />
@@ -134,8 +149,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       className="px-3 text-sm text-destructive">{splitError.message}</Text> : null}
     {priceError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-price-error"
       className="px-3 text-sm text-destructive">{priceError.message}</Text> : null}
-    <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
-    {lineEditor === 'inline' ? <CartLineActions actions={[
+    {picker ? null : <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />}
+    {lineEditor === 'inline' && !picker ? <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
       ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', color: 'text-primary', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
     ]}>
@@ -168,12 +183,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
         pulseKey={() => 0} identity={order.id} renderItem={(charge, index) =>
         <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
-          <CartLineStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
+          <ChargeStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
             onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
             {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
               total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
               showPrice={showPrice} columns={columns} testID="cart-charge-line" wrapTotal={wrapTotal} />}
-          </CartLineStrip>
+          </ChargeStrip>
           {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
             taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
@@ -222,5 +237,28 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         </Pressable>
       </View>}
     </View>} />
+  </View>;
+}
+
+/** A fee or shipping row on the picker's read-only bill: the row alone, no Edit or Remove strip. */
+const ReadOnlyStrip = ({ children }: Parameters<typeof CartLineStrip>[0]) => <>{children((content) => content)}</>;
+
+/** Cart's `picker` stepper, v2's `− n of unpaid +` (tender/unit-stepper.tsx), with what the picked units add under it. */
+function PickStepper({ picker, id, name, unpaid, currency }: { picker: NonNullable<Parameters<typeof Cart>[0]['picker']>;
+  id: string; name: string; unpaid: number; currency: string }) {
+  const t = useT();
+  const formatMoney = useFormatMoney();
+  const units = picker.picked[id] ?? 0;
+  const button = 'rounded-md border border-border bg-card px-3 py-2 min-h-11 min-w-11 items-center justify-center';
+  return <View className="items-center gap-1">
+    <View className="flex-row items-center gap-2">
+      <Pressable accessibilityRole="button" accessibilityLabel={t('pos_checkout.pick_fewer', { name })} testID={`cart-line-${id}-pick-minus`}
+        disabled={units <= 0} onPress={() => picker.onPick(id, units - 1)} className={button}><Text className="text-center text-foreground">−</Text></Pressable>
+      <Text testID={`cart-line-${id}-pick-units`} className="tabular-nums text-foreground">{t('pos_checkout.n_of_units', { n: units, total: unpaid })}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('pos_checkout.pick_more', { name })} testID={`cart-line-${id}-pick-plus`}
+        disabled={units >= unpaid} onPress={() => picker.onPick(id, Math.min(units + 1, unpaid))} className={button}><Text className="text-center text-foreground">+</Text></Pressable>
+    </View>
+    {units > 0 ? <Text testID={`cart-line-${id}-pick-amount`} className="font-semibold tabular-nums text-foreground">
+      {formatMoney({ amount: picker.unitMinor(id, units), currency }) ?? '—'}</Text> : null}
   </View>;
 }
