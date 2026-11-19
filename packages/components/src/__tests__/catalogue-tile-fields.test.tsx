@@ -1,8 +1,9 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorProvider, type TallyConnector } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
+import { woocommerceConnector, wooProductTraits } from '@tallyui/connector-woocommerce';
 import type { TileFields } from '@tallyui/pos';
 import { Catalogue } from '../sale/catalogue';
 import type { ProductGrid } from '../product';
@@ -118,5 +119,49 @@ describe('Catalogue tileFields', () => {
     expect(text('Sale Cap')).toMatch(/\(was .*20\.00\)/);
     expect(text('Sale Cap')).toContain('In Stock');
     expect(text('Sale Cap')).toContain('SKU CAP-1');
+  });
+});
+
+// 9.9c. The drill set up as catalogue-variations-drill.test.tsx (its Woo tee, copied): the drill's variant tiles and
+// the loading skeleton follow tileFields too.
+const tee = { id: 80, name: 'Tee', type: 'variable', status: 'publish', attributes: [
+  { name: 'Size', variation: true, position: 0, options: ['S', 'M', 'L'] },
+  { name: 'Colour', variation: true, position: 1, options: ['Red', 'Blue'] },
+], variation_docs: [
+  { id: 81, status: 'publish', sku: 'TEE-M-RED', regular_price: '20', stock_status: 'instock',
+    attributes: [{ name: 'Size', option: 'M' }, { name: 'Colour', option: 'Red' }] },
+  { id: 82, status: 'publish', sku: 'TEE-S-BLUE', regular_price: '20', stock_status: 'instock',
+    attributes: [{ name: 'Size', option: 'S' }, { name: 'Colour', option: 'Blue' }] },
+] };
+const band = () => screen.getAllByTestId('catalogue-loading-band')[0].style.height;
+function mountLoading(tileFields?: Partial<TileFields>) {
+  render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} tileFields={tileFields} />);
+}
+
+describe('Catalogue tileFields in the drill and the skeleton', () => {
+  it('C1: a drill variant tile shows its SKU and no option chips with name off and sku on', () => {
+    render(
+      <ConnectorProvider connector={woocommerceConnector}>
+        <Catalogue products={[tee]} traits={wooProductTraits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+          variationsStyle="drill" tileFields={{ name: false, sku: true }} />
+      </ConnectorProvider>,
+    );
+    fireEvent.click(screen.getByTestId('product-tile-Tee'));
+    expect(screen.getByTestId('variation-tile-81').textContent).toContain('SKU TEE-M-RED');
+    expect(screen.getByTestId('variation-tile-82').textContent).toContain('SKU TEE-S-BLUE');
+    expect(screen.queryByTestId('variation-tile-81-chips')).toBeNull();
+  });
+
+  it('S1: without tileFields the loading band is 83 px', () => {
+    mountLoading();
+    expect(band()).toBe('83px');
+  });
+
+  it('S2: the loading band grows by a gap and a line per fact row, and is 0 with every field off', () => {
+    mountLoading({ sku: true, barcode: true });
+    expect(band()).toBe('131px');
+    cleanup();
+    mountLoading({ name: false, price: false, onSale: false, sku: false, barcode: false, categories: false, stock: false });
+    expect(band()).toBe('0px');
   });
 });
