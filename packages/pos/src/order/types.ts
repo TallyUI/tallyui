@@ -122,16 +122,18 @@ export interface ChargeLine {
   netMicros?: string;
   totalMinor?: number;
   name: string;
-  amountMinor: number; // integer >= 0, in the order's tax mode (ADR-075)
+  amountMinor: number; // integer >= 0, as entered, in the charge's own mode (amountIncludesTax, else the order's; ADR-075)
   taxClass?: string;
   taxStatus: 'taxable' | 'none';
+  /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order. */
+  amountIncludesTax?: boolean;
   taxLines: LineItem['taxLines'];
   netMinor: number;
   taxMicros: string;
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string }
+export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean }
 
 export interface LineTaxLine {
   code?: string;

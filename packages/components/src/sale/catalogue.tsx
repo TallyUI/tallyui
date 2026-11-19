@@ -247,7 +247,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
   const level = browsing && (activeCategory || allOpen);
   const back = () => { setCrumbFocus(false); setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); };
-  const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
+  const atRoot = browsing && !activeCategory && !allOpen && !query.trim()
+    && categoryList.some((category) => (counts.get(category.id) ?? 0) > 0);
   const [scannerOpen, setScannerOpen] = useState(false);
   // The search row is shorter than a control's band at Compact: under a coarse pointer it is the band's height.
   const band = useMinTarget();

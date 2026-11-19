@@ -169,4 +169,24 @@ describe('Catalogue category browse', () => {
     expect(screen.getByTestId('category-browse')).toBeTruthy();
     expect(screen.queryByTestId('category-crumb')).toBeNull();
   });
+
+  it('P4: the All tile carries the grid mark and a category tile the folder mark', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    expect(screen.getByTestId('category-tile-all-mark')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-pcat_hats-mark')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-all-stack')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-pcat_hats-stack')).toBeTruthy();
+  });
+
+  it('P5: an empty category is hidden and the footer counts the shown ones', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" categories={[...categories, { id: 'pcat_empty', name: 'Empty' }]} />);
+    expect(screen.queryByTestId('category-tile-pcat_empty')).toBeNull();
+    expect(screen.getByTestId('category-browse-footer').textContent).toBe('2 categories · 3 products');
+  });
+
+  it('P6: when every supplied category is empty the root is the product grid', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" categories={[{ id: 'pcat_empty', name: 'Empty' }]} />);
+    expect(screen.queryByTestId('category-browse')).toBeNull();
+    expect(screen.getByTestId('grid')).toBeTruthy();
+  });
 });

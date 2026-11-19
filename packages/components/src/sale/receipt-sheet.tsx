@@ -1,7 +1,7 @@
 /**
  * The receipt print sheet: template choice, printer, the preview, and Close / Email Receipt / Print.
  * Layout of WCPOS v2, MIT, WCPOS: packages/core/src/screens/main/receipt/receipt.tsx, print-sheet.tsx,
- * receipt-body.tsx, template-switcher.tsx and receipt-actions.tsx; the strings are v2's English ones from core.json;
+ * receipt-body.tsx, template-switcher.tsx, printer-switcher.tsx and receipt-actions.tsx; the strings are v2's English ones from core.json;
  * after a send the sheet shows v2's 'Email sent' / 'Receipt email queued' as a line, not a toast.
  * Props-only: the sheet renders no receipt and prints nothing itself.
  */
@@ -46,6 +46,14 @@ export interface ReceiptSheetProps {
   onTemplateChange?: (id: string) => void;
   /** The Printer row's text. Default "Browser print dialog". */
   printerLabel?: string;
+  /** v2's printer switcher. The app keeps the pick, for this print only, and resets it when the template changes, as v2 does. */
+  printers?: readonly { id: string; name?: string }[];
+  /** The cashier's pick for this print; null or undefined is Auto. */
+  printerId?: string | null;
+  /** The name Auto resolves to, worked out by the app (for example with `resolvePrinter` from `@tallyui/pos`). */
+  autoPrinterName?: string;
+  /** Called with the picked printer's id, or null for Auto. */
+  onPrinterChange?: (id: string | null) => void;
   onPrint: () => void;
   /** Print shows its loading state and cannot be pressed. */
   printing?: boolean;
@@ -84,6 +92,37 @@ function TemplateValue({ templates, templateId, onTemplateChange }:
           <SelectItem key={template.id} value={template.id} label={template.title} disabled={template.disabled}
             testID={`receipt-template-${template.id}`} className={cn('min-h-11', template.disabled && 'opacity-50')}>
             <Text className="text-sm">{template.title}</Text>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const AUTO = '__auto__';
+
+/** v2's printer-switcher.tsx: Auto first, then every printer by name, falling back to its id. */
+function PrinterValue({ printers, printerId, autoPrinterName, onPrinterChange }:
+  Required<Pick<ReceiptSheetProps, 'printers'>> & Pick<ReceiptSheetProps, 'printerId' | 'autoPrinterName' | 'onPrinterChange'>) {
+  const labelOf = (printer: { id: string; name?: string }) => printer.name?.trim() || printer.id;
+  const current = printers.find((printer) => printer.id === printerId);
+  const value = current
+    ? { value: current.id, label: labelOf(current) }
+    : { value: AUTO, label: autoPrinterName ? `Auto — ${autoPrinterName}` : 'Auto' };
+  return (
+    <Select value={value} onValueChange={(option) => {
+      if (option && option.value !== value.value) onPrinterChange?.(option.value === AUTO ? null : option.value);
+    }}>
+      <SelectTrigger testID="receipt-printer-select" accessibilityLabel="Printer" className="h-11 w-56 gap-2">
+        <SelectValue placeholder="Select printer" className="shrink text-sm text-foreground" numberOfLines={1} />
+      </SelectTrigger>
+      <SelectContent className="w-56">
+        <SelectItem value={AUTO} label="Auto" testID="receipt-printer-auto" className="min-h-11">
+          <Text className="text-sm">Auto</Text>
+        </SelectItem>
+        {printers.map((printer) => (
+          <SelectItem key={printer.id} value={printer.id} label={labelOf(printer)} testID={`receipt-printer-${printer.id}`} className="min-h-11">
+            <Text className="text-sm">{labelOf(printer)}</Text>
           </SelectItem>
         ))}
       </SelectContent>
@@ -141,7 +180,8 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queue
 }
 
 export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates, templateId, onTemplateChange,
-  printerLabel = 'Browser print dialog', onPrint, printing = false, printed = false, onEmail, email, children }: ReceiptSheetProps): JSX.Element {
+  printerLabel = 'Browser print dialog', printers, printerId, autoPrinterName, onPrinterChange,
+  onPrint, printing = false, printed = false, onEmail, email, children }: ReceiptSheetProps): JSX.Element {
   const t = useT();
   const [sent, setSent] = useState<'sent' | 'queued' | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -161,9 +201,11 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
               <TemplateValue templates={templates} templateId={templateId} onTemplateChange={onTemplateChange} />
             </SheetRow>
           )}
-          {/* v2 offers a printer switcher here; TallyUI shows the app's one label until a printer list exists. */}
+          {/* v2's printer-switcher.tsx when the app passes printers; otherwise the app's one label. */}
           <SheetRow testID="print-sheet-printer" label="Printer">
-            <Text className="text-sm text-foreground">{printerLabel}</Text>
+            {printers && printers.length > 0 ? (
+              <PrinterValue printers={printers} printerId={printerId} autoPrinterName={autoPrinterName} onPrinterChange={onPrinterChange} />
+            ) : <Text className="text-sm text-foreground">{printerLabel}</Text>}
           </SheetRow>
         </View>
         {/* v2 draws its own WebView preview with zoom and loading states; here the app's preview is the child. */}

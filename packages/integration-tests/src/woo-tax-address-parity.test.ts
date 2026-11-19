@@ -36,11 +36,12 @@ const billing = { firstName: 'Ann', address1: '1 State St', city: 'Albany', stat
 const shipping = { firstName: 'Ann', city: 'Austin', state: 'TX', postcode: '78701', country: 'US' };
 
 /** The till: the customer's context, a taxable line, a fee and shipping, finalized and sent to WooCommerce. */
-async function sell(taxBasedOn: string, customer: CustomerSummary, orderCreateVersion = 8) {
+async function sell(taxBasedOn: string, customer: CustomerSummary, orderCreateVersion = 8,
+  fee: Parameters<ReturnType<typeof createOrderBuilder>['addFee']>[0] = { name: 'Bag', amountMinor: 400 }) {
   const { taxContext, location } = saleTaxContexts(await settingsFor(taxBasedOn), { orderCreateVersion })(customer);
   const builder = createOrderBuilder({ currency: 'USD', taxContext });
   builder.addLine({ productId: '11', name: 'Item', unitPrice: { amount: 2000, currency: 'USD' } });
-  builder.addFee({ name: 'Bag', amountMinor: 400 });
+  builder.addFee(fee);
   builder.addShipping({ name: 'Delivery', amountMinor: 800, taxClass: 'standard', methodId: 'flat_rate' });
   builder.setCustomer(customer);
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
@@ -146,5 +147,13 @@ describe('WooCommerce tax on the customer\'s address, till against server (#722)
     expect(order.customer).toBeTruthy();
     expect(order.customer?.billing).toMatchObject({ state: 'NY', country: 'US' });
     expect(order.customer?.shipping).toMatchObject({ state: 'TX' });
+  });
+
+  it('(g) vendurepos gap 2.10: a fee entered with tax at the CA rate is sent as the plain 4.00 fee, and the server agrees', async () => {
+    const { order, payload } = await sell('base', both, 8, { name: 'Bag', amountMinor: 429, amountIncludesTax: true });
+    const plain = await sell('base', both);
+    expect(payload.fee_lines?.[0].total).toBe('4.00');
+    expect(payload.fee_lines?.[0].total).toBe(plain.payload.fee_lines?.[0].total);
+    expect(serverTotals(payload)).toStrictEqual({ taxMinor: order.taxMinor, totalMinor: order.totalMinor });
   });
 });

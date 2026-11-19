@@ -42,6 +42,7 @@
     "address-fields",
     "address-editor",
     "customer-order-history",
+    "customers-list",
     "---Checkout---",
     "payment-method-card",
     "payment-selector",
