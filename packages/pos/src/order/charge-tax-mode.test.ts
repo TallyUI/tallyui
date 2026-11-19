@@ -247,6 +247,21 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     displayIdentity(order);
   });
 
+  it('G9 (N1): an untaxed converted fee never takes residue the product lines owe', () => {
+    const builder = makeGeneric(false);
+    // Two inclusive 5s each show 5 (4.5454 rounded) but the subtotal is 10 − tax 1 = 9: residue −1 goes to the
+    // first converted line (ties to the earlier line), never to the untaxed fee, which has no rounding of its own.
+    for (const productId of ['a', 'b']) builder.addLine({ ...product(5), productId, unitPrice: { amount: 5, currency: 'EUR', taxInclusive: true } });
+    builder.addFee({ name: 'Untaxed', amountMinor: 500, amountIncludesTax: true, taxStatus: 'none' });
+    let order!: Order;
+    expect(() => { order = builder.getSnapshot(); }).not.toThrow();
+    expect(order).toMatchObject({ taxMinor: 1, totalMinor: 510 });
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([500]);
+    expect(order.display.lines.map((line) => line.amountMinor)).toEqual([4, 5]);
+    expect(order.display.subtotalMinor).toBe(9);
+    displayIdentity(order);
+  });
+
   it('V1: a mode that is not a boolean is refused', () => {
     expect(() => makeGeneric(false).addFee({ name: 'Fee', amountMinor: 1, amountIncludesTax: 'yes' as never })).toThrow(RangeError);
   });
