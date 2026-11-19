@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_TAX_IDS_MAX, paymentMethodOf } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -49,8 +50,7 @@ export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on thi
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
 /** ADR-092 6a: setTaxIds' refusal once the sale left the cart or money is live; the tax ids change only in the cart. */
 export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
-/** ADR-092 6a: setTaxIds' refusal of a list order.create 12 could not carry. */
-export const TAX_IDS_INVALID = 'Each tax id needs a type and a number, a country is a two-letter code, and a sale takes at most 10.';
+export { TAX_IDS_INVALID } from '../order/tax-ids';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
@@ -371,8 +371,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return paymentId;
   }
 
+  /** #1064: a customer's tax ids cleanTaxIds would refuse (a defaultCustomer, a restored draft) start no tender. */
+  function taxIdsRefusal(): string | null {
+    const taxIds = builderNow.current.getSnapshot().customer?.taxIds;
+    return taxIds && cleanTaxIds(taxIds) === null ? TAX_IDS_INVALID : null;
+  }
+
   function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
     if (locked()) return;
+    const taxIdsRefused = tender && taxIdsRefusal();
+    if (taxIdsRefused) return setError(taxIdsRefused);
     const builder = builderNow.current;
     for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
     droppedReferences.current.clear();
@@ -628,11 +636,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
     setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
-    setCustomer(customer: CustomerSummary | null) {
+    setCustomer(picked: CustomerSummary | null) {
       if (locked()) return;
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
-      const refused = customer && customerRefusal(customer);
+      const refused = picked && customerRefusal(picked);
       if (refused) return setError(refused);
+      // #1064: so do tax ids setTaxIds would refuse; the clean list is the one stored.
+      const taxIds = picked?.taxIds?.length ? cleanTaxIds(picked.taxIds) : undefined;
+      if (taxIds === null) return setError(TAX_IDS_INVALID);
+      const customer = picked && taxIds ? { ...picked, taxIds } : picked;
       // #722: the sale's rates and its customer always agree, so a customer with other rates is refused once they are fixed.
       if (!retaxFor(customer)) {
         const same = opts.taxContextFor?.(customer);
@@ -641,7 +653,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (same) taxNow.current = same;
         builderNow.current.setCustomer(customer);
       }
-      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED) ? null : current); // any other error stays
+      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED || current === TAX_IDS_INVALID) ? null : current); // any other error stays
     },
     /**
      * Replaces both addresses on the picked customer (`undefined` removes one) and re-taxes like `setCustomer`. Does
@@ -675,13 +687,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const { customer, payments } = builderNow.current.getSnapshot();
       if (customer === null) return false;
       if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) { setError(TAX_IDS_CHANGE_REFUSED); return false; }
-      const trimmed = taxIds.map(({ type, value, country, label }) => ({ type: type.trim(), value: value.trim(),
-        ...(country?.trim() ? { country: country.trim() } : {}), ...(label?.trim() ? { label: label.trim() } : {}) }));
-      if (trimmed.length > ORDER_TAX_IDS_MAX || trimmed.some((t) => !t.type || !t.value || (t.country !== undefined && !/^[A-Z]{2}$/.test(t.country)))) {
-        setError(TAX_IDS_INVALID); return false;
-      }
+      const cleaned = cleanTaxIds(taxIds);
+      if (!cleaned) { setError(TAX_IDS_INVALID); return false; }
       const { taxIds: _taxIds, ...rest } = customer;
-      builderNow.current.setCustomer(trimmed.length ? { ...rest, taxIds: trimmed } : rest);
+      builderNow.current.setCustomer(cleaned.length ? { ...rest, taxIds: cleaned } : rest);
       setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
       return true;
     },
@@ -716,6 +725,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) return setError(taxIdsRefused);
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -736,6 +747,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) { setError(taxIdsRefused); return null; }
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();

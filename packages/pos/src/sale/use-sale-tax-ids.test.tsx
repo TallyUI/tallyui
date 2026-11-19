@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -43,13 +43,13 @@ describe('useSale setTaxIds (ADR-092 6a)', () => {
   });
   afterEach(async () => { cleanup(); await db.remove(); });
 
-  function saleOn(customer: CustomerSummary | null) {
+  function saleOn(customer: CustomerSummary | null, extra: Partial<Parameters<typeof useSale>[1]> = {}) {
     const taxContextFor = saleTaxContexts(settings, { orderCreateVersion: 8 });
     function Wrapper({ children }: { children: ReactNode }) {
       return <TaxProvider {...taxProviderProps(settings)}>{children}</TaxProvider>;
     }
     const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
-      capabilities: { orderCreate: 12 }, drafts: db.pos_drafts, taxContextFor }), { wrapper: Wrapper });
+      capabilities: { orderCreate: 12 }, drafts: db.pos_drafts, taxContextFor, ...extra }), { wrapper: Wrapper });
     if (customer) act(() => result.current.setCustomer(customer));
     act(() => { result.current.add(entries[0], traits); });
     return result;
@@ -111,7 +111,7 @@ describe('useSale setTaxIds (ADR-092 6a)', () => {
     ['11 entries', Array.from({ length: 11 }, (_, i) => ({ type: 'other', value: `ID${i}` }))],
     ['an empty type', [{ type: '', value: 'DE123' }]],
     ['a whitespace-only value', [{ type: 'eu_vat', value: '   ' }]],
-    ['a lower-case country', [{ type: 'eu_vat', value: 'DE123', country: 'de' }]],
+    ['a country with a digit', [{ type: 'eu_vat', value: 'DE123', country: 'D1' }]],
     ['a three-letter country', [{ type: 'eu_vat', value: 'DE123', country: 'DEU' }]],
   ])('T5: refuses %s, keeping the stored ids, and a valid call clears the refusal', (_name, invalid) => {
     const result = withVat();
@@ -160,5 +160,69 @@ describe('useSale setTaxIds (ADR-092 6a)', () => {
     const order = finalized(saleOn(auCustomer));
     expect(order.customer).toBeTruthy();
     expect('taxIds' in order.customer!).toBe(false);
+  });
+
+  it('U1: setCustomer refuses 11 tax ids, keeping the customer it had; a valid customer clears the refusal', () => {
+    const result = withVat();
+    const before = result.current.order.customer;
+    act(() => result.current.setCustomer({ id: '5', name: 'Ann', taxIds: Array.from({ length: 11 }, (_, i) => ({ type: 'other', value: `ID${i}` })) }));
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.order.customer).toStrictEqual(before);
+    act(() => result.current.setCustomer({ id: '5', name: 'Ann' }));
+    expect(result.current.error).toBeNull();
+  });
+
+  it('U2: setCustomer stores the cleaned list, the country upper-cased', () => {
+    const result = saleOn({ ...auCustomer, taxIds: [{ type: ' eu_vat', value: 'DE1', country: 'de' }] });
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.customer?.taxIds).toStrictEqual([{ type: 'eu_vat', value: 'DE1', country: 'DE' }]);
+  });
+
+  it('U3: a default customer with tax ids the store could not take starts no tender, and the gate is never asked', async () => {
+    const tenderGate = vi.fn(async () => null);
+    const result = saleOn(null, { defaultCustomer: { ...auCustomer, taxIds: [{ type: 't'.repeat(33), value: '1' }] }, tenderGate });
+    await act(async () => { result.current.startTender('cash'); await Promise.resolve(); });
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.stage.kind).toBe('cart');
+    act(() => result.current.setTender({ method: 'cash', amountMinor: result.current.order.totalMinor }));
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.order.payments).toHaveLength(0);
+    let id: string | null = 'unset';
+    act(() => { id = result.current.addTender({ method: 'cash', amountMinor: result.current.order.totalMinor }); });
+    expect(id).toBeNull();
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.order.payments).toHaveLength(0);
+    expect(result.current.stage.kind).toBe('cart');
+    expect(tenderGate).not.toHaveBeenCalled();
+  });
+
+  it('U3: with no tender gate, startTender refuses too', () => {
+    const result = saleOn(null, { defaultCustomer: { ...auCustomer, taxIds: [{ type: 'eu_vat', value: 'DE1' }, { type: 'eu_vat', value: 'DE1' }] } });
+    act(() => result.current.startTender('cash'));
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.stage.kind).toBe('cart');
+  });
+
+  it.each<[string, CustomerTaxId[]]>([
+    ['a 33-character type', [{ type: 't'.repeat(33), value: 'DE123' }]],
+    ['a NUL', [{ type: 'eu_vat', value: 'DE\u0000123' }]],
+  ])('U4: setTaxIds refuses %s', (_name, invalid) => {
+    const result = withVat();
+    expect(setTaxIds(result, invalid)).toBe(false);
+    expect(result.current.error).toBe(TAX_IDS_INVALID);
+    expect(result.current.order.customer?.taxIds).toEqual(stored);
+  });
+
+  // addTender works from the cart (no startTender), so the cart can hold captured money or a leg in motion.
+  it.each([
+    ['captured money (N3)', { method: 'cash' as const, amountMinor: 500 }],
+    ['a leg in motion (N4)', { method: 'external' as const, amountMinor: 500, status: 'pending' as const }],
+  ])('U5: setTaxIds refuses in the cart with %s', (_name, tender) => {
+    const result = withVat();
+    act(() => { expect(result.current.addTender(tender)).not.toBeNull(); });
+    expect(result.current.stage.kind).toBe('cart');
+    expect(setTaxIds(result, [{ type: 'au_abn', value: '51824753556' }])).toBe(false);
+    expect(result.current.error).toBe(TAX_IDS_CHANGE_REFUSED);
+    expect(result.current.order.customer?.taxIds).toEqual(stored);
   });
 });

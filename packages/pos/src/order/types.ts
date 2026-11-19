@@ -191,7 +191,7 @@ export interface CustomerSummary {
   billing?: CustomerAddress;
   shipping?: CustomerAddress;
   /** The sale's tax ids (ADR-092 6a): set with `useSale().setTaxIds`, parked with the draft, stored on the order and sent
-   *  at order.create 12 without `label`. A picked customer's own (`Customer.taxIds`) may be passed in `setCustomer`. */
+   *  at order.create 12 without `label`. A picked customer's own (`Customer.taxIds`) may be passed in `setCustomer`, which refuses a list `setTaxIds` would refuse. */
   taxIds?: CustomerTaxId[];
 }
 
