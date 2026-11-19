@@ -9,7 +9,7 @@
 
 `auth.getHeaders({ token })` sends the WCPOS access token as `Authorization: Bearer <token>`, together with the POS marker `X-WCPOS: 1`. Without a token it throws `WooMissingTokenError`. WooCommerce consumer keys are not supported.
 
-It also sends `X-WCPOS-Protocol: 2`, which WCPOS 2.0 requires of POS requests, and `X-WCPOS-Client: tallyui/<connector version>` (lowercase `[a-z0-9._-]`, at most 32 characters), which WCPOS uses only for consent-gated telemetry.
+It also sends `X-WCPOS-Protocol: 3`, which WCPOS 2.0.4 requires of POS requests (a lower value gets HTTP 426 `wcpos_update_required`), and `X-WCPOS-Client: tallyui/<connector version>` (lowercase `[a-z0-9._-]`, at most 32 characters), which WCPOS uses only for consent-gated telemetry.
 
 ## Product pull
 
@@ -46,6 +46,10 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 - **`lineTax`** is always `{ none: true, classes: true }`.
 - **Unauthorised reads.** A 401 or 403 from `/stores` or `/status` throws `ConnectorUnauthorizedError`. A 401 or 403 from `/site` only closes the coupon gate.
 - **`products_id_fast_path`** is read by the reconcile pass, not here (see Reconciliation).
+
+## Order push on WCPOS 2.0
+
+On a 2.0.x store (`ledgerPayments`, or `/site` `wcpos_version` 2 or later, read once per transport) the sale is pushed `pending` with no money keys, then paid with one `POST orders/<id>/payments` per payment (`pos_cash` with `tendered`, or `pos_card`), each sent with the revision the last answer gave; a free sale is closed with `POST orders/<id>/close`. The sale counts as applied only after the last of those calls succeeds. A retry replays the push by its mutation id and each payment by its id. A money call the store refuses is rejected with a message naming the order it created, since that order now exists unpaid. On 1.10.x and the fork, the push body is unchanged.
 
 ## Customers
 
