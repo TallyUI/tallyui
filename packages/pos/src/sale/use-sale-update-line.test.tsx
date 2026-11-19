@@ -13,7 +13,7 @@ import type { PosOrder } from '../pos-order/types';
 import { TaxProvider, saleTaxContexts } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
-import { LINE_EDIT_REFUSED, useSale } from './use-sale';
+import { LINE_EDIT_REFUSED, SALE_FINISHED, SALE_HAS_PAYMENT, useSale } from './use-sale';
 
 const longSku = 'L'.repeat(120);
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00', sku: 'SHIRT-1' },
@@ -65,6 +65,15 @@ describe('useSale updateLine (ADR-092 6b/6c)', () => {
     act(() => { result.current.addTender({ method: 'cash', amountMinor: result.current.order.totalMinor }); });
     return finalizeOrder(result.current.order, { capabilities: { orderCreate: 12 } });
   }
+  /** saleOnReceipt from use-sale-receipt-stage.test.tsx, adapted: the sale paid by a captured cash leg and completed. */
+  async function saleOnReceipt() {
+    const result = saleOf();
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: result.current.order.totalMinor })).toEqual(expect.any(String)); });
+    await act(async () => { await result.current.complete(); });
+    const receipt = result.current.stage;
+    if (receipt.kind !== 'receipt') throw new Error('Expected receipt');
+    return { result, receipt };
+  }
   /** S2's sale: a Shirt line edited in name, SKU and regular price, parked and resumed. */
   async function resumedEdited() {
     const result = saleOf();
@@ -90,7 +99,7 @@ describe('useSale updateLine (ADR-092 6b/6c)', () => {
     expect(result.current.order.lineItems[0].name).toBe('Other');
   });
 
-  it('S7: in the cart with an unlocked captured leg, updateLine refuses and leaves the order equal', async () => {
+  it('S7: in the cart with an unlocked captured leg, updateLine refuses with SALE_HAS_PAYMENT, sets it as the error and leaves the order equal', async () => {
     const result = saleOf();
     act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500, status: 'captured' })).toEqual(expect.any(String)); });
     const id = result.current.order.id;
@@ -100,8 +109,18 @@ describe('useSale updateLine (ADR-092 6b/6c)', () => {
     expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'cash', amountMinor: 500, status: 'captured' })]);
     expect(result.current.order.payments[0].locked).toBeFalsy();
     const before = result.current.order;
-    expect(update(result, { name: 'Other', sku: 'X', regularUnitPriceMinor: 1 })).toBe(LINE_EDIT_REFUSED);
+    expect(update(result, { name: 'Other', sku: 'X', regularUnitPriceMinor: 1 })).toBe(SALE_HAS_PAYMENT);
+    expect(result.current.error).toBe(SALE_HAS_PAYMENT);
     expect(result.current.order).toEqual(before);
+  });
+
+  it('S8: on the receipt, updateLine refuses with SALE_FINISHED, sets it as the error and changes neither the order nor the stage', async () => {
+    const { result, receipt } = await saleOnReceipt();
+    const before = result.current.order;
+    expect(update(result, { name: 'Other', sku: 'X', regularUnitPriceMinor: 1 })).toBe(SALE_FINISHED);
+    expect(result.current.error).toBe(SALE_FINISHED);
+    expect(result.current.order).toEqual(before);
+    expect(result.current.stage).toBe(receipt);
   });
 
   it('S2: a parked edited line resumes with both SKUs, and a later scan adds a new line', async () => {

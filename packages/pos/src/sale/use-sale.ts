@@ -586,11 +586,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     /**
      * ADR-092 6b/6c: edits a cart line's `name`, `sku` or `regularUnitPriceMinor` (`null` removes it); the regular price is
-     * the "was" price that receipts print and order.create 6+ sends. Cart only (LINE_EDIT_REFUSED); returns a refusal or null.
+     * the "was" price that receipts print and order.create 6+ sends. Cart only; returns a refusal or null: editRefusal's
+     * refusals first (SALE_SAVING, SALE_FINISHED, SALE_HAS_PAYMENT), then LINE_EDIT_REFUSED for any other stage outside the cart.
      */
     updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): string | null {
-      if (locked()) return SALE_SAVING;
-      if (stageNow.current.kind !== 'cart' || liveLeg()) return LINE_EDIT_REFUSED;
+      const held = editRefusal(); if (held) return held;
+      if (stageNow.current.kind !== 'cart') return LINE_EDIT_REFUSED;
       try {
         builderNow.current.updateLine(lineId, patch);
         return null;
