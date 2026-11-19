@@ -352,6 +352,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ...(addresses.billing ? { billing: addresses.billing } : {}),
       ...(addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
+    ...(order.meta?.length ? { meta: order.meta.map((m) => ({ ...m })) } : {}),
     ...(taxAddress ? { taxAddress } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),

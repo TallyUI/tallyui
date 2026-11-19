@@ -1,4 +1,4 @@
-import type { CustomerAddress, Money, TaxRounding } from '@tallyui/core';
+import type { CustomerAddress, Money, OrderCreateMeta, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
 /** A store-priced coupon's share of one line (#790, docs/contract/order-create-v9.md), tax-exclusive, in integer minor units. */
@@ -36,6 +36,9 @@ export interface Order {
   payments: Payment[];
   customer: CustomerSummary | null;
   note: string;
+  /** The sale's order meta, WooCommerce's custom fields (ADR-092 6d). Set with `useSale().setMeta`, parked with the draft,
+   *  stored on the order, and sent at order.create 12. Keys are unique; none starts with `_`. Absent when there is none. */
+  meta?: OrderCreateMeta[];
   currency: string;
   pricesIncludeTax: boolean;
   /** The store's tax rounding strategy the figures were computed with (#287), from the sale's tax context; absent is per_order. */
