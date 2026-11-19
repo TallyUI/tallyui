@@ -15,26 +15,42 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 // Answers as the v2.0.4 plugin and its tests do: push { document, currentRevision } (Write_Controller.php:767-783), a money
 // call without revision 428 and a close without a uuid command_id 400 (Money_Command.php:71-77), an old revision 409
 // wcpos_revision_stale with data.currentRevision (Command_Log.php:251-273), else 200 with the next top-level revision
-// (Payments_Controller.php:376-405; Test_Payments_Controller.php:85-101,865-902). `queue` overrides answers per path.
-function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boolean | undefined, total = '3.000000', queue = {} as Record<string, Response[]> } = {}) {
+// (Payments_Controller.php:376-405; Test_Payments_Controller.php:85-101,865-902). `queue` overrides answers per path (an
+// `undefined` entry lets that call through). A `payments` call whose payment.id was already recorded is a replay: 200 with
+// the revision stored for that id, whatever revision it carries, and the revision does not advance (Ledger.php:585-595,
+// Command_Log.php:93-124). `lose` counts answers per path that the store acts on and the client never receives.
+function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boolean | undefined, total = '3.000000',
+  queue = {} as Record<string, Array<Response | undefined>>, lose = {} as Record<string, number> } = {}) {
   let revision = 1;
   const calls: Array<{ path: string; body?: ReturnType<typeof JSON.parse> }> = [];
-  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
-    const path = String(url).slice(baseUrl.length + 1), body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ path, body });
+  const recorded: Array<{ id: string; revision: string }> = [];
+  const answer = (path: string, body: ReturnType<typeof JSON.parse>): Response => {
     const queued = queue[path]?.shift();
     if (queued) return queued;
     if (path === 'site') return json(200, { wcpos_version: version });
     if (path === 'push/orders') return json(201, { document: { id: 115, number: '115', total }, currentRevision: `r${revision}` });
     if (typeof body?.revision !== 'string' || !body.revision) return json(428, { code: 'wcpos_revision_required' });
     if (path.endsWith('/close') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.command_id)) return json(400, { code: 'rest_invalid_param' });
+    const replayed = path.endsWith('/payments') ? recorded.find(({ id }) => id === body.payment?.id) : undefined;
+    if (replayed) return json(200, { payment: { id: replayed.id, status: 'captured' }, revision: replayed.revision });
     if (body.revision !== `r${revision}`) return json(409, { code: 'wcpos_revision_stale', data: { status: 409, currentRevision: `r${revision}` } });
     revision += 1;
+    if (path.endsWith('/payments')) recorded.push({ id: body.payment?.id, revision: `r${revision}` });
     return json(200, { payment: { id: body.payment?.id, status: 'captured' }, revision: `r${revision}` });
+  };
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+    const path = String(url).slice(baseUrl.length + 1), body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ path, body });
+    const response = answer(path, body);
+    if ((lose[path] ?? 0) > 0) {
+      lose[path] -= 1;
+      throw new TypeError('Failed to fetch');
+    }
+    return response;
   });
   const transport = createWooCommandTransport({ baseUrl, fetch, getHeaders: () => ({ 'X-WCPOS': '1' }), acceptsPaymentsList: true,
     ...(ledgerPayments === undefined ? {} : { ledgerPayments }) });
-  return { calls, fetch, transport };
+  return { calls, fetch, transport, recorded, revision: () => `r${revision}` };
 }
 const applied = { kind: 'results', results: [{ id: uuid(1), status: 'applied', serverRefs: { orderId: '115', displayId: '115', totalMinor: 300 } }] };
 const line = { product_id: 80, quantity: 1, subtotal: '3.00', total: '3.00' };
@@ -136,5 +152,75 @@ describe('WCPOS 2.0 payment ledger', () => {
     const { calls, transport } = store({ ledgerPayments: true, queue: { 'push/orders': [json(422, { code: 'wcpos_status_not_pushable', message: 'Not pushable.' })] } });
     expect(await transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload', message: 'Not pushable.' } }] });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('WCPOS 2.0 payment ledger: amendment 2', () => {
+  const mismatch = (serverMinor: number, total: string) => ({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: {
+    code: 'invalid_payload', message: `WooCommerce order #115 totals ${total} but the till charged 3.00; no payment was recorded on it.`,
+    data: { orderId: '115', storeCode: 'total_mismatch', tillMinor: 300, serverMinor } } }] });
+  it('A2-1: a ledger push whose store total is higher is rejected before any money', async () => {
+    const { calls, transport } = store({ ledgerPayments: true, total: '3.010000' });
+    expect(await transport.send([order()])).toEqual(mismatch(301, '3.01'));
+    expect(calls.map(({ path }) => path)).toEqual(['push/orders']);
+  });
+  it('A2-2: a ledger push whose store total is lower is rejected the same way', async () => {
+    const { calls, transport } = store({ ledgerPayments: true, total: '2.990000' });
+    expect(await transport.send([order()])).toEqual(mismatch(299, '2.99'));
+    expect(calls.map(({ path }) => path)).toEqual(['push/orders']);
+  });
+  it('A2-3: a legacy push with a store total mismatch stays applied with the total_mismatch warning', async () => {
+    const { transport } = store({ ledgerPayments: false, total: '3.010000' });
+    expect(await transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'applied',
+      serverRefs: { orderId: '115', displayId: '115', totalMinor: 301 },
+      warnings: [{ code: 'total_mismatch', expectedMinor: 300, serverMinor: 301 }] }] });
+  });
+  it('A2-4: a first record answered 403 rest_forbidden is rejected as created but not paid', async () => {
+    const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [json(403, { code: 'rest_forbidden', message: 'Forbidden.' })] } });
+    expect(await transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload',
+      message: 'WooCommerce order #115 was created but not paid: Forbidden.', data: { orderId: '115', storeCode: 'rest_forbidden' } } }] });
+  });
+  it('A2-5: a record answered with an unknown 4xx is retried by its code', async () => {
+    const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [json(404, { code: 'woocommerce_rest_cannot_view' })] } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'woocommerce_rest_cannot_view' });
+  });
+  it('A2-6: a split whose second record is refused names what landed', async () => {
+    const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [undefined,
+      json(409, { code: 'wcpos_amount_exceeds_balance', message: 'Too much.' })] } });
+    expect(await transport.send([order(split)])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload',
+      message: 'WooCommerce order #115 was created and part paid (1 of 2 payments recorded): Too much.',
+      data: { orderId: '115', storeCode: 'wcpos_amount_exceeds_balance', recorded: 1 } } }] });
+  });
+  it('A2-7: a record answered 404 rest_no_route clears the /site decision and retries', async () => {
+    const { calls, transport } = store({ queue: { 'orders/115/payments': [json(404, { code: 'rest_no_route' })] } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'ledger_route_missing' });
+    expect(await transport.send([order()])).toEqual(applied);
+    expect(calls.filter(({ path }) => path === 'site')).toHaveLength(2);
+  });
+  it('A2-8: a legacy push answered 422 wcpos_status_not_pushable re-reads /site; an explicit legacy option still rejects', async () => {
+    const notPushable = () => json(422, { code: 'wcpos_status_not_pushable', message: 'Not pushable.' });
+    const detected = store({ version: '1.10.20', queue: { 'push/orders': [notPushable()] } });
+    expect(await detected.transport.send([order()])).toEqual({ kind: 'retry', reason: 'ledger_store_detected' });
+    expect(await detected.transport.send([order()])).toEqual(applied);
+    expect(detected.calls.filter(({ path }) => path === 'site')).toHaveLength(2);
+    const explicit = store({ ledgerPayments: false, queue: { 'push/orders': [notPushable()] } });
+    expect(await explicit.transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected',
+      error: { code: 'invalid_payload', message: 'Not pushable.' } }] });
+  });
+  it('A2-9: a free sale whose envelope id is not a UUID is refused in preflight, with no request', async () => {
+    const free = { ...order([{ clientPaymentId: uuid(5), method: 'cash', amountMinor: 0 }], 0), id: 'second' };
+    const error = { code: 'invalid_payload', message: "WooCommerce POS 2.0 closes a free sale by a UUID command id; this sale's id is not one." };
+    expect(toWooOrderPayload(free, undefined, { ledger: true })).toEqual({ error });
+    const { fetch, transport } = store({ ledgerPayments: true, total: '0.00' });
+    expect(await transport.send([free])).toEqual({ kind: 'results', results: [{ id: 'second', status: 'rejected', error }] });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('A2-10: a record whose answer was lost is replayed on the resend: one payment, one revision step', async () => {
+    const { calls, recorded, revision, transport } = store({ ledgerPayments: true, lose: { 'orders/115/payments': 1 } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'network' });
+    expect(await transport.send([order()])).toEqual(applied);
+    expect(calls.map(({ path }) => path)).toEqual(['push/orders', 'orders/115/payments', 'push/orders', 'orders/115/payments']);
+    expect(recorded).toEqual([{ id: uuid(5), revision: 'r2' }]);
+    expect(revision()).toBe('r2');
   });
 });
