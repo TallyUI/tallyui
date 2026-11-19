@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type JSX } from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
+import { cn } from '@tallyui/theme';
 import { Text } from '../ui/text';
 
 const AGE_TICK_MS = 60_000; // Ages tick once a minute (v2).
@@ -29,6 +30,8 @@ export interface OpenSaleTabsProps {
   currency: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Merged onto the bar's root, after its own classes, so an app can restyle it (for example `border-t-0 border-b` at the top). */
+  className?: string;
 }
 
 /** v2 cart/tab-who.ts: the customer, or what is in the cart when the customer is a guest. */
@@ -42,7 +45,7 @@ function who(sale: OpenSale): string {
  * The open sales as cart tabs (v2 cart/tabs.tsx): who, then the Partly paid chip or else the total. The open sale's
  * tab is underlined even when it is the only one; a blank cart has no tab, the + cell is its tab and reads "New".
  */
-export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsProps): JSX.Element {
+export function OpenSaleTabs({ sales, currency, onSelect, onNew, className }: OpenSaleTabsProps): JSX.Element {
   const formatMoney = useFormatMoney();
   const now = useNowMs(AGE_TICK_MS);
   const blank = !sales.some((sale) => sale.current);
@@ -69,7 +72,7 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
     }
   } : undefined;
   return (
-    <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card"
+    <View testID="open-sale-tabs" className={cn('h-14 flex-row items-stretch border-t border-border bg-card', className)}
       {...{ onKeyDown } /* RN's View types lack onKeyDown; react-native-web passes it to the div. */}>
       <ScrollView horizontal accessibilityRole="tablist" showsHorizontalScrollIndicator={false} className="min-w-0 flex-1">
         {sales.map((sale) => {

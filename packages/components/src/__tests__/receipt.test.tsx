@@ -161,6 +161,20 @@ describe('Receipt', () => {
     expect(newSale).toHaveBeenCalledTimes(1);
   });
 
+  it('with printed, Print reads Print again', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} printed />);
+    expect(screen.getByText('Print again')).toBeTruthy();
+    expect(screen.queryByText('Print receipt')).toBeNull();
+  });
+
+  it('with printed={false}, Print reads Print receipt', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={() => {}} printed={false} />);
+    expect(screen.getByText('Print receipt')).toBeTruthy();
+    expect(screen.queryByText('Print again')).toBeNull();
+  });
+
   it('shows the customer under the cashier when there is one', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     act(() => sale.setCustomer({ id: 'customer-1', name: 'Jane Smith' }));

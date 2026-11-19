@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { cn } from '@tallyui/theme';
-import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
+import { useProductStock, useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
-  listCategories, inCategory, productCategories, cartQuantities,
-  type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
+  listCategories, inCategory, productCategories, cartQuantities, listTermGroups, hasTerm, DEFAULT_TILE_FIELDS,
+  type TileFields, type CatalogueEntry, type CatalogueViewState, type CatalogueViewAction, type CartQuantityLine } from '@tallyui/pos';
 import { ProductGrid, ProductImage, ProductPrice, ProductStockBadge, ProductTitle, ProductTable, ViewToggle, CategoryNav } from '../product';
 import { ProductVariantPicker } from '../product/product-variant-picker';
 import { STOCK_STATUS_LABELS } from '../product/product-stock-badge';
@@ -17,7 +17,8 @@ import { Popover } from '@tallyui/primitives';
 import { CameraScanButton } from '../product/camera-scan-button';
 import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
-import { CategoryBrowseGrid, CategoryCrumb } from './category-browse';
+import { CategoryBrowseGrid } from './category-browse';
+import { Breadcrumb } from './breadcrumb';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
@@ -65,7 +66,7 @@ function draws(node: ReactNode): boolean {
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, searchAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, termPills = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot, tileFields }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -130,6 +131,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   filterChips?: readonly ProductFilterChip[];
   /** With the In Stock pill on, keep 'backorder' products in the grid (only 'out_of_stock' is dropped). Default false: WCPOS v2's pill is stock_status 'instock' and drops backorders too. */
   inStockKeepsBackorder?: boolean;
+  /** With showFilterBar, a term pill per term group (traits.getTerms) after the chips: `true` for every group the listed
+   *  products carry, in listTermGroups order, or the group ids to show, in this order (a group with no terms is not drawn).
+   *  Single select per group; groups AND together; local only, never persisted. Not drawn with `items`. Default off. */
+  termPills?: boolean | readonly string[];
   /** Controlled filters; changes are reported through onFiltersChange. */
   filters?: ProductFilters;
   /** The cashier's next filters (requested filters when controlled). */
@@ -151,6 +156,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** v2's rows between the chips and the products (its ListColumn `rows`): notices such as "Price check only until
    * the register is open.", rendered under the header and above the grid, table or category tiles. Default none. */
   rowsSlot?: ReactNode;
+  /** v2's Product settings › Tile Fields: which words a grid tile shows. Merged over DEFAULT_TILE_FIELDS (today's tile:
+   * name, price with its on-sale strike, stock status). Apps feed it from the `catalogue.tileFields` app setting. Grid
+   * view only; the table, drill variant tiles and the skeleton ignore it. */
+  tileFields?: Partial<TileFields>;
 }) {
   const [initial] = useState<{
     state: CatalogueViewState; loaded?: CatalogueViewState; pending?: Promise<unknown>; failed?: boolean; error?: unknown;
@@ -168,6 +177,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   });
   const [internalState, setInternalState] = useState(initial.state);
   const state = viewState ?? internalState;
+  const fields: TileFields = { ...DEFAULT_TILE_FIELDS, ...tileFields };
   const cashierChanged = useRef(false);
   useEffect(() => {
     let mounted = true;
@@ -226,8 +236,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
   const [allOpen, setAllOpen] = useState(false);
+  // Opening a category by its tile focuses the crumb (v2 focuses on mount); a stored category does not.
+  const [crumbFocus, setCrumbFocus] = useState(false);
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
-  const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
+  const level = browsing && (activeCategory || allOpen);
+  const back = () => { setCrumbFocus(false); setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); };
+  const atRoot = browsing && !activeCategory && !allOpen && !query.trim()
+    && categoryList.some((category) => (counts.get(category.id) ?? 0) > 0);
   const [scannerOpen, setScannerOpen] = useState(false);
   // The search row is shorter than a control's band at Compact: under a coarse pointer it is the band's height.
   const band = useMinTarget();
@@ -243,14 +258,33 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
+  // The term pills: local picks (group id to term id), never saved or reported. A pick whose term no drawn group still
+  // holds is not applied but kept, and applies again when the term returns, as a stored category does.
+  const [termPicks, setTermPicks] = useState<Readonly<Record<string, string>>>({});
+  const allTermGroups = useMemo(() => (showFilterBar && termPills && items === undefined ? listTermGroups(shown, traits) : []),
+    [showFilterBar, termPills, items, shown, traits]);
+  const termGroups = useMemo(() => (termPills === true ? allTermGroups
+    : termPills ? termPills.flatMap((id) => allTermGroups.filter((group) => group.id === id)) : []), [allTermGroups, termPills]);
+  const activeTerms = useMemo(() => termGroups
+    .filter((group) => group.terms.some((term) => term.id === termPicks[group.id]))
+    .map((group) => [group.id, termPicks[group.id]] as const), [termGroups, termPicks]);
+  function pickTerm(group: string, term: string | undefined) {
+    setTermPicks((current) => {
+      const next = { ...current };
+      if (term === undefined) delete next[group]; else next[group] = term;
+      return next;
+    });
+  }
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
     const matched = searchProducts(activeCategory
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
-    const filtered = stockFiltered
+    const stocked = stockFiltered
       ? matched.filter((doc) => !(inStockKeepsBackorder ? ['out_of_stock'] : ['out_of_stock', 'backorder']).includes(traits.getStock(doc).status)) : matched;
+    const filtered = activeTerms.length > 0
+      ? stocked.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : stocked;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, activeTerms]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -343,6 +377,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
+    : activeTerms.length > 0 && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
     : isLoading ? 'Loading products…' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay
@@ -384,7 +419,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             {draws(searchAccessory) ? searchAccessory : null}
           </View>
         ) : searchInput}
-        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips} /> : null}
+        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips}
+          termGroups={termGroups.length > 0 ? termGroups.map((group) => ({
+            id: group.id, label: group.name, options: group.terms.map((term) => ({ value: term.id, label: term.name })),
+            value: activeTerms.find(([id]) => id === group.id)?.[1], onChange: (term: string | undefined) => pickTerm(group.id, term),
+          })) : undefined} /> : null}
         {cameraScan && cameraScanner && scannerOpen ?<CameraScannerPanel {...cameraScanner} onClose={() => setScannerOpen(false)} /> : null}
         {(statusText || statusAccessory) ? (
           <View testID="catalogue-status-row" className="flex-row items-center gap-2">
@@ -428,9 +467,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       </View>
       {draws(rowsSlot) ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
-        onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
-      {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}
-        onRoot={() => { setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); }} /> : null}
+        onOpen={(id) => { setCrumbFocus(true); if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <LevelWrap level={!!level} onBack={back}>
+      {level ? <Breadcrumb testID="category-crumb" phone={phone} autoFocus={crumbFocus}
+        parents={[{ label: 'Categories', testID: 'category-crumb-root', onPress: back }]} here={activeCategory?.name ?? 'All products'} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
@@ -451,13 +490,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           // inside the card and centred with the rest, rather than adding a slot to ProductCard (out of scope for TV6b).
           const tile = (
             <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`}
+              // v2 product-tile.tsx:81: with the name off, the name stays the tile's label.
+              {...(fields.name ? {} : { accessibilityLabel: traits.getName(product) })}
               onPress={groups.length > 0 ? () => { closePicker(); setChooserId(null); } : () => selectProduct(product)}>
               {({ pressed }) => <>
               <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
                 <ProductImage doc={product} size={80} className="rounded-md" />
-                <ProductTitle doc={product} className="text-sm" numberOfLines={2} />
-                <ProductPrice doc={product} />
-                <ProductStockBadge doc={product} showAsOf={false} className="self-center" />
+                <TileWords doc={product} traits={traits} fields={fields} />
               </VStack>
               <PressVeil pressed={pressed} className="rounded-lg" />
               <InCartBadge count={quantities.get(id) ?? 0} className="absolute right-2 top-2" testID={`in-cart-${id}`} />
@@ -483,7 +522,45 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           );
         }}
         emptyState={emptyState} />}
-      </>}
+      </LevelWrap>}
     </View>
+  );
+}
+
+// The words under a grid tile's image, as v2's tile-words.tsx: a field that is off is not drawn; the facts (SKU,
+// barcode, categories) come after the price, each one line, only when on and set (tile-words.tsx:110-162).
+function TileWords<Doc>({ doc, traits, fields }: { doc: Doc; traits: ProductTraits<Doc>; fields: TileFields }) {
+  const sku = traits.getSku(doc);
+  const facts = [
+    ['sku', fields.sku && sku ? `SKU ${sku}` : ''],
+    ['barcode', fields.barcode ? traits.getBarcode(doc) ?? '' : ''],
+    ['categories', fields.categories ? traits.getCategoryNames(doc).join(', ') : ''],
+  ].filter(([, text]) => text);
+  return <>
+    {fields.name ? <ProductTitle doc={doc} className="text-sm" numberOfLines={2} /> : null}
+    {fields.price ? <ProductPrice doc={doc} {...(fields.onSale ? {} : { showWas: false })} /> : null}
+    {facts.map(([key, text]) => <Text key={key} numberOfLines={1} className="text-center text-xs text-muted-foreground">{text}</Text>)}
+    {fields.stock ? <ProductStockBadge doc={doc} showAsOf={false} className="self-center" />
+      : fields.price ? <OutOfStockMark doc={doc} /> : null}
+  </>;
+}
+
+// With stock off, an out-of-stock product still says so while its price shows (v2 tile-words.tsx:66-71). Its own
+// component so useProductStock runs only on this path, never on the default tile.
+function OutOfStockMark({ doc }: { doc: unknown }) {
+  return useProductStock(doc).status === 'out_of_stock' ? <ProductStockBadge doc={doc} showAsOf={false} className="self-center" /> : null;
+}
+
+// An open category is a level: on web, Escape inside it goes back (v2 packages/core/src/screens/main/pos/products/
+// level-back.tsx:37-49, the web part only). Outside a level the children render as before, with no wrapper.
+function LevelWrap({ level, onBack, children }: { level: boolean; onBack: () => void; children: ReactNode }) {
+  if (!level) return <>{children}</>;
+  return (
+    // RN's View types lack onKeyDown; react-native-web passes it to the div (as open-sale-tabs.tsx does).
+    <View className="flex-1" {...(Platform.OS === 'web' ? {
+      onKeyDown: (event: { nativeEvent: { key: string }; stopPropagation: () => void }) => {
+        if (event.nativeEvent.key === 'Escape') { event.stopPropagation(); onBack(); }
+      },
+    } : {})}>{children}</View>
   );
 }

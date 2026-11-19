@@ -5,13 +5,14 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import {
   appSettingSchema as schemaFromEntry, useAppSettings as hookFromEntry,
-  DEFAULT_APP_SETTINGS as defaultsFromEntry,
+  DEFAULT_APP_SETTINGS as defaultsFromEntry, CART_COLUMN_IDS, OPEN_ORDERS_POSITIONS,
 } from '../index';
 import { uuidv7 } from '../pos-order';
 import {
   appSettingCollection, appSettingSchema, appSettings$, DEFAULT_APP_SETTINGS, readAppSettings, writeAppSetting,
   type AppSettingCollection, type AppSettings,
 } from './app-settings';
+import { DEFAULT_TILE_FIELDS } from '../product/tile-fields';
 import { useAppSettings } from './use-app-settings';
 
 describe('app settings', () => {
@@ -76,6 +77,27 @@ describe('app settings', () => {
     expect((await collection.findOne('cart.quickDiscounts').exec())!.toJSON().value).toBe('[10]');
   });
 
+  it("reads catalogue.tileFields, defaulting to today's tile", async () => {
+    expect(DEFAULT_APP_SETTINGS['catalogue.tileFields']).toBe(DEFAULT_TILE_FIELDS);
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(DEFAULT_TILE_FIELDS);
+  });
+
+  it('writes catalogue.tileFields and merges a partial stored value onto the defaults', async () => {
+    const fields = { ...DEFAULT_TILE_FIELDS, sku: true, stock: false };
+    await writeAppSetting(collection, 'catalogue.tileFields', fields);
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(fields);
+    await collection.upsert({ key: 'catalogue.tileFields', value: '{"barcode":true}' });
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual({ ...DEFAULT_TILE_FIELDS, barcode: true });
+  });
+
+  it('falls back to the default tile fields for a stored non-object', async () => {
+    for (const value of ['"x"', '[]', 'null']) {
+      const doc = await collection.insert({ key: 'catalogue.tileFields', value });
+      expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(DEFAULT_TILE_FIELDS);
+      await doc.remove();
+    }
+  });
+
   it('rejects an invalid value and writes nothing', async () => {
     await expect(writeAppSetting(collection, 'ui.scale', 'huge' as never))
       .rejects.toThrow('writeAppSetting: invalid value for ui.scale');
@@ -101,5 +123,58 @@ describe('app settings', () => {
     expect(schemaFromEntry).toBe(appSettingSchema);
     expect(hookFromEntry).toBe(useAppSettings);
     expect(defaultsFromEntry).toBe(DEFAULT_APP_SETTINGS);
+  });
+
+  const rawValue = async (key: string) => (await collection.findOne(key).exec())?.toJSON().value;
+
+  it('CS1: reads cart.columns as {} and cart.openOrdersPosition as bottom from an empty collection', async () => {
+    const settings = await readAppSettings(collection);
+    expect(settings['cart.columns']).toEqual({});
+    expect(settings['cart.openOrdersPosition']).toBe('bottom');
+  });
+
+  it('CS2: writes cart.columns and reads it back', async () => {
+    const columns = { image: { show: true }, price: { onSale: false }, order: ['total', 'name'] } as const;
+    await writeAppSetting(collection, 'cart.columns', columns);
+    expect((await readAppSettings(collection))['cart.columns']).toEqual(columns);
+  });
+
+  it('CS3: drops unknown columns, non-boolean fields and unknown or repeated order ids', async () => {
+    await collection.insert({ key: 'cart.columns', value: JSON.stringify({
+      name: { show: false, sku: 'yes', extra: true }, bogus: { show: true }, sku: 5,
+      order: ['price', 'nope', 'price', 'quantity', 7],
+    }) });
+    expect((await readAppSettings(collection))['cart.columns']).toEqual({ name: { show: false }, order: ['price', 'quantity'] });
+  });
+
+  it('CS4: reads a non-object cart.columns as {}', async () => {
+    for (const value of ['"x"', '[]', 'null', '42']) {
+      const doc = await collection.insert({ key: 'cart.columns', value });
+      expect((await readAppSettings(collection))['cart.columns']).toEqual({});
+      await doc.remove();
+    }
+  });
+
+  it('CS5: rejects an array cart.columns and stores the parsed value', async () => {
+    await expect(writeAppSetting(collection, 'cart.columns', [] as never))
+      .rejects.toThrow('writeAppSetting: invalid value for cart.columns');
+    expect(await collection.find().exec()).toHaveLength(0);
+    await writeAppSetting(collection, 'cart.columns', { order: ['nope'] } as never);
+    expect(await rawValue('cart.columns')).toBe('{"order":[]}');
+  });
+
+  it('CS6: keeps cart.openOrdersPosition to top or bottom', async () => {
+    await writeAppSetting(collection, 'cart.openOrdersPosition', 'top');
+    expect((await readAppSettings(collection))['cart.openOrdersPosition']).toBe('top');
+    await collection.upsert({ key: 'cart.openOrdersPosition', value: '"middle"' });
+    expect((await readAppSettings(collection))['cart.openOrdersPosition']).toBe('bottom');
+    await expect(writeAppSetting(collection, 'cart.openOrdersPosition', 'left' as never))
+      .rejects.toThrow('writeAppSetting: invalid value for cart.openOrdersPosition');
+    expect(await rawValue('cart.openOrdersPosition')).toBe('"middle"');
+  });
+
+  it('CS7: exports the cart column ids and open-orders positions from the package entry', () => {
+    expect(CART_COLUMN_IDS).toEqual(['quantity', 'image', 'name', 'sku', 'price', 'regularPrice', 'total']);
+    expect(OPEN_ORDERS_POSITIONS).toEqual(['top', 'bottom']);
   });
 });

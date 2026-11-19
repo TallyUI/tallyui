@@ -43,6 +43,7 @@ The Tag chip opens a searchable list of `tags` (`{ value, label }`). A picked ta
 | `onChange` | `(next: ProductFilters) => void` | required | Receives the filters with the tapped chip toggled |
 | `chips` | `readonly ProductFilterChip[]` | `PRODUCT_FILTER_CHIPS` | Chips to show, in this order |
 | `terms` | `Partial<Record<'category' \| 'tag' \| 'brand', ProductTermFilter>>` | — | Turns those term chips into searchable picker pills |
+| `termGroups` | `readonly (ProductTermFilter & { id: string; label: string; searchPlaceholder?: string })[]` | — | Extra searchable term pills after the built-in chips, one per group and in this order (e.g. one per Vendure facet) |
 | `onTermPress` | `(chip: 'category' \| 'tag' \| 'brand') => void` | — | Opens the app's term picker for a term chip without `terms`; such chips are hidden without it |
 | `className` | `string` | — | Override container styles |
 

@@ -28,6 +28,11 @@ vi.mock('../input', () => ({
     <input value={value} placeholder={placeholder} onChange={(event) => onChangeText(event.target.value)} />
   ),
 }));
+// The window Catalogue reads for its phone boundary, set per test as catalogue-search-cap.test.tsx does.
+const dimensions = { width: 1280, height: 800, scale: 1, fontScale: 1 };
+vi.mock('react-native', async (importOriginal) => ({
+  ...await importOriginal<typeof import('react-native')>(), useWindowDimensions: () => dimensions,
+}));
 vi.mock('../ui', () => ({
   VStack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
@@ -51,7 +56,7 @@ const products = [
 ];
 const props = { products, traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null, showCategoryNav: true };
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); Object.assign(dimensions, { width: 1280, height: 800 }); });
 
 describe('Catalogue category browse', () => {
   it('keeps the chips by default', () => {
@@ -123,5 +128,65 @@ describe('Catalogue category browse', () => {
     expect(within(screen.getByTestId('grid')).getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid')))
       .toEqual(['product-tile-Red Shirt', 'product-tile-Hat and Shirt']);
     expect(within(screen.getByTestId('category-crumb')).getByText('Shirts')).toBeTruthy();
+  });
+
+  it('B1: splits the parent and the place with a separator at a wide window', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_shirts'));
+    expect(screen.getByTestId('category-crumb-sep-0')).toBeTruthy();
+    expect(screen.getByTestId('category-crumb-here').textContent).toBe('Shirts');
+    expect(screen.getByTestId('category-crumb-root').textContent).toBe('Categories');
+  });
+
+  it('B2: collapses to one Categories control with no separator at a phone window', () => {
+    Object.assign(dimensions, { width: 390, height: 844 });
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_shirts'));
+    expect(screen.queryByTestId('category-crumb-sep-0')).toBeNull();
+    expect(screen.getByTestId('category-crumb-root').textContent).toBe('Categories');
+    expect(screen.getByTestId('category-crumb-here').textContent).toBe('Shirts');
+    fireEvent.click(screen.getByTestId('category-crumb-root'));
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+    expect(screen.queryByTestId('category-crumb')).toBeNull();
+  });
+
+  it('B3: opening a category by its tile focuses the Categories crumb', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_shirts'));
+    expect(document.activeElement).toBe(screen.getByTestId('category-crumb-root'));
+  });
+
+  it('B4: a stored category does not focus the Categories crumb', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" loadViewState={() => ({ categoryId: 'pcat_shirts' })} />);
+    expect(screen.getByTestId('category-crumb')).toBeTruthy();
+    expect(document.activeElement).not.toBe(screen.getByTestId('category-crumb-root'));
+  });
+
+  it('B5: Escape inside an open category goes back to the tiles', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_shirts'));
+    fireEvent.keyDown(screen.getByTestId('category-crumb-root'), { key: 'Escape' });
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+    expect(screen.queryByTestId('category-crumb')).toBeNull();
+  });
+
+  it('P4: the All tile carries the grid mark and a category tile the folder mark', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    expect(screen.getByTestId('category-tile-all-mark')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-pcat_hats-mark')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-all-stack')).toBeTruthy();
+    expect(screen.getByTestId('category-tile-pcat_hats-stack')).toBeTruthy();
+  });
+
+  it('P5: an empty category is hidden and the footer counts the shown ones', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" categories={[...categories, { id: 'pcat_empty', name: 'Empty' }]} />);
+    expect(screen.queryByTestId('category-tile-pcat_empty')).toBeNull();
+    expect(screen.getByTestId('category-browse-footer').textContent).toBe('2 categories · 3 products');
+  });
+
+  it('P6: when every supplied category is empty the root is the product grid', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" categories={[{ id: 'pcat_empty', name: 'Empty' }]} />);
+    expect(screen.queryByTestId('category-browse')).toBeNull();
+    expect(screen.getByTestId('grid')).toBeTruthy();
   });
 });

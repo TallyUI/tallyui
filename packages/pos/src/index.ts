@@ -32,9 +32,11 @@ export type { CashierState } from './cashier';
 export {
   UI_SCALES, UI_THEMES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
   appSettingCollection, resolveAppSettings, readAppSettings, appSettings$, writeAppSetting, useAppSettings,
+  CART_COLUMN_IDS, OPEN_ORDERS_POSITIONS,
 } from './app-settings';
 export type {
   UiScale, UiTheme, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
+  CartColumnId, CartColumnsSetting, OpenOrdersPosition,
 } from './app-settings';
 
 // RxDB reads past the query cache, and live lists that can't leave it stale (RxDB 16.21.1 bug 4)
@@ -102,7 +104,7 @@ export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } f
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
 
 // Product
-export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
+export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory, productTerms, listTermGroups, hasTerm, type ProductTermGroup, TILE_FIELDS, DEFAULT_TILE_FIELDS, normalizeTileFields, type TileField, type TileFields } from './product';
 
 // Scanner
 export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner, SCANNER_DEVICE_KEY_MAX_LENGTH, normalizeUuid, isCanonicalUuid, scannerDeviceKey, scannerTransport, createSerialLineDecoder, decodeHidPosReport, isWebSerialSupported, isWebHidSupported, isChooserCancel, SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile, createScanHub, createScanBus, inertScanHub, dedupeScans, SCAN_DEDUP_WINDOW_MS, analyzeScanTrace } from './scanner';
@@ -128,16 +130,16 @@ export type {
 export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
-  escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES,
+  escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions,
+  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, ResolvePrinterOptions,
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
@@ -145,8 +147,8 @@ export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type Reo
 export { noteDelivery, type NoteDelivery } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { TAX_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
-export { CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
+export { TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';

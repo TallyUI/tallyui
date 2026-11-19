@@ -28,6 +28,7 @@ Handles sale prices automatically — regular prices use `text-price`, sale pric
 | `showFromPrice` | `boolean` | `true` | Show the lowest price, formatted by `formatFrom`, when variant prices differ |
 | `formatFrom` | `(price: string) => string` | `` (price) => `from ${price}` `` | Formats the lowest price when variant prices differ, for languages whose word order puts the label after the price |
 | `fromLabel` | `string` | — | **Deprecated.** Use `formatFrom`. Label shown before the lowest price when given and `formatFrom` is not |
+| `showWas` | `boolean` | `true` | Show the price a sale replaces, struck through; `false` renders an on-sale price like a regular one |
 | `className` | `string` | — | Override default styles |
 
 **Default classes:** `text-sm font-medium text-price` (or `text-sale` when on sale)

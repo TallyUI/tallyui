@@ -11,8 +11,9 @@ export interface CommandEnvelope<P = unknown> {
    *  6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495), sent only for an order that has one.
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
-   *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+   *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
+   *  11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended). */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -100,8 +101,9 @@ export interface OrderUpdateReopenRequiredData { orderStatus: string }
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
  * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
- * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 };
+ * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
+ * 11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -447,9 +449,9 @@ export interface OrderCreatePayload {
     email?: string;
     /** Version 3+: the platform's id for the customer picked at the till, a soft reference of at most 64 characters. Absent for a guest sale, or when no customer was picked. */
     customerId?: string;
-    /** Version 8 (#722): the customer's billing address, sent only with `taxAddress`. */
+    /** Version 8 (#722): the customer's billing address, sent at 8+ with `taxAddress` and at 11 without it. */
     billing?: OrderAddress;
-    /** Version 8 (#722): the customer's shipping address, sent only with `taxAddress`. */
+    /** Version 8 (#722): the customer's shipping address, sent at 8+ with `taxAddress` and at 11 without it. */
     shipping?: OrderAddress;
   } | null;
   /** Version 8 (#722): the customer address the till taxed the sale on; always present at 8; optional at 9, and that address has a

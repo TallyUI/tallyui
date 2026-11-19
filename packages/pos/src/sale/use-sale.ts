@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
+import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
@@ -37,8 +37,12 @@ export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sal
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
 /** startTender refuses with this when the app's tenderGate rejects instead of answering. */
 export const TENDER_GATE_FAILED = 'The checkout check failed, so the tender did not start';
+/** 5.2 backlog F5: startTender shows this when a re-tax swapped the sale while the tender gate ran; the tender does not start. */
+export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ran; start the payment again.';
 /** #722: setCustomer's refusal of a customer whose address moves the sale's rates once they can no longer change (tender, receipt, money live); interim until #759 re-taxes like v2. */
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
+/** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
+export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -436,7 +440,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const lockedMinor = current.payments.reduce((sum, payment) => sum + (payment.locked ? payment.amountMinor : 0), 0);
     if (lockedMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
     else setTender(method === 'external' && current.totalMinor - lockedMinor > 0 ? { method, amountMinor: current.totalMinor - lockedMinor } : null);
-    setStage({ kind: 'tender', method });
+    stageNow.current = { kind: 'tender', method }; // 5.2 backlog F4: a same-tick setCustomer/setAddresses sees the tender
+    setStage(stageNow.current);
   }
 
   const result = {
@@ -615,6 +620,30 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED) ? null : current); // any other error stays
     },
     /**
+     * Replaces both addresses on the picked customer (`undefined` removes one) and re-taxes like `setCustomer`. Does
+     * nothing and returns false for a guest sale (guests come later); refuses once the sale left the cart (desk Q7.4).
+     */
+    setAddresses(billing: CustomerAddress | undefined, shipping: CustomerAddress | undefined): boolean {
+      if (locked()) return false;
+      const { customer, payments } = builderNow.current.getSnapshot();
+      if (customer === null) return false;
+      // Q7.4: refused outside the cart or with money live, even for an address with the same rates.
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+        setError(ADDRESS_CHANGE_REFUSED);
+        return false;
+      }
+      const { billing: _billing, shipping: _shipping, ...rest } = customer;
+      const next: CustomerSummary = { ...rest, ...(billing !== undefined ? { billing } : {}), ...(shipping !== undefined ? { shipping } : {}) };
+      if (!retaxFor(next)) {
+        const same = opts.taxContextFor?.(next);
+        if (same && same.taxContext !== taxNow.current.taxContext) { setError(ADDRESS_CHANGE_REFUSED); return false; }
+        if (same) taxNow.current = same;
+        builderNow.current.setCustomer(next);
+      }
+      setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
+      return true;
+    },
+    /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
      * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
@@ -630,7 +659,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       tenderGatePending.current = true;
       void Promise.resolve().then(() => opts.tenderGate!({ method })).catch(() => TENDER_GATE_FAILED).then((refusal) => {
         tenderGatePending.current = false;
-        if (builderNow.current !== b || generation.current !== at) return;
+        if (generation.current !== at) return;
+        if (builderNow.current !== b) return setError(TENDER_SALE_CHANGED); // 5.2 backlog F5: a re-tax the gate did not judge
         if (refusal !== null) setError(refusal);
         else begin(method, options);
       });

@@ -37,7 +37,7 @@ afterEach(async () => { vi.restoreAllMocks(); await db.remove(); });
 function deps(context = taxContext) {
   return { orders: db.pos_orders, drafts: db.order_drafts, sessions: db.register_sessions, taxContext: context, now: () => now };
 }
-function storedOrder(percentage = false): PosOrder {
+function storedOrder(percentage = false, addresses: Pick<NonNullable<Order['customer']>, 'billing' | 'shipping'> = {}): PosOrder {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext });
   const line = builder.addLine({ productId: '11', variantId: '12', name: 'Shirt', sku: 'SHIRT', taxClass: 'standard',
     unitPrice: { amount: 1200, currency: 'EUR' }, regularUnitPriceMinor: 1500, quantity: 2 });
@@ -49,7 +49,7 @@ function storedOrder(percentage = false): PosOrder {
   builder.addShipping({ name: 'Delivery', amountMinor: 200, taxClass: 'reduced', taxStatus: 'taxable', methodId: 'flat_rate' });
   builder.addPayment({ method: 'cash', amountMinor: 5000 });
   builder.addPayment({ method: 'external', amountMinor: 500, reference: 'card-123' });
-  builder.setCustomer({ id: '42', name: 'Buyer', email: 'buyer@example.com' });
+  builder.setCustomer({ id: '42', name: 'Buyer', email: 'buyer@example.com', ...addresses });
   builder.setNote('Keep the receipt');
   return { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 }, now: new Date('2026-10-06T12:00:00Z') }),
     syncStatus: 'rejected', error, coupons: [{ code: 'save10', couponId: '7', discountMinor: 100, discountTaxMinor: 0 }] };
@@ -344,6 +344,23 @@ it.each([null, { name: 'No id' }, { id: '42' }, { id: 'bad\u0000id', name: 'Bad 
   const order = { ...storedOrder(), customer };
   await db.pos_orders.insert(order);
   expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toBeNull();
+});
+
+it('keeps the stored customer addresses on the reopened draft (vendurepos gap 5.2)', async () => {
+  const stored = storedOrder();
+  const customer = { ...stored.customer!, billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } };
+  const order: PosOrder = { ...stored, customer, taxAddress: 'shipping' };
+  await db.pos_orders.insert(order);
+  expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
+});
+
+it("reopens an untaxed refused sale with the customer's addresses (order.create 11 stores them)", async () => {
+  const order = storedOrder(false, { billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
+  expect(order.taxAddress).toBeUndefined();
+  await db.pos_orders.insert(order);
+  expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
 });
 
 it.each([

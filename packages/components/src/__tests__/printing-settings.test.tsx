@@ -130,3 +130,94 @@ describe('PrintingSettings', () => {
     expect(document.querySelector('[data-class~="border-border"]')).toBeNull(); // no empty card
   });
 });
+
+type TemplateProp = NonNullable<PrintingSettingsProps['templates']>[number];
+
+describe('PrintingSettings template routing', () => {
+  const thermal80: TemplateProp = { id: 't80', kind: 'receipt', title: 'Thermal receipt', engine: 'thermal' };
+  const html: TemplateProp = { id: 'html', kind: 'receipt', title: 'Standard receipt', engine: 'html' };
+  const report: TemplateProp = { id: 'z', kind: 'report', title: 'Z report', engine: 'thermal', paper: '58mm' };
+  const templates = [thermal80, html, report];
+  const optionTexts = () => screen.getAllByRole('option').map((option) => option.textContent);
+  const openSelect = (id: string) => fireEvent.click(screen.getByTestId(`template-row-${id}-printer-select`));
+  const openDelete = () => {
+    openMenu('epson');
+    fireEvent.click(screen.getByTestId('printer-row-epson-delete'));
+  };
+
+  it('P1: without templates draws no routing and no delete description', () => {
+    show();
+    expect(document.querySelector('[data-testid^="template-row-"]')).toBeNull();
+    expect(screen.queryByText('Receipt Templates')).toBeNull();
+    openDelete();
+    expect(screen.getByText('Delete Front counter?')).toBeTruthy();
+    expect(screen.queryByText(/Receipts routed/)).toBeNull();
+  });
+
+  it('P2: sections run receipt, report, closure, rows in the given order, an empty kind says so', () => {
+    show({ templates: [html, report, thermal80] });
+    const titles = ['Printers', 'Receipt Templates', 'Report templates', 'Closure templates'];
+    const nodes = titles.map((title) => screen.getByText(title));
+    for (let i = 1; i < nodes.length; i++) {
+      expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getAllByText('Choose which printer each template prints to.')).toHaveLength(3);
+    const rows = Array.from(document.querySelectorAll('[data-testid^="template-row-"][data-testid$="-type"]'))
+      .map((node) => node.getAttribute('data-testid'));
+    expect(rows).toEqual(['template-row-html-type', 'template-row-t80-type', 'template-row-z-type']);
+    expect(text('templates-empty-closure')).toBe('No active templates found.');
+    expect(screen.queryByTestId('templates-empty-receipt')).toBeNull();
+    expect(screen.queryByTestId('templates-empty-report')).toBeNull();
+  });
+
+  it('P3: the type chip reads Thermal <paper>, unset paper as 80mm, and HTML', () => {
+    show({ templates });
+    expect(text('template-row-z-type')).toBe('Thermal 58mm');
+    expect(text('template-row-t80-type')).toBe('Thermal 80mm');
+    expect(text('template-row-html-type')).toBe('HTML');
+  });
+
+  it('P4: with no routing the trigger reads the Auto label resolvePrinter picks', () => {
+    show({ templates });
+    // epson is network with no columns, so it counts as 42 and fits 80mm.
+    expect(text('template-row-t80-printer-select')).toBe('Auto — Front counter');
+    expect(text('template-row-html-printer-select')).toBe('Auto — Print Dialog');
+    expect(text('template-row-z-printer-select')).toBe('Auto — Print Dialog');
+    cleanup();
+    show({ templates, printers: [epson] });
+    expect(text('template-row-html-printer-select')).toBe('Auto — Print Dialog');
+  });
+
+  it('P5: an override to a known printer shows its name and no Unavailable item', () => {
+    show({ templates, routing: { t80: 'bt' } });
+    expect(text('template-row-t80-printer-select')).toBe('Kitchen');
+    openSelect('t80');
+    expect(optionTexts()).toEqual(['Auto — Front counter', 'Print Dialog', 'Front counter', 'Kitchen', 'Back office']);
+    expect(screen.queryByText('Unavailable printer')).toBeNull();
+  });
+
+  it('P6: an override to a missing printer reads Unavailable printer and lists it after Auto', () => {
+    show({ templates, routing: { t80: 'gone' } });
+    expect(text('template-row-t80-printer-select')).toBe('Unavailable printer');
+    openSelect('t80');
+    expect(optionTexts()).toEqual(['Auto — Front counter', 'Unavailable printer', 'Print Dialog', 'Front counter', 'Kitchen', 'Back office']);
+  });
+
+  it('P7: choosing Auto clears the override and choosing a printer sets it', () => {
+    const onRoutingChange = vi.fn();
+    show({ templates, routing: { t80: 'usb' }, onRoutingChange });
+    openSelect('t80');
+    fireEvent.click(screen.getByRole('option', { name: 'Auto — Front counter' }));
+    expect(onRoutingChange).toHaveBeenLastCalledWith('t80', null);
+    openSelect('t80');
+    fireEvent.click(screen.getByRole('option', { name: 'Kitchen' }));
+    expect(onRoutingChange).toHaveBeenLastCalledWith('t80', 'bt');
+    expect(onRoutingChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('P8: with templates the delete dialog says routed receipts fall back to Auto', () => {
+    show({ templates });
+    openDelete();
+    expect(screen.getByText('Receipts routed to it print with Auto instead.')).toBeTruthy();
+  });
+});

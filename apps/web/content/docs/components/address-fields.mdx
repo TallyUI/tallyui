@@ -1,0 +1,30 @@
+---
+title: AddressFields
+description: AddressFields edits one CustomerAddress, every part optional, with Country and State pickers when the app passes their options.
+---
+## Import
+```tsx
+import { AddressFields, ShippingAddressFields } from '@tallyui/components';
+```
+## Usage
+```tsx
+<AddressFields value={billing} onChange={setBilling} countries={countries} statesFor={statesFor} showEmail />
+```
+
+Each part is a labelled field with the placeholder `Add {label}`, in one column. A part emptied by the cashier leaves the address: `onChange` never carries `''` or `undefined`. With `countries`, Country is a searchable picker, otherwise a text field; State is a picker while `statesFor` gives the chosen country a list. Picking a country whose list lacks the current state drops the state. Email shows only with `showEmail`.
+## Props
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` / `onChange` | `CustomerAddress` / `(next: CustomerAddress) => void` | required | The address, and every edit as the whole next address |
+| `countries` | `readonly { value: string; label: string }[]` | --- | ISO alpha-2 country options; absent, Country is a text field |
+| `statesFor` | `(country: string) => readonly { value: string; label: string }[] \| undefined` | --- | A country's states; none, State is a text field |
+| `showEmail` / `testID` | `boolean` / `string` | `false` / `'address-fields'` | Show Email (billing only); testID prefix |
+
+## ShippingAddressFields
+Shipping reads "Same as billing" while `value` is empty or billing's copy (email aside), read once at mount: key it by order. "Use a different address" calls `onChange` with billing's copy without its email and shows the parts; "Same as billing" calls `onChange(undefined)`.
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `billing` / `value` | `CustomerAddress \| undefined` | required | Billing, and the shipping address |
+| `onChange` | `(next: CustomerAddress \| undefined) => void` | required | `undefined` folds shipping back to billing |
+| `countries` / `statesFor` / `testID` | as AddressFields | `'shipping-address'` | Passed to the parts; testID prefix |

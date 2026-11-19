@@ -1,6 +1,6 @@
 ---
 title: PrintingSettings
-description: PrintingSettings is the Printers section of Settings › Printing, the printers on this device with Test Print, Edit, Set Default and Delete, ported from WCPOS v2.
+description: PrintingSettings is Settings › Printing, the printers on this device with Test Print, Edit, Set Default and Delete, and the template routing that sends each template to a printer, ported from WCPOS v2.
 ---
 
 ## Import
@@ -20,6 +20,9 @@ import { PrintingSettings } from '@tallyui/components';
   onSetDefault={(id) => setDefaultPrinter(id)}
   onDelete={(id) => deletePrinter(id)}
   onAdd={() => openPrinterDialog()}
+  templates={templates}
+  routing={routing}
+  onRoutingChange={(templateId, printerId) => setTemplatePrinter(templateId, printerId)}
 />
 ```
 
@@ -28,6 +31,8 @@ Props only: the app passes its `PrinterProfile`s (from `@tallyui/pos`) and wires
 Each printer is a row with its name, a "Default" tag on the default printer, and its connection line: "Print Dialog · built-in" for the Print Dialog (`connectionType: 'system'`), otherwise the address with its port and " · Epson" or " · Star" for those vendors. Actions are Test Print (busy while its id is in `testingIds`), Edit, and a "More actions" menu with Set Default and Delete. A built-in printer has no Edit and no Delete; the default printer has no Set Default. Delete asks first and calls `onDelete` only on confirm.
 
 With only the Print Dialog, the section shows "No printers configured" and a primary Add Printer; once a hardware printer exists, every printer is listed and Add Printer is an outline button. While `loading`, only the section title shows.
+
+With `templates`, three routing sections follow the Printers section: Receipt Templates, Report templates and Closure templates, each listing the templates of that `kind` in the order given ("No active templates found." when it has none). Each row shows the template's title, a type chip (`Thermal 58mm` or `Thermal 80mm` for a thermal template, an unset paper counting as 80mm, and `HTML` otherwise) and a printer select. Its first choice is Auto, labelled with the printer `resolvePrinter` picks for the template (`Auto — Front counter`), or `Auto — Print Dialog` when it picks none; then every printer by name. When `routing` names a printer that no longer exists, the select shows "Unavailable printer" until another choice is made. Choosing a printer calls `onRoutingChange(templateId, printerId)`; choosing Auto calls `onRoutingChange(templateId, null)`. With `templates`, the delete dialog adds "Receipts routed to it print with Auto instead."
 
 ## Props
 
@@ -41,4 +46,7 @@ With only the Print Dialog, the section shows "No printers configured" and a pri
 | `onSetDefault` | `(id: string) => void` | required | Set Default chosen |
 | `onDelete` | `(id: string) => void` | required | Delete confirmed |
 | `onAdd` | `() => void` | required | Add Printer pressed |
+| `templates` | `readonly Pick<ReceiptTemplate, 'id' \| 'kind' \| 'title' \| 'engine' \| 'paper'>[]` | --- | The store's templates; when absent, no routing sections show |
+| `routing` | `Readonly<Record<string, string>>` | `{}` | Template id to printer id, this device's overrides |
+| `onRoutingChange` | `(templateId: string, printerId: string \| null) => void` | --- | A template's printer chosen; `null` is Auto |
 | `className` | `string` | --- | Override container styles |

@@ -8,12 +8,32 @@
  */
 import type { RxCollection, RxJsonSchema } from 'rxdb';
 import { map, type Observable } from 'rxjs';
+import { DEFAULT_TILE_FIELDS, normalizeTileFields, type TileFields } from '../product/tile-fields';
 
 export const UI_SCALES = ['auto', 'compact', 'regular', 'spacious'] as const;
 export type UiScale = (typeof UI_SCALES)[number];
 /** v2's first three themes (`core/screens/main/settings/theme.tsx`); TallyUI's tokens define light and dark. */
 export const UI_THEMES = ['system', 'light', 'dark'] as const;
 export type UiTheme = (typeof UI_THEMES)[number];
+/** The same ids, in the same default order, as `@tallyui/components` `CartColumnSettings` (`cart/cart-columns.tsx`);
+ * pos cannot import components, so keep the two in step. */
+export const CART_COLUMN_IDS = ['quantity', 'image', 'name', 'sku', 'price', 'regularPrice', 'total'] as const;
+export type CartColumnId = (typeof CART_COLUMN_IDS)[number];
+/** v2 `openOrdersPosition`, default bottom (`initial-settings.json:153`). */
+export const OPEN_ORDERS_POSITIONS = ['top', 'bottom'] as const;
+export type OpenOrdersPosition = (typeof OPEN_ORDERS_POSITIONS)[number];
+
+/** Structurally the same as `@tallyui/components` `CartColumnSettings`, so a stored value passes straight to `Cart`. */
+export interface CartColumnsSetting {
+  quantity?: { show?: boolean; split?: boolean };
+  image?: { show?: boolean };
+  name?: { show?: boolean; sku?: boolean };
+  sku?: { show?: boolean };
+  price?: { show?: boolean; onSale?: boolean };
+  regularPrice?: { show?: boolean };
+  total?: { show?: boolean };
+  order?: readonly CartColumnId[];
+}
 
 /** The typed key map. Add a key here and in APP_SETTING_DEFINITIONS; no schema change is needed. */
 export interface AppSettings {
@@ -27,6 +47,15 @@ export interface AppSettings {
    * `pos-cart.quickDiscounts: [5, 10, 15]` (`core/src/screens/main/contexts/ui-settings/initial-settings.json`).
    */
   'cart.quickDiscounts': readonly number[];
+  /** Cart Settings › Columns (v2 `pos-cart.columns`), for `Cart`'s `columns`; per device, unlike v2's
+   * per store × login (desk, 19 Nov). */
+  'cart.columns': CartColumnsSetting;
+  'cart.openOrdersPosition': OpenOrdersPosition;
+  /**
+   * Which words a catalogue grid tile shows. v2 keeps them per screen as `pos-products.gridFields`.
+   * Desk 19 Nov (Q6): per device, camelCase keys, and the default is today's tile.
+   */
+  'catalogue.tileFields': TileFields;
 }
 export type AppSettingKey = keyof AppSettings;
 
@@ -34,6 +63,30 @@ export type AppSettingKey = keyof AppSettings;
 export interface AppSettingDefinition<T> {
   default: T;
   parse: (value: unknown) => T | undefined;
+}
+/** Each column's known fields; parseCartColumns keeps only these, and only when boolean. */
+const CART_COLUMN_FIELDS: Record<CartColumnId, readonly string[]> = {
+  quantity: ['show', 'split'], image: ['show'], name: ['show', 'sku'], sku: ['show'],
+  price: ['show', 'onSale'], regularPrice: ['show'], total: ['show'],
+};
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Known columns and boolean fields only; `order` keeps known ids, first occurrence. */
+function parseCartColumns(value: unknown): CartColumnsSetting | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const parsed: Record<string, unknown> = {};
+  for (const id of CART_COLUMN_IDS) {
+    const column = value[id];
+    if (!isPlainObject(column)) continue;
+    parsed[id] = Object.fromEntries(CART_COLUMN_FIELDS[id]
+      .filter((field) => typeof column[field] === 'boolean').map((field) => [field, column[field]]));
+  }
+  if (Array.isArray(value.order)) {
+    const known = value.order.filter((id): id is CartColumnId => (CART_COLUMN_IDS as readonly unknown[]).includes(id));
+    parsed.order = [...new Set(known)];
+  }
+  return parsed as CartColumnsSetting;
 }
 export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefinition<AppSettings[K]> } = {
   'ui.theme': { default: 'system', parse: (value) => UI_THEMES.find((theme) => theme === value) },
@@ -49,12 +102,18 @@ export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefiniti
       ? value.filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 100)
       : undefined,
   },
+  'cart.columns': { default: {}, parse: parseCartColumns },
+  'cart.openOrdersPosition': { default: 'bottom', parse: (value) => OPEN_ORDERS_POSITIONS.find((p) => p === value) },
+  'catalogue.tileFields': { default: DEFAULT_TILE_FIELDS, parse: normalizeTileFields },
 };
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   'ui.theme': APP_SETTING_DEFINITIONS['ui.theme'].default,
   'ui.scale': APP_SETTING_DEFINITIONS['ui.scale'].default,
   'ui.font': APP_SETTING_DEFINITIONS['ui.font'].default,
   'cart.quickDiscounts': APP_SETTING_DEFINITIONS['cart.quickDiscounts'].default,
+  'cart.columns': APP_SETTING_DEFINITIONS['cart.columns'].default,
+  'cart.openOrdersPosition': APP_SETTING_DEFINITIONS['cart.openOrdersPosition'].default,
+  'catalogue.tileFields': APP_SETTING_DEFINITIONS['catalogue.tileFields'].default,
 };
 
 /** One stored setting. `value` is the JSON encoding of the setting's value, so the schema never changes when a key is added. */

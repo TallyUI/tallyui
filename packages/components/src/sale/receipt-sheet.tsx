@@ -1,7 +1,8 @@
 /**
  * The receipt print sheet: template choice, printer, the preview, and Close / Email Receipt / Print.
  * Layout of WCPOS v2, MIT, WCPOS: packages/core/src/screens/main/receipt/receipt.tsx, print-sheet.tsx,
- * receipt-body.tsx, template-switcher.tsx and receipt-actions.tsx; the strings are v2's English ones from core.json.
+ * receipt-body.tsx, template-switcher.tsx and receipt-actions.tsx; the strings are v2's English ones from core.json;
+ * after a send the sheet shows v2's 'Email sent' / 'Receipt email queued' as a line, not a toast.
  * Props-only: the sheet renders no receipt and prints nothing itself.
  */
 import { useState, type JSX, type ReactNode } from 'react';
@@ -15,6 +16,7 @@ import { Switch } from '../ui/switch';
 import { PrinterIcon } from '../ui/icon/printer-icon';
 import { Loader } from '../ui/loader';
 import { Text } from '../ui/text';
+import { useT } from '../i18n';
 
 export interface ReceiptSheetTemplate {
   id: string;
@@ -92,7 +94,7 @@ function TemplateValue({ templates, templateId, onTemplateChange }:
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
 
 /** v2's email.tsx (MIT, WCPOS) inline: it mounts fresh on each open, so it starts from defaultAddress, switch off, no error. */
-function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: () => void }) {
+function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queued: boolean) => void }) {
   const [text, setText] = useState(email.defaultAddress ?? '');
   const [save, setSave] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +113,7 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: () => 
       refusal = cause instanceof Error ? cause.message : 'Could not send the receipt.';
     }
     setSending(false);
-    if (refusal === null) onDone(); else setError(refusal);
+    if (refusal === null) onDone(Boolean(email.offline)); else setError(refusal);
   };
   return (
     <View testID="receipt-email-form" className="gap-2 py-2">
@@ -140,10 +142,12 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: () => 
 
 export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates, templateId, onTemplateChange,
   printerLabel = 'Browser print dialog', onPrint, printing = false, printed = false, onEmail, email, children }: ReceiptSheetProps): JSX.Element {
+  const t = useT();
+  const [sent, setSent] = useState<'sent' | 'queued' | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
   // Closing the sheet closes the form too, so it opens fresh next time.
-  if (!open && emailOpen) setEmailOpen(false);
-  const onEmailPress = email ? () => setEmailOpen((was) => !was) : onEmail;
+  if (!open && (emailOpen || sent)) { setEmailOpen(false); setSent(null); }
+  const onEmailPress = email ? () => { setSent(null); setEmailOpen((was) => !was); } : onEmail;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="right" testID="receipt-dialog" className="flex-col" showClose>
@@ -164,7 +168,8 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
         </View>
         {/* v2 draws its own WebView preview with zoom and loading states; here the app's preview is the child. */}
         <ScrollView className="flex-1" contentContainerClassName="pb-2">{children}</ScrollView>
-        {email && emailOpen ? <EmailForm email={email} onDone={() => setEmailOpen(false)} /> : null}
+        {email && emailOpen ? <EmailForm email={email} onDone={(queued) => { setEmailOpen(false); setSent(queued ? 'queued' : 'sent'); }} /> : null}
+        {email && sent ? <Text testID="receipt-email-sent" className="py-2 text-sm text-foreground">{t(sent === 'queued' ? 'receipt.email_queued' : 'receipt.email_sent')}</Text> : null}
         {/* v2's footer also has Download PDF and Sync order; TallyUI has neither. `email` draws v2's form above, the app sends. */}
         <DialogFooter bordered className="gap-2" testID="receipt-footer">
           <DialogClose asChild>

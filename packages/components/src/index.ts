@@ -78,6 +78,7 @@ export {
   CartColumnHeads,
   type CartColumnHeadsProps,
   cartColumnIds,
+  type CartColumnId,
   type CartColumnSettings,
   CartFoot,
   type CartFootProps,
@@ -116,6 +117,13 @@ export {
   type CustomerOrderHistoryProps,
   CustomerDropdown,
   type CustomerDropdownProps,
+  AddressFields,
+  ShippingAddressFields,
+  type AddressFieldsProps,
+  type ShippingAddressFieldsProps,
+  AddressEditor,
+  type AddressEditorProps,
+  type AddressEditorValue,
 } from './customer';
 
 // Checkout components

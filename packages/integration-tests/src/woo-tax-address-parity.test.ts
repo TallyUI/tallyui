@@ -130,7 +130,7 @@ describe('WooCommerce tax on the customer\'s address, till against server (#722)
     expect(serverTotals(payload)).toStrictEqual({ taxMinor: order.taxMinor, totalMinor: order.totalMinor });
   });
 
-  it('(f) #930: basis base, a customer read through the Woo customer read with NY billing: tax, payload and stored order as without addresses', async () => {
+  it('(f) #930: basis base, a customer read through the Woo customer read with NY billing: tax and payload as without addresses; the stored order keeps the customer\'s addresses (ADR-086 d2 amended)', async () => {
     const [row] = searchNameFirst;
     const customer = toWooCustomer({ ...row,
       billing: { ...row.billing, address_1: '1 State St', city: 'Albany', state: 'NY', postcode: '12207', country: 'US' },
@@ -145,8 +145,8 @@ describe('WooCommerce tax on the customer\'s address, till against server (#722)
     for (const key of ['country', 'state', 'postcode', 'city', 'address_1']) expect(payload.billing ?? {}).not.toHaveProperty(key);
     expect(order.taxAddress).toBeUndefined();
     expect(order.customer).toBeTruthy();
-    expect(order.customer).not.toHaveProperty('billing');
-    expect(order.customer).not.toHaveProperty('shipping');
+    expect(order.customer?.billing).toMatchObject({ state: 'NY', country: 'US' });
+    expect(order.customer?.shipping).toMatchObject({ state: 'TX' });
   });
 
   it('(g) vendurepos gap 2.10: a fee entered with tax at the CA rate is sent as the plain 4.00 fee, and the server agrees', async () => {

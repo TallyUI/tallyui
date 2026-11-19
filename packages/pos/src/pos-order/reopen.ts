@@ -82,7 +82,9 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     });
     if (order.customer?.id && order.customer.name && customerRefusal(order.customer) === null) {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,
-        ...(order.customer.email !== undefined ? { email: order.customer.email } : {}) });
+        ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
+        ...(order.customer.billing !== undefined ? { billing: order.customer.billing } : {}),
+        ...(order.customer.shipping !== undefined ? { shipping: order.customer.shipping } : {}) });
     }
     // ADR-083 condition 1: the note holds only the cashier's own note, since order.create 7 sends it. The refusal stays
     // on this refused row (`error`), the till's record of it; the draft's id is this row's id.
