@@ -11,7 +11,7 @@ import { catalogueEntries } from './catalogue';
 import type { SaleCoupon, SaleCouponSource } from './woocommerce/coupons';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 import { COUPONS_UNSUPPORTED } from './discount-codes';
-import { SALE_SAVING, useSale } from './use-sale';
+import { SALE_HAS_PAYMENT, SALE_SAVING, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -291,7 +291,7 @@ describe('useSale coupons', () => {
     expect(result.current.stage.kind).toBe('receipt');
     await act(async () => {
       resolve(coupon());
-      expect(await applying).toBe('The sale changed while the coupon was being checked; apply it again');
+      expect(await applying).toBe(SALE_HAS_PAYMENT); // tally-woo 11c: the completed sale still holds its captured leg
     });
     const stage = result.current.stage;
     expect(stage.kind).toBe('receipt');

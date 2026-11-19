@@ -192,6 +192,6 @@ describe('useSale ADR-075 charges', () => {
     expect(result.current.saving).toBe(false);
     expect(result.current.order).toEqual(before);
     expect(onSaleCompleted).not.toHaveBeenCalled();
-    act(() => { expect(result.current.removeFee(before.fees![0].id)).toBeNull(); });
+    act(() => { expect(result.current.voidTender(before.payments[0].id)).toBe(true); expect(result.current.removeFee(before.fees![0].id)).toBeNull(); });
   });
 });
