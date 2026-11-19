@@ -12,4 +12,4 @@ export { createSystemPrintTransport, SYSTEM_PRINT_TIMING } from './system-transp
 export type { SystemPrintTransportOptions } from './system-transport';
 export { escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES } from './escpos';
 export { createEpsonEposSink, createStarWebPrntSink, networkSinkFor, canOpenDrawer, openDrawerJob } from './escpos';
-export type { EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions } from './escpos';
+export type { EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions } from './escpos';
