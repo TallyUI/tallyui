@@ -1,10 +1,10 @@
-// TallyUI#753 (ADR-085): on the Woo backend the till's device id is a bearer secret until #754's server-issued key.
-// These tests run the till-display flows with logging on and prove the id reaches nothing but the `deviceId`
-// argument of the seam's own calls: no console output, no reported error, no exposed state, no other seam argument,
-// and nothing the display receives.
+// TallyUI#753 and #754 (ADR-085): the till's device key is its credential, and the device id is kept as close.
+// These tests run the till-display flows with logging on and prove the key reaches nothing but the `deviceKey` of the
+// seam's till calls (and the id nothing but their `deviceId` and `registerDevice`'s id): no console output, no
+// reported error, no exposed state, no other seam argument or answer, and nothing the display receives.
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
-  DisplaySignallingError, type DisplaySignalling, type DisplaySignallingErrorCode, type SyncContext,
+  DisplaySignallingError, type DisplaySignalling, type DisplaySignallingErrorCode, type SyncContext, type TillDevice,
 } from '@tallyui/core';
 import { createMemoryDisplaySignalling } from '@tallyui/core/server';
 import { COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, createDisplayClient } from './display-client';
@@ -13,11 +13,15 @@ import { line, receiptWith } from './fixture.test-helper';
 import type { DisplayConfig, DisplayEnvelope } from './protocol';
 import { SNAPSHOT_MIN_INTERVAL_MS } from './snapshot-fallback';
 import { LIST_POLL_MS, SIGNAL_POLL_MS, createTillDisplayService } from './till-display-service';
+import { createTillDevice } from './till-device';
 import { PENDING_POLL_MS, createTillPairing } from './till-pairing';
 import { FakeNetwork } from './webrtc/fake-peer.test-helper';
 import { createDisplayPeerLink } from './webrtc';
 
 const SECRET = 'till-secret-' + 'x'.repeat(40);
+/** The stored device key, and the one a fake's re-registration issues. */
+const KEY = 'till-key-' + 'k'.repeat(40);
+const KEY2 = 'till-key2-' + 'q'.repeat(40);
 const ctx: SyncContext = { connectorId: 'woo', baseUrl: 'https://shop.test', headers: {} };
 const NOW = '2026-11-11T10:00:00.000Z';
 const base: DisplayConfig = {
@@ -54,7 +58,7 @@ const TILL_METHODS = ['mint', 'pending', 'confirm', 'decline', 'list', 'forget',
 const DISPLAY_METHODS = ['claim', 'collect', 'displaySendSignal', 'displayReceiveSignals', 'readSnapshot'] as const;
 type Method = (typeof TILL_METHODS)[number] | (typeof DISPLAY_METHODS)[number];
 const CODES: DisplaySignallingErrorCode[] = [
-  'forbidden', 'limit', 'claim_refused', 'collect_refused', 'not_found', 'token_refused', 'too_large', 'network', 'server',
+  'forbidden', 'limit', 'claim_refused', 'collect_refused', 'not_found', 'device_refused', 'token_refused', 'too_large', 'network', 'server',
 ];
 type Refusal = DisplaySignallingErrorCode | 'plain';
 const CONSOLE = ['log', 'info', 'warn', 'error', 'debug'] as const;
@@ -71,30 +75,44 @@ function text(value: unknown): string {
   }
 }
 
-/** Every console line, every reported error, every exposed state and every seam argument and answer but `deviceId`. */
+/** Every console line, every reported error, every exposed state and every seam argument and answer but the device and the issued key. */
 let captured: string[] = [];
 const capture = (label: string, value: unknown) => void captured.push(`${label}: ${text(value)}`);
 const seen = () => captured.join('\n');
 const onError = (error: unknown) => capture('onError', error);
 
-/** What the wrapped seam saw: each till-side call's `deviceId`, each call, and each rejection it gave. */
+/** What the wrapped seam saw: each till-side call's device id and key, each issued key, each call, and each rejection. */
 interface Watch {
   signalling: DisplaySignalling;
   deviceIds: string[];
+  deviceKeys: string[];
+  issued: string[];
   calls: Method[];
   rejected: Method[];
   /** The refusal the next calls of a method get, while set. */
   refuse: { method: Method; with: Refusal } | null;
 }
 function watch(seam: DisplaySignalling): Watch {
-  const w: Watch = { signalling: {} as DisplaySignalling, deviceIds: [], calls: [], rejected: [], refuse: null };
-  const out = w.signalling as unknown as Record<Method, (...args: unknown[]) => Promise<unknown>>;
+  const w: Watch = { signalling: {} as DisplaySignalling, deviceIds: [], deviceKeys: [], issued: [KEY], calls: [], rejected: [], refuse: null };
+  const out = w.signalling as unknown as Record<Method | 'registerDevice', (...args: unknown[]) => Promise<unknown>>;
+  // The one call that takes the id alone and answers with a key: neither is captured.
+  out.registerDevice = async (registerCtx: unknown, deviceId: unknown) => {
+    w.deviceIds.push(deviceId as string);
+    capture('registerDevice args', [registerCtx]);
+    const result = await seam.registerDevice(registerCtx as SyncContext, deviceId as string);
+    w.issued.push(result.deviceKey);
+    return result;
+  };
   for (const name of [...TILL_METHODS, ...DISPLAY_METHODS]) {
     const original = (seam[name] as (...args: unknown[]) => Promise<unknown>).bind(seam);
     const tillSide = (TILL_METHODS as readonly string[]).includes(name);
     out[name] = async (...args: unknown[]) => {
       w.calls.push(name);
-      if (tillSide) w.deviceIds.push(args[1] as string);
+      if (tillSide) {
+        const device = args[1] as TillDevice;
+        w.deviceIds.push(device.deviceId);
+        w.deviceKeys.push(device.deviceKey);
+      }
       capture(`${name} args`, tillSide ? [args[0], ...args.slice(2)] : args);
       if (w.refuse?.method === name) {
         w.rejected.push(name);
@@ -108,17 +126,33 @@ function watch(seam: DisplaySignalling): Watch {
   return w;
 }
 
-/** The seam got the id as `deviceId` on every till-side call, so a test cannot pass by never calling it. */
+/**
+ * The seam got the id and an issued key on every till-side call, so a test cannot pass by never calling it, and
+ * neither the id nor any issued key appears anywhere else.
+ */
 function expectSecretOnlyAsDeviceId(w: Watch) {
   expect(w.deviceIds.length).toBeGreaterThan(0);
   expect(new Set(w.deviceIds)).toEqual(new Set([SECRET]));
+  expect(w.deviceKeys.length).toBeGreaterThan(0);
+  for (const key of w.deviceKeys) expect(w.issued).toContain(key);
   expect(seen()).not.toContain(SECRET);
+  for (const key of w.issued) expect(seen()).not.toContain(key);
+}
+
+/** The till's device over `signalling`, with `stored` as its key store's starting key. */
+function deviceOver(signalling: DisplaySignalling, stored: string | null = KEY) {
+  let key = stored;
+  return createTillDevice({
+    signalling, deviceId: SECRET, onError,
+    keys: { load: async () => key, save: async (next) => void (key = next), clear: async () => void (key = null) },
+  });
 }
 
 function pairingWith(fake: FakePairingSignalling) {
+  fake.registerDevice = async () => ({ deviceKey: KEY2 });
   const w = watch(fake);
   const pairing = createTillPairing({
-    signalling: w.signalling, context: () => ctx, deviceId: SECRET, service: { refresh: async () => {} }, onError,
+    signalling: w.signalling, context: () => ctx, device: deviceOver(w.signalling), service: { refresh: async () => {} }, onError,
   });
   const look = () => capture('pairing', { phase: pairing.phase, forgetError: pairing.forgetError });
   pairing.onChange(look);
@@ -126,10 +160,11 @@ function pairingWith(fake: FakePairingSignalling) {
 }
 
 function serviceWith(fake: FakeSignalling, network: FakeNetwork, refuse: Watch['refuse'] = null) {
+  fake.registerDevice = async () => ({ deviceKey: KEY2 });
   const w = watch(fake);
   w.refuse = refuse;
   const service = createTillDisplayService({
-    signalling: w.signalling, context: () => ctx, deviceId: SECRET, advertisement: { iceServers: [], snapshot: true },
+    signalling: w.signalling, context: () => ctx, device: deviceOver(w.signalling), advertisement: { iceServers: [], snapshot: true },
     configFor, createPeer: network.createPeer, onError,
   });
   const look = () => capture('service', { status: service.status, displays: service.displays });
@@ -151,7 +186,7 @@ function twoDisplays() {
   return { fake, network, side, heard };
 }
 
-describe('the till device id stays a secret (TallyUI#753)', () => {
+describe('the till device key and id stay secret (TallyUI#753, #754)', () => {
   const closers: Array<() => void> = [];
   beforeEach(() => {
     vi.useFakeTimers();
@@ -165,7 +200,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     vi.useRealTimers();
   });
 
-  it('D1: pairing: mint, pending poll, confirm, decline and forget never expose the device id', async () => {
+  it('D1: pairing: mint, pending poll, confirm, decline and forget never expose the device key or id', async () => {
     const fake = new FakePairingSignalling();
     fake.claims = [pendingClaim('k1', '4821'), pendingClaim('k2', '0937')];
     const { w, pairing, look } = pairingWith(fake);
@@ -186,7 +221,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     expectSecretOnlyAsDeviceId(w);
   });
 
-  it('D2: service: list, receive and send signals, and post a snapshot never expose the device id', async () => {
+  it('D2: service: list, receive and send signals, and post a snapshot never expose the device key or id', async () => {
     const { fake, network, side, heard } = twoDisplays();
     const { w, service, look } = serviceWith(fake, network);
     closers.push(() => service.close(), () => side.close());
@@ -206,7 +241,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     expectSecretOnlyAsDeviceId(w);
   });
 
-  describe('D3: refusals: every seam call rejecting with each DisplaySignallingError code (and a plain Error) reports errors that do not contain the device id', () => {
+  describe('D3: refusals: every seam call rejecting with each DisplaySignallingError code (and a plain Error) reports errors that do not contain the device key or id', () => {
     const refusals: Refusal[] = [...CODES, 'plain'];
 
     it.each(refusals)('pairing calls refused with %s', async (refusal) => {
@@ -251,7 +286,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     });
   });
 
-  it('D4: display side: what the display client receives (signals, snapshot bodies, its own state) never contains the device id', async () => {
+  it('D4: display side: what the display client receives (signals, snapshot bodies, its own state) never contains the device key or id', async () => {
     // The CI flake 'display paired still false after 10 steps': digest settles in real time, so D4 always runs it slow.
     const realDigest = globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle);
     const digest = vi.spyOn(globalThis.crypto.subtle, 'digest')
@@ -273,7 +308,9 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     });
     const lookClient = () => capture('display client', { phase: client.phase, state: client.state });
     client.onChange(lookClient);
-    const pairing = createTillPairing({ signalling: w.signalling, context: () => tillCtx, deviceId: SECRET, onError });
+    // One device, as an app shares it: it registers on the memory server, which issues a random key.
+    const device = deviceOver(w.signalling, null);
+    const pairing = createTillPairing({ signalling: w.signalling, context: () => tillCtx, device, onError });
     pairing.onChange(() => capture('pairing', { phase: pairing.phase, forgetError: pairing.forgetError }));
     closers.push(() => client.close(), () => pairing.close());
 
@@ -282,15 +319,17 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     const shown = pairing.phase;
     if (shown.phase !== 'code') throw new Error(`expected a code, got ${shown.phase}`);
     await client.claim(shown.code, 'Counter');
-    await wait(PENDING_POLL_MS);
-    const claims = pairing.phase.phase === 'code' ? pairing.phase.claims : [];
+    // Every till call hashes its key with the slowed digest now, so the poll's answer lands in real time.
+    const listed = () => (pairing.phase.phase === 'code' ? pairing.phase.claims : []);
+    await waitUntil('claim listed', PENDING_POLL_MS, () => listed().length > 0);
+    const claims = listed();
     expect(claims).toHaveLength(1);
     await pairing.confirm(claims[0].claimId);
     await waitUntil('display paired', COLLECT_POLL_MS, () => client.phase.phase === 'paired');
     expect(client.phase.phase).toBe('paired');
 
     const service = createTillDisplayService({
-      signalling: w.signalling, context: () => tillCtx, deviceId: SECRET, advertisement: { iceServers: [], snapshot: true },
+      signalling: w.signalling, context: () => tillCtx, device, advertisement: { iceServers: [], snapshot: true },
       configFor, createPeer: network.createPeer, onError,
     });
     closers.unshift(() => service.close());
@@ -306,6 +345,7 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     expect(heardOffer()).toBe(true);
     expect(client.state.config?.display.name).toBe('Counter');
     expect(client.state.view.screen).toBe('cart');
+    expect(w.issued).toHaveLength(2);
     expectSecretOnlyAsDeviceId(w);
   });
 });
