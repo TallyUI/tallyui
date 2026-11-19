@@ -246,3 +246,41 @@ describe('parseInfoCapabilities coupons (#709)', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe('parseInfoCapabilities receiptEmail (vendurepos 12.1b)', () => {
+  const base = { contracts: { 'order.create': [1], register: [1, 2, 3] }, coupons: true };
+
+  it.each([[{ v: 1 }, 1], [{ v: 2, extra: true }, 2]])('reads receiptEmail %j as version %s', (receiptEmail, version) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ ...base, receiptEmail }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, coupons: true, receiptEmail: version });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('omits absent receiptEmail without warning', () => {
+    const warn = vi.fn();
+    const caps = parseInfoCapabilities(base, warn);
+    expect(caps).toStrictEqual({ orderCreate: 1, register: 3, coupons: true });
+    expect(caps).not.toHaveProperty('receiptEmail');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [null], [[]], [true], [1], ['1'], [{}], [{ v: 0 }], [{ v: -1 }], [{ v: 1.5 }], [{ v: '1' }], [{ v: NaN }],
+    [{ v: Number.MAX_SAFE_INTEGER + 1 }],
+  ])('keeps other capabilities and warns once for malformed receiptEmail %j', (receiptEmail) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ ...base, receiptEmail }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, coupons: true });
+    expect(warn).toHaveBeenCalledExactlyOnceWith('ignoring a malformed receiptEmail');
+  });
+
+  it('warns for a malformed receiptEmail independently of a malformed lineTax', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ ...base, lineTax: true, receiptEmail: { v: 0 } }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, coupons: true });
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/malformed lineTax/));
+    expect(warn).toHaveBeenCalledWith('ignoring a malformed receiptEmail');
+  });
+});
