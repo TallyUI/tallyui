@@ -329,4 +329,9 @@ describe('normalizeMoneyText (#672)', () => {
     expect(normalizeMoneyText(' 1,234.50 ', format)).toBe(' 1,234.50 ');
     expect(normalizeMoneyText('1.234,50', format)).toBe('1.234,50');
   });
+
+  it('NM6: returns a long digit run with a trailing letter unchanged', () => {
+    const text = '1'.repeat(50_000) + 'x';
+    expect(normalizeMoneyText(text, COMMA)).toBe(text);
+  });
 });

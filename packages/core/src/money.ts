@@ -166,7 +166,7 @@ export function normalizeMoneyText(text: string, format?: MoneyFormat): string {
     for (const sep of ['.', ',']) if (t.split(sep).length > 2) t = t.split(sep).join('');
     t = t.replace(',', '.');
   }
-  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return text;
+  if (!/^-?(\d+(?:\.\d*)?|\.\d+)$/.test(t)) return text;
   return t.replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.$/, '');
 }
 
