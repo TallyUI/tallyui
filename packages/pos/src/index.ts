@@ -135,12 +135,12 @@ export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
   escpos, encodeEscPos, createEscPosTransport, createEpsonEposSink, createStarWebPrntSink, networkSinkFor, canOpenDrawer,
-  openDrawerJob, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
+  openDrawerJob, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns, renderEscpos, encodeThermalTemplate,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
+  EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions, RenderEscposOptions,
 } from './print';
 
 // Sale
