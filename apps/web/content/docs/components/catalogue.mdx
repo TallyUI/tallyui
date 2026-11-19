@@ -23,7 +23,7 @@ import { Catalogue } from '@tallyui/components';
 />
 ```
 
-Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order. With `showFilterBar`, In Stock is on by default and hides out-of-stock and backorder products (a stock the backend did not report stays) unless `items` is supplied; Featured and On Sale are only passed out through `onFiltersChange`, for an app whose connector knows them. With `variationsStyle="popover"`, a grid tile opens its VariationPicker; the table view keeps the list chooser. The `cameraScan` button shows only when `cameraScanner` is passed too.
+Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order. With `showFilterBar`, In Stock is on by default and hides out-of-stock and backorder products (a stock the backend did not report stays) unless `items` is supplied; Featured and On Sale are only passed out through `onFiltersChange`, for an app whose connector knows them. With `variationsStyle="popover"`, a grid tile opens its VariationPicker; with `variationsStyle="drill"`, it swaps the grid for the product's variant tiles, with the product's tile first as Back; the table view keeps the list chooser. The `cameraScan` button shows only when `cameraScanner` is passed too.
 
 ## Props
 
@@ -61,7 +61,7 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `inStockKeepsBackorder` | `boolean` | `false` | With the In Stock filter on, keeps backorder products in the grid and drops only out-of-stock ones |
 | `filters` | `ProductFilters` | --- | Controlled filters; uncontrolled state starts at `DEFAULT_PRODUCT_FILTERS` (In Stock on) |
 | `onFiltersChange` | `(filters: ProductFilters) => void` | --- | Receives the cashier's next filters, including requested filters in controlled mode |
-| `variationsStyle` | `'list' \| 'popover'` | `'list'` | `'popover'` opens a grid tile's VariationPicker in a popover for a product with option groups; `'list'` opens the variant list chooser |
+| `variationsStyle` | `'list' \| 'popover' \| 'drill'` | `'list'` | `'popover'` opens a grid tile's VariationPicker in a popover for a product with option groups; `'drill'` swaps the grid for the product's variant tiles, with its tile first as Back; `'list'` opens the variant list chooser |
 | `cameraScan` | `boolean` | `false` | Shows the camera scan button beside the search box, opening an inline camera scanner panel |
 | `cameraScanner` | `Omit<CameraScannerPanelProps, 'onClose'>` | --- | Passed to the camera scanner panel; the app wires its `useCameraScan` result here |
 | `tableRow` | `{ thumbnail?: boolean; addButton?: boolean }` | --- | In table view, `thumbnail` leads each row and `addButton` ends it with a button that does what a row press does |
