@@ -65,7 +65,7 @@ function liveVariants(doc: any): any[] {
 }
 
 // A variant's option values keyed by group name (vendurepos gap 2.5): `groupId` finds the group in the
-// product's `optionGroups`; an option whose group is not there is left out. Undefined with no options or groups.
+// product's `optionGroups`; an option whose group is not there is left out. Undefined with no options, no groups, or no option in a group.
 type VendureOption = { id?: string; code?: string; name: string; groupId?: string };
 type VendureOptionGroup = { id: string; code?: string; name: string; options?: VendureOption[] };
 function variantOptions(doc: { optionGroups?: VendureOptionGroup[] }, variant: { options?: VendureOption[] }): Record<string, string> | undefined {
@@ -76,7 +76,7 @@ function variantOptions(doc: { optionGroups?: VendureOptionGroup[] }, variant: {
     const group = groups.find((g) => String(g.id) === String(option.groupId));
     if (group) options[group.name] = option.name;
   }
-  return options;
+  return Object.keys(options).length ? options : undefined;
 }
 
 /**

@@ -187,3 +187,39 @@ describe('toVendureProduct', () => {
     expect(vendureProductTraits.getBarcode(vendureDrink)).toBeUndefined();
   });
 });
+
+describe('toVendureProduct option groups (#1005)', () => {
+  const base = products[0];
+  const neutral = { ...base, type: 'variable' as const, variants: [
+    { ...base.variants[0], id: 'var-s-red', name: 'S Red', options: { Size: 'S', Colour: 'Red' } },
+    { ...base.variants[0], id: 'var-m-red', name: 'M Red', options: { Size: 'M', Colour: 'Red' } },
+  ] };
+  const vendure = toVendureProduct(neutral);
+
+  it('emits one option group per option name, with its values in first-seen order', () => {
+    expect(vendure.optionGroups.map((g) => [g.name, g.options.map((o) => o.name)])).toEqual([
+      ['Size', ['S', 'M']], ['Colour', ['Red']],
+    ]);
+  });
+
+  it('gives every variant option a groupId that names one of the groups', () => {
+    const groupIds = vendure.optionGroups.map((g) => g.id);
+    for (const option of vendure.variants.flatMap((v) => v.options)) expect(groupIds).toContain(option.groupId);
+  });
+
+  it('gives one value one id across variants and its group, and two values two ids', () => {
+    const idOf = (value: string) => vendure.variants.flatMap((v) => v.options).filter((o) => o.name === value).map((o) => o.id);
+    const sizes = vendure.optionGroups.find((g) => g.name === 'Size')!.options;
+    expect(new Set([...idOf('S'), sizes.find((o) => o.name === 'S')!.id]).size).toBe(1);
+    expect(idOf('S')[0]).not.toBe(idOf('M')[0]);
+  });
+
+  it('round trip: the connector reads back each neutral variant\'s options', () => {
+    const variants = createVendureConnector().traits.product.getVariants!(vendure);
+    expect(variants.map((v) => v.options)).toEqual(neutral.variants.map((v) => v.options));
+  });
+
+  it('a product with no variant options emits optionGroups []', () => {
+    expect(toVendureProduct(base).optionGroups).toEqual([]);
+  });
+});

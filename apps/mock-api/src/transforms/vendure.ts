@@ -23,6 +23,8 @@ function toVendureId(neutralId: string): string {
   return neutralId.replace(/^prod-/, '');
 }
 
+const slug = (text: string) => text.toLowerCase().replace(/\s+/g, '-');
+
 /**
  * Transform a NeutralProduct into a Vendure Admin/Shop API product shape.
  *
@@ -45,7 +47,8 @@ function toVendureId(neutralId: string): string {
  * - `variants[].stockOnHand`: number
  * - `variants[].trackInventory`: 'TRUE' | 'FALSE' (strings, not booleans)
  * - `variants[].customFields.barcode`: string or null
- * - `variants[].options[]`: `{ id, name, code }`
+ * - `variants[].options[]`: `{ id, name, code, groupId }`
+ * - `optionGroups[]`: `{ id, code, name, options[] }`, one per option name in first-seen order
  * - `updatedAt`: ISO string (camelCase)
  */
 export function toVendureProduct(product: NeutralProduct) {
@@ -58,6 +61,13 @@ export function toVendureProduct(product: NeutralProduct) {
     id: `asset-${product.slug}-${idx}`,
     preview: img.url,
   }));
+
+  const optionGroups: { id: string; code: string; name: string; options: { id: string; code: string; name: string }[] }[] = [];
+  for (const [key, value] of product.variants.flatMap((variant) => Object.entries(variant.options))) {
+    let group = optionGroups.find((g) => g.name === key);
+    if (!group) optionGroups.push(group = { id: `grp-${slug(key)}`, code: slug(key), name: key, options: [] });
+    if (!group.options.some((o) => o.name === value)) group.options.push({ id: `opt-${slug(key)}-${slug(value)}`, code: slug(value), name: value });
+  }
 
   return {
     id: toVendureId(product.id),
@@ -82,6 +92,8 @@ export function toVendureProduct(product: NeutralProduct) {
       facet: { id: 'facet-tags', name: 'Tags', code: 'tags' },
     })),
 
+    optionGroups,
+
     variants: product.variants.map((variant) => {
       const optionEntries = Object.entries(variant.options);
       return {
@@ -98,10 +110,11 @@ export function toVendureProduct(product: NeutralProduct) {
         customFields: {
           barcode: variant.barcode,
         },
-        options: optionEntries.map(([key, value], idx) => ({
-          id: `opt-${key.toLowerCase().replace(/\s+/g, '-')}-${idx}`,
+        options: optionEntries.map(([key, value]) => ({
+          id: `opt-${slug(key)}-${slug(value)}`,
           name: value,
-          code: value.toLowerCase().replace(/\s+/g, '-'),
+          code: slug(value),
+          groupId: `grp-${slug(key)}`,
         })),
       };
     }),
