@@ -1,4 +1,5 @@
-import type { OrderCreateEnvelope, OrderCreatePayload, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderCreateMeta, OrderCreatePayload, OrderCreateTaxId, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
@@ -56,6 +57,24 @@ export function cutText(text: string, max: number): string {
   if (clean.length <= max) return clean;
   const high = clean.charCodeAt(max - 2);
   return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? max - 2 : max - 1)}…`;
+}
+
+// What order.create 12's shape check accepts (order-payload-shape.ts); a bad entry is dropped, not sent, so one bad extra never holds the sale (desk, F1054-1).
+function sendableTaxIds(taxIds: readonly OrderCreateTaxId[] | undefined): OrderCreateTaxId[] {
+  return (taxIds ?? []).flatMap(({ type, value, country }) => {
+    const id = { type: cutText(type, ORDER_TAX_ID_TYPE_MAX), value: cutText(value, ORDER_TAX_ID_VALUE_MAX) };
+    const code = country?.toUpperCase();
+    return id.type && id.value ? [{ ...id, ...(code !== undefined && /^[A-Z]{2}$/.test(code) ? { country: code } : {}) }] : [];
+  }).slice(0, ORDER_TAX_IDS_MAX);
+}
+function sendableMeta(meta: readonly OrderCreateMeta[] | undefined): OrderCreateMeta[] {
+  const kept = new Set<string>();
+  return (meta ?? []).flatMap((entry) => {
+    const key = cutText(entry.key, ORDER_META_KEY_MAX);
+    if (!key || key.startsWith('_') || kept.has(key)) return [];
+    kept.add(key);
+    return [{ key, value: cutText(entry.value, ORDER_NOTE_MAX) }];
+  }).slice(0, ORDER_META_MAX);
 }
 
 /**
@@ -152,14 +171,14 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
     && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
   // Version 12 is 11 plus tax ids, meta and a catalogue line's edited SKU (ADR-092), on the same terms; otherwise none of them is sent.
   const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueSku !== undefined && line.sku !== '' && line.sku !== line.catalogueSku;
-  const extras = !!(order.customer?.taxIds?.length || order.meta?.length || order.lines.some(editedSku))
+  const sentTaxIds = sendableTaxIds(order.customer?.taxIds), sentMeta = sendableMeta(order.meta);
+  const extras = !!(sentTaxIds.length || sentMeta.length || order.lines.some(editedSku))
     && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
   const version = (extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
   const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
-  const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && order.customer?.taxIds?.length
-    ? { taxIds: order.customer.taxIds.map(({ type, value, country }) => ({ type, value, ...(country !== undefined ? { country } : {}) })) } : undefined;
+  const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentTaxIds.length ? { taxIds: sentTaxIds } : undefined;
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -229,7 +248,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
       ...(version >= 7 && note ? { note } : {}),
       ...(withTaxAddress ? { taxAddress } : {}),
-      ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && order.meta?.length ? { meta: order.meta.map(({ key, value }) => ({ key, value })) } : {}),
+      ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentMeta.length ? { meta: sentMeta } : {}),
     },
   };
 }

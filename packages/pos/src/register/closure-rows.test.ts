@@ -92,3 +92,17 @@ it('derives a missing business_day from opened_at in a zone east of UTC, rolling
   const scope: ClosureScope = { from: '2026-09-18', to: '2026-09-18', registerId: 'r1' };
   expect(selectClosureRows(rows, scope, 'Pacific/Auckland').map((r) => r.id)).toEqual(['rolled']);
 });
+
+it('K1: a closure with no store_key, null or absent, counts as the scope\'s store; another store\'s does not (#665, TallyUI-only)', () => {
+  const { store_key: _key, ...absent } = row({ id: 'absent' });
+  const rows = [row({ id: 'null', store_key: null }), absent as Closure, row({ id: 'other', store_key: 'store-2' })];
+  expect(absent).not.toHaveProperty('store_key');
+  const scope: ClosureScope = { from: '2026-09-17', to: '2026-09-17', registerId: 'r1', storeKey: 'store-1' };
+  expect(selectClosureRows(rows, scope, 'UTC').map((r) => r.id).sort()).toEqual(['absent', 'null']);
+});
+
+it('K2: with no scope store, a keyless closure is selected and a keyed one is not (TallyUI-only)', () => {
+  const rows = [row({ id: 'keyless', store_key: null }), row({ id: 'keyed', store_key: 'store-1' })];
+  const scope: ClosureScope = { from: '2026-09-17', to: '2026-09-17', registerId: 'r1' };
+  expect(selectClosureRows(rows, scope, 'UTC').map((r) => r.id)).toEqual(['keyless']);
+});

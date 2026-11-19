@@ -10,7 +10,7 @@ describe('woocommerceConnector.auth', () => {
     expect(headers).toEqual({
       Authorization: 'Bearer t',
       'X-WCPOS': '1',
-      'X-WCPOS-Protocol': '2',
+      'X-WCPOS-Protocol': '3',
       'X-WCPOS-Client': `tallyui/${wcposClientPart(pkg.version)}`,
     });
     expect(headers['X-WCPOS-Client']).toMatch(/^tallyui\/[a-z0-9._-]{1,32}$/);
