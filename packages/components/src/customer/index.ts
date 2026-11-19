@@ -4,3 +4,4 @@ export { CustomerForm, type CustomerFormProps, type CustomerFormValues } from '.
 export { CustomerOrderHistory, type CustomerOrderHistoryProps } from './customer-order-history';
 export { CustomerPicker, type CustomerPickerProps } from './customer-picker';
 export { CustomerDropdown, type CustomerDropdownProps } from './customer-dropdown';
+export { AddressFields, ShippingAddressFields, type AddressFieldsProps, type ShippingAddressFieldsProps } from './address-fields';

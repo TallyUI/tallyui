@@ -116,6 +116,10 @@ export {
   type CustomerOrderHistoryProps,
   CustomerDropdown,
   type CustomerDropdownProps,
+  AddressFields,
+  ShippingAddressFields,
+  type AddressFieldsProps,
+  type ShippingAddressFieldsProps,
 } from './customer';
 
 // Checkout components
