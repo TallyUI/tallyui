@@ -1,36 +1,5 @@
 # @tallyui/components
 
-## 3.21.0
-
-### Minor Changes
-
-- ef2347e: Catalogue: optional inStockKeepsBackorder keeps backorder products in the grid while the In Stock pill is on (default off, unchanged).
-- ef2347e: New exports the platform apps copied before: `deriveSessionFigures` and `deriveVariance` on `@tallyui/core`'s browser-safe main entry; `tenderLabel` and a new `syncStatusQuiet` predicate (true when `SyncStatus` would show only "Sales are up to date.") on `@tallyui/components`.
-
-### Patch Changes
-
-- ef2347e: ChargeForm: visible, translatable Name and Amount labels; the amount shows the sale currency's symbol as an affix instead of a currency-code placeholder.
-- ef2347e: RegisterPanel's side presentation keeps the register-panel-sales-count, -amount and -movements testIDs.
-- dec6d41: `SwitchConfirm`: when signing out with the register still open, "Close register" is the primary button and "Sign out anyway" the outline one, as in WCPOS v2.
-- ef2347e: Internal tidy: the cart tabs use `@tallyui/pos`'s `isPartlyPaid` instead of a copy, and the catalogue, stock badge and variations popover share one stock-status label table. Behaviour unchanged.
-- ef2347e: ToggleGroupItem shows the pressed style (bg-accent) on the selected item(s), as Toggle does.
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [8d6fa8b]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-- Updated dependencies [ef2347e]
-  - @tallyui/core@3.21.0
-  - @tallyui/pos@3.21.0
-  - @tallyui/primitives@3.21.0
-  - @tallyui/theme@3.21.0
-
 ## 3.20.1
 
 ### Patch Changes
