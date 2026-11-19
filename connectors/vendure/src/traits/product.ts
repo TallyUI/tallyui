@@ -126,7 +126,7 @@ const traits: ProductTraits = {
     stock: traits.getStock({ variants: [variant] }),
   })),
 
-  // Every option of each group in Vendure's order; core asks no filter by the live variants (as WooCommerce).
+  // Every option of each group in the order the API returns them; core asks no filter by the live variants (as WooCommerce).
   getVariantOptions: (doc) => ((doc.optionGroups ?? []) as VendureOptionGroup[]).map((g) => ({
     id: String(g.id), name: g.name, values: (g.options ?? []).map((o) => o.name),
   })),

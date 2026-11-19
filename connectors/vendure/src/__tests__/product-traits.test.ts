@@ -611,7 +611,7 @@ describe('vendureProductSchema v1 (backlog 28) and v2 (#288)', () => {
 });
 
 describe('variant option groups (vendurepos gap 2.5)', () => {
-  // Two groups in the backend's order (Size: 30, 32; Colour: Blue) and two variants.
+  // Two groups in the API's order (Size: 30, 32; Colour: Blue) and two variants.
   const product = {
     id: '1', name: 'Jeans',
     optionGroups: [
@@ -649,7 +649,7 @@ describe('variant option groups (vendurepos gap 2.5)', () => {
     expect(vendureProductTraits.getVariants!({ ...product, variants: [{ id: '3', price: 1 }] })[0].options).toBeUndefined();
   });
 
-  it('V4: getVariantOptions lists the groups and their values in the backend\'s order', () => {
+  it('V4: getVariantOptions lists the groups and their values in the API\'s order', () => {
     expect(vendureProductTraits.getVariantOptions!(product)).toEqual([
       { id: '10', name: 'Size', values: ['30', '32'] },
       { id: '20', name: 'Colour', values: ['Blue'] },

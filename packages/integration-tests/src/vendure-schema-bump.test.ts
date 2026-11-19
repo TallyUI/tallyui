@@ -50,7 +50,7 @@ describe('the Vendure products schema bump v2 → v3 drops server data only (ven
     const before = await open(name, storage, versionTwoSchema());
     expect(before.products.schema.version).toBe(2);
     await before.products.insert({ id: '1', name: 'Jeans', variants: [{ id: '1', price: 1000, options: [{ id: '100', name: '30', code: 'size-30' }] }] });
-    // The catalogue reconcile's gate (#248), the only local document on products.
+    // The catalogue reconcile's gate (#248): a local document on products, like the id and fingerprint reconcile gates.
     await before.products.upsertLocal('catalogue-reconcile', { lastCompletedAt: 1 });
     await before.pos_orders.insert(order);
     await before.register_sessions.insert(session);
