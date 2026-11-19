@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -66,5 +66,26 @@ describe('markAttentionHandled (ADR-092 6f)', () => {
     expect(await markAttentionHandled(collection, input.id, () => first)).toBe(true);
     expect(await markAttentionHandled(collection, input.id, () => second)).toBe(true);
     expect(await stored(input.id)).toMatchObject({ attentionHandledFor: input.commandId, updatedAt: first.toISOString() });
+  });
+  it('H6 a requeue between findOne and the write wins: false, and neither commandId is stamped', async () => {
+    const input = order({ syncStatus: 'rejected', error: { code: 'payment_declined', message: 'Refused' } });
+    await collection.insert(input);
+    const requeuedId = uuidv7(), findOne = collection.findOne.bind(collection);
+    // exec() resolves the real document, then a requeue (written as order-outbox's requeue() writes it) lands before it returns.
+    const spy = vi.spyOn(collection, 'findOne').mockImplementationOnce((id) => ({ exec: async () => {
+      const doc = await findOne(id).exec();
+      await doc!.incrementalModify((data) => {
+        data.syncStatus = 'pending';
+        delete data.error;
+        data.commandId = requeuedId;
+        return data;
+      });
+      return doc;
+    } }) as unknown as ReturnType<typeof findOne>);
+    expect(await markAttentionHandled(collection, input.id)).toBe(false);
+    spy.mockRestore();
+    const row = await stored(input.id);
+    expect(row).toMatchObject({ syncStatus: 'pending', commandId: requeuedId });
+    expect(row).not.toHaveProperty('attentionHandledFor');
   });
 });

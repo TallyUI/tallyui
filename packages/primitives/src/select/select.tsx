@@ -305,7 +305,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
       ref={ref}
       role="list"
       aria-modal={true}
-      style={[positionStyle, style]}
+      style={[positionStyle, triggerPosition ? { minWidth: triggerPosition.width } : null, style]}
       onLayout={onLayout}
       {...props}
     />

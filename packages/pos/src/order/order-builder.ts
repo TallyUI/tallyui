@@ -1,5 +1,5 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, woocommerceTax, type woocommerceCoupons, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
+import { resolvePrice, woocommerceTax, type woocommerceCoupons, type OrderCreateMeta, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
 import type { TaxContext } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
@@ -166,6 +166,8 @@ export interface OrderBuilder {
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
+  /** Replaces the order meta as given (`[]` removes it); `useSale().setMeta` checks keys before it calls this. */
+  setMeta(meta: OrderCreateMeta[]): void;
   /** Replaces the coupon codes with their trimmed, lower-case, deduplicated list; a given context replaces the builder's coupon context. */
   setCoupons(codes: readonly string[], context?: OrderCouponContext | StorePricedCouponContext): void;
   clear(): void;
@@ -197,6 +199,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   let payments: Payment[] = [];
   let customer: CustomerSummary | null = null;
   let note = '';
+  let meta: OrderCreateMeta[] = [];
   let couponCodes: string[] = [];
   const now = new Date().toISOString();
 
@@ -454,6 +457,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       payments: [...payments],
       customer,
       note,
+      ...(meta.length ? { meta: meta.map((m) => ({ ...m })) } : {}),
       subtotalMinor,
       discountMinor,
       taxMinor,
@@ -778,6 +782,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
+    setMeta(next) {
+      meta = next.map((m) => ({ ...m }));
+      emit();
+    },
+
     setCoupons(codes, context) {
       const nextContext = context ?? couponContext;
       const normalized = [...new Set(codes.map((code) => code.trim().toLowerCase()))];
@@ -815,6 +824,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       payments = [];
       customer = null;
       note = '';
+      meta = [];
       couponCodes = [];
       if (couponContext && 'kind' in couponContext) couponContext = undefined;
       emit();

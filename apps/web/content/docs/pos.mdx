@@ -248,25 +248,25 @@ manager.newOrder();
 | State | `saving` | Completion is pending; the sale is locked and the UI offers Retry. |
 | State | `canContinue` | The pending order is confirmed stored, so the UI can offer Continue. |
 | State | `couponsRepricing` | Coupons are being priced again; tender refuses with `COUPONS_REPRICING`. |
-| Cart | `add(entry, traits)` | Adds a line or increments its quantity; returns `{ lineId }` or a refusal also shown in `error`. |
-| Cart | `setQuantity(lineId, quantity)` | Updates a line's quantity. |
-| Cart | `remove(lineId)` | Removes a line. |
-| Cart | `splitLine(lineId)` | Splits quantity N into N lines of one; returns a refusal or `null`. |
-| Cart | `setUnitPrice(lineId, amountMinor)` | Sets price in minor units of the line's tax mode and recalculates discounts and tax; returns a refusal or `null`. |
-| Cart | `applyDiscount(lineId, discount)` | Applies a line discount, or an order discount for `null`; returns a refusal (including `DISCOUNTS_UNSUPPORTED`) or `null`. |
-| Cart | `removeDiscount(id)` | Removes a discount. |
-| Cart | `applyCoupon(code)` | Looks up, checks and applies a platform discount code; resolves to a refusal or `null`. |
-| Cart | `removeCoupon(code)` | Removes an applied coupon; returns a refusal or `null`. |
-| Cart | `repriceCoupons()` | Retries coupon pricing; resolves to a refusal or error, or `null`. |
+| Cart | `add(entry, traits)` | Adds a line or increments its quantity; returns `{ lineId }` or a refusal also shown in `error`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion; on the receipt it starts the next sale first. |
+| Cart | `setQuantity(lineId, quantity)` | Updates a line's quantity. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `remove(lineId)` | Removes a line. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `splitLine(lineId)` | Splits quantity N into N lines of one; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `setUnitPrice(lineId, amountMinor)` | Sets price in minor units of the line's tax mode and recalculates discounts and tax; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `applyDiscount(lineId, discount)` | Applies a line discount, or an order discount for `null`; returns a refusal (including `DISCOUNTS_UNSUPPORTED`) or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `removeDiscount(id)` | Removes a discount. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `applyCoupon(code)` | Looks up, checks and applies a platform discount code; resolves to a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `removeCoupon(code)` | Removes an applied coupon; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `repriceCoupons()` | Retries coupon pricing; resolves to a refusal or error, or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt; stale coupons are not priced again automatically while a payment is live either. |
 | Cart | `setNote(note)` | Sets the note kept with parked carts and sent as the order note; a new sale clears it. |
 | Cart | `setCustomer(customer)` | Picks a customer or `null` for guest; refuses invalid customer data or a tax change once rates are fixed. |
-| Cart | `addFee(input)` | Adds a fee from `ChargeInput`; returns `{ id }` or a refusal. |
-| Cart | `updateFee(id, patch)` | Updates a fee; returns a refusal or `null`. |
-| Cart | `removeFee(id)` | Removes a fee; returns a refusal or `null`. |
-| Cart | `addShipping(input)` | Adds shipping from `ChargeInput` with optional `methodId`; returns `{ id }` or a refusal. |
-| Cart | `updateShipping(id, patch)` | Updates shipping; returns a refusal or `null`. |
-| Cart | `removeShipping(id)` | Removes shipping; returns a refusal or `null`. |
-| Cart | `addCustomLine(input)` | Adds a distinct custom line with `name`, `priceMinor` and optional `quantity`, `taxClass`, `taxStatus`, `sku`; returns `{ id }` or a refusal. |
+| Cart | `addFee(input)` | Adds a fee from `ChargeInput`; returns `{ id }` or a refusal. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `updateFee(id, patch)` | Updates a fee; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `removeFee(id)` | Removes a fee; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `addShipping(input)` | Adds shipping from `ChargeInput` with optional `methodId`; returns `{ id }` or a refusal. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `updateShipping(id, patch)` | Updates shipping; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `removeShipping(id)` | Removes shipping; returns a refusal or `null`. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
+| Cart | `addCustomLine(input)` | Adds a distinct custom line with `name`, `priceMinor` and optional `quantity`, `taxClass`, `taxStatus`, `sku`; returns `{ id }` or a refusal. Refuses with `SALE_HAS_PAYMENT` while a payment is taken or in motion and with `SALE_FINISHED` on the receipt. |
 | Cart | `park()` | Stores the cart in `drafts` and starts a new sale; resolves to a refusal or `null`. |
 | Cart | `resume(draftId, options?)` | Restores a draft into an empty cart, rechecks coupons and optionally keeps parked prices with `keepParkedPrices`; resolves to a refusal or `null`. |
 | Cart | `switchSale(draftId)` | Parks the current cart and opens a draft, or a new sale for `null`; refuses while saving, partly paid, payment in motion or in tender. |
@@ -277,8 +277,8 @@ manager.newOrder();
 | Tender | `setTender(tender)` | Replaces unlocked payments with one tender, or clears them for `null`. |
 | Tender | `addTender(tender)` | Adds a cash or external payment; external amounts are capped at the balance less payments in motion, and only cash gives change. |
 | Tender | `setTenderStatus(paymentId, status)` | Sets `authorized`, `captured` or `failed`; returns whether the status changed. |
-| Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. |
-| Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. |
+| Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. Refuses with `SALE_FINISHED` on the receipt. |
+| Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. Refuses with `SALE_FINISHED` on the receipt. |
 | Tender | `cancelTender()` | Clears unlocked payments and returns to the cart. |
 | Completion | `complete()` | Finalizes, saves and shows the receipt; refuses payments in motion with `PAYMENT_IN_MOTION`. Retry reuses the same pending order. |
 | Completion | `newSale()` | Starts an empty sale; a pending save must be confirmed stored before it can be abandoned, and its stored record is kept. |

@@ -119,6 +119,15 @@ test.describe('Overlay anchoring', () => {
           }, { message: 'content width vs max(320, trigger width)' })
           .toBeLessThanOrEqual(2);
       }
+      if (overlay.name === 'select') {
+        await soft
+          .poll(async () => {
+            const { t, c } = await boxes();
+            // v2's `min-w-32` (128 px), raised to the trigger's width.
+            return Math.abs(c.width - Math.max(128, t.width));
+          }, { message: 'content width vs max(128, trigger width)' })
+          .toBeLessThanOrEqual(2);
+      }
 
       const { t, c } = await boxes();
       console.log(overlay.name, 'trigger', JSON.stringify(t), 'content', JSON.stringify(c));

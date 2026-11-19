@@ -1,6 +1,7 @@
 import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
   type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import type { ChargeLine, Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -332,6 +333,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const taxAddress = used === 'billing' || used === 'shipping' ? used : undefined;
   const addresses = { billing: orderAddress(order.customer?.billing), shipping: orderAddress(order.customer?.shipping) };
   if (taxAddress && !addresses[taxAddress]?.country) throw new Error(`finalize: the sale was taxed on the customer's ${taxAddress} address, which it does not have`);
+  // #1064: the backstop for a list no setter checked; the stored list is always a clean copy.
+  const taxIds = order.customer?.taxIds && cleanTaxIds(order.customer.taxIds);
+  if (taxIds === null) throw new Error(TAX_IDS_INVALID);
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
@@ -353,8 +357,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
       ...(addresses.billing ? { billing: addresses.billing } : {}),
       ...(addresses.shipping ? { shipping: addresses.shipping } : {}),
-      ...(order.customer.taxIds?.length ? { taxIds: order.customer.taxIds.map((t) => ({ ...t })) } : {}) } : null,
+      ...(taxIds?.length ? { taxIds } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
+    ...(order.meta?.length ? { meta: order.meta.map((m) => ({ ...m })) } : {}),
     ...(taxAddress ? { taxAddress } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),

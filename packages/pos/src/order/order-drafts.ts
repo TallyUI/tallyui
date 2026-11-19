@@ -80,6 +80,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   if (saved.note) {
     builder.setNote(saved.note);
   }
+  if (saved.meta?.length) builder.setMeta(saved.meta);
 
   // Restore line items and their discounts
   for (const line of saved.lineItems) {

@@ -46,6 +46,7 @@
 	"customers.no_customers_yet_description": "Customers you add, and anyone who buys from you, will appear here.",
 	"customers.nothing_matches_search": "No customers match your search",
 	"customers.open_customer": "Open customer",
+	"pos_cart.amount_includes_tax": "Amount Includes Tax",
 	"pos_cart.changes_save_to_order": "Changes save to this order",
 	"pos_cart.col_item": "Item",
 	"pos_cart.col_price": "Price",

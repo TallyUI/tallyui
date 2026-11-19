@@ -20,7 +20,7 @@ const sale = useSale(settings, { registerId, cashierRef });
 <Cart sale={sale} />
 ```
 
-Renders the sale's lines with quantity and removal controls, line and order discounts, totals, and cash or card terminal actions. Price editing appears when permitted, and the charge form appears when the sale's capabilities support it.
+Renders the sale's lines with quantity and removal controls, line and order discounts, totals, and cash or card terminal actions. Price editing appears when permitted, and the charge form appears when the sale's capabilities support it. The charge form takes a fee as a percent of the cart, whose Price cell then shows the percent, and a fee or shipping charge's own Amount Includes Tax choice, which starts at the order's tax mode.
 
 Pass `orderActions={false}` when the app hosts the Order discount and Add charge controls in its own menu, as WCPOS v2's cart "+" menu does. Applied order discounts, fees and shipping still show with their own Remove controls.
 

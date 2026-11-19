@@ -117,6 +117,10 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     const micros = net / divisor;
     return `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
   };
+  // 2.10 PR4: an exclusive store gets a charge's 6-dp net when it is not a whole cent.
+  const chargeTotal = (amountMinor: number, netMicros: string | undefined, id: string) =>
+    p.pricesIncludeTax || (netMicros !== undefined && BigInt(netMicros) !== BigInt(amountMinor) * 1000000n)
+      ? inclusiveNet(netMicros, id) : major(amountMinor);
   const line_items = [];
   for (const line of p.lines) {
     const inclusive = line.taxInclusive ?? p.pricesIncludeTax;
@@ -160,14 +164,13 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
-    const total = p.pricesIncludeTax
-      ? inclusiveNet(local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId) : major(fee.amountMinor);
+    const total = chargeTotal(fee.amountMinor, local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId);
     if (typeof total !== 'string') return total;
     fee_lines.push({ name: fee.name, total, tax_status: fee.taxStatus, tax_class: fee.taxClass ?? '' });
   }
   for (const shipping of p.shipping ?? []) {
-    const total = p.pricesIncludeTax
-      ? inclusiveNet(local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId) : major(shipping.amountMinor);
+    const total = chargeTotal(shipping.amountMinor,
+      local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId);
     if (typeof total !== 'string') return total;
     shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total });
   }

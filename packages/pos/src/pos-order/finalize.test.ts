@@ -2,13 +2,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
-import { resolveCapabilities, type TaxRounding } from '@tallyui/core';
+import { resolveCapabilities, type CustomerTaxId, type TaxRounding } from '@tallyui/core';
 import { medusaAdminUserConnector } from '@tallyui/connector-medusa';
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
 import { taxLinesByRate } from '../tax/exact';
 import type { LogEntry } from '../logging';
 import { outboxLogger } from '../outbox/logger';
 import { toOrderCreateEnvelope } from './command';
+import { TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, freezeSentForm, withSentForm } from './finalize';
 import { uuidv7 } from './uuidv7';
 import type { PosOrderLocalWarning } from './types';
@@ -846,5 +847,32 @@ describe("finalizeOrder stores the customer's addresses on every order (ADR-086 
     builder.setCustomer({ id: '42', name: 'Ann Lee', billing: { firstName: '', city: '', country: '', email: '' }, shipping: { address1: '', postcode: '' } });
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
     expect(finalizeOrder(builder.getSnapshot()).customer).toStrictEqual({ id: '42', name: 'Ann Lee' });
+  });
+});
+
+describe("finalizeOrder stores the customer's tax ids clean (#1064)", () => {
+  function paidWith(taxIds: CustomerTaxId[]) {
+    const builder = sale();
+    builder.setCustomer({ id: '42', name: 'Ann Lee', taxIds });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    return builder.getSnapshot();
+  }
+
+  it('#1064 F1 stores no taxIds key for an empty list', () => {
+    expect(finalizeOrder(paidWith([])).customer).toStrictEqual({ id: '42', name: 'Ann Lee' });
+  });
+
+  it('#1064 F2 stores a copy: changing the input list or entry afterwards leaves the order unchanged', () => {
+    const order = paidWith([{ type: 'eu_vat', value: 'DE1', country: 'DE' }]);
+    const stored = finalizeOrder(order);
+    order.customer!.taxIds![0].value = 'changed';
+    order.customer!.taxIds!.push({ type: 'gb_vat', value: 'GB1' });
+    expect(stored.customer!.taxIds).toStrictEqual([{ type: 'eu_vat', value: 'DE1', country: 'DE' }]);
+  });
+
+  it('#1064 F3 upper-cases a lower-case country and throws TAX_IDS_INVALID for 11 entries', () => {
+    expect(finalizeOrder(paidWith([{ type: 'eu_vat', value: 'DE1', country: 'de' }])).customer!.taxIds).toStrictEqual([{ type: 'eu_vat', value: 'DE1', country: 'DE' }]);
+    expect(() => finalizeOrder(paidWith(Array.from({ length: 11 }, (_, i) => ({ type: 'other', value: `ID${i}` })))))
+      .toThrow(TAX_IDS_INVALID);
   });
 });

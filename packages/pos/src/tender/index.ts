@@ -1,5 +1,7 @@
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR } from './tender-state';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg } from './tender-state';
+export { unitsMinor, paidUnitsByLine, unpaidUnitsByLine, pickedUnitsMinor } from './split-units';
+export type { SplitUnitLine, UnitAllocations } from './split-units';
 export { tenderFigures, runsWholeOrder } from './tender-figures';
 export type { TenderFacts, TenderFigures } from './tender-figures';
 export { tenderVoidSchema, tenderVoidCollection } from './tender-void';

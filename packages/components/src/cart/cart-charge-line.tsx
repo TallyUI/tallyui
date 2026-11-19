@@ -18,13 +18,15 @@ export interface CartChargeLineProps extends Omit<HStackProps, 'children'> {
   /** As CartLine's columns. */
   columns?: CartColumnSettings;
   locale?: string;
+  /** A percent fee: the Price cell shows the percent, as v2's fee-price.tsx. */
+  percent?: number;
   className?: string;
   /** The line strip's press target (`CartLineStrip`): wraps the Total cell's content, or the last visible cell's when
    * Total is hidden, as v2's table does. */
   wrapTotal?: (content: ReactNode) => ReactNode;
 }
 
-export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, className, wrapTotal, ...rest }: CartChargeLineProps): JSX.Element {
+export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, percent, className, wrapTotal, ...rest }: CartChargeLineProps): JSX.Element {
   const formatMoney = useFormatMoney();
   const slots = cartColumnSlots(columns, { showPrice });
   const target = slots.includes('total') ? 'total' : slots[slots.length - 1];
@@ -39,7 +41,8 @@ export function CartChargeLine({ name, price, total, showPrice = true, columns, 
     sku: <View key="sku" className={CART_COLUMNS.sku.cell}>{wrap('sku', null)}</View>,
     regularPrice: <View key="regularPrice" className={CART_COLUMNS.regularPrice.cell}>{wrap('regularPrice', null)}</View>,
     price: <View key="price" className={CART_COLUMNS.price.cell}>
-      {wrap('price', <Text testID="cart-charge-price" className="text-right text-sm tabular-nums text-muted-foreground">{formatMoney(price, locale) ?? '—'}</Text>)}
+      {wrap('price', <Text testID="cart-charge-price" className="text-right text-sm tabular-nums text-muted-foreground">
+        {percent !== undefined ? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(percent)}%` : formatMoney(price, locale) ?? '—'}</Text>)}
     </View>,
     total: <View key="total" className={CART_COLUMNS.total.cell}>
       {wrap('total', <Text testID="cart-charge-total" className="text-right text-sm tabular-nums">{formatMoney(total, locale) ?? '—'}</Text>)}
