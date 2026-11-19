@@ -82,6 +82,8 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
         ? `The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: ${warning.customerId}.`
         : warning.code === 'figures_mismatch'
         ? `The online store worked out different figures for this sale. ${warning.fields.map(({ field, tillMinor, serverMinor }) => `${FIGURE_LABELS.get(field) ?? field}: till ${formatMoney({ amount: tillMinor, currency: order.currency })}, store ${formatMoney({ amount: serverMinor, currency: order.currency })}.`).join(' ')}`
+        : warning.code === 'line_figures_mismatch'
+        ? ((n) => `The online store worked out different figures for ${n === 1 ? 'one line' : `${n} lines`} of this sale.`)(new Set(warning.lines.map((line) => line.lineId)).size)
         : warning.bridgeMinor !== undefined
         ? `Store calculated ${formatMoney({ amount: warning.serverMinor, currency: order.currency })}; a rounding line of ${warning.bridgeMinor > 0 ? '+' : ''}${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} brought it to ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
         : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}

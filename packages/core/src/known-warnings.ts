@@ -19,6 +19,22 @@ function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
   return rebuilt;
 }
 
+type LineFiguresMismatchLine = Extract<CommandWarning, { code: 'line_figures_mismatch' }>['lines'][number];
+
+function lineFiguresMismatchLines(lines: unknown): LineFiguresMismatchLine[] | null {
+  if (!Array.isArray(lines) || lines.length === 0) return null;
+  const rebuilt: LineFiguresMismatchLine[] = [];
+  for (const entry of lines) {
+    if (typeof entry !== 'object' || entry === null) return null;
+    const { lineId, field, tillMinor, serverMinor } = entry as Record<string, unknown>;
+    if (typeof lineId !== 'string' || lineId === '' || lineId.length > 64) return null;
+    if (typeof field !== 'string' || field === '' || rebuilt.some((kept) => kept.lineId === lineId && kept.field === field)) return null;
+    if (!isSafeInt(tillMinor) || !isSafeInt(serverMinor) || tillMinor === serverMinor) return null;
+    rebuilt.push({ lineId, field, tillMinor, serverMinor });
+  }
+  return rebuilt;
+}
+
 /**
  * The till's single reader of stored warnings. `[]` for anything that isn't a warnings array.
  * A `total_mismatch`'s `bridgeMinor` is dropped (the rest of the warning is kept) when it's
@@ -29,6 +45,8 @@ function figuresMismatchFields(fields: unknown): FiguresMismatchField[] | null {
  * A `figures_mismatch` is dropped entirely unless `fields` is non-empty and each entry names a
  * different figure with two differing safe integers; each entry is rebuilt from its known keys.
  * A figure name it doesn't know (any non-empty string) is kept, since a newer store may send one.
+ * A `line_figures_mismatch` is dropped entirely unless `lines` is non-empty and each entry has a `lineId` of 1 to 64
+ * characters, a non-empty `field` (kept when unknown), two differing safe integers, and a `lineId` and `field` pair of its own.
  */
 export function knownWarnings(warnings: unknown): CommandWarning[] {
   if (!Array.isArray(warnings)) return [];
@@ -74,6 +92,11 @@ export function knownWarnings(warnings: unknown): CommandWarning[] {
       case 'figures_mismatch': {
         const fields = figuresMismatchFields(warning.fields);
         if (fields !== null) kept.push({ code: 'figures_mismatch', fields });
+        break;
+      }
+      case 'line_figures_mismatch': {
+        const lines = lineFiguresMismatchLines(warning.lines);
+        if (lines !== null) kept.push({ code: 'line_figures_mismatch', lines });
         break;
       }
       default:

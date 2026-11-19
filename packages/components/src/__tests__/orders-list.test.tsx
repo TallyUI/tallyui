@@ -563,6 +563,25 @@ describe('OrdersList', () => {
     expect(screen.getAllByText(expected)).toHaveLength(2);
   });
 
+  const lineFigures = (lines: Array<{ lineId: string; field: string }>) => order('w', { syncStatus: 'applied',
+    warnings: [{ code: 'line_figures_mismatch', lines: lines.map((line, i) => ({ ...line, tillMinor: 100 + i, serverMinor: 90 })) }] });
+  it('counts one line for a line_figures_mismatch over one line\'s tax and total, with no Store total (O1)', () => {
+    render(<OrdersList orders={[lineFigures([{ lineId: 'l1', field: 'taxMinor' }, { lineId: 'l1', field: 'totalMinor' }])]} onRetry={async () => 0} />);
+    expect(screen.getAllByText('The online store worked out different figures for one line of this sale.').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Store total/)).toBeNull();
+  });
+
+  it('counts 2 lines for a line_figures_mismatch over two lines (O2)', () => {
+    render(<OrdersList orders={[lineFigures([{ lineId: 'l1', field: 'taxMinor' }, { lineId: 'l2', field: 'taxMinor' }])]} onRetry={async () => 0} />);
+    expect(screen.getAllByText('The online store worked out different figures for 2 lines of this sale.').length).toBeGreaterThan(0);
+  });
+
+  it('lists a line_figures_mismatch order under Needs attention as well as Recent (O3)', () => {
+    render(<OrdersList orders={[lineFigures([{ lineId: 'l1', field: 'totalMinor' }])]} onRetry={async () => 0} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    expect(screen.getAllByText('The online store worked out different figures for one line of this sale.')).toHaveLength(2);
+  });
+
   it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });
