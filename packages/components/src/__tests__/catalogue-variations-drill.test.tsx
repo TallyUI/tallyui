@@ -128,3 +128,53 @@ it("D10: the default 'list' style still opens the variant list", () => {
   expect(screen.queryByTestId('variations-parent-tile')).toBeNull();
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+it('C1: the drill shows a "Products › name" crumb with its back crumb focused', () => {
+  mount({ variationsStyle: 'drill' });
+  press('product-tile-Tee');
+  const crumb = within(screen.getByTestId('products-breadcrumb'));
+  expect(crumb.getByText('Products')).toBeTruthy();
+  expect(crumb.getByText('Tee')).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByTestId('products-breadcrumb-back'));
+});
+
+it('C2: the Products crumb goes back to the products', () => {
+  mount({ variationsStyle: 'drill' });
+  press('product-tile-Tee');
+  press('products-breadcrumb-back');
+  expect(screen.queryByTestId('variations-parent-tile')).toBeNull();
+  expect(screen.queryByTestId('products-breadcrumb')).toBeNull();
+  expect(screen.getByTestId('product-tile-Tee')).toBeTruthy();
+});
+
+it('C3: Escape inside the drill goes back to the products', () => {
+  mount({ variationsStyle: 'drill' });
+  press('product-tile-Tee');
+  fireEvent.keyDown(screen.getByTestId('variation-tile-81'), { key: 'Escape' });
+  expect(screen.queryByTestId('variations-parent-tile')).toBeNull();
+  expect(screen.getByTestId('product-tile-Tee')).toBeTruthy();
+});
+
+it('C4: in a category level, the drill hides the category crumb and Escape leaves only the drill', () => {
+  // The smallest fixture change for C4: the tee in a category, so a level can hold a variable product.
+  const filedTee = { ...tee, categories: [{ id: 7, name: 'Clothing' }] };
+  render(<Catalogue products={[filedTee]} traits={wooProductTraits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+    variationsStyle="drill" showCategoryNav categoryBrowse="tiles" />, { wrapper });
+  press('category-tile-7');
+  press('product-tile-Tee');
+  expect(screen.getByTestId('products-breadcrumb')).toBeTruthy();
+  expect(screen.queryByTestId('category-crumb')).toBeNull();
+  fireEvent.keyDown(screen.getByTestId('variation-tile-81'), { key: 'Escape' });
+  expect(screen.queryByTestId('variations-parent-tile')).toBeNull();
+  expect(screen.getByTestId('category-level-parent')).toBeTruthy();
+  expect(screen.getByTestId('category-crumb')).toBeTruthy();
+  fireEvent.keyDown(screen.getByTestId('product-tile-Tee'), { key: 'Escape' });
+  expect(screen.getByTestId('category-browse')).toBeTruthy();
+  expect(screen.queryByTestId('category-crumb')).toBeNull();
+});
+
+it("C5: the default 'list' style draws no Products crumb", () => {
+  mount();
+  press('product-tile-Tee');
+  expect(screen.queryByTestId('products-breadcrumb')).toBeNull();
+});
