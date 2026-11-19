@@ -101,6 +101,16 @@ describe('useSale updateLine (ADR-092 6b/6c)', () => {
     expect(lines[1].catalogueSku).toBeUndefined();
   });
 
+  it('S5: a name-only edit never merges a later scan of the same product', () => {
+    const result = saleOf();
+    expect(update(result, { name: 'Gift shirt' })).toBeNull();
+    act(() => { result.current.add(entries[0], traits); });
+    const lines = result.current.order.lineItems;
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ name: 'Gift shirt', sku: 'SHIRT-1', quantity: 1 });
+    expect(lines[1]).toMatchObject({ name: 'Shirt', sku: 'SHIRT-1', quantity: 1 });
+  });
+
   it('S3: finalize stores the catalogue SKU; cap 12 sends the edited SKU at 12, cap 11 sends none; a name-only edit keeps the version', async () => {
     const order = finalized(await resumedEdited());
     expect(order.lines[0]).toMatchObject({ sku: 'S-EDIT', catalogueSku: 'SHIRT-1' });
