@@ -149,6 +149,21 @@ describe('useSale taxContextFor (#722)', () => {
     expect(result.current.order.taxMinor).toBe(before.taxMinor);
   });
 
+  it('refuses a customer with other rates set in the same tick as startTender (5.2 backlog F4)', () => {
+    const { result } = renderSale();
+    act(() => result.current.setCustomer(auCustomer));
+    act(() => { result.current.add(entries[0], traits); });
+    const before = result.current.order;
+    expect(before.totalMinor).toBe(1100);
+    act(() => { result.current.startTender('cash'); result.current.setCustomer(nzCustomer); });
+    expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
+    expect(result.current.stage.kind).toBe('tender');
+    expect(result.current.order.customer).toBe(auCustomer);
+    expect(result.current.order.lineItems).toEqual(before.lineItems);
+    expect(result.current.order.taxMinor).toBe(before.taxMinor);
+    expect(result.current.order.totalMinor).toBe(1100);
+  });
+
   it('sets a customer with the same rates in tender, and clears the refusal', () => {
     const { result } = renderSale();
     addLines(result);
