@@ -10,6 +10,7 @@ import { orderDraftSchema, writeOrderDraft, type CustomerSummary, type Order } f
 import { TaxProvider, saleTaxContexts } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
+import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 import type { SaleCoupon } from './woocommerce/coupons';
 import { CUSTOMER_RETAX_REFUSED, useSale } from './use-sale';
@@ -36,6 +37,7 @@ const auCustomer: CustomerSummary = { id: '9', name: 'Matt', shipping: { country
 const coupon: SaleCoupon = { id: 101, code: 'ten', discount_type: 'percent', amount: '10' };
 const source = { find: vi.fn(async (code: string) => code === 'ten' ? coupon : null), productCategories: vi.fn(async () => new Map()) };
 type Sale = { current: ReturnType<typeof useSale> };
+type SaleOptions = Parameters<typeof useSale>[1];
 
 /** The order's money and shape, without the ids and times a second sale can't share. */
 function money(order: Order) {
@@ -52,14 +54,14 @@ describe('useSale taxContextFor (#722)', () => {
   });
   afterEach(async () => { cleanup(); await db.remove(); });
 
-  function renderSale(withContexts = true) {
-    const state = { settings, taxContextFor: withContexts ? contexts(settings) : undefined };
+  function renderSale(withContexts = true, overrides: Partial<SaleOptions> = {}) {
+    const state = { settings, taxContextFor: overrides.taxContextFor ?? (withContexts ? contexts(settings) : undefined) };
     function Wrapper({ children }: { children: ReactNode }) {
       return <TaxProvider {...taxProviderProps(state.settings)}>{children}</TaxProvider>;
     }
     const hook = renderHook(() => useSale(state.settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
       capabilities: { orderCreate: 8, coupons: true }, drafts: db.pos_drafts, discountCodes: createDiscountCodes(source),
-      taxContextFor: state.taxContextFor }), { wrapper: Wrapper });
+      ...overrides, taxContextFor: state.taxContextFor }), { wrapper: Wrapper });
     return { ...hook, state };
   }
   function addLines(result: Sale) {
@@ -371,5 +373,89 @@ describe('useSale taxContextFor (#722)', () => {
     expect(rateCodes(result.current.order)).toEqual([['NZ-GST-1'], ['NZ-GST-1']]);
     expect(money(result.current.order)).toEqual(money(parked));
     expect(result.current.taxLocation).toMatchObject({ addressUsed: 'shipping', hasCustomer: true });
+  });
+
+  /** Every id on the order a re-tax must keep, by kind, and its createdAt (#742). */
+  const held = (order: Order) => ({
+    lines: order.lineItems.map((line) => line.id),
+    lineDiscounts: order.lineItems.flatMap((line) => line.discounts.map((d) => d.id)),
+    fees: order.fees?.map((fee) => fee.id),
+    shipping: order.shipping?.map((charge) => charge.id),
+    orderDiscounts: order.discounts.map((d) => d.id),
+    createdAt: order.createdAt,
+  });
+  const later = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); }); // the clock moves on
+  type RetaxPath = { overrides?: Partial<SaleOptions>; before?: (result: Sale) => void; retax: (result: Sale) => void };
+  const paths: Array<[string, string, () => RetaxPath]> = [
+    ['T1', 'setCustomer', () => ({ retax: (result) => act(() => result.current.setCustomer(nzCustomer)) })],
+    ['T1b', 'setAddresses', () => ({ before: (result) => act(() => result.current.setCustomer(auCustomer)),
+      retax: (result) => act(() => { expect(result.current.setAddresses(undefined, nzCustomer.shipping)).toBe(true); }) })],
+    ['T1c', 'cancelTender', () => {
+      // The rates move during tender, as in use-sale-park.test.tsx US5; cancelTender re-taxes once the cart is back.
+      const forCustomer = contexts(settings);
+      let moved = false;
+      return { overrides: { taxContextFor: (customer) => forCustomer(moved ? nzCustomer : customer) },
+        retax: (result) => { act(() => result.current.startTender('cash')); moved = true; act(() => result.current.cancelTender()); } };
+    }],
+  ];
+
+  it.each(paths)('%s: a re-tax through %s keeps every id and createdAt, and a held line id still edits its line (#742)', async (_id, _path, make) => {
+    const { overrides, before, retax } = make();
+    const { result } = renderSale(true, overrides);
+    before?.(result);
+    addLines(result); addCharges(result);
+    const order = result.current.order, ids = held(order);
+    expect(Object.values(ids).flat()).toHaveLength(7);
+    expect(rateCodes(order)).toEqual([['AU-GST-1'], ['AU-GST-1']]);
+    await later();
+    retax(result);
+    const after = result.current.order;
+    expect(result.current.stage.kind).toBe('cart');
+    expect(rateCodes(after)).toEqual([['NZ-GST-1'], ['NZ-GST-1']]);
+    expect(after.taxMinor).not.toBe(order.taxMinor);
+    expect(held(after)).toEqual(ids);
+    act(() => result.current.setQuantity(ids.lines[0], 3));
+    expect(result.current.order.lineItems.find((line) => line.id === ids.lines[0])?.quantity).toBe(3);
+  });
+
+  /** A store that takes 100 off the first line for each code, cut down from use-sale-coupon-reprice.test.tsx's store(); `hold()` keeps the next call waiting. */
+  function store() {
+    const gates: Promise<void>[] = [];
+    const price = vi.fn<StorePricedDiscountCodesOptions['price']>(async (codes, sale) => {
+      const lineId = sale.order.lineItems[0].id;
+      await gates.shift();
+      return { priced: new Map(codes.map((code) => [code, { couponId: `id-${code}`, lines: [{ lineId, amountMinor: 100 }] }])) };
+    });
+    return { price, codes: createStorePricedDiscountCodes({ price }), hold() {
+      let open!: () => void;
+      gates.push(new Promise<void>((resolve) => { open = resolve; }));
+      return () => open();
+    } };
+  }
+  const settle = () => act(async () => { for (let k = 0; k < 4; k++) await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+  it.each([
+    ['T2', 'setCustomer', nzCustomer, (result: Sale) => act(() => result.current.setCustomer(nzCustomer))],
+    ['T2b', 'setAddresses (the same customer)', { ...auCustomer, shipping: nzCustomer.shipping },
+      (result: Sale) => act(() => { expect(result.current.setAddresses(undefined, nzCustomer.shipping)).toBe(true); })],
+  ] as const)('%s: a store-priced coupon survives a re-tax through %s, stale until the store prices it again (#742)', async (_id, _path, customer, retax) => {
+    const shop = store();
+    const { result } = renderSale(true, { discountCodes: shop.codes });
+    act(() => result.current.setCustomer(auCustomer));
+    addLines(result);
+    await act(async () => { expect(await result.current.applyCoupon('a')).toBeNull(); });
+    expect(result.current.order).not.toHaveProperty('couponPricesStale');
+    const release = shop.hold();
+    retax(result);
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.customer).toEqual(customer);
+    expect(rateCodes(result.current.order)).toEqual([['NZ-GST-1'], ['NZ-GST-1']]);
+    expect(result.current.order.coupons?.map((entry) => entry.code)).toEqual(['a']);
+    expect(result.current.order.couponPricesStale).toBe(true);
+    expect(shop.price).toHaveBeenCalledTimes(2);
+    release();
+    await settle();
+    expect(result.current.order).not.toHaveProperty('couponPricesStale');
+    expect(result.current.order.coupons?.map((entry) => entry.code)).toEqual(['a']);
   });
 });

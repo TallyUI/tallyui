@@ -117,10 +117,10 @@ export interface StorePricedCouponContext {
 
 /** What a store-priced coupon's amounts depend on (TallyUI#709). A price is good only while this is unchanged. */
 export function couponPricingBasis(order: Order): string {
-  // Inputs only, never a computed figure, so applying or removing coupons can't change it.
+  // Inputs only, never a computed figure, so applying or removing coupons can't change it; tax rates are inputs, so a re-tax moves it (#742).
   return JSON.stringify([order.currency, order.customer?.id ?? null,
     order.lineItems.map((li) => [li.id, li.productId, li.variantId ?? null, li.quantity, li.unitPriceMinor, li.taxInclusive,
-      li.taxClass ?? null, li.taxStatus ?? null, li.discounts.map((d) => [d.type, d.value])]),
+      li.taxClass ?? null, li.taxStatus ?? null, li.discounts.map((d) => [d.type, d.value]), li.taxLines.map((t) => [t.code ?? null, t.ratePpm])]),
     order.discounts.map((d) => [d.type, d.value])]);
 }
 
@@ -128,6 +128,7 @@ export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
   id?: string;
+  createdAt?: string; // a restored order's own (#742); absent is now
   storeOrder?: StoreOrderRef;
   couponContext?: OrderCouponContext;
 }
@@ -155,7 +156,7 @@ export interface OrderBuilder {
   applyLineDiscount(lineId: string, discount: Discount): void;
   applyOrderDiscount(discount: Discount): void;
   removeDiscount(discountId: string): void;
-  addPayment(payment: Omit<Payment, 'id'>): string;
+  addPayment(payment: Omit<Payment, 'id'> & { id?: string }): string;
   setPaymentStatus(paymentId: string, status: PaymentLegStatus): boolean;
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
@@ -195,7 +196,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   let note = '';
   let meta: OrderCreateMeta[] = [];
   let couponCodes: string[] = [];
-  const now = new Date().toISOString();
+  const now = options.createdAt ?? new Date().toISOString();
+  const idFor = (given?: string) => { // an input's id (a restore's, #742), refused when already on the order; absent mints one
+    if (given !== undefined && [...lineItems.flatMap((li) => [li, ...li.discounts]), ...fees, ...shipping, ...orderDiscounts, ...payments].some((x) => x.id === given))
+      throw new RangeError(`Id ${given} is already on the order`);
+    return given ?? uid();
+  };
 
   const subject = new BehaviorSubject<Order>(buildOrder());
 
@@ -548,7 +554,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       return existing.id;
     }
 
-    const lineId = uid();
+    const lineId = idFor(input.id);
     const line: LineItem = {
       id: lineId,
       ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
@@ -594,7 +600,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     addLine,
 
     addFee(input) {
-      const fee = recalculateCharge(uid(), input);
+      const fee = recalculateCharge(idFor(input.id), input);
       fees = [...fees, fee]; emit(); return fee.id;
     },
     updateFee(id, patch) {
@@ -609,7 +615,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       fees = fees.filter((entry) => entry.id !== id); emit();
     },
     addShipping(input) {
-      const charge = { ...recalculateCharge(uid(), input, true), methodId: input.methodId };
+      const charge = { ...recalculateCharge(idFor(input.id), input, true), methodId: input.methodId };
       shipping = [...shipping, charge]; emit(); return charge.id;
     },
     updateShipping(id, patch) {
@@ -696,7 +702,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         const base = li.unitPriceMinor * li.quantity;
         const applied: AppliedDiscount = {
           ...discount,
-          id: uid(),
+          id: idFor(discount.id),
           amountMinor: computeDiscountAmount(discount, base),
         };
         return recalculateLine({ ...li, discounts: [...li.discounts, applied] });
@@ -707,7 +713,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     applyOrderDiscount(discount) {
       const applied: AppliedDiscount = {
         ...discount,
-        id: uid(),
+        id: idFor(discount.id),
         amountMinor: computeDiscountAmount(discount, 0),
       };
       orderDiscounts = [...orderDiscounts, applied];
@@ -727,7 +733,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     },
 
     addPayment(payment) {
-      const id = uid();
+      const id = idFor(payment.id);
       payments = [...payments, { ...payment, id }];
       emit();
       return id;
