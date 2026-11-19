@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { CartColumnHeads, cartColumnIds, cartColumnSlots } from '../cart/cart-columns';
+import { CartColumnHeads, cartColumnIds, cartColumnOrder, cartColumnSlots } from '../cart/cart-columns';
 import { CartLine } from '../cart/cart-line';
 import { CartChargeLine } from '../cart/cart-charge-line';
 import { I18nProvider } from '../i18n';
@@ -20,6 +20,13 @@ describe('cartColumnIds order', () => {
 
   it('C3: the Price fold drops Price but keeps Regular Price', () => {
     expect(cartColumnIds({ regularPrice: { show: true } }, { showPrice: false })).toEqual(['quantity', 'name', 'regularPrice', 'total']);
+  });
+});
+
+describe('cartColumnOrder', () => {
+  it('CO1: lists every column once, the saved ones first, then the default order', () => {
+    expect(cartColumnOrder({ order: ['total', 'bogus' as never, 'total'] }))
+      .toEqual(['total', 'quantity', 'image', 'name', 'sku', 'price', 'regularPrice']);
   });
 });
 
