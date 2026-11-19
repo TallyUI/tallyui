@@ -7,6 +7,7 @@ export { posOrderSchema, posOrderCollection } from './schema';
 export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 export { getDeviceId } from './device-id';
 export { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
+export { moneyDivergence, type MoneyDivergence } from './money-divergence';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
 export { isReopened, replacedOrderIds } from './reopened';
 export { noteDelivery, type NoteDelivery } from './note-delivery';

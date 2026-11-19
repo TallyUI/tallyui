@@ -42,8 +42,8 @@ export const MESSAGE_NAME_MAX = 61;
 /** A charge as stored and sent: in the order's mode, without the cashier's own mode (vendurepos gap 2.10).
  *  A converted generic charge keeps its display row, so the payload equals the display (core fiscal-figures.ts). */
 function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean, displayMinor: number | undefined): C {
-  if (charge.amountIncludesTax === undefined) return charge;
-  const { amountIncludesTax: _mode, ...rest } = charge;
+  if (charge.amountIncludesTax === undefined && charge.percent === undefined) return charge;
+  const { amountIncludesTax: _mode, percent: _percent, ...rest } = charge;
   const amountMinor = charge.totalMinor === undefined && displayMinor !== undefined ? displayMinor : chargeOrderModeMinor(charge, pricesIncludeTax);
   return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}) } as C;
 }

@@ -1,6 +1,7 @@
 /**
  * A `PrintTransport` that writes ESC/POS bytes to a sink the app supplies (WebUSB, WebSerial, a TCP socket,
- * Bluetooth). It holds no device code; ADR-084 decision 2 keeps vendor SDKs out of the MIT packages. Run it
+ * Bluetooth); the pos package ships the Epson ePOS and Star WebPRNT web sinks (`networkSinkFor`). It holds no
+ * device code; ADR-084 decision 2 keeps vendor SDKs out of the MIT packages. Run it
  * through `createPrintQueue`, like the system transport, so one printer prints one job at a time.
  */
 import type { ReceiptTemplateOptions } from '../../receipt-template/template-data';

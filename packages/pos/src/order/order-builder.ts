@@ -180,6 +180,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const item = wooLine(amount, line.taxClass, line.taxInclusive, line.taxStatus === 'none');
     return taxContext.pricesIncludeTax ? item.totalMinor : item.netMinor;
   };
+  /** A recalculated line's remaining amount in the store's mode: the display's remaining and a percent fee's basis. */
+  const storeModeMinor = (li: LineItem) =>
+    woo ? taxContext.pricesIncludeTax ? li.totalMinor! : li.netMinor : toDisplayMode(li, li.netMinor, taxContext.pricesIncludeTax);
 
   let lineItems: LineItem[] = [];
   let fees: FeeLine[] = [];
@@ -269,6 +272,20 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const replay = woo && couponCodes.length && !store ? woocommerceCouponReplay(displaySourceLines, couponCodes,
       couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
     let lines = replay?.lines ?? displaySourceLines;
+    if (fees.some((fee) => fee.percent !== undefined)) {
+      // A percent fee (v2 Add Fee "%", order-math cart-line.ts calculatePercentAmount) is basis × percent / 100 of the
+      // lines after coupons, in the store's mode. Unlike v2, which keeps and taxes the unrounded value, TallyUI rounds it
+      // once, half up, to integer minor units, then builds it exactly as a fixed fee of that amount. Store-priced coupons
+      // (#709): the lines as the loop below leaves them after its last code, since every settle there uses the fees.
+      const taken = new Map<string, number>();
+      if (store) for (const code of couponCodes)
+        for (const { lineId, amountMinor } of store.priced.get(code)?.lines ?? []) taken.set(lineId, (taken.get(lineId) ?? 0) + amountMinor);
+      const basisLines = taken.size ? lineItems.map((li, index) => taken.has(li.id) ? recalculateLine(li, shares[index], taken.get(li.id)) : displaySourceLines[index]) : lines;
+      const basis = BigInt(basisLines.reduce((sum, li) => sum + storeModeMinor(li), 0));
+      // Exact: the percent in ten-thousandths (validated to 4 places), so 100% is 1_000_000n.
+      fees = fees.map((fee) => fee.percent === undefined ? fee : recalculateCharge(fee.id, { ...fee,
+        amountMinor: Number((basis * BigInt(Math.round(fee.percent * 10000)) + 500000n) / 1000000n) }));
+    }
 
     if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
     const charges = [...fees, ...shipping];
@@ -331,7 +348,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         discountId: d.id, ...(d.label !== undefined ? { label: d.label } : {}), amountMinor: displayAmount(li, d.amountMinor),
       }));
       const shareMinor = displayAmount(li, li.orderDiscountMinor);
-      const remainingMinor = woo ? taxInclusive ? li.totalMinor! : li.netMinor : toDisplayMode(li, li.netMinor, taxInclusive);
+      const remainingMinor = storeModeMinor(li);
       const amountMinor = !woo && li.taxInclusive === taxInclusive && !returned ? li.unitPriceMinor * li.quantity
         : discounts.reduce((sum, d) => sum + d.amountMinor, remainingMinor + shareMinor);
       return { line: { lineId: li.id, amountMinor, discounts }, shareMinor, remainingMinor, returned };
@@ -459,9 +476,13 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     if (input.amountMinor < 0) throw new RangeError('Amount must be >= 0');
     if (!input.name.trim()) throw new RangeError('Name must not be empty');
     if (input.amountIncludesTax !== undefined && typeof input.amountIncludesTax !== 'boolean') throw new RangeError('amountIncludesTax must be a boolean');
+    if (shipping && input.percent !== undefined) throw new RangeError('Shipping cannot be a percentage');
+    if (input.percent !== undefined && !(Number.isFinite(input.percent) && input.percent > 0 && input.percent <= 100
+      && Math.round(input.percent * 10000) / 10000 === input.percent)) throw new RangeError('Percent must be > 0 and <= 100, with at most 4 decimal places');
     const taxStatus = input.taxStatus ?? 'taxable';
     const inclusive = input.amountIncludesTax ?? taxContext.pricesIncludeTax;
-    const mode = input.amountIncludesTax !== undefined ? { amountIncludesTax: input.amountIncludesTax } : {};
+    const mode = { ...(input.amountIncludesTax !== undefined ? { amountIncludesTax: input.amountIncludesTax } : {}),
+      ...(input.percent !== undefined ? { percent: input.percent } : {}) };
     if (woo) {
       const taxClass = shipping
         ? taxContext.shippingTaxClass === undefined || taxContext.shippingTaxClass === 'inherit'
@@ -507,7 +528,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const fromClass = !woo && input.taxRates === undefined;
 
     const existing = lineItems.find(
-      (li) => input.storeLineId === undefined && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
+      (li) => input.storeLineId === undefined && !input.separate && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
         && (li.taxFromClass === true) === fromClass
         && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)

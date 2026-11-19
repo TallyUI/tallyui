@@ -8,6 +8,7 @@ export { PriceForm, parsePrice } from './price-form';
 export { LinePopover, type LinePopoverProps } from './line-popover';
 export { ChargeForm, type ChargeFormProps } from './charge-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
+export { CatalogueSettingsForm, type CatalogueSettingsFormProps } from './catalogue-settings-form';
 export { Receipt } from './receipt';
 export { ReceiptSheet, type ReceiptSheetEmail, type ReceiptSheetProps, type ReceiptSheetTemplate } from './receipt-sheet';
 export { orderReference } from './order-reference';

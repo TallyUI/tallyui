@@ -128,6 +128,14 @@ another channel. A warning never rejects a sale.
 with one entry for each of `subtotalMinor`, `taxMinor` and
 `discountMinor` that differs from the server's own computation.
 
+`line_figures_mismatch` is one warning per sale, `{ code:
+'line_figures_mismatch'; lines: Array<{ lineId; field; tillMinor;
+serverMinor }> }`, with one entry for each line figure (`subtotalMinor`,
+`taxMinor`, `discountMinor`, `totalMinor`) that differs from the
+server's own computation, `lineId` being the line's `clientLineId`. It
+is never sent inside `figures_mismatch`, so an older till keeps the
+order-level figures.
+
 ## Reading the tables
 
 - **Field** is the full path from the envelope; `[]` stands for every

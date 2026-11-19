@@ -152,6 +152,24 @@ export function parseCommandResult(value: unknown): CommandResult {
           return { field: entry.field as 'subtotalMinor' | 'taxMinor' | 'discountMinor', tillMinor: entry.tillMinor as number, serverMinor: entry.serverMinor as number }
         }) }
       }
+      if (item.code === 'line_figures_mismatch') {
+        if (!Array.isArray(item.lines) || item.lines.length === 0) throw new CommandResultError(`Invalid ${field}.lines`)
+        const seen: string[] = []
+        return { code: item.code, lines: item.lines.map((value: unknown, i) => {
+          const path = `${field}.lines[${i}]`
+          if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new CommandResultError(`Invalid ${path}`)
+          const entry = value as Record<string, unknown>
+          if (typeof entry.lineId !== 'string' || entry.lineId.length === 0 || entry.lineId.length > 64) throw new CommandResultError(`Invalid ${path}.lineId`)
+          const key = JSON.stringify([entry.lineId, entry.field])
+          if (!['subtotalMinor', 'taxMinor', 'discountMinor', 'totalMinor'].includes(entry.field as string) || seen.includes(key)) {
+            throw new CommandResultError(`Invalid ${path}.field`)
+          }
+          seen.push(key)
+          if (!Number.isSafeInteger(entry.tillMinor)) throw new CommandResultError(`Invalid ${path}.tillMinor`)
+          if (!Number.isSafeInteger(entry.serverMinor) || entry.serverMinor === entry.tillMinor) throw new CommandResultError(`Invalid ${path}.serverMinor`)
+          return { lineId: entry.lineId, field: entry.field as 'subtotalMinor' | 'taxMinor' | 'discountMinor' | 'totalMinor', tillMinor: entry.tillMinor as number, serverMinor: entry.serverMinor as number }
+        }) }
+      }
       throw new CommandResultError(`Invalid ${field}.code`)
     })
   }

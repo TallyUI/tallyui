@@ -18,6 +18,9 @@ vi.mock('../product', () => ({
       {items.length ? items.map((item: { id: string }, index: number) => <div key={item.id}>{renderItem(item, index)}</div>) : emptyState}
     </div>
   ),
+  ProductTable: ({ items }: { items: { title?: string }[] }) => (
+    <div data-testid="table">{items.map((item) => <span key={item.title}>{item.title}</span>)}</div>
+  ),
   ProductImage: () => null,
   ProductTitle: ({ doc }: { doc: { title?: ReactNode } }) => <span>{doc.title}</span>,
   ProductPrice: () => null,
@@ -188,5 +191,72 @@ describe('Catalogue category browse', () => {
     render(<Catalogue {...props} categoryBrowse="tiles" categories={[{ id: 'pcat_empty', name: 'Empty' }]} />);
     expect(screen.queryByTestId('category-browse')).toBeNull();
     expect(screen.getByTestId('grid')).toBeTruthy();
+  });
+
+  const tileIds = () => within(screen.getByTestId('grid')).getAllByTestId(/^product-tile-/).map((tile) => tile.getAttribute('data-testid'));
+  const search = (value: string) => fireEvent.change(screen.getByPlaceholderText('Search or scan barcode / SKU'), { target: { value } });
+
+  it('L1: a level opens on its own category as a back poster, then its products', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_hats'));
+    const first = screen.getByTestId('grid').firstElementChild as HTMLElement;
+    const parent = within(first).getByTestId('category-level-parent');
+    expect(parent.getAttribute('aria-label')).toBe('Back');
+    expect(within(parent).getByTestId('category-level-parent-back')).toBeTruthy();
+    expect(within(parent).getByText('Hats')).toBeTruthy();
+    expect(tileIds()).toEqual(['product-tile-Blue Hat', 'product-tile-Hat and Shirt']);
+  });
+
+  it('L2: pressing the back poster returns to the tiles', () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} categoryBrowse="tiles" onStateChange={onStateChange} />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_hats'));
+    fireEvent.click(screen.getByTestId('category-level-parent'));
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+    expect(screen.queryByTestId('category-crumb')).toBeNull();
+    expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ categoryId: null }));
+  });
+
+  it('L3: All products has its own back poster with the grid mark', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" />);
+    fireEvent.click(screen.getByTestId('category-tile-all'));
+    const parent = screen.getByTestId('category-level-parent');
+    expect(within(parent).getByText('All products')).toBeTruthy();
+    expect(within(parent).getByTestId('category-level-parent-mark')).toBeTruthy();
+    fireEvent.click(parent);
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+  });
+
+  it('L4: the table view has no back poster', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" defaultViewState={{ view: 'table', categoryId: 'pcat_hats' }} />);
+    expect(screen.getByTestId('table')).toBeTruthy();
+    expect(screen.queryByTestId('category-level-parent')).toBeNull();
+  });
+
+  it('L5: a search typed inside a level leaves it and spans every product; clearing it shows the tiles', () => {
+    const onStateChange = vi.fn();
+    render(<Catalogue {...props} categoryBrowse="tiles" onStateChange={onStateChange} />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_hats'));
+    search('shirt');
+    expect(screen.queryByTestId('category-crumb')).toBeNull();
+    expect(screen.queryByTestId('category-browse')).toBeNull();
+    expect(tileIds()).toEqual(['product-tile-Red Shirt', 'product-tile-Hat and Shirt']);
+    expect(onStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ categoryId: null }));
+    search('');
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+  });
+
+  it('L6: in chips mode a search inside a chosen category stays scoped', () => {
+    render(<Catalogue {...props} />);
+    fireEvent.click(screen.getByTestId('category-pcat_hats'));
+    search('shirt');
+    expect(tileIds()).toEqual(['product-tile-Hat and Shirt']);
+  });
+
+  it('L7: a level with no results draws the empty state and no back poster', () => {
+    render(<Catalogue {...props} categoryBrowse="tiles" items={[]} />);
+    fireEvent.click(screen.getByTestId('category-tile-pcat_hats'));
+    expect(screen.getByText('No products in Hats.')).toBeTruthy();
+    expect(screen.queryByTestId('category-level-parent')).toBeNull();
   });
 });

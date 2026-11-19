@@ -19,6 +19,8 @@ import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/cam
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { CategoryBrowseGrid } from './category-browse';
 import { Breadcrumb } from './breadcrumb';
+import { CategoryTile } from '../product/category-tile';
+import { useT } from '../i18n';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
@@ -44,6 +46,8 @@ function tileBand(fields: TileFields): number {
 // TallyUI difference: v2 counts rows at the tile's width plus its band, as its poster image is the tile's width; here the
 // image is a fixed 80 px, so the row is a fixed height.
 const tileRow = (fields: TileFields) => TILE_IMAGE + tileBand(fields) + 2 * (12 + 1 + 4);
+// A level's first grid slot, its own category as a back poster (v2 browse/term-grid.tsx:271-272), as the drill's parent.
+const LEVEL_PARENT = { id: 'level-parent' };
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -240,6 +244,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
+  const t = useT();
   const [query, setQuery] = useState('');
   const [allOpen, setAllOpen] = useState(false);
   // Opening a category by its tile focuses the crumb (v2 focuses on mount); a stored category does not.
@@ -407,7 +412,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     </View>
   ) : <Text className="mt-10 text-center text-sm text-muted-foreground">{emptyText}</Text>;
 
-  const searchInput = <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
+  const searchInput = <SearchInput value={query} onChangeText={(text) => {
+    // A search typed inside a level leaves it and spans every product (v2 browse/use-browse-path.ts:521-534).
+    if (browsing && level && text.trim() !== '') back();
+    setQuery(text); onQueryChange?.(text);
+  }} placeholder="Search or scan barcode / SKU" autoFocus
     onSubmitEditing={() => {
       if (minCodeLength && query.trim().length < minCodeLength) return;
       const entry = findEntryByCode(entries, query);
@@ -488,8 +497,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)}
             fields={fields} sku={entry.variant.sku} barcode={entry.variant.barcode} />
           : <VariantParentTile doc={drillEntries[0].product} onPress={() => setDrillId(null)} />} />
-      : <ProductGrid items={results} numColumns={columns}
+      : <ProductGrid items={level && results.length > 0 ? [LEVEL_PARENT, ...results] : results} numColumns={columns}
         renderItem={(product: Doc) => {
+          if (product === LEVEL_PARENT) return <CategoryTile testID="category-level-parent" back stacked accessibilityLabel={t('common.back')}
+            name={activeCategory?.name ?? 'All products'} imageUrl={activeCategory?.imageUrl}
+            mark={activeCategory ? 'folder' : 'all'} count={results.length} onPress={back} />;
           const id = traits.getId(product);
           const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
           // TallyUI's ProductCard has no children slot, so the tile is composed directly here

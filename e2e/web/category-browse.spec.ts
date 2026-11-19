@@ -80,3 +80,30 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
     await page.screenshot({ path: test.info().outputPath(`category-tiles-stacked-${width}.png`) });
   });
 }
+
+// v2's slot 0 (browse/term-grid.tsx:271-272, term-tile.tsx:181-209): in a level the first tile is the level itself,
+// with the back badge top-right, ahead of the products; tapping it goes back to the tiles.
+for (const [width, height] of [[390, 844], [1280, 800]] as const) {
+  test(`category level back poster at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/pos/category-browse');
+    await page.getByTestId('category-tile-pcat_ceramics').click();
+
+    const parent = page.getByTestId('category-level-parent');
+    await expect(parent).toBeVisible();
+    const parentBox = (await parent.boundingBox())!;
+    const badgeBox = (await page.getByTestId('category-level-parent-back').boundingBox())!;
+    expect(badgeBox.x, 'the badge is inside the poster').toBeGreaterThanOrEqual(parentBox.x);
+    expect(badgeBox.y).toBeGreaterThanOrEqual(parentBox.y);
+    expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(parentBox.x + parentBox.width + 0.5);
+    expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(parentBox.y + parentBox.height + 0.5);
+
+    const productBox = (await page.getByTestId(/^product-tile-/).first().boundingBox())!;
+    expect(parentBox.y + parentBox.height <= productBox.y + 0.5 || parentBox.x + parentBox.width <= productBox.x + 0.5,
+      'the poster comes before the first product').toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`category-level-parent-${width}.png`) });
+
+    await parent.click();
+    await expect(page.getByTestId('category-browse')).toBeVisible();
+  });
+}

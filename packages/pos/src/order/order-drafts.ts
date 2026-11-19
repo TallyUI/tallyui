@@ -86,6 +86,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     const rederive = line.taxFromClass === true && !options.keepTaxRates;
     const lineId = builder.addLine({
       productId: line.productId,
+      separate: true,
       ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
       custom: line.custom,
       taxStatus: line.taxStatus,

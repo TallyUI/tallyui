@@ -10,6 +10,8 @@ export type { StorageHealth, StorageWatchdogOptions } from './storage-watchdog';
 
 export { startReplication } from './replication';
 export type { StartReplicationOptions, TallyReplicationState } from './replication';
+export { resetCollection, replicationGeneration, REPLICATION_GENERATION_DOC } from './reset-collection';
+export type { ResetCollectionOptions } from './reset-collection';
 
 export {
   createConnectivityTracker, reduceConnectivity, INITIAL_CONNECTIVITY, FAILURE_CONFIRMATION_MS, FAILURE_CONFIRMATION_TOLERANCE_MS,
