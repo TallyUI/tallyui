@@ -147,11 +147,12 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
   }
-  if (options.keepCoupons && saved.coupons?.length) {
+  // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).
+  if (options.keepCoupons && saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length) {
     const restored = builder.getSnapshot();
     builder.setCoupons(saved.coupons.map((coupon) => coupon.code), { kind: 'kept', coupons: saved.coupons,
-      displayRows: saved.display.coupons?.map((row) => row.amountMinor) ?? [], lines: new Map(saved.lineItems.map((li) => [li.id, li])),
-      basis: couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }) });
+      displayRows: saved.display.coupons.map((row) => row.amountMinor), lines: new Map(saved.lineItems.map((li) => [li.id, li])),
+      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }) });
   }
   return builder;
 }

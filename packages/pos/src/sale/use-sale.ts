@@ -875,6 +875,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
+      if (keptCodes() && !snapshot.coupons?.length) return COUPONS_REPRICING; // kept codes with no figures would park as no coupons
       await writeOrderDraft(opts.drafts, snapshot);
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale();
@@ -920,13 +921,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // Taxed for the customer the draft restores (a refused one isn't).
       const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
       // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
-      const keep = !!saved.coupons?.length && (saved.payments ?? []).some(isLiveLeg); // ADR-077 d3 amended 2026-11-19: parked coupon amounts
+      // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
+      const keep = !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
-        keepTaxRates: capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
+        keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
       let n = 0;
-      // A draft whose legs took money keeps the prices it was paid against (u19).
+      // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
       // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
-      if (opts.currentPrice && !options?.keepParkedPrices && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
+      if (opts.currentPrice && !options?.keepParkedPrices && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
         for (const line of builder.getSnapshot().lineItems) {
           if (!line.variantId) continue;
           const price = opts.currentPrice(line.variantId);
