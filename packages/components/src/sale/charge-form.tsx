@@ -17,7 +17,7 @@ export interface ChargeFormProps {
   initial?: { name: string; amountMinor: number; taxStatus?: 'taxable' | 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean };
   /** Shows the amount-unit toggle (currency symbol or %) on the fee kind, as v2's AmountUnitToggle. */
   allowPercent?: boolean;
-  /** The store's tax mode. Given, the fee and shipping kinds show the "Amount Includes Tax" switch, which starts at this
+  /** The store's tax mode. Given, the fee and shipping kinds show the "Amount Includes Tax" switch (not on a percent fee), which starts at this
    * value (Desk Q4: default = store tax mode, ADR-075). */
   pricesIncludeTax?: boolean;
   onApply: (charge: { kind: 'fee' | 'shipping' | 'custom'; name: string; amountMinor: number;
@@ -54,7 +54,8 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
   const storeShipping = kind === 'shipping' && shippingTaxFromStore;
   const showUnit = Boolean(allowPercent) && kind === 'fee';
   const percentMode = showUnit && unitPercent;
-  const showIncludesTax = pricesIncludeTax !== undefined && kind !== 'custom';
+  // Desk ruling (#1060): a percent fee is of the cart in the store's mode, so it has no switch and no amountIncludesTax.
+  const showIncludesTax = pricesIncludeTax !== undefined && kind !== 'custom' && !percentMode;
   function apply() {
     // v2's fee rules (add-fee.tsx:48-55): `pos_cart.fee_amount_negative`, and zero refused with
     // `pos_cart.discount_amount_invalid` (climb F28). Shipping and custom items accept zero.
@@ -71,7 +72,7 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
       taxStatus: !storeShipping && lineTax?.none ? (noTax ? 'none' : undefined) : initial?.taxStatus === 'none' ? 'none' : undefined,
       taxClass: !storeShipping && lineTax?.classes && taxClasses?.length ? taxClass || undefined : initial?.taxClass,
       ...(percentMode ? { percent: parsed } : !showUnit && initial?.percent !== undefined ? { percent: initial.percent } : {}),
-      ...(showIncludesTax ? includesTax !== pricesIncludeTax ? { amountIncludesTax: includesTax } : {}
+      ...(percentMode ? {} : showIncludesTax ? includesTax !== pricesIncludeTax ? { amountIncludesTax: includesTax } : {}
         : initial?.amountIncludesTax !== undefined ? { amountIncludesTax: initial.amountIncludesTax } : {}),
     });
     setError(refused);

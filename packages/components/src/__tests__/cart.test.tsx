@@ -863,5 +863,42 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       expect(chargeForm('Add charge').getByRole('alert').textContent).toMatch(/Percent must be > 0 and <= 100/);
       expect(fees()).toHaveLength(0);
     });
+
+    it("C5: a Shipping charge's own tax mode is set by the switch and cleared on edit", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const store = sale.order.pricesIncludeTax;
+      click('Add charge');
+      click('Shipping');
+      const form = chargeForm('Add charge');
+      fireEvent.change(form.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
+      fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+      click('Apply');
+      expect(sale.order.shipping![0].amountIncludesTax).toBe(!store);
+      click('Edit total of Courier');
+      click('Edit Courier');
+      const edit = chargeForm('Edit Courier');
+      expect(edit.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
+      fireEvent.click(edit.getByRole('switch', { name: 'Amount Includes Tax' }));
+      click('Apply');
+      expect(sale.order.shipping![0].amountIncludesTax).toBeUndefined();
+    });
+
+    it('C6: editing a fee with its own tax mode to % hides the switch and clears the mode', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Wrap', '1.00', { toggleTax: true });
+      expect(fees()[0].amountIncludesTax).toBe(!sale.order.pricesIncludeTax);
+      click('Edit total of Wrap');
+      click('Edit Wrap');
+      const form = chargeForm('Edit Wrap');
+      fireEvent.click(form.getByTestId('charge-form-unit-percent'));
+      expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '10' } });
+      click('Apply');
+      expect(fees()[0].percent).toBe(10);
+      expect(fees()[0].amountIncludesTax).toBeUndefined();
+    });
   });
 });

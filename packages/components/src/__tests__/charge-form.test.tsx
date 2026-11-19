@@ -265,16 +265,18 @@ describe('ChargeForm', () => {
       expect(includesTax()).toBeNull();
     });
 
-    it("F6: editing a percent fee starts on % with the charge's own mode", () => {
+    it('F6: editing a percent fee starts on % without the switch', () => {
       const onApply = vi.fn().mockReturnValue(null);
       render(<ChargeForm currency="EUR" kind="fee" allowPercent pricesIncludeTax
         initial={{ name: 'Service', amountMinor: 500, percent: 10, amountIncludesTax: false }} onApply={onApply} onClose={() => {}} />);
       expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('10');
       expect(screen.getByTestId('charge-form-unit-percent').getAttribute('aria-selected')).toBe('true');
-      expect(includesTax()!.getAttribute('aria-checked')).toBe('false');
+      expect(includesTax()).toBeNull();
       click('Apply');
-      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10, amountIncludesTax: false });
+      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10 });
+      expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
       unit('amount');
+      expect(includesTax()!.getAttribute('aria-checked')).toBe('false');
       input('Amount', '2');
       click('Apply');
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 200 });
@@ -287,6 +289,33 @@ describe('ChargeForm', () => {
         initial={{ name: 'Service', amountMinor: 500, percent: 10, amountIncludesTax: false }} onApply={onApply} onClose={() => {}} />);
       click('Apply');
       expect(onApply.mock.lastCall![0]).toMatchObject({ percent: 10, amountIncludesTax: false });
+    });
+
+    it('F8: a fee switched to % hides the switch and sends no amountIncludesTax; back to the amount, it shows again', () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="fee" allowPercent pricesIncludeTax={false} onApply={onApply} onClose={() => {}} />);
+      fireEvent.click(includesTax()!);
+      expect(includesTax()!.getAttribute('aria-checked')).toBe('true');
+      unit('percent');
+      expect(includesTax()).toBeNull();
+      input('Amount', '10');
+      click('Apply');
+      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10 });
+      expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
+      unit('amount');
+      expect(includesTax()).not.toBeNull();
+    });
+
+    it("F9: editing a fee with its own mode to % drops the charge's amountIncludesTax", () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="fee" allowPercent pricesIncludeTax={false}
+        initial={{ name: 'Wrap', amountMinor: 100, amountIncludesTax: true }} onApply={onApply} onClose={() => {}} />);
+      expect(includesTax()!.getAttribute('aria-checked')).toBe('true');
+      unit('percent');
+      input('Amount', '5');
+      click('Apply');
+      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 5 });
+      expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
     });
   });
 });
