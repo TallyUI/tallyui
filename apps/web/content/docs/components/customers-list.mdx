@@ -1,0 +1,29 @@
+---
+title: CustomersList
+description: CustomersList draws the Customers screen's search field and customer rows from props, as in WCPOS v2.
+---
+## Import
+```tsx
+import { CustomersList } from '@tallyui/components';
+```
+## Usage
+```tsx
+const [query, setQuery] = useState('');
+
+<CustomersList customers={customers} query={query} onQueryChange={setQuery} loading={loading}
+  onOpen={(customer) => router.push(`/customers/${customer.id}`)} onEndReached={loadNextPage} />
+```
+
+The app owns the search call, the paging, the route and opening the editor; the list only draws what it is given.
+## Props
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `customers` | `Customer[]` | required | The rows, in order |
+| `query` / `onQueryChange` | `string` / `(query: string) => void` | required | The search field's text, and every edit of it (`''` from Clear search) |
+| `onOpen` | `(customer: Customer) => void` | --- | Pressing a row; absent, rows are not pressable and show no chevron |
+| `onEndReached` | `() => void` | --- | The list scrolled within a tenth of its visible height of the end |
+| `loading` | `boolean` | `false` | A loading row under the rows; hides the empty states |
+| `error` | `string` | --- | A sentence shown as an alert above the rows |
+| `actions` | `ReactNode` | --- | Before the search field, such as an Add button |
+| `className` | `string` | --- | The outer view's classes |
+| `testID` | `string` | `'customers-list'` | Prefix for every testID; rows are `<testID>-row-<id>` |

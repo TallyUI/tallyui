@@ -3,13 +3,14 @@ import type { TaxRounding } from '@tallyui/core';
 /** The lines and charges `taxLinesByRate` splits, each in the tax mode its tax was rounded in (ADR-065: the
  *  receipt's figures, which every per-rate split must equal). Under `woocommerce` rounding a line with `netMicros`
  *  is in the store's mode, since WooCommerce rounds every line that way. Otherwise a line keeps its own mode, and
- *  a line without one, or a fee or shipping charge, is in the store's. */
+ *  a line without one is in the store's; a charge outside `woocommerce` keeps its `amountIncludesTax`, else the store's. */
 export function taxedLinesFor<L extends { netMicros?: string; taxInclusive?: boolean }, C>(
-  lines: readonly L[], charges: readonly C[], pricesIncludeTax: boolean, rounding?: TaxRounding,
+  lines: readonly L[], charges: readonly (C & { amountIncludesTax?: boolean })[], pricesIncludeTax: boolean, rounding?: TaxRounding,
 ): Array<(L | C) & { taxInclusive: boolean }> {
   return [...lines.map((line) => ({ ...line, taxInclusive: rounding?.granularity === 'woocommerce' && line.netMicros !== undefined
     ? pricesIncludeTax : line.taxInclusive ?? pricesIncludeTax })),
-  ...charges.map((charge) => ({ ...charge, taxInclusive: pricesIncludeTax }))];
+  ...charges.map((charge) => ({ ...charge, taxInclusive: rounding?.granularity === 'woocommerce'
+    ? pricesIncludeTax : charge.amountIncludesTax ?? pricesIncludeTax }))];
 }
 
 /** The stored per-rate split a reader may use, or undefined to recompute it with `taxedLinesFor`. A

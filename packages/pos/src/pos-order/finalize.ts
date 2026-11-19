@@ -1,6 +1,7 @@
 import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
   type woocommerceTax } from '@tallyui/core';
-import type { Order, SentOrder } from '../order/types';
+import { chargeOrderModeMinor } from '../order/order-builder';
+import type { ChargeLine, Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
@@ -38,6 +39,15 @@ function orderAddress(address: CustomerAddress | undefined): OrderAddress | unde
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
 export const MESSAGE_NAME_MAX = 61;
 
+/** A charge as stored and sent: in the order's mode, without the cashier's own mode (vendurepos gap 2.10).
+ *  A converted generic charge keeps its display row, so the payload equals the display (core fiscal-figures.ts). */
+function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean, displayMinor: number | undefined): C {
+  if (charge.amountIncludesTax === undefined) return charge;
+  const { amountIncludesTax: _mode, ...rest } = charge;
+  const amountMinor = charge.totalMinor === undefined && displayMinor !== undefined ? displayMinor : chargeOrderModeMinor(charge, pricesIncludeTax);
+  return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}) } as C;
+}
+
 /** The receipt shows the order as it was stored and sent (Front desk, 2026-09-29). */
 export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   const customer: SentOrder['customer'] = order.customer && { ...order.customer };
@@ -45,8 +55,9 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
   return { ...order, customer, note: posOrder.note ?? order.note,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
-    ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...fee, name: posOrder.fees![i].name })) } : {}),
-    ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...charge, name: posOrder.shipping![i].name })) } : {}),
+    ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...storedCharge(fee, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor), name: posOrder.fees![i].name })) } : {}),
+    ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor),
+      name: posOrder.shipping![i].name })) } : {}),
     display: posOrder.display ? { ...order.display,
       ...(order.display.fees ? { fees: order.display.fees.map((row, i) => ({ ...row, name: posOrder.display!.fees![i].name })) } : {}),
       ...(order.display.shipping ? { shipping: order.display.shipping.map((row, i) => ({ ...row, name: posOrder.display!.shipping![i].name })) } : {}),
@@ -234,8 +245,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
-  const fees = order.fees?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
-  const shipping = order.shipping?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
     method: payment.method as PosOrderPayment['method'],

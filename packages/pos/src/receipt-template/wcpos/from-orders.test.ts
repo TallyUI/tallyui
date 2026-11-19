@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { minorUnitDigits, type StoreOrder, type TaxRounding } from '@tallyui/core';
 import { couponPricingBasis, createOrderBuilder } from '../../order/order-builder';
 import type { Order } from '../../order/types';
-import { finalizeOrder } from '../../pos-order/finalize';
+import { finalizeOrder, withSentForm } from '../../pos-order/finalize';
 import type { PosOrder } from '../../pos-order/types';
 import { buildReceiptData } from '../../receipt/build-receipt-data';
 import { buildReceiptDataFromPosOrder, buildReceiptDataFromStoreOrder } from '../../receipt/reprint';
@@ -287,5 +287,30 @@ describe('PosOrder tax labels', () => {
     expect(labelled.tax_summary.map((row) => row.label)).toEqual(['Sales tax']);
     const withRate = { ...stored(), taxByRate: stored().taxByRate!.map((row) => ({ ...row, ratePpm: 100000 })) };
     expect(wcpos(wcposSourceFromPosOrder(withRate, plain)).tax_summary.map((row) => row.label)).toEqual(['Tax 10%']);
+  });
+});
+
+describe('vendurepos gap 2.10: a charge entered in the other tax mode, through the sent form', () => {
+  const sentFee = (pricesIncludeTax: boolean, fee: { name: string; amountMinor: number; amountIncludesTax: boolean }) => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax, getTaxRatePpm: () => 100000 } });
+    builder.addLine({ productId: 'p', name: 'Product', unitPrice: { amount: 2000, currency: 'EUR' } }); // G1's line; finalize needs one
+    builder.addFee(fee);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order = builder.getSnapshot();
+    const sent = withSentForm(order, finalize(order));
+    return { sent, source: wcposSourceFromSentOrder(sent, plain) };
+  };
+
+  it('R1: an inclusive fee at an exclusive store is sent and printed in the order\'s mode', () => {
+    const { sent, source } = sentFee(false, { name: 'Fee', amountMinor: 1100, amountIncludesTax: true });
+    expect(source.fees[0]).toMatchObject({ totalMinor: 1000, totalTaxMinor: 100 });
+    expect(sent.fees![0]).not.toHaveProperty('amountIncludesTax');
+    expect(sent.fees![0].amountMinor).toBe(1000);
+  });
+
+  it('R2: an exclusive fee at an inclusive store is printed in the order\'s mode', () => {
+    const { sent, source } = sentFee(true, { name: 'Fee', amountMinor: 1000, amountIncludesTax: false });
+    expect(source.fees[0]).toMatchObject({ totalMinor: 1000, totalTaxMinor: 100 });
+    expect(sent.fees![0]).not.toHaveProperty('amountIncludesTax');
   });
 });

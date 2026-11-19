@@ -22,13 +22,17 @@ import { CategoryTile } from '@tallyui/components';
 
 A square tile as WCPOS v2 lays out a category: the photo fills the tile and the name, with the product count under it, sits on a band at the foot. Without `imageUrl` the tile is tinted and shows the name's initial. The app supplies the photo and count, since `ProductCategory` carries only an id and a name.
 
+With `stacked`, two cards sit behind the tile as in v2's poster tiles, and `mark` draws a small folder (`folder`) or grid (`all`) mark in the top-left corner; the mark is decoration, so the tile is still read by its name.
+
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `name` | `string` | required | Category name, up to two lines |
-| `imageUrl` | `string` | — | Category photo; omitted shows the initial fallback |
+| `imageUrl` | `string` | — | Category photo; omitted, or failing to load, shows the initial fallback, and a new URL is tried again |
 | `count` | `number` | — | Products in the category, shown when above 0 |
+| `stacked` | `boolean` | `false` | Draws two cards behind the tile |
+| `mark` | `'folder' \| 'all'` | — | Corner mark: a folder for a category, a grid for All products |
 | `onPress` | `() => void` | — | Called when the tile is tapped |
 | `testID` | `string` | — | Test id; the image and fallback use it as a prefix |
 | `className` | `string` | — | Override tile styles, e.g. its width |
