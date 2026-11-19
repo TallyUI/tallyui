@@ -73,6 +73,8 @@ export interface StartReplicationOptions<RxDocType, CheckpointType = any> {
    * RxDB fixes it when the replication starts.
    */
   pullBatchSize?: number;
+  /** The reset generation (`resetCollection`); default 0. From 1 the identifier ends `-g${generation}`, a fresh checkpoint. Read it with `replicationGeneration(collection)` before every start of a collection that was ever reset. */
+  generation?: number;
 }
 
 /** RxDB's replication state plus the pull notice and a way to restart after a till error. */
@@ -140,6 +142,7 @@ export function startReplication<RxDocType, CheckpointType = any>({
   maxRetryTimeMs = MAX_RETRY_TIME_MS,
   connectivity,
   pullBatchSize,
+  generation = 0,
 }: StartReplicationOptions<RxDocType, CheckpointType>): TallyReplicationState<RxDocType, CheckpointType> {
   // Pull errors fall in three classes by who can fix them (errorKind):
   // - till (sign in again): one notice and an empty page (RxDB stores no
@@ -210,11 +213,12 @@ export function startReplication<RxDocType, CheckpointType = any>({
   // A new identifier is a fresh meta instance, so the pull starts from nothing
   // (and a combined adapter seeds as on a fresh install). The old meta instance
   // is left orphaned: a few rows, and removing it is out of scope. Version 0
-  // keeps the original identifier, so existing installs never resync.
+  // keeps the original identifier, so existing installs never resync. A reset
+  // (resetCollection) appends `-g${generation}` from generation 1 the same way.
   const { version } = collection.schema;
   const replication = replicateRxCollection({
     collection,
-    replicationIdentifier: `${context.connectorId}-${collection.name}${version > 0 ? `-v${version}` : ''}`,
+    replicationIdentifier: `${context.connectorId}-${collection.name}${version > 0 ? `-v${version}` : ''}${generation > 0 ? `-g${generation}` : ''}`,
     pull: {
       handler: pullHandler,
       stream$: adapter.pull.stream$?.pipe(filter(event => event === 'RESYNC' || !tillHeld$.getValue())),
