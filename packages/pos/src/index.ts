@@ -134,8 +134,8 @@ export type {
 export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
-  escpos, encodeEscPos, createEscPosTransport, createEpsonEposSink, createStarWebPrntSink, networkSinkFor,
-  ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
+  escpos, encodeEscPos, createEscPosTransport, createEpsonEposSink, createStarWebPrntSink, networkSinkFor, canOpenDrawer,
+  openDrawerJob, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
