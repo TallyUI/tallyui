@@ -11,7 +11,7 @@ const FRUITS = [
 ];
 
 describe('Combobox', () => {
-  const renderCombobox = (props: Record<string, any> = {}, items = FRUITS) =>
+  const renderCombobox = (props: Record<string, any> = {}, items = FRUITS, contentProps = {}) =>
     render(
       <div>
         <PortalHost />
@@ -19,7 +19,7 @@ describe('Combobox', () => {
           <Combobox.Input testID="input" placeholder="Search fruits..." />
           <Combobox.Trigger testID="trigger" />
           <Combobox.Portal>
-            <Combobox.Content testID="content">
+            <Combobox.Content testID="content" {...contentProps}>
               {items.map((fruit) => (
                 <Combobox.Item
                   key={fruit.value}
@@ -406,6 +406,39 @@ describe('Combobox', () => {
       await waitFor(() => {
         expect(getComputedStyle(screen.getByTestId('content')).minWidth).toBe('200px');
       });
+    });
+  });
+
+  describe('Escape', () => {
+    it('C1: Escape closes the open list', () => {
+      renderCombobox({ defaultOpen: true });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+
+    it('C2: onEscapeKeyDown can keep it open', () => {
+      const onEscapeKeyDown = vi.fn((event: KeyboardEvent) => event.preventDefault());
+      renderCombobox({ defaultOpen: true }, FRUITS, { onEscapeKeyDown });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      expect(onEscapeKeyDown).toHaveBeenCalledTimes(1);
+    });
+
+    it('C3: Escape leaves the typed search in the input', () => {
+      renderCombobox();
+      const input = screen.getByTestId('input') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'ban' } });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+      expect(input.value).toBe('ban');
+    });
+
+    it('C4: Escape fired on the focused input itself closes the list', () => {
+      renderCombobox({ defaultOpen: true });
+      fireEvent.keyDown(screen.getByTestId('input'), { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
     });
   });
 });

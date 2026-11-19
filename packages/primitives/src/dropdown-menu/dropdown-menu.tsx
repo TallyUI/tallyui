@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
 import { measureTrigger } from '../hooks/measure-trigger';
+import { useEscapeDismiss } from '../hooks/use-escape-dismiss';
 import { Portal as RNPortal } from '../portal';
 import { Slot } from '../slot';
 import type {
@@ -247,11 +248,23 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
     style,
     disablePositioningStyle,
     onLayout: onLayoutProp,
+    onEscapeKeyDown,
     ...props
   },
   ref
 ) {
-  const { open, triggerPosition, contentLayout, setContentLayout } = useRootContext();
+  const { open, onOpenChange, triggerPosition, contentLayout, setTriggerPosition, setContentLayout } =
+    useRootContext();
+
+  useEscapeDismiss(
+    open,
+    () => {
+      setTriggerPosition(null);
+      setContentLayout(null);
+      onOpenChange(false);
+    },
+    onEscapeKeyDown
+  );
 
   const positionStyle = useRelativePosition({
     align,
@@ -612,7 +625,9 @@ const SubContent = React.forwardRef<View, SubContentProps>(function SubContent(
   { asChild, forceMount, ...props },
   ref
 ) {
-  const { open, nativeID } = useSubContext();
+  const { open, nativeID, onOpenChange } = useSubContext();
+
+  useEscapeDismiss(open, () => onOpenChange(false));
 
   if (!forceMount && !open) {
     return null;
