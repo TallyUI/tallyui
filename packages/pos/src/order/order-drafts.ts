@@ -95,13 +95,14 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       name: line.name,
       ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
       ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
-      sku: line.sku,
+      sku: line.catalogueSku ?? line.sku,
       imageUrl: line.imageUrl,
       unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
       ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
       quantity: line.quantity,
       ...(rederive ? {} : { taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })) }),
     });
+    if (line.catalogueSku !== undefined) builder.updateLine(lineId, { sku: line.sku });
     for (const discount of line.discounts) {
       builder.applyLineDiscount(lineId, {
         type: discount.type,

@@ -47,6 +47,8 @@ export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. 
 export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6a: setTaxIds' refusal of a list order.create 12 could not carry. */
 export const TAX_IDS_INVALID = 'Each tax id needs a type and a number, a country is a two-letter code, and a sale takes at most 10.';
+/** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
+export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -538,6 +540,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return SALE_SAVING;
       try {
         builderNow.current.setUnitPrice(lineId, amountMinor);
+        return null;
+      } catch (error) {
+        if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
+        throw error;
+      }
+    },
+    /**
+     * ADR-092 6b/6c: edits a cart line's `name`, `sku` or `regularUnitPriceMinor` (`null` removes it); the regular price is
+     * the "was" price that receipts print and order.create 6+ sends. Cart only (LINE_EDIT_REFUSED); returns a refusal or null.
+     */
+    updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): string | null {
+      if (locked()) return SALE_SAVING;
+      if (stageNow.current.kind !== 'cart') return LINE_EDIT_REFUSED;
+      try {
+        builderNow.current.updateLine(lineId, patch);
         return null;
       } catch (error) {
         if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
