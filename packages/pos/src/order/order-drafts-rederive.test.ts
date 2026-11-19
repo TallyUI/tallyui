@@ -88,3 +88,37 @@ describe('restoreOrderDraft re-derives class-taxed lines (5.2 F3)', () => {
     expect(split.getSnapshot().lineItems.map((item) => item.quantity)).toEqual([1, 1]);
   });
 });
+
+// RD8–RD10: a restored class line equals a fresh cart built on the new context, inclusive and with discounts.
+function cart(taxContext: TaxContext, unitMinor: number, discounted: boolean): Order {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+  const lineId = builder.addLine({ productId: 'p1', name: 'Tea', taxClass: 'reduced', unitPrice: { amount: unitMinor, currency: 'EUR' }, quantity: 2 });
+  if (discounted) {
+    builder.applyLineDiscount(lineId, { type: 'percentage', value: 10 });
+    builder.applyOrderDiscount({ type: 'percentage', value: 10 });
+  }
+  return JSON.parse(JSON.stringify(builder.getSnapshot())) as Order;
+}
+
+function money(order: Order) {
+  const { quantity, unitPriceMinor, netMinor, taxMicros, taxLines, discounts, orderDiscountMinor } = order.lineItems[0];
+  return {
+    line: { quantity, unitPriceMinor, netMinor, taxMicros, taxLines, orderDiscountMinor, discounts: discounts.map(({ id: _id, ...row }) => row) },
+    subtotalMinor: order.subtotalMinor, taxMinor: order.taxMinor, totalMinor: order.totalMinor,
+  };
+}
+
+describe('restoreOrderDraft re-derives to a fresh cart\'s figures (5.2 F3)', () => {
+  it.each([
+    { id: 'RD8', label: 'inclusive', inclusive: true, unitMinor: 1100, discounted: false, before: [200, 2200, 2000], after: [367, 2200] },
+    { id: 'RD9', label: 'discounts, exclusive', inclusive: false, unitMinor: 1000, discounted: true, before: [162, 1782, 1620], after: [324, 1944] },
+    { id: 'RD10', label: 'discounts, inclusive', inclusive: true, unitMinor: 1100, discounted: true, before: [162, 1782, 1620], after: [297, 1782] },
+  ])('$id: $label', ({ inclusive, unitMinor, discounted, before, after }) => {
+    const saved = cart(at(100000, { pricesIncludeTax: inclusive }), unitMinor, discounted);
+    expect({ ...figures(saved), subtotalMinor: saved.subtotalMinor }).toEqual({ taxMinor: before[0], totalMinor: before[1], ratePpm: 100000, subtotalMinor: before[2] });
+    const next = at(200000, { pricesIncludeTax: inclusive });
+    const restored = restoreOrderDraft(saved, { currency: 'EUR', taxContext: next }).getSnapshot();
+    expect(figures(restored)).toEqual({ taxMinor: after[0], totalMinor: after[1], ratePpm: 200000 });
+    expect(money(restored)).toEqual(money(cart(next, unitMinor, discounted)));
+  });
+});

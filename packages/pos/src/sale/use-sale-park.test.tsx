@@ -335,4 +335,19 @@ describe('useSale re-derives class-taxed line rates (5.2 F3)', () => {
     expect(result.current.order.customer).toMatchObject({ id: 'c1' });
     expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
   });
+
+  it('US4: setAddresses re-taxes a class-taxed cart to the new billing address\'s 20%', () => {
+    const base = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 100000 : 0 };
+    const billed = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 200000 : 0 };
+    const location = { taxBasedOn: 'billing', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    const taxContextFor = (customer: { billing?: unknown } | null) => ({ taxContext: customer?.billing ? billed : base, location });
+    const { result } = renderSale(at(100000), { taxContextFor });
+    addTwo(result);
+    act(() => result.current.setCustomer({ id: 'c1', name: 'Alice' }));
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    let done = false;
+    act(() => { done = result.current.setAddresses({ country: 'NZ' }, undefined); });
+    expect(done).toBe(true);
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
+  });
 });

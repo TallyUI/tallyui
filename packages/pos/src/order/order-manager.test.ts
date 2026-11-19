@@ -107,6 +107,21 @@ describe('OrderManager', () => {
     expect(resumed.lineItems[0]).toMatchObject({ taxClass: 'reduced', taxFromClass: true });
   });
 
+  it('OM2: resume keeps the rates a paid draft (a captured leg) was paid against (5.2 F3)', async () => {
+    const at = (ratePpm: number): TaxContext => ({ pricesIncludeTax: false, getTaxRatePpm: (taxClass) => taxClass === 'reduced' ? ratePpm : 0 });
+    const parking = createOrderManager({ currency: 'EUR', taxContext: at(100000), draftsCollection: db.pos_drafts });
+    const builder = await firstValueFrom(parking.activeOrder$);
+    builder.addLine({ productId: 'p1', name: 'Tea', taxClass: 'reduced', unitPrice: { amount: 1000, currency: 'EUR' }, quantity: 2 });
+    builder.addPayment({ method: 'cash', amountMinor: 500 });
+    const parked = builder.getSnapshot();
+    expect(parked).toMatchObject({ taxMinor: 200, totalMinor: 2200, paidMinor: 500 });
+    await parking.parkCurrentOrder();
+    const mgr = createOrderManager({ currency: 'EUR', taxContext: at(200000), draftsCollection: db.pos_drafts });
+    const resumed = (await mgr.resumeOrder(parked.id)).getSnapshot();
+    expect(resumed).toMatchObject({ taxMinor: 200, totalMinor: 2200, paidMinor: 500 });
+    expect(resumed.lineItems[0].taxLines[0].ratePpm).toBe(100000);
+  });
+
   it('preserves two lines, their taxes, discounts and payments through JSON park/resume', async () => {
     const mgr = createOrderManager({ currency: 'usd', taxContext, draftsCollection: db.pos_drafts });
     const builder = await firstValueFrom(mgr.activeOrder$);
