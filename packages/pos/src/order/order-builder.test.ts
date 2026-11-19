@@ -527,6 +527,14 @@ describe('OrderBuilder', () => {
     expect(order.note).toBe('');
   });
 
+  it('M8: clear() removes the order meta (ADR-092 6d)', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.setMeta([{ key: 'a', value: 'b' }]);
+    expect(builder.getSnapshot().meta).toEqual([{ key: 'a', value: 'b' }]);
+    builder.clear();
+    expect('meta' in builder.getSnapshot()).toBe(false);
+  });
+
   it('throws when there is no price in the order currency', () => {
     const noPriceTraits = { ...traits, getPrices: () => [{ amount: 450, currency: 'EUR', kind: 'base' as const }] };
     const builder = createOrderBuilder({ currency: 'USD', taxContext });

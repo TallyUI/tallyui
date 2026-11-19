@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { paymentMethodOf } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
@@ -33,8 +33,13 @@ export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before 
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
-/** Line and total changes refuse with this while a till leg is live, as v2's resolveStage stills the cart (tally-woo 11c). */
-export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Void it before changing the sale.';
+/**
+ * Line and total changes refuse with this while a till leg is live, as v2's resolveStage stills the cart (tally-woo 11c).
+ * "Cancel the payment" names the leg's button, `pos_checkout.cancel_payment` ("Cancel payment") in packages/components.
+ */
+export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the payment before changing the sale.';
+/** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
+export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
 /** startTender refuses with this when the app's tenderGate rejects instead of answering. */
@@ -45,6 +50,10 @@ export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ra
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
+/** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
+export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
+/** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
+export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -199,12 +208,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   /** locked() without its error. */
   function busy() { return !!(inFlight.current || pending.current); }
-  /** Line and total changes' guard: SALE_SAVING while busy, SALE_HAS_PAYMENT while an unlocked leg is captured or in motion; sets it as the error. */
+  /** Line and total changes' guard: SALE_SAVING while busy, SALE_FINISHED on the receipt, SALE_HAS_PAYMENT while an unlocked leg is captured or in motion; sets it as the error. */
   function editRefusal(): string | null {
-    const live = builderNow.current.getSnapshot().payments.some((payment) => !payment.locked && (countsTowardPaid(payment) || isInMotion(payment)));
-    const refusal = busy() ? SALE_SAVING : live ? SALE_HAS_PAYMENT : null;
+    const refusal = busy() ? SALE_SAVING : stageNow.current.kind === 'receipt' ? SALE_FINISHED : liveLeg() ? SALE_HAS_PAYMENT : null;
     if (refusal) setError(refusal);
     return refusal;
+  }
+  /** An unlocked leg on the live sale is captured or in motion: its total must not move. */
+  function liveLeg() {
+    return builderNow.current.getSnapshot().payments.some((payment) => !payment.locked && (countsTowardPaid(payment) || isInMotion(payment)));
   }
   // TallyUI#710: the coupon re-price in flight (at most one), the count of coupon changes that discards its result,
   // and the order snapshot a transient refusal or a throw stopped it on, with that reason.
@@ -285,9 +297,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }, [rendered]);
   // TallyUI#710: a rendered order whose store-priced coupons went stale prices them again, one re-price at a time. Checked
   // on every render, so it runs again when one ends (the sale may have changed meanwhile), never on a snapshot one stopped on.
+  // #1059 review: never while a leg is live, as a re-price moves the total. The coupons then stay stale, so startTender and
+  // complete() keep refusing with COUPONS_REPRICING (couponsUnpriced) and finalize's stale check stays the backstop, until
+  // the leg is voided, removed or fails; that changes the order, and this effect prices them again.
   useEffect(() => {
     if (order.couponPricesStale && appliedWith.current && applied.current.size > 0 && !repricing.current
-      && stageNow.current.kind !== 'receipt' && !busy() && stopped.current?.order !== order) void reprice();
+      && stageNow.current.kind !== 'receipt' && !busy() && !liveLeg() && stopped.current?.order !== order) void reprice();
   });
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
@@ -422,7 +437,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     droppedReferences.current.clear();
     confirm(null);
     setSaving(false);
-    setError(null);
+    setError(null); // every error goes, SALE_HAS_PAYMENT too: it is never shown on the receipt (#1059 review)
     stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
     setStage(stageNow.current);
   }
@@ -441,6 +456,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
 
   function begin(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a tender gate that answers after complete()
     if (locked()) return;
     const current = builderNow.current.getSnapshot();
     if (!current.lineItems.length) return;
@@ -464,8 +480,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     saving,
     /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */
     canContinue,
-    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. */
+    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. On the receipt it starts the next sale first (v2 #2861). */
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>): { lineId: string } | string {
+      if (stageNow.current.kind === 'receipt') {
+        resetSale();
+        if (stageNow.current.kind === 'receipt') return SALE_SAVING; // resetSale refused, with this as its error
+      }
       const held = editRefusal(); if (held) return held;
       const builder = builderNow.current;
       try {
@@ -606,8 +626,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     couponsRepricing,
     /** Prices the sale's coupons again now, as Retry after a transient refusal; resolves to the refusal or error it set, or null. */
     async repriceCoupons(): Promise<string | null> {
-      if (locked()) return SALE_SAVING;
-      if (!appliedWith.current || !applied.current.size || stageNow.current.kind === 'receipt') return null;
+      const held = editRefusal(); if (held) return held; // a re-price moves the total
+      if (!appliedWith.current || !applied.current.size) return null;
       return reprice();
     },
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
@@ -653,11 +673,36 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return true;
     },
     /**
+     * Sets one custom field on this sale (ADR-092 4 and 6d). It replaces the value when the key is there, and removes the
+     * field when `value` is null. It refuses once the sale has left the cart, and it refuses an invalid key. The value is
+     * cut to its bound when the order is frozen, as the note is.
+     */
+    setMeta(key: string, value: string | null): boolean {
+      if (locked()) return false;
+      const { meta = [], payments } = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+        setError(META_CHANGE_REFUSED);
+        return false;
+      }
+      const name = key.trim();
+      const known = meta.some((m) => m.key === name);
+      if (!name || name.length > ORDER_META_KEY_MAX || name.startsWith('_') || (value !== null && !known && meta.length >= ORDER_META_MAX)) {
+        setError(META_INVALID);
+        return false;
+      }
+      const next = value === null ? meta.filter((m) => m.key !== name)
+        : known ? meta.map((m) => m.key === name ? { key: name, value } : m) : [...meta, { key: name, value }];
+      builderNow.current.setMeta(next);
+      setError((current) => current === META_CHANGE_REFUSED || current === META_INVALID ? null : current); // any other error stays
+      return true;
+    },
+    /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
      * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -691,10 +736,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (locked()) return false;
-      return builderNow.current.setPaymentStatus(paymentId, status);
+      const changed = builderNow.current.setPaymentStatus(paymentId, status);
+      // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
+      if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
+      return changed;
     },
-    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. */
+    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. Refused on the receipt. */
     voidTender(paymentId: string): boolean {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment?.locked) return false;
       if (locked()) return false;
@@ -704,8 +753,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       clearStaleError();
       return true;
     },
-    /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
+    /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. Refused on the receipt. */
     removeTender(paymentId: string): void {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment?.locked) return;
       if (locked()) return;
@@ -715,6 +765,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       clearStaleError();
     },
     cancelTender() {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       setTender(null);
       tenderSession.current = null;
