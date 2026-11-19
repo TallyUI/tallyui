@@ -114,6 +114,16 @@ describe('useSale setAddresses (vendurepos gap 5.2)', () => {
     expect(result.current.order.customer?.shipping).toEqual({ country: 'AU', state: 'VIC' });
   });
 
+  it('A4b: refuses an address set in the same tick as startTender (5.2 backlog F4)', () => {
+    const result = saleOn(auCustomer);
+    let done: boolean | undefined;
+    act(() => { result.current.startTender('cash'); done = result.current.setAddresses(undefined, nzAddress); });
+    expect(done).toBe(false);
+    expect(result.current.error).toBe(ADDRESS_CHANGE_REFUSED);
+    expect(result.current.stage.kind).toBe('tender');
+    expect(result.current.order.customer?.shipping).toEqual({ country: 'AU', state: 'VIC' });
+  });
+
   it('A5: changes the address once the tender is cancelled, and clears the refusal', () => {
     const { result } = refusedInTender();
     act(() => result.current.cancelTender());
