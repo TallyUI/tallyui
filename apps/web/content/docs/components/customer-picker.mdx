@@ -1,0 +1,42 @@
+---
+title: CustomerPicker
+description: CustomerPicker searches the store's customers as the cashier types, picks one for the sale, and can add a new customer.
+---
+
+## Import
+
+```tsx
+import { CustomerPicker } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerPicker search={search} create={create} selected={null} onSelect={onSelect} online />
+```
+
+The app passes the connector's `searchCustomers` and `createCustomer`, bound to its context. The picker searches after the cashier stops typing for `debounceMs`, and shows the results in a [CustomerSelect](/docs/components/customer-select) without its own search field. Choosing a result calls `onSelect` and clears the search.
+
+With a selected customer, their card shows at the top with a Remove customer button, which calls `onSelect(null)`. With `withGuest`, a Guest row above the results also calls `onSelect(null)`.
+
+"New customer" shows only when `create` is given. It opens a short form; Save Customer needs an email, checks its shape and length (up to 254 characters), then calls `create` and selects the new customer.
+
+While `online` is `false`, search and create are disabled and the picker says "Connect to search or add customers."
+
+Errors show as text in the picker. Store errors (`CustomerServiceError`) are explained to the cashier; any other error is also passed to `onError`, including `ConnectorUnauthorizedError`: ask the cashier to sign in again only when its `code` is `'unauthorized'`. `'forbidden'` means signed in but not allowed, so never sign out for it.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `search` | `(query: string) => Promise<Customer[]>` | required | The connector's customer search, bound by the app |
+| `create` | `(input: CustomerInput) => Promise<Customer>` | --- | The connector's customer create; when absent, "New customer" is hidden |
+| `selected` | `Customer \| null` | required | The sale's customer |
+| `onSelect` | `(customer: Customer \| null) => void` | required | A customer picked, or `null` for Remove customer and Guest |
+| `onError` | `(error: unknown) => void` | --- | Errors the picker can't explain to the cashier |
+| `online` | `boolean` | required | `false` disables search and create |
+| `debounceMs` | `number` | `250` | Wait before a search, in ms |
+| `className` | `string` | --- | Override container styles |
+| `testID` | `string` | `'customer-picker-search'` | testID of the search field |
+| `showAvatar` | `boolean` | `false` | Draws an initials avatar on each result row |
+| `withGuest` | `boolean` | `false` | Shows a Guest row above the results |

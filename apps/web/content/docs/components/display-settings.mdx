@@ -1,0 +1,34 @@
+---
+title: DisplaySettings
+description: DisplaySettings is Settings › Display, the theme, scale and fonts of this device, ported from WCPOS v2's theme settings.
+---
+
+## Import
+
+```tsx
+import { DisplaySettings } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<DisplaySettings {...useAppSettings(db.app_settings)} />
+```
+
+Ported from the WCPOS v2 theme settings screen. The settings are device-local: the app passes the result of `useAppSettings` from `@tallyui/pos`.
+
+Three groups follow each other:
+
+- **Theme**: System ("Follow your device settings"), Light and Dark, saved as `ui.theme`.
+- **Scale**: Auto, Compact, Regular and Spacious, saved as `ui.scale`. Auto follows the window size.
+- **Fonts**: Match theme, System and the app's type sets, each with an "Aa" sample, saved as `ui.font`. A font that is unknown or no longer offered shows as Match theme.
+
+Each choice calls `setSetting` at once. A failed save is logged to the console; the component shows no error.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `settings` | `Pick<AppSettings, 'ui.theme' \| 'ui.scale' \| 'ui.font'>` | required | The current values, from `useAppSettings` |
+| `setSetting` | `ReturnType<typeof useAppSettings>['setSetting']` | required | Saves one setting |
+| `className` | `string` | --- | Override container styles |

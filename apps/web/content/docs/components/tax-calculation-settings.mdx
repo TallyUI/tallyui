@@ -1,0 +1,34 @@
+---
+title: TaxCalculationSettings
+description: TaxCalculationSettings is Settings › Tax › Calculation, the "Calculate tax based on" choice and read-only rows for the tax settings kept in WooCommerce.
+---
+
+## Import
+
+```tsx
+import { TaxCalculationSettings } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<TaxCalculationSettings taxBasedOn="base" onTaxBasedOnChange={setTaxBasedOn} />
+```
+
+Ported from the WCPOS v2 tax settings screen. It is one settings group, Calculation.
+
+"Calculate tax based on" offers Customer shipping address, Customer billing address and Shop base address. Choosing a different one calls `onTaxBasedOnChange`; without `onTaxBasedOnChange` the select is disabled.
+
+Three read-only rows follow, each shown only when its prop is given: Prices entered with tax (Yes or No), Shipping tax class ("Based on cart items" for `inherit`, otherwise the class name, with `''` and `standard` as Standard) and Round tax at subtotal level (Yes or No). Each row says "Set in WooCommerce", which is a link that calls `onOpenStoreTaxSettings` when it is given, and plain text otherwise.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `taxBasedOn` | `'shipping' \| 'billing' \| 'base'` | required | The current choice (`woocommerceTax.TaxBasedOn`) |
+| `onTaxBasedOnChange` | `(value: TaxBasedOn) => void` | --- | A different choice made; when absent, the select is disabled |
+| `pricesIncludeTax` | `boolean` | --- | Shows the Prices entered with tax row |
+| `shippingTaxClass` | `string` | --- | Shows the Shipping tax class row |
+| `taxRoundAtSubtotal` | `boolean` | --- | Shows the Round tax at subtotal level row |
+| `onOpenStoreTaxSettings` | `() => void` | --- | Makes "Set in WooCommerce" a link |
+| `className` | `string` | --- | Override container styles |

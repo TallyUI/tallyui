@@ -1,0 +1,31 @@
+---
+title: ShippingAddressFields
+description: ShippingAddressFields is the order's shipping address, shown as "Same as billing" until the cashier uses a different address.
+---
+
+## Import
+
+```tsx
+import { ShippingAddressFields } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ShippingAddressFields billing={billing} value={shipping} onChange={setShipping} countries={countries} statesFor={statesFor} />
+```
+
+Shipping reads "Same as billing" while `value` is empty or a copy of billing (email aside). This is read once, when the component mounts, so key it by order to read it again.
+
+"Use a different address" calls `onChange` with billing's copy, without its email, and shows the address parts as [AddressFields](/docs/components/address-fields). "Same as billing" calls `onChange(undefined)`.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `billing` | `CustomerAddress \| undefined` | required | The billing address |
+| `value` | `CustomerAddress \| undefined` | required | The shipping address |
+| `onChange` | `(next: CustomerAddress \| undefined) => void` | required | Every edit; `undefined` is "Same as billing" |
+| `countries` | `AddressFieldsProps['countries']` | --- | Passed to the address parts |
+| `statesFor` | `AddressFieldsProps['statesFor']` | --- | Passed to the address parts |
+| `testID` | `string` | `'shipping-address'` | testID prefix |

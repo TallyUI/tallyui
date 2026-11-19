@@ -85,7 +85,10 @@ export interface LineItem {
   id: string;
   /** The store's id for a line the reopened sale keeps; absent on a line the till added. */
   storeLineId?: string;
+  /** The line's tax class: kept under woo granularity, on a custom line that has one, and on a class-taxed line outside woo. */
   taxClass?: string;
+  /** Set outside woo granularity when the line's rates came from the tax context for taxClass (absent: rates the caller gave, or a draft from before this field); a re-tax or resume re-derives them. */
+  taxFromClass?: true;
   /** WooCommerce's stored net at rounding precision, in integer micro-minor units, and its rounded gross. */
   netMicros?: string;
   totalMinor?: number;
