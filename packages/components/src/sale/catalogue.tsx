@@ -19,6 +19,8 @@ import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/cam
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { CategoryBrowseGrid } from './category-browse';
 import { Breadcrumb } from './breadcrumb';
+import { CategoryTile } from '../product/category-tile';
+import { useT } from '../i18n';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
@@ -30,14 +32,22 @@ import { usePointer } from '../scale/use-pointer';
 const WIDE_MIN_WIDTH = 768;
 const WIDE_MIN_HEIGHT = 480;
 // A loading tile in the grid tile's frame (the tile below, as ProductCard): its 80 px image, then the band under it,
-// gap-2 (8) + a one-line title, the price and the stock badge with their gaps: 75 px at the regular scale, measured in
-// the demo (a tile with no image is 101 px: 75 + p-3 + border).
+// one gap-2 (8) above each row the tile draws for its fields. Title, price and stock badge with their gaps were 75 px
+// at the regular scale, measured in the demo (a tile with no image is 101 px: 75 + p-3 + border). The title and price
+// rows are text-sm's 20 px line, and the badge's 19 is what is left of the measured 75. A fact row (SKU, barcode,
+// categories) is text-xs's 16 px line, from the type scale, not measured.
 const TILE_IMAGE = 80;
-const TILE_BAND = 8 + 75;
+const TILE_GAP = 8;
+const TILE_ROW_HEIGHTS: [keyof TileFields, number][] = [['name', 20], ['price', 20], ['sku', 16], ['barcode', 16], ['categories', 16], ['stock', 19]];
+function tileBand(fields: TileFields): number {
+  return TILE_ROW_HEIGHTS.reduce((band, [field, height]) => band + (fields[field] ? TILE_GAP + height : 0), 0);
+}
 // One grid row: the tile's p-3 and border (12 + 1 each side) and the grid cell's p-1 (4 each side) around image and band.
 // TallyUI difference: v2 counts rows at the tile's width plus its band, as its poster image is the tile's width; here the
 // image is a fixed 80 px, so the row is a fixed height.
-const TILE_ROW = TILE_IMAGE + TILE_BAND + 2 * (12 + 1 + 4);
+const tileRow = (fields: TileFields) => TILE_IMAGE + tileBand(fields) + 2 * (12 + 1 + 4);
+// A level's first grid slot, its own category as a back poster (v2 browse/term-grid.tsx:271-272), as the drill's parent.
+const LEVEL_PARENT = { id: 'level-parent' };
 
 // locale/hour12/now are injected (rather than read from the device or the clock inside this
 // function) so the formatting is testable without the device; callers default them to the
@@ -157,8 +167,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * the register is open.", rendered under the header and above the grid, table or category tiles. Default none. */
   rowsSlot?: ReactNode;
   /** v2's Product settings › Tile Fields: which words a grid tile shows. Merged over DEFAULT_TILE_FIELDS (today's tile:
-   * name, price with its on-sale strike, stock status). Apps feed it from the `catalogue.tileFields` app setting. Grid
-   * view only; the table, drill variant tiles and the skeleton ignore it. */
+   * name, price with its on-sale strike, stock status). Apps feed it from the `catalogue.tileFields` app setting. The grid
+   * tiles, the drill's variant tiles and the loading skeleton follow it; the table does not. */
   tileFields?: Partial<TileFields>;
 }) {
   const [initial] = useState<{
@@ -234,6 +244,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const parsedOverlayAsOf = overlayAsOf ? new Date(overlayAsOf) : undefined;
   const validOverlayAsOf = parsedOverlayAsOf && !isNaN(parsedOverlayAsOf.getTime()) ? parsedOverlayAsOf : undefined;
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
+  const t = useT();
   const [query, setQuery] = useState('');
   const [allOpen, setAllOpen] = useState(false);
   // Opening a category by its tile focuses the crumb (v2 focuses on mount); a stored category does not.
@@ -386,13 +397,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const emptyState = showLoading && state.view !== 'table' ? (
     <View accessibilityLabel="Loading products…" aria-busy testID="catalogue-loading" className="flex-1 overflow-hidden p-1"
       onLayout={(event) => setLoadingHeight(event.nativeEvent.layout.height)}>
-      {Array.from({ length: skeletonCount(loadingHeight, TILE_ROW) }, (_, row) => (
+      {Array.from({ length: skeletonCount(loadingHeight, tileRow(fields)) }, (_, row) => (
         <View key={row} className="flex-row">
           {Array.from({ length: columns }, (_, column) => (
             <View key={column} style={{ width: `${100 / columns}%` }} className="p-1">
               <View testID="catalogue-loading-tile" aria-busy className="items-center rounded-lg border border-transparent bg-muted p-3">
                 <View style={{ width: TILE_IMAGE, height: TILE_IMAGE }} />
-                <View style={{ height: TILE_BAND }} />
+                <View testID="catalogue-loading-band" style={{ height: tileBand(fields) }} />
               </View>
             </View>
           ))}
@@ -401,7 +412,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     </View>
   ) : <Text className="mt-10 text-center text-sm text-muted-foreground">{emptyText}</Text>;
 
-  const searchInput = <SearchInput value={query} onChangeText={(text) => { setQuery(text); onQueryChange?.(text); }} placeholder="Search or scan barcode / SKU" autoFocus
+  const searchInput = <SearchInput value={query} onChangeText={(text) => {
+    // A search typed inside a level leaves it and spans every product (v2 browse/use-browse-path.ts:521-534).
+    if (browsing && level && text.trim() !== '') back();
+    setQuery(text); onQueryChange?.(text);
+  }} placeholder="Search or scan barcode / SKU" autoFocus
     onSubmitEditing={() => {
       if (minCodeLength && query.trim().length < minCodeLength) return;
       const entry = findEntryByCode(entries, query);
@@ -479,10 +494,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         items={[{ id: 'parent' }, ...drillEntries.map((entry) => ({ id: `variant-${entry.variant.id}`, entry }))]}
         renderItem={({ entry }: { entry?: CatalogueEntry<Doc> }) => entry
           ? <VariantTile testID={`variation-tile-${entry.variant.id}`} name={traits.getName(entry.product)} chips={chipsOf(entry)}
-            price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)} />
+            price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)}
+            fields={fields} sku={entry.variant.sku} barcode={entry.variant.barcode} />
           : <VariantParentTile doc={drillEntries[0].product} onPress={() => setDrillId(null)} />} />
-      : <ProductGrid items={results} numColumns={columns}
+      : <ProductGrid items={level && results.length > 0 ? [LEVEL_PARENT, ...results] : results} numColumns={columns}
         renderItem={(product: Doc) => {
+          if (product === LEVEL_PARENT) return <CategoryTile testID="category-level-parent" back stacked accessibilityLabel={t('common.back')}
+            name={activeCategory?.name ?? 'All products'} imageUrl={activeCategory?.imageUrl}
+            mark={activeCategory ? 'folder' : 'all'} count={results.length} onPress={back} />;
           const id = traits.getId(product);
           const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
           // TallyUI's ProductCard has no children slot, so the tile is composed directly here
