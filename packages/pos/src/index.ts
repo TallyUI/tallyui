@@ -32,9 +32,11 @@ export type { CashierState } from './cashier';
 export {
   UI_SCALES, UI_THEMES, APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, appSettingSchema,
   appSettingCollection, resolveAppSettings, readAppSettings, appSettings$, writeAppSetting, useAppSettings,
+  CART_COLUMN_IDS, OPEN_ORDERS_POSITIONS,
 } from './app-settings';
 export type {
   UiScale, UiTheme, AppSettings, AppSettingKey, AppSettingDefinition, AppSettingDoc, AppSettingCollection,
+  CartColumnId, CartColumnsSetting, OpenOrdersPosition,
 } from './app-settings';
 
 // RxDB reads past the query cache, and live lists that can't leave it stale (RxDB 16.21.1 bug 4)
