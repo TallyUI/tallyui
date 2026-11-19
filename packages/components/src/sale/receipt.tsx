@@ -15,6 +15,8 @@ type ReceiptProps = {
   footerSlot?: ReactNode;
   /** The second button's text; default `New sale`. */
   doneLabel?: string;
+  /** The app's own record that this receipt was printed; Print reads 'Print again' (as `ReceiptSheet`, v2's `printedTo`). Ignored when `actions` replaces the buttons. */
+  printed?: boolean;
 } & ({
   order: SentOrder; store: { name: string; address?: string }; cashier: string; registerId: string;
   /** The register's name, printed as `Register: <name>`; the id is never printed. */
@@ -40,7 +42,7 @@ type ReceiptProps = {
 export function Receipt(props: ReceiptProps) {
   const formatMoney = useFormatMoney();
   const { posOrder, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
-    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale', actions } = props;
+    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale', actions, printed = false } = props;
   useEffect(injectPrintStyle, []);
   const order = props.receipt === undefined ? props.order : undefined;
   const receipt = props.receipt === undefined ? buildReceiptData(props.order, {
@@ -101,7 +103,7 @@ export function Receipt(props: ReceiptProps) {
     {actions === false ? null : <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
       {actions !== undefined ? actions : <>
       <Pressable accessibilityRole="button" onPress={() => { if (typeof window !== 'undefined' && typeof window.print === 'function') window.print(); }} className="rounded-md border border-border bg-card px-4 py-3">
-        <Text className="text-center text-foreground">Print receipt</Text>
+        <Text className="text-center text-foreground">{printed ? 'Print again' : 'Print receipt'}</Text>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={newSale} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">{doneLabel}</Text></Pressable>
       </>}
