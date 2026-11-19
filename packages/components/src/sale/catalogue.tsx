@@ -483,20 +483,26 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       {draws(rowsSlot) ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
         onOpen={(id) => { setCrumbFocus(true); if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <LevelWrap level={!!level} onBack={back}>
-      {level ? <Breadcrumb testID="category-crumb" phone={phone} autoFocus={crumbFocus}
+      {level && drillEntries.length === 0 ? <Breadcrumb testID="category-crumb" phone={phone} autoFocus={crumbFocus}
         parents={[{ label: 'Categories', testID: 'category-crumb-root', onPress: back }]} here={activeCategory?.name ?? 'All products'} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
-      ) : drillEntries.length > 0 ? <ProductGrid numColumns={columns} showUnsellable
+      ) : drillEntries.length > 0 ? <LevelWrap level onBack={() => setDrillId(null)}>
+        {/* v2 drill-in.tsx:44-68: "Products › name" above the variant tiles; at phone width the Breadcrumb drops the separator. */}
+        <Breadcrumb testID="products-breadcrumb" phone={phone} autoFocus
+          parents={[{ label: 'Products', testID: 'products-breadcrumb-back', onPress: () => setDrillId(null) }]}
+          here={traits.getName(drillEntries[0].product)} />
+        <ProductGrid numColumns={columns} showUnsellable
         items={[{ id: 'parent' }, ...drillEntries.map((entry) => ({ id: `variant-${entry.variant.id}`, entry }))]}
         renderItem={({ entry }: { entry?: CatalogueEntry<Doc> }) => entry
           ? <VariantTile testID={`variation-tile-${entry.variant.id}`} name={traits.getName(entry.product)} chips={chipsOf(entry)}
             price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)}
             fields={fields} sku={entry.variant.sku} barcode={entry.variant.barcode} />
           : <VariantParentTile doc={drillEntries[0].product} onPress={() => setDrillId(null)} />} />
+      </LevelWrap>
       : <ProductGrid items={level && results.length > 0 ? [LEVEL_PARENT, ...results] : results} numColumns={columns}
         renderItem={(product: Doc) => {
           if (product === LEVEL_PARENT) return <CategoryTile testID="category-level-parent" back stacked accessibilityLabel={t('common.back')}
