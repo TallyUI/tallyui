@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import type { TallyConnector } from '@tallyui/core';
 import { createVendureConnector, vendureProductSchema } from '@tallyui/connector-vendure';
-import { addRegisterSessionCollection, ensureRegister, posOrderCollection, type PosOrder } from '@tallyui/pos';
+import { addRegisterSessionCollection, appSettingCollection, ensureRegister, orderDraftSchema, posOrderCollection, type PosOrder } from '@tallyui/pos';
 import { createTallyDatabase, type TallyDatabase } from '@tallyui/database';
 
 const stamp = (n: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString();
@@ -33,17 +33,17 @@ afterEach(async () => {
   db = undefined;
 });
 
-/** Opens `name` with `schema` as Vendure's products schema, plus pos_orders and register_sessions as `@tallyui/pos` adds them. */
+/** Opens `name` with `schema` as Vendure's products schema, plus pos_orders, register_sessions, order_drafts and app_settings as `@tallyui/pos` adds them. */
 async function open(name: string, storage: unknown, schema: typeof vendureProductSchema) {
   const connector: TallyConnector = { ...createVendureConnector(), schemas: { products: schema } };
   db = await createTallyDatabase({ connector, name, storage });
-  await db.addCollections({ pos_orders: posOrderCollection() });
+  await db.addCollections({ pos_orders: posOrderCollection(), order_drafts: { schema: orderDraftSchema }, app_settings: appSettingCollection() });
   await addRegisterSessionCollection(db);
   return db;
 }
 
 describe('the Vendure products schema bump v2 → v3 drops server data only (vendurepos gap 2.5)', () => {
-  it('empties products; the open order, the session, the register document and stock_levels survive', async () => {
+  it('empties products; the open order, the session, the register document, the parked cart, the app settings and stock_levels survive', async () => {
     const storage = getRxStorageMemory();
     const name = `vendureschemabump${Date.now()}`;
 
@@ -57,6 +57,10 @@ describe('the Vendure products schema bump v2 → v3 drops server data only (ven
     await ensureRegister(before.register_sessions, 'web');
     // Vendure has reconcile.stock, so createTallyDatabase adds the stock_levels overlay.
     await before.stock_levels.insert({ id: '1', value: { status: 'in_stock', quantity: 3 }, updatedAt: stamp(1) });
+    await before.order_drafts.insert({ id: 'draft-1', data: JSON.stringify({ id: 'draft-1' }), customerName: 'Ada', itemCount: 1, total: 1000, parkedAt: stamp(1) });
+    await before.app_settings.insert({ key: 'ui.font', value: JSON.stringify('inter') });
+    const draftRow = (await before.order_drafts.findOne('draft-1').exec())!.toJSON(true);
+    const settingRow = (await before.app_settings.findOne('ui.font').exec())!.toJSON(true);
     const orderRow = (await before.pos_orders.findOne('order-1').exec())!.toJSON(true);
     const sessionRow = (await before.register_sessions.findOne('session-1').exec())!.toJSON(true);
     const registerDoc = (await before.register_sessions.getLocal('register'))!.toJSON(true);
@@ -72,6 +76,8 @@ describe('the Vendure products schema bump v2 → v3 drops server data only (ven
     expect((await after.pos_orders.findOne('order-1').exec())!.toJSON(true)).toEqual(orderRow);
     expect((await after.register_sessions.findOne('session-1').exec())!.toJSON(true)).toEqual(sessionRow);
     expect((await after.register_sessions.getLocal('register'))!.toJSON(true)).toEqual(registerDoc);
+    expect((await after.order_drafts.findOne('draft-1').exec())!.toJSON(true)).toEqual(draftRow);
+    expect((await after.app_settings.findOne('ui.font').exec())!.toJSON(true)).toEqual(settingRow);
     expect((await after.stock_levels.findOne('1').exec())!.toJSON(true)).toEqual(stockRow);
   }, 30000);
 });
