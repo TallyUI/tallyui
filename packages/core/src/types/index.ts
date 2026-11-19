@@ -13,7 +13,7 @@ export type { ReplicationAdapter } from './replication';
 
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
-  PendingPairing, DisplayRecord, SignalMessage,
+  PendingPairing, DisplayRecord, SignalMessage, TillDevice,
 } from './display-signalling';
 
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';

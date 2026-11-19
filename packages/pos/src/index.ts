@@ -102,6 +102,8 @@ export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT
 export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
+export { createTillDevice } from './customer-display';
+export type { TillDeviceHandle, TillDeviceKeyStore, TillDeviceOptions } from './customer-display';
 
 // Customer form values to a create input or an update patch
 export { shipsToBilling, toCustomerInput, toCustomerPatch } from './customer/customer-patch';

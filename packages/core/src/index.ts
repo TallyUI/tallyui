@@ -33,7 +33,7 @@ export type {
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
-  PendingPairing, DisplayRecord, SignalMessage,
+  PendingPairing, DisplayRecord, SignalMessage, TillDevice,
 } from './types';
 export { DisplaySignallingError, DISPLAY_PAIR_CAPABILITY } from './types/display-signalling';
 export { DEFAULT_ICE_SERVERS, parseDisplayAdvertisement, rateLimitSource } from './customer-display';
