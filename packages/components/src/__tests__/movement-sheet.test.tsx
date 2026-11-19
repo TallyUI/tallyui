@@ -269,3 +269,64 @@ it('an app catalogue overrides the label string', () => {
   typeAmount('5');
   expect(confirmButton().textContent).toBe('Deposit €5.00');
 });
+
+const renderSheet = (type: 'paid_in' | 'paid_out', currency: string, onDone = vi.fn()) =>
+  render(
+    <RegisterHarness db={db}>
+      {(register) => <MovementSheet register={register} type={type} currency={currency} onDone={onDone} onOpenChange={vi.fn()} />}
+    </RegisterHarness>,
+  );
+const typeReason = (value: string) => fireEvent.change(screen.getByTestId('movement-reason'), { target: { value } });
+const hint = () => screen.getByTestId('movement-invalid').textContent;
+
+it('refuses more decimal places than the currency has, before the tap', async () => {
+  const onDone = vi.fn();
+  renderSheet('paid_in', 'EUR', onDone);
+  typeAmount('5.123');
+  typeReason('Change');
+  expect(confirmButton().disabled).toBe(true);
+  expect(hint()).toBe('Enter an amount with at most 2 decimal places.');
+  expect(confirmButton().textContent).toBe('Put cash in');
+  fireEvent.click(confirmButton());
+  expect(onDone).not.toHaveBeenCalled();
+  expect(await db.cash_movements.find().exec()).toHaveLength(0);
+});
+
+it('records 5.12 EUR as 512 minor units', async () => {
+  const onDone = vi.fn();
+  renderSheet('paid_in', 'EUR', onDone);
+  typeAmount('5.12');
+  typeReason('Change');
+  fireEvent.click(confirmButton());
+  await waitFor(() => expect(onDone).toHaveBeenCalledWith(expect.any(String), 'paid_in', 512));
+  expect((await db.cash_movements.find().exec())[0]?.toJSON()).toMatchObject({ type: 'paid_in', amountMinor: 512 });
+});
+
+it('refuses a fractional yen amount and records a whole one', async () => {
+  const onDone = vi.fn();
+  renderSheet('paid_out', 'JPY', onDone);
+  typeAmount('500.5');
+  typeReason('Milk');
+  expect(confirmButton().disabled).toBe(true);
+  expect(hint()).toBe('Enter a whole amount.');
+  typeAmount('500');
+  expect(confirmButton().disabled).toBe(false);
+  fireEvent.click(confirmButton());
+  await waitFor(() => expect(onDone).toHaveBeenCalledWith(expect.any(String), 'paid_out', 500));
+});
+
+it('refuses an amount too large for minor units', () => {
+  renderSheet('paid_in', 'EUR');
+  typeAmount('99999999999999');
+  typeReason('Change');
+  expect(confirmButton().disabled).toBe(true);
+  expect(hint()).toBe('Enter a valid amount.');
+  expect(confirmButton().textContent).toBe('Put cash in');
+});
+
+it('a missing reason still names a valid amount', () => {
+  renderSheet('paid_in', 'EUR');
+  typeAmount('5.12');
+  expect(hint()).toBe('Enter a reason.');
+  expect(confirmButton().textContent).toBe('Put €5.12 in');
+});
