@@ -350,4 +350,21 @@ describe('useSale re-derives class-taxed line rates (5.2 F3)', () => {
     expect(done).toBe(true);
     expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
   });
+
+  it('US5: cancelTender re-taxes to rates that changed during tender (#722 + F3)', () => {
+    const base = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 100000 : 0 };
+    const raised = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 200000 : 0 };
+    const location = { taxBasedOn: 'billing', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    let rates: typeof base | typeof raised = base;
+    const taxContextFor = () => ({ taxContext: rates, location });
+    const { result } = renderSale(at(100000), { taxContextFor });
+    addTwo(result);
+    act(() => result.current.setCustomer({ id: 'c1', name: 'Alice' }));
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    act(() => result.current.startTender('cash'));
+    rates = raised;
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    act(() => result.current.cancelTender());
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
+  });
 });
