@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { errorKind, type SyncContext } from '@tallyui/core';
 
-import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, type VendureProductCheckpoint } from './products';
+import { createVendureProductReplication, vendureProductReplication, toProductDocument, probeUpdatedAtSkew, PRODUCT_LIST_QUERY, type VendureProductCheckpoint } from './products';
 import { createVendureConnector, VendureTimezoneConfigError } from '../index';
 import { vendureProductTraits } from '../traits/product';
 import { vendureStoreSettings } from '../store-settings';
@@ -420,5 +420,16 @@ describe('toProductDocument variant order', () => {
     const reversed = toProductDocument({ id: '1', variants: [...shuffled].reverse() });
     expect(vendureProductTraits.getPrices(forward)).toEqual(vendureProductTraits.getPrices(reversed));
     expect(vendureProductTraits.getPrices(forward)).toEqual([{ amount: 10, currency: 'EUR', kind: 'base' }]);
+  });
+});
+
+describe('PRODUCT_LIST_QUERY option groups (vendurepos gap 2.5)', () => {
+  it('asks for the product\'s optionGroups and each variant option\'s groupId, and toProductDocument keeps them', () => {
+    const query = PRODUCT_LIST_QUERY().replace(/\s+/g, ' ');
+    expect(query).toContain('optionGroups { id code name options { id code name } }');
+    expect(query).toContain('options { id name code groupId }');
+    const optionGroups = [{ id: '10', code: 'size', name: 'Size', options: [{ id: '100', code: 'size-30', name: '30' }] }];
+    const variants = [{ id: '1', options: [{ id: '100', code: 'size-30', name: '30', groupId: '10' }] }];
+    expect(toProductDocument({ id: '1', optionGroups, variants })).toMatchObject({ optionGroups, variants });
   });
 });

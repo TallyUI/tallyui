@@ -64,6 +64,21 @@ function liveVariants(doc: any): any[] {
   return (doc.variants ?? []).filter((variant: any) => variant.enabled !== false);
 }
 
+// A variant's option values keyed by group name (vendurepos gap 2.5): `groupId` finds the group in the
+// product's `optionGroups`; an option whose group is not there is left out. Undefined with no options or groups.
+type VendureOption = { id?: string; code?: string; name: string; groupId?: string };
+type VendureOptionGroup = { id: string; code?: string; name: string; options?: VendureOption[] };
+function variantOptions(doc: { optionGroups?: VendureOptionGroup[] }, variant: { options?: VendureOption[] }): Record<string, string> | undefined {
+  const groups = doc.optionGroups ?? [];
+  if (!variant.options?.length || !groups.length) return undefined;
+  const options: Record<string, string> = {};
+  for (const option of variant.options) {
+    const group = groups.find((g) => String(g.id) === String(option.groupId));
+    if (group) options[group.name] = option.name;
+  }
+  return options;
+}
+
 /**
  * Vendure product trait implementations.
  *
@@ -104,10 +119,16 @@ const traits: ProductTraits = {
   getVariants: (doc, context) => liveVariants(doc).map((variant: any) => ({
     id: String(variant.id),
     title: variant.name || undefined,
+    options: variantOptions(doc, variant),
     sku: variant.sku || undefined,
     barcode: barcodeField ? variant.customFields?.[barcodeField] || undefined : undefined,
     prices: traits.getPrices({ variants: [variant] }, context),
     stock: traits.getStock({ variants: [variant] }),
+  })),
+
+  // Every option of each group in the order the API returns them; core asks no filter by the live variants (as WooCommerce).
+  getVariantOptions: (doc) => ((doc.optionGroups ?? []) as VendureOptionGroup[]).map((g) => ({
+    id: String(g.id), name: g.name, values: (g.options ?? []).map((o) => o.name),
   })),
 
   // The variant's tax category id: store-settings.ts keys taxRatesPpm by the same id. No variant id: the default
