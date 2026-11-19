@@ -4,6 +4,7 @@ import { Image } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { Icon } from '../ui/icon';
 import { CategoryIcon } from '../ui/icon/category-icon';
+import { ChevronLeftIcon } from '../ui/icon/chevron-left-icon';
 import { ViewGridIcon } from '../ui/icon/view-grid-icon';
 
 // v2 poster-tile/style.ts CARD, FAR and NEAR: the two cards drawn behind a stacked tile.
@@ -24,6 +25,10 @@ export interface CategoryTileProps {
   stacked?: boolean;
   /** The corner mark: `folder` for a category, `all` (a grid) for the All products tile. Decoration only. */
   mark?: 'folder' | 'all';
+  /** Draws v2's back badge, a left chevron top-right in the mark's circle, as on a level's first tile. Decoration only (default false). */
+  back?: boolean;
+  /** The tile's accessible label (default `name`). */
+  accessibilityLabel?: string;
   onPress?: () => void;
   testID?: string;
   className?: string;
@@ -37,13 +42,13 @@ export interface CategoryTileProps {
  * (MIT, WCPOS): the picture fills the square (`contentFit="cover"`), else a tint; the name bold over two
  * lines with the count under it. The stack and the mark follow v2's `PosterTile` (poster-tile/index.tsx).
  */
-export function CategoryTile({ name, imageUrl, count, stacked = false, mark, onPress, testID, className }: CategoryTileProps) {
+export function CategoryTile({ name, imageUrl, count, stacked = false, mark, back = false, accessibilityLabel, onPress, testID, className }: CategoryTileProps) {
   const id = testID ?? 'category-tile';
   // Keyed by the URL, as v2's useTermPicture: a failed photo falls back to the initial, a new URL is tried.
   const [failed, setFailed] = useState<string | null>(null);
   const photo = imageUrl && imageUrl !== failed ? imageUrl : undefined;
   return (
-    <Pressable testID={testID} role="button" accessibilityLabel={name} onPress={onPress} className={className}>
+    <Pressable testID={testID} role="button" accessibilityLabel={accessibilityLabel ?? name} onPress={onPress} className={className}>
       {stacked ? (
         <View testID={`${id}-stack`} pointerEvents="none" className="absolute inset-0">
           <View testID={`${id}-stack-far`} className={CARD} style={FAR} />
@@ -69,6 +74,12 @@ export function CategoryTile({ name, imageUrl, count, stacked = false, mark, onP
             <Icon size="sm" className="text-muted-foreground">
               {mark === 'all' ? <ViewGridIcon size={16} /> : <CategoryIcon size={16} />}
             </Icon>
+          </View>
+        ) : null}
+        {back ? (
+          <View testID={`${id}-back`} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+            className="absolute top-2 right-2 size-6 items-center justify-center rounded-full border border-border bg-card">
+            <Icon size="sm" className="text-muted-foreground"><ChevronLeftIcon size={16} /></Icon>
           </View>
         ) : null}
       </View>
