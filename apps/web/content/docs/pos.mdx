@@ -228,7 +228,7 @@ manager.newOrder();
 | `cashierRef` | `string` | Cashier reference passed to order finalization. |
 | `capabilities?` | `ServerCapabilities` | Server capabilities used by finalization and exposed to sale components. |
 | `discountCodes?` | `SaleDiscountCodes<any>` | Platform discount codes; without them, `applyCoupon` refuses with `COUPONS_UNSUPPORTED`. |
-| `tenderGate?` | `(attempt: { method: 'cash' \| 'external' }) => Promise<string \| null>` | Awaited after checkout checks: return a refusal or `null` to start tender; rejection gives `TENDER_GATE_FAILED`. |
+| `tenderGate?` | `(attempt: { method: 'cash' \| 'external' }) => Promise<string \| null>` | Awaited after checkout checks: return a refusal or `null` to start tender; rejection gives `TENDER_GATE_FAILED`. If a customer or address change re-taxes the sale while the gate runs, tender does not start and the sale shows `TENDER_SALE_CHANGED`. |
 | `defaultCustomer?` | `CustomerSummary \| null` | Customer for each new sale, never a resumed one; changes apply to an idle cart or the next new sale, and a refused customer is skipped. |
 | `drafts?` | `RxCollection` | Collection created with `orderDraftSchema` where `park()` keeps carts. |
 | `currentPrice?` | `(variantId: string) => number \| undefined` | Current variant price in integer minor units, or unknown; `resume()` re-prices unless asked to keep parked prices. |
