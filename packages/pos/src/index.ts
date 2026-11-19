@@ -104,7 +104,7 @@ export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } f
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
 
 // Product
-export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory, productTerms, listTermGroups, hasTerm, type ProductTermGroup } from './product';
+export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory, productTerms, listTermGroups, hasTerm, type ProductTermGroup, TILE_FIELDS, DEFAULT_TILE_FIELDS, normalizeTileFields, type TileField, type TileFields } from './product';
 
 // Scanner
 export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner, SCANNER_DEVICE_KEY_MAX_LENGTH, normalizeUuid, isCanonicalUuid, scannerDeviceKey, scannerTransport, createSerialLineDecoder, decodeHidPosReport, isWebSerialSupported, isWebHidSupported, isChooserCancel, SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile, createScanHub, createScanBus, inertScanHub, dedupeScans, SCAN_DEDUP_WINDOW_MS, analyzeScanTrace } from './scanner';
@@ -130,12 +130,12 @@ export type {
 export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
-  escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES,
+  escpos, encodeEscPos, createEscPosTransport, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions,
+  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, ResolvePrinterOptions,
 } from './print';
 
 // Sale

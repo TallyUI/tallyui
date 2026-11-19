@@ -12,6 +12,7 @@ import {
   appSettingCollection, appSettingSchema, appSettings$, DEFAULT_APP_SETTINGS, readAppSettings, writeAppSetting,
   type AppSettingCollection, type AppSettings,
 } from './app-settings';
+import { DEFAULT_TILE_FIELDS } from '../product/tile-fields';
 import { useAppSettings } from './use-app-settings';
 
 describe('app settings', () => {
@@ -74,6 +75,27 @@ describe('app settings', () => {
   it('stores the parsed quick discounts', async () => {
     await writeAppSetting(collection, 'cart.quickDiscounts', [10, 200]);
     expect((await collection.findOne('cart.quickDiscounts').exec())!.toJSON().value).toBe('[10]');
+  });
+
+  it("reads catalogue.tileFields, defaulting to today's tile", async () => {
+    expect(DEFAULT_APP_SETTINGS['catalogue.tileFields']).toBe(DEFAULT_TILE_FIELDS);
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(DEFAULT_TILE_FIELDS);
+  });
+
+  it('writes catalogue.tileFields and merges a partial stored value onto the defaults', async () => {
+    const fields = { ...DEFAULT_TILE_FIELDS, sku: true, stock: false };
+    await writeAppSetting(collection, 'catalogue.tileFields', fields);
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(fields);
+    await collection.upsert({ key: 'catalogue.tileFields', value: '{"barcode":true}' });
+    expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual({ ...DEFAULT_TILE_FIELDS, barcode: true });
+  });
+
+  it('falls back to the default tile fields for a stored non-object', async () => {
+    for (const value of ['"x"', '[]', 'null']) {
+      const doc = await collection.insert({ key: 'catalogue.tileFields', value });
+      expect((await readAppSettings(collection))['catalogue.tileFields']).toEqual(DEFAULT_TILE_FIELDS);
+      await doc.remove();
+    }
   });
 
   it('rejects an invalid value and writes nothing', async () => {

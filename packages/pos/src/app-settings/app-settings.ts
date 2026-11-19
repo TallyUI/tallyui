@@ -8,6 +8,7 @@
  */
 import type { RxCollection, RxJsonSchema } from 'rxdb';
 import { map, type Observable } from 'rxjs';
+import { DEFAULT_TILE_FIELDS, normalizeTileFields, type TileFields } from '../product/tile-fields';
 
 export const UI_SCALES = ['auto', 'compact', 'regular', 'spacious'] as const;
 export type UiScale = (typeof UI_SCALES)[number];
@@ -50,6 +51,11 @@ export interface AppSettings {
    * per store × login (desk, 19 Nov). */
   'cart.columns': CartColumnsSetting;
   'cart.openOrdersPosition': OpenOrdersPosition;
+  /**
+   * Which words a catalogue grid tile shows. v2 keeps them per screen as `pos-products.gridFields`.
+   * Desk 19 Nov (Q6): per device, camelCase keys, and the default is today's tile.
+   */
+  'catalogue.tileFields': TileFields;
 }
 export type AppSettingKey = keyof AppSettings;
 
@@ -98,6 +104,7 @@ export const APP_SETTING_DEFINITIONS: { [K in AppSettingKey]: AppSettingDefiniti
   },
   'cart.columns': { default: {}, parse: parseCartColumns },
   'cart.openOrdersPosition': { default: 'bottom', parse: (value) => OPEN_ORDERS_POSITIONS.find((p) => p === value) },
+  'catalogue.tileFields': { default: DEFAULT_TILE_FIELDS, parse: normalizeTileFields },
 };
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   'ui.theme': APP_SETTING_DEFINITIONS['ui.theme'].default,
@@ -106,6 +113,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   'cart.quickDiscounts': APP_SETTING_DEFINITIONS['cart.quickDiscounts'].default,
   'cart.columns': APP_SETTING_DEFINITIONS['cart.columns'].default,
   'cart.openOrdersPosition': APP_SETTING_DEFINITIONS['cart.openOrdersPosition'].default,
+  'catalogue.tileFields': APP_SETTING_DEFINITIONS['catalogue.tileFields'].default,
 };
 
 /** One stored setting. `value` is the JSON encoding of the setting's value, so the schema never changes when a key is added. */
