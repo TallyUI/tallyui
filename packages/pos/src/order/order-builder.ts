@@ -474,10 +474,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       : input.taxStatus === 'none' ? [{ ...(code !== undefined ? { code } : {}), ratePpm: 0 }]
       : input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
+    const fromClass = !woo && input.taxRates === undefined;
 
     const existing = lineItems.find(
       (li) => input.storeLineId === undefined && !input.custom && !li.custom && li.productId === productId && li.variantId === variantId && li.taxInclusive === taxInclusive
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
+        && (li.taxFromClass === true) === fromClass
         && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
@@ -496,6 +498,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       id: lineId,
       ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
       ...((input.custom ? input.taxClass !== undefined : woo) ? { taxClass: input.taxClass } : {}),
+      // Outside woo, a line taxed from its class keeps the class and a marker, so a re-tax or resume re-derives its rates.
+      ...(fromClass ? { ...(input.taxClass !== undefined ? { taxClass: input.taxClass } : {}), taxFromClass: true as const } : {}),
       productId,
       ...(input.custom ? { custom: true as const } : {}),
       ...(input.taxStatus === 'none' ? { taxStatus: 'none' as const } : {}),
