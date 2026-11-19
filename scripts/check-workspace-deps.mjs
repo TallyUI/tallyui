@@ -43,7 +43,7 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // sort ProductTable orders rows with, never a hook or the store.
   'sortProducts', 'productSortValue',
   // the catalogue (slice b): the pure view-state reducer and column maths Catalogue uses, never a hook or the store.
-  'catalogueViewReducer', 'normalizeCatalogueViewState', 'resolveGridColumns', 'DEFAULT_CATALOGUE_VIEW_STATE',
+  'catalogueViewReducer', 'normalizeCatalogueViewState', 'resolveGridColumns', 'DEFAULT_CATALOGUE_VIEW_STATE', 'DEFAULT_TILE_FIELDS',
   // the catalogue (slice c): the pure category list and membership test Catalogue filters with, and the pure
   // per-product category list its browse tiles count with (G-CATEGORY), never a hook or the store.
   'listCategories', 'inCategory', 'productCategories',

@@ -231,4 +231,26 @@ describe('ProductPrice', () => {
     expect(source.match(/text-price/g)?.length).toBe(2);
     expect(source).toContain('text-sale');
   });
+  describe('showWas', () => {
+    const saleDoc = { ...wooDoc, price: '499.99', sale_price: '499.99', regular_price: '599.99', on_sale: true };
+
+    it('PW1: showWas={false} renders an on-sale price without the was price', () => {
+      render(
+        <ConnectorProvider connector={createTestConnector('woo')}>
+          <ProductPrice doc={saleDoc} showWas={false} />
+        </ConnectorProvider>
+      );
+      expect(screen.getByText('$499.99')).toBeDefined();
+      expect(screen.queryByText(/\(was/)).toBeNull();
+    });
+
+    it('PW2: by default the was price still shows', () => {
+      render(
+        <ConnectorProvider connector={createTestConnector('woo')}>
+          <ProductPrice doc={saleDoc} />
+        </ConnectorProvider>
+      );
+      expect(screen.getByText('(was $599.99)')).toBeDefined();
+    });
+  });
 });
