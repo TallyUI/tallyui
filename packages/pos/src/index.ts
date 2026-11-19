@@ -103,6 +103,10 @@ export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, 
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
 
+// Customer form values to a create input or an update patch
+export { shipsToBilling, toCustomerInput, toCustomerPatch } from './customer/customer-patch';
+export type { CustomerEditValues } from './customer/customer-patch';
+
 // Product
 export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory, productTerms, listTermGroups, hasTerm, type ProductTermGroup, TILE_FIELDS, DEFAULT_TILE_FIELDS, normalizeTileFields, type TileField, type TileFields } from './product';
 
