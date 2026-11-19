@@ -36,23 +36,31 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the Z report's approved mixed-rounding line (#287): one pure string constant ClosureSheet
   // shares with buildClosureDocument, never a hook or the store.
   'TAX_ROUNDING_MIXED_NOTE',
+  // the Z report's store-paid tax line (ADR-090 ruling 38): one pure string constant ClosureSheet
+  // shares with buildClosureDocument, never a hook or the store.
+  'TAX_STORE_PAID_NOTE',
   // the catalogue (Catalogue 3.5.0 slice a, placement ruling 2026-10-06): the pure product
   // sort ProductTable orders rows with, never a hook or the store.
   'sortProducts', 'productSortValue',
   // the catalogue (slice b): the pure view-state reducer and column maths Catalogue uses, never a hook or the store.
   'catalogueViewReducer', 'normalizeCatalogueViewState', 'resolveGridColumns', 'DEFAULT_CATALOGUE_VIEW_STATE',
-  // the catalogue (slice c): the pure category list and membership test Catalogue filters with, never a hook or the store.
-  'listCategories', 'inCategory',
+  // the catalogue (slice c): the pure category list and membership test Catalogue filters with, and the pure
+  // per-product category list its browse tiles count with (G-CATEGORY), never a hook or the store.
+  'listCategories', 'inCategory', 'productCategories',
   // Needs attention's Retry (ADR-077 d4b): the one definition of which refusal codes the outbox resends, never a hook or the store.
   'isRequeueable',
+  // Needs attention for reopened sales (ADR-090 W4c): the pure row-aware Retry predicate and unsendable-update message, never a hook or the store.
+  'isRequeueableOrder', 'UPDATE_UNSENDABLE', 'UPDATE_UNSENDABLE_MESSAGE',
   // the refund form (plan unit 20, ADR-080 amendment 2): the pure refundable-quantity and refund pricing the form shows and sends, never a hook or the store.
   'refundableLines', 'priceRefund',
   // the sale note (ADR-083 condition 2): the one pure test of whether a till order's note reached the store, never a hook or the store.
   'noteDelivery',
+  // ADR-090 W4e and gates 36/36c: the pure refund-due figures and refused till legs the orders list and the tender pane show.
+  'refundDueOf', 'lockedRefundDueMinor', 'tillLegsTheStoreRefuses',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
   'UI_SCALES', 'UI_THEMES',
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
-  'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
+  'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
   // the Sales room (plan unit 25): the pure store-day date presets its filters bar offers, never a hook or the store.
   'presetRange', 'DATE_PRESETS',
@@ -66,6 +74,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'daysOf',
   // the cart tabs (v2 cart/tab-chip.tsx): the one pure test of a partly paid sale the tab chip shows, never a hook or the store.
   'isPartlyPaid',
+  // the Sales room panels (v2 panels/export-csv.ts): the pure CSV the Export CSV button hands over, never a hook or the store.
+  'csvFromCells',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

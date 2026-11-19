@@ -12,8 +12,10 @@
  */
 import type { RxCollection } from 'rxdb';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
+import { taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
+import { tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
 import { deriveExpected, paymentLedgerRows, refundAmounts } from './expected';
@@ -310,12 +312,13 @@ export const backToSelling = (sessions: RegisterSessionCollection, id: string) =
  * without a business day. `approvedBy`, the manager who approved the count, is written in the same
  * write as the close, and a repeat close keeps the first close's approver as it keeps its count.
  * `approval`, the store's opaque proof (ADR-082), is written to `approver_token` in the same
- * write; it never reaches the closure or its breakdowns.
+ * write; it never reaches the closure or its breakdowns. `note`, the cashier's note on the count, is
+ * written with the count (blank is stored as null); a repeat close keeps the first close's note, as it keeps its count.
  */
 export async function closeSession(
   sessions: RegisterSessionCollection,
   id: string,
-  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; approval?: string; timezone?: string },
+  input: { counted: Record<string, number>; closedBy?: string; approvedBy?: string; approval?: string; timezone?: string; note?: string },
 ) {
   const session = await sessions.findOne(id).exec();
   if (!session) throw new RegisterSessionRequiredError();
@@ -323,6 +326,7 @@ export async function closeSession(
     business_day: session.business_day || businessDayOf(session.opened_at_gmt, input.timezone ?? 'device'),
     counted: input.counted,
     closed_by: input.closedBy ?? null,
+    count_note: input.note?.trim() || null,
     ...(input.approvedBy ? { approved_by: input.approvedBy } : {}),
     ...(input.approval ? { approver_token: input.approval } : {}),
     closure_id: id,
@@ -509,19 +513,21 @@ export async function writeClosure({
     });
   const counts = { cash: counted, ...otherTenders };
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-  const payment_methods: Record<string, { sales_minor: number; refunds_minor: number }> = {};
+  // A Map, so a method id named like an Object.prototype member (`__proto__`) stays an ordinary key.
+  const methodTotals = new Map<string, { sales_minor: number; refunds_minor: number }>();
   for (const row of rows) {
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    payment_methods[method] = { sales_minor: (payment_methods[method]?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 };
+    methodTotals.set(method, { sales_minor: (methodTotals.get(method)?.sales_minor ?? 0) + row.amountMinor, refunds_minor: 0 });
   }
   for (const refund of countedRefunds) {
     for (const [method, amount] of refundAmounts(refund)) {
-      payment_methods[method] = { sales_minor: payment_methods[method]?.sales_minor ?? 0, refunds_minor: (payment_methods[method]?.refunds_minor ?? 0) + amount };
+      methodTotals.set(method, { sales_minor: methodTotals.get(method)?.sales_minor ?? 0, refunds_minor: (methodTotals.get(method)?.refunds_minor ?? 0) + amount });
     }
   }
+  const payment_methods = Object.fromEntries(methodTotals);
   // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
-  // add up to its own taxMinor, then summed across the session's orders by rate. A line's own
-  // taxInclusive overrides the order's, matching PosOrderLine's own fallback convention. Each order is split by the
+  // add up to its own taxMinor, then summed across the session's orders by rate. Each line is in the mode
+  // its receipt rounded it in (`taxedLinesFor`). Each order is split by the
   // tax rounding it recorded (#287), so its rows are its receipt's; absent is the default, today's split.
   const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
@@ -530,9 +536,7 @@ export async function writeClosure({
     const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
-    const lines = order.lines.map((line) => ({ ...line, taxInclusive: line.taxInclusive ?? order.pricesIncludeTax }));
-    const taxedLines = [...lines, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
-      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
     for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(String(ratePpm));
       taxRates.set(String(ratePpm), {
@@ -557,14 +561,14 @@ export async function writeClosure({
     expected: till_expected,
     counted: counts,
     variance: Object.fromEntries(
-      Object.entries(counts).map(([method, value]) => [method, countVariance(value, till_expected[method] ?? 0)]),
+      Object.entries(counts).map(([method, value]) => [method, countVariance(value, Object.hasOwn(till_expected, method) ? till_expected[method] : 0)]),
     ),
     period_sales_total_minor: sum(rows.map((row) => row.amountMinor)),
     period_refunds_total_minor: sum(countedRefunds.flatMap((refund) => refundAmounts(refund).map(([, amount]) => amount))),
     perpetual_sales_total_minor: 0,
     perpetual_refunds_total_minor: 0,
     unsynced_count: unsynced.length,
-    unsynced_total_minor: sum(unsynced.flatMap((order) => order.payments.map((payment) => payment.amountMinor))),
+    unsynced_total_minor: sum(unsynced.flatMap((order) => tillPayments(order.payments).map((payment) => payment.amountMinor))),
     software_version: softwareVersion,
     printed_at: null,
     print_count: 0,
@@ -572,6 +576,8 @@ export async function writeClosure({
       ...labels,
       opened_by: session.opened_by ?? null,
       approved_by: session.approved_by ?? null,
+      // v2's key; the Z shows it when it is not blank.
+      ...(session.count_note?.trim() ? { variance_note: session.count_note } : {}),
       payment_methods,
       tax_rates: Object.fromEntries(
         [...taxRates.values()].map(({ ratePpm, net_minor, tax_minor }) => [
@@ -580,6 +586,8 @@ export async function writeClosure({
       ),
       // The session's sales used more than one tax rounding (#287): the Z report says so.
       ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
+      // A reopened sale's tax rates are its whole order's, including tax on what was paid earlier in the store (ADR-090 ruling 38).
+      ...(bound.some((order) => tillPayments(order.payments).length < order.payments.length) ? { tax_includes_store_paid: true } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

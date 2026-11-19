@@ -65,10 +65,39 @@ describe('SalesRoom cards', () => {
     expect(text('card-orders-cost-missing')).toBe('Cost missing on 2 of 2 items');
   });
 
+  it('the Orders card shows Median and Largest', () => {
+    const figures = salesFigures({ orders, range: day, timezone: 'UTC' });
+    setup(figures);
+    expect(text('card-orders-median')).toBe(money(1250));
+    expect(text('card-orders-largest')).toBe(money(1500));
+    cleanup();
+    setup({ ...figures, totals: { ...figures.totals, largestMinor: null } });
+    expect(text('card-orders-largest')).toBe('—');
+    cleanup();
+    setup({ ...figures, totals: { ...figures.totals, largestMinor: undefined } });
+    expect(text('card-orders-largest')).toBe('—');
+  });
+
   it('opens a card\'s panel from its head', () => {
     const { onOpenCard } = setup(salesFigures({ orders, range: day, timezone: 'UTC' }));
     fireEvent.click(screen.getByTestId('card-payments-open'));
     expect(onOpenCard).toHaveBeenCalledWith('payments');
+  });
+
+  it('shows all six cards by default', () => {
+    setup(salesFigures({ orders, range: day, timezone: 'UTC' }));
+    for (const id of ['orders', 'payments', 'products', 'categories', 'taxes', 'refunds']) {
+      expect(screen.getByTestId(`card-${id}`)).toBeTruthy();
+    }
+  });
+
+  it('leaves out the cards named in hideCards and keeps the rest in order', () => {
+    setup(salesFigures({ orders, range: day, timezone: 'UTC' }), { hideCards: ['categories', 'refunds'] });
+    expect(screen.queryByTestId('card-categories')).toBeNull();
+    expect(screen.queryByTestId('card-refunds')).toBeNull();
+    expect(screen.queryByTestId('card-categories-empty')).toBeNull();
+    const shown = Array.from(screen.getByTestId('sales-cards').children, (child) => child.getAttribute('data-testid'));
+    expect(shown).toEqual(['card-orders', 'card-payments', 'card-products', 'card-taxes']);
   });
 });
 

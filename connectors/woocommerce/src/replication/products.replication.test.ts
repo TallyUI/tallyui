@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRxDatabase, type JsonSchema } from 'rxdb';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { connectorCollection } from '@tallyui/database';
 import { at, closeTills, createFakeStore, stamp, startTill, type FakeRow } from '../__tests__/fake-store';
+import { wooProductSchema } from '../schemas/products';
 
 afterEach(closeTills);
 
@@ -103,5 +108,40 @@ describe('WooCommerce product pass cursor in the real RxDB replication loop', ()
     state.reSync();
     await vi.waitFor(() => expect(errors).not.toEqual([]));
     expect((errors[0] as any).parameters.errors[0]).toMatchObject({ name: 'WooDateFilterError', code: 'unsupported_store' });
+  });
+});
+
+/** The version 3 product schema: version 4 without low_stock_amount. */
+function previousProductSchema(): typeof wooProductSchema {
+  const variationDocs = wooProductSchema.properties.variation_docs;
+  const items = variationDocs.items as JsonSchema;
+  const variationProperties = { ...items.properties };
+  delete variationProperties.low_stock_amount;
+  const properties: typeof wooProductSchema.properties = { ...wooProductSchema.properties, variation_docs: { ...variationDocs, items: { ...items, properties: variationProperties } } };
+  delete properties.low_stock_amount;
+  return { ...wooProductSchema, version: 3, properties };
+}
+
+describe('WooCommerce product schema upgrade', () => {
+  it('drops a version 3 product cache on open under schema version 4 and resyncs it', async () => {
+    const v3Schema = previousProductSchema();
+    const options = { name: `woo${Math.random().toString(36).slice(2)}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false };
+    let db = await createRxDatabase(options);
+    try {
+      await db.addCollections({ products: connectorCollection(v3Schema) });
+      await db.products.insert({ uuid: 'stale', id: 999, name: 'Stale', status: 'publish', date_modified_gmt: '2026-01-01T00:00:00' });
+      expect(await db.products.count().exec()).toBe(1);
+      await db.close();
+      db = await createRxDatabase(options);
+      await db.addCollections({ products: connectorCollection(wooProductSchema) });
+      expect(db.products.schema.version).toBe(4);
+      expect(await db.products.count().exec()).toBe(0);
+      const { sync, local } = await startTill(createFakeStore(3), { db });
+      await sync();
+      expect([...(await local()).keys()].sort()).toEqual(['u1', 'u2', 'u3']);
+    } finally {
+      await closeTills();
+      await db.close();
+    }
   });
 });

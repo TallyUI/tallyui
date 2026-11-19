@@ -4,16 +4,21 @@ import {
 import type { DisplayClock } from './display-link';
 import { displayReducer, initialDisplayState, type DisplayState } from './display-state';
 import { decode, makeEnvelope, type DisplayConfig, type DisplayEnvelope } from './protocol';
+import { systemClock, SALE_ACTIONS, quietly } from './snapshot-fallback';
 import { DISPLAY_TEMPLATE, HELLO_RETRY_MS } from './use-customer-display';
 import { createDisplayPeerLink, type PeerFactory, type PeerLink, type PeerLinkState } from './webrtc';
 
-/** TallyUI's choice: how often a waiting display asks whether the cashier has confirmed. */
+/** TallyUI's choice: how often a waiting display asks whether the cashier has confirmed.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const COLLECT_POLL_MS = 2000;
-/** TallyUI's choice: how often a paired display drains its inbox while no link is open. */
+/** TallyUI's choice: how often a paired display drains its inbox while no link is open.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const DISPLAY_SIGNAL_POLL_MS = 1000;
-/** TallyUI's choice: how often it drains its inbox while a link is open, so a re-linking till's offer is still seen. */
+/** TallyUI's choice: how often it drains its inbox while a link is open, so a re-linking till's offer is still seen.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const OPEN_SIGNAL_POLL_MS = 5000;
-/** TallyUI's choice: how often it reads the snapshot fallback while no link is open. */
+/** TallyUI's choice: how often it reads the snapshot fallback while no link is open.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SNAPSHOT_POLL_MS = 2000;
 
 /** Where the display keeps its token; U8 binds it to a local collection that is never replicated (ADR-085 d5). */
@@ -53,11 +58,6 @@ export interface DisplayClient {
   close(): void;
 }
 
-const systemClock: DisplayClock = {
-  setTimeout: (run, ms) => setTimeout(run, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
-const SNAPSHOT_EVENTS: readonly string[] = ['cart.updated', 'payment.state', 'display.idle'];
 const codeOf = (error: unknown) => (error instanceof DisplaySignallingError ? error.code : undefined);
 
 /** U4's snapshot body as two envelopes, or null when any part of it cannot be trusted (ADR-085 d8). */
@@ -69,7 +69,7 @@ function parseSnapshot(body: unknown): { seq: number; config: DisplayEnvelope; e
     const configResult = decode(JSON.stringify(makeEnvelope('display.config', config as DisplayConfig, 'snapshot')));
     const eventResult = decode(JSON.stringify(event));
     if (!configResult.ok || configResult.envelope.action !== 'display.config') return null;
-    if (!eventResult.ok || !SNAPSHOT_EVENTS.includes(eventResult.envelope.action)) return null;
+    if (!eventResult.ok || !SALE_ACTIONS.has(eventResult.envelope.action)) return null;
     return { seq, config: configResult.envelope, event: eventResult.envelope };
   } catch {
     return null;
@@ -106,13 +106,7 @@ export function createDisplayClient(options: DisplayClientOptions): DisplayClien
     const next: Paired = { ...phase, ...patch };
     if (next.link !== phase.link || next.source !== phase.source || next.online !== phase.online) setPhase(next);
   };
-  const report = (error: unknown) => {
-    try {
-      onError?.(error);
-    } catch {
-      // A failing error handler must not break the client.
-    }
-  };
+  const report = (error: unknown) => quietly(() => onError?.(error));
   const live = (session: number) => !closed && session === epoch;
   const after = (ms: number, run: () => void) => {
     const handle = clock.setTimeout(() => {

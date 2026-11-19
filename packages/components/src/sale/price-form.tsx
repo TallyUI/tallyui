@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { formatMoney, minorUnitDigits, moneyFromDecimalString } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits, moneyFromDecimalString } from '@tallyui/core';
 
 /** The cashier's entry as integer minor units of `currency` (0 allowed), or the inline error to show. */
 export function parsePrice(text: string, currency: string): number | string {
@@ -44,6 +44,7 @@ export function PriceForm({ lineName, currency, currentMinor, onApply, onClose, 
   /** Percentages off the current price, as v2's price-keypad keys; the first three valid ones (0 < n ≤ 100) are drawn. */
   quickDiscounts?: readonly number[];
 }): JSX.Element {
+  const formatMoney = useFormatMoney();
   const [text, setText] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);

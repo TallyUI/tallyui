@@ -46,6 +46,9 @@ describe('WooCommerce orders', () => {
       payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 3291 }],
       refunds: [{ id: '140', amountMinor: 350, reason: 'Damaged' }],
     });
+    expect(order.fees).toStrictEqual([{ id: '31', name: 'Loyalty', totalMinor: -100, taxMinor: 0, taxStatus: 'none' }]);
+    expect(order.shipping).toStrictEqual([{ id: '32', name: 'Delivery', totalMinor: 400, taxMinor: 0, methodId: 'flat_rate' }]);
+    expect(order.payments[0]).not.toHaveProperty('id');
     expect(order.lines[0]!.clientLineId).toBe('00000000-0000-4000-8000-000000001370');
   });
 
@@ -58,6 +61,7 @@ describe('WooCommerce orders', () => {
       tax_lines: [{ label: 'Tax', rate_code: '', rate_percent: 'x', tax_total: '0.10', shipping_tax_total: '0.05' }],
       discount_total: '0', discount_tax: '0', total_tax: '0.15', total: '1.15',
       payment_method: 'bacs', payment_method_title: '',
+      date_paid_gmt: '2026-10-06T04:54:03',
     });
     expect(order.reference).toBe('9');
     expect(order).not.toHaveProperty('clientOrderId');
@@ -69,6 +73,208 @@ describe('WooCommerce orders', () => {
     expect(order.taxLines).toStrictEqual([{ label: 'Tax', ratePpm: 0, amountMinor: 15 }]);
     expect(order.payments).toStrictEqual([{ method: 'bacs', amountMinor: 115 }]);
     expect(order).toMatchObject({ fees: [], shipping: [], coupons: [], refunds: [] });
+  });
+
+  it('reports no payments for an unpaid order', () => {
+    const raw = {
+      id: 9, status: 'pending', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10', payment_method: 'cod',
+    };
+    expect(toWooStoreOrder(raw).payments).toStrictEqual([]);
+    expect(toWooStoreOrder({ ...raw, date_paid: null, date_paid_gmt: '' }).payments).toStrictEqual([]);
+  });
+
+  it('reports the captured rows of a payment ledger in order', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      payment_method: 'pos_card', payment_method_title: 'Cash + Card', date_paid_gmt: '2026-10-06T04:54:03',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { id: '1', method_id: 'pos_cash', amount: '5.00', currency: 'USD', status: 'captured' },
+        { id: '2', method_id: 'pos_card', amount: '7.10', currency: 'USD', status: 'captured' },
+        { id: '3', method_id: 'pos_card', amount: '3.00', currency: 'USD', status: 'authorized' },
+        { id: '4', method_id: 'pos_cash', amount: '1.00', currency: 'USD', status: 'voided' },
+        { id: '5', method_id: 'stripe', amount: '2.00', currency: 'USD', status: 'failed' },
+      ] } }],
+    });
+    expect(order.payments).toStrictEqual([
+      { id: '1', method: 'pos_cash', kind: 'cash', amountMinor: 500 },
+      { id: '2', method: 'pos_card', kind: 'external', amountMinor: 710 },
+    ]);
+  });
+
+  it('falls back to the paid rule for a ledger with no captured row', () => {
+    const raw = {
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      payment_method: 'pos_card', payment_method_title: 'Card', date_paid_gmt: '2026-10-06T04:54:03',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { id: '1', method_id: 'pos_card', amount: '15.10', currency: 'USD', status: 'pending' },
+      ] } }],
+    };
+    expect(toWooStoreOrder(raw).payments).toStrictEqual([{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1510 }]);
+    expect(toWooStoreOrder({ ...raw, date_paid_gmt: undefined }).payments).toStrictEqual([]);
+  });
+
+  it('gives the title to ledger rows that all share the order method', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '10.00',
+      payment_method: 'pos_card', payment_method_title: 'Card',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_card', amount: '4.00', currency: 'USD', status: 'captured' },
+        { method_id: 'pos_card', amount: '6.00', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toStrictEqual([
+      { method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 400 },
+      { method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 600 },
+    ]);
+  });
+
+  it('treats date_paid alone as paid', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      payment_method: 'cod', date_paid: '2026-10-06T04:54:03',
+    });
+    expect(order.payments).toStrictEqual([{ method: 'cod', amountMinor: 1510 }]);
+  });
+
+  it('throws a server error for a captured ledger row without a method', () => {
+    const call = () => toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: '', amount: '5.00', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(call).toThrow(CustomerServiceError);
+    expect(call).toThrow(expect.objectContaining({ code: 'server', message: 'unexpected response' }));
+  });
+
+  it('reads a 2.0 order with a 6dp total and 2dp ledger amounts', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '9.900000',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '9.90', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toStrictEqual([{ method: 'pos_cash', kind: 'cash', amountMinor: 990 }]);
+  });
+
+  it('throws a server error for a captured ledger row in another currency', () => {
+    const call = () => toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { id: '1', method_id: 'pos_cash', amount: '5.00', currency: 'EUR', status: 'captured' },
+      ] } }],
+    });
+    expect(call).toThrow(CustomerServiceError);
+    expect(call).toThrow(expect.objectContaining({ code: 'server', message: 'unexpected response' }));
+  });
+
+  it('falls back to a payment of the total for a paid order with a schema 2 ledger', () => {
+    const order = toWooStoreOrder({
+      id: 9, status: 'processing', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      payment_method: 'pos_card', payment_method_title: 'Card', date_paid_gmt: '2026-10-06T04:54:03',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 2, payments: [
+        { id: '1', method_id: 'pos_cash', amount: '5.00', currency: 'USD', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toStrictEqual([{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 1510 }]);
+  });
+
+  it.each([
+    { schema: 2, payments: [] }, { schema: 1 }, { schema: 1, payments: 'x' }, 'x', null,
+  ])('flags an unreadable payment ledger %j while keeping the paid-state fallback', (value) => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+      date_paid_gmt: '2026-10-06T04:54:03', payment_method: 'pos_cash',
+      meta_data: [{ key: '_wcpos_payments', value }],
+    });
+    expect(order.paymentRecordUnreadable).toBe(true);
+    expect(order.payments).toStrictEqual([{ method: 'pos_cash', kind: 'cash', amountMinor: 1510 }]);
+  });
+
+  it('leaves out the unreadable flag for absent or readable payment ledgers', () => {
+    for (const meta_data of [
+      [],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [] } }],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '15.10', currency: 'USD', status: 'captured' },
+      ] } }],
+      [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '15.10', currency: 'USD', status: 'pending' },
+      ] } }],
+    ]) {
+      const order = toWooStoreOrder({
+        id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+        discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10',
+        date_paid_gmt: '2026-10-06T04:54:03', payment_method: 'pos_cash', meta_data,
+      });
+      expect(order).not.toHaveProperty('paymentRecordUnreadable');
+    }
+  });
+
+  it('reads the store revision only when it is a non-empty string', () => {
+    const raw = {
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '0',
+    };
+    expect(toWooStoreOrder({ ...raw, _rxdb_revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' }).revision).toBe('sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298');
+    for (const revision of [{}, { _rxdb_revision: '' }, { _rxdb_revision: 7 }]) {
+      expect(toWooStoreOrder({ ...raw, ...revision })).not.toHaveProperty('revision');
+    }
+  });
+
+  it('reads the recorded fee id, tax status and tax class only when defined', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      fee_lines: [
+        { id: 7, name: 'Fee', total: '1.00', total_tax: '0', tax_status: 'taxable', tax_class: 'reduced-rate' },
+        { id: 0, name: 'Fee', total: '1.00', total_tax: '0', tax_status: 'shipping', tax_class: '' },
+      ],
+    });
+    expect(order.fees).toStrictEqual([
+      { id: '7', name: 'Fee', totalMinor: 100, taxMinor: 0, taxStatus: 'taxable', taxClass: 'reduced-rate' },
+      { name: 'Fee', totalMinor: 100, taxMinor: 0 },
+    ]);
+  });
+
+  it('reads the recorded shipping id, method and tax status', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      shipping_lines: [
+        { id: 9, method_title: 'Delivery', method_id: 'pos', total: '1.00', total_tax: '0', tax_status: 'taxable' },
+        { method_title: 'Delivery', method_id: '', total: '1.00', total_tax: '0', tax_status: 'shipping' },
+        { method_title: 'Delivery', total: '1.00', total_tax: '0', tax_status: 'none', tax_class: 'reduced-rate' },
+      ],
+    });
+    expect(order.shipping).toStrictEqual([
+      { id: '9', name: 'Delivery', totalMinor: 100, taxMinor: 0, methodId: 'pos', taxStatus: 'taxable' },
+      { name: 'Delivery', totalMinor: 100, taxMinor: 0 },
+      { name: 'Delivery', totalMinor: 100, taxMinor: 0, taxStatus: 'none' },
+    ]);
+  });
+
+  it('leaves out absent or empty captured payment ids', () => {
+    const order = toWooStoreOrder({
+      id: 9, currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '2.00',
+      meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+        { method_id: 'pos_cash', amount: '1.00', status: 'captured' },
+        { id: '', method_id: 'pos_cash', amount: '1.00', status: 'captured' },
+      ] } }],
+    });
+    expect(order.payments).toHaveLength(2);
+    for (const payment of order.payments) expect(payment).not.toHaveProperty('id');
   });
 
   it('maps a "-0.00" fee to a positive zero', () => {
@@ -129,7 +335,7 @@ describe('WooCommerce orders', () => {
 
   it('maps a negative 6dp fee symmetrically', () => {
     const fee = toWooStoreOrder({ ...list[1], fee_lines: [{ ...list[1]!.fee_lines[0]!, total: '-0.125000', total_tax: '-0.025000' }] }).fees[0]!;
-    expect(fee).toStrictEqual({ name: 'Loyalty', totalMinor: -13, taxMinor: -2 });
+    expect(fee).toStrictEqual({ id: '31', name: 'Loyalty', totalMinor: -13, taxMinor: -2, taxStatus: 'none' });
   });
 
   it('throws a server error on an unparseable tax amount', () => {
@@ -164,6 +370,38 @@ describe('WooCommerce orders', () => {
     expect(first.hasMore).toBe(true);
     await expect(orders.listOrders(context, { page: 2, perPage: 10, search: ' ' })).resolves.toMatchObject({ hasMore: false });
     expect(spy).toHaveBeenNthCalledWith(2, `${context.baseUrl}/orders?page=2&per_page=10&orderby=date&order=desc`, request);
+  });
+
+  it('leaves out and counts an unreadable order without ending paging early', async () => {
+    const badRow = { ...list[1], meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+      { method_id: 'pos_cash', amount: '5.00', currency: 'EUR', status: 'captured' },
+    ] } }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([list[0], badRow]));
+    const result = await orders.listOrders(context, { perPage: 2 });
+    expect(result.orders.map((order) => order.id)).toStrictEqual(['136']);
+    expect(result).toMatchObject({ unreadable: 1, hasMore: true });
+  });
+
+  it('leaves out unreadable when every order on the page is readable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(list));
+    await expect(orders.listOrders(context)).resolves.not.toHaveProperty('unreadable');
+  });
+
+  it('rejects a non-data error while reading a row instead of counting it as unreadable', async () => {
+    const error = new TypeError('boom');
+    const row = { ...list[0], get status() { throw error; } };
+    const response = new Response();
+    vi.spyOn(response, 'json').mockResolvedValueOnce([row]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    await expect(orders.listOrders(context)).rejects.toBe(error);
+  });
+
+  it('rejects a lookup of an unreadable order', async () => {
+    const badRow = { ...list[1], meta_data: [{ key: '_wcpos_payments', value: { schema: 1, payments: [
+      { method_id: 'pos_cash', amount: '5.00', currency: 'EUR', status: 'captured' },
+    ] } }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([badRow]));
+    await expect(orders.getOrders(context, ['137'])).rejects.toEqual(expect.objectContaining({ code: 'server' }));
   });
 
   describe('listOrders total', () => {

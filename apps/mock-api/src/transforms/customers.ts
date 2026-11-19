@@ -1,13 +1,5 @@
 import type { NeutralCustomer } from '../data/types';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Convert cents (integer) to a decimal string, e.g. 23560 -> "235.60". */
-function centsToDecimal(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
+import { centsToDecimal } from '../utils/money';
 
 // ---------------------------------------------------------------------------
 // WooCommerce

@@ -1,33 +1,43 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
 import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
 const screens = [
   // App shell
   { href: '/pos/app-shell', label: 'AppShell' },
+  { href: '/pos/connectivity-toast', label: 'ConnectivityToast' },
   // Input
   { href: '/pos/quantity-stepper', label: 'QuantityStepper' },
   // Cart
+  { href: '/pos/open-sale-tabs', label: 'OpenSaleTabs' },
   { href: '/pos/discount-badge', label: 'DiscountBadge' },
   { href: '/pos/cart-note-input', label: 'CartNoteInput' },
+  { href: '/pos/customer-dropdown', label: 'CustomerDropdown' },
   { href: '/pos/cart-panel', label: 'CartPanel' },
   { href: '/pos/sale-charges', label: 'Cart charges' },
+  { href: '/pos/sale-note', label: 'Cart note' },
   // Product
   { href: '/pos/category-nav', label: 'CategoryNav' },
   { href: '/pos/product-variant-picker', label: 'ProductVariantPicker' },
+  { href: '/pos/products-screen', label: 'Products screen' },
+  { href: '/pos/phone-sale', label: 'Phone sale' },
+  { href: '/pos/split-sale', label: 'Split sale' },
   // Checkout
   { href: '/pos/cash-tendered', label: 'CashTendered' },
   { href: '/pos/change-display', label: 'ChangeDisplay' },
+  { href: '/pos/receipt-sheet', label: 'ReceiptSheet' },
   { href: '/pos/customer-display', label: 'Customer display' },
   // Order
   { href: '/pos/order-status-badge', label: 'OrderStatusBadge' },
   { href: '/pos/order-card', label: 'OrderCard' },
+  { href: '/pos/order-detail', label: 'OrderDetail' },
   // Register
   { href: '/pos/cash-count-input', label: 'CashCountInput' },
   { href: '/pos/register-open-close', label: 'RegisterOpenClose' },
   { href: '/pos/register/picker', label: 'RegisterPicker' },
   { href: '/pos/register/open', label: 'OpenRegisterCard' },
   { href: '/pos/register/bar', label: 'RegisterBar' },
+  { href: '/pos/register/cashier', label: 'CashierSheet' },
   { href: '/pos/register/movement', label: 'MovementSheet' },
   { href: '/pos/register/panel', label: 'RegisterPanel' },
   { href: '/pos/register/column', label: 'RegisterColumn' },
@@ -35,12 +45,15 @@ const screens = [
   { href: '/pos/register/count', label: 'RegisterCount' },
   { href: '/pos/register/count-blind', label: 'RegisterCount (blind)' },
   { href: '/pos/register/closure', label: 'ClosureSheet' },
+  { href: '/pos/tap-targets', label: 'Tap targets' },
   // Reports
   { href: '/pos/reports/sales', label: 'Sales room' },
   // Settings
   { href: '/pos/connector-status', label: 'ConnectorStatus' },
   { href: '/pos/settings-group', label: 'SettingsGroup' },
   { href: '/pos/display-settings', label: 'DisplaySettings' },
+  { href: '/pos/printing-settings', label: 'PrintingSettings' },
+  { href: '/pos/barcode-scanning-settings', label: 'BarcodeScanningSettings' },
   { href: '/pos/store-settings-choice', label: 'StoreSettingsChoiceScreen' },
 ] as const;
 

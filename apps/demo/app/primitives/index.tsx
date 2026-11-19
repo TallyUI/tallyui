@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
 import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 

@@ -1,15 +1,9 @@
+import { isPlainObject, shapeErrors } from './shape-errors'
+
 /** Strict shape errors per ADR-070 and ADR-080 for order.refund v1; plugins run this before any lookup. */
 export function refundPayloadErrors(payload: unknown): string[] {
-  const errors: string[] = []
-  const object = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
-  const check = (valid: boolean, field: string, expected: string) => {
-    if (!valid && errors.length < 10) errors.push(`${field}: expected ${expected}`)
-  }
-  if (!object(payload)) return ['payload: expected an object']
-  const noNul = (value: unknown, field: string) => {
-    if (typeof value === 'string') check(!value.includes('\u0000'), field, 'no NUL character')
-  }
+  const { errors, check, noNul } = shapeErrors()
+  if (!isPlainObject(payload)) return ['payload: expected an object']
   const fields = ['clientRefundId', 'orderId', 'registerId', 'sessionId', 'clientOrderId', 'cashierRef',
     'lines', 'shippingMinor', 'totalMinor', 'adjustmentMinor', 'destination', 'reason', 'createdAt']
   for (const key of Object.keys(payload)) {
@@ -28,7 +22,7 @@ export function refundPayloadErrors(payload: unknown): string[] {
   const seen = new Set<string>()
   if (Array.isArray(payload.lines)) payload.lines.forEach((line, index) => {
     const path = `lines[${index}]`
-    if (!object(line)) {
+    if (!isPlainObject(line)) {
       check(false, path, 'an object')
       return
     }

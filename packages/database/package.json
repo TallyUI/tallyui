@@ -27,8 +27,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet\""
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "rxdb": "17.5.0",

@@ -7,7 +7,7 @@ import type { RxJsonSchema } from 'rxdb';
  */
 export const wooProductSchema: RxJsonSchema<any> = {
   title: 'WooCommerce Product',
-  version: 2,
+  version: 4, // 3: backorders (A16); 4: low_stock_amount; a till resyncs its products once
   type: 'object',
   primaryKey: 'uuid',
   properties: {
@@ -71,6 +71,9 @@ export const wooProductSchema: RxJsonSchema<any> = {
     stock_quantity: {
       type: ['number', 'null'],
     },
+    low_stock_amount: {
+      type: ['number', 'null'],
+    },
     stock_status: {
       type: 'string',
       default: 'instock',
@@ -81,6 +84,7 @@ export const wooProductSchema: RxJsonSchema<any> = {
       type: 'boolean',
       default: false,
     },
+    backorders: { type: 'string' },
     categories: {
       type: 'array',
       items: {
@@ -142,7 +146,8 @@ export const wooProductSchema: RxJsonSchema<any> = {
       price: { type: 'string' }, regular_price: { type: 'string' }, sale_price: { type: 'string' },
       tax_class: { type: 'string' }, tax_status: { type: 'string' },
       on_sale: { type: 'boolean' }, stock_status: { type: 'string' }, stock_quantity: { type: ['number', 'null'] },
-      manage_stock: { type: 'boolean' }, status: { type: 'string' }, purchasable: { type: 'boolean' },
+      low_stock_amount: { type: ['number', 'null'] },
+      manage_stock: { type: 'boolean' }, backorders: { type: 'string' }, status: { type: 'string' }, purchasable: { type: 'boolean' },
       attributes: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, option: { type: 'string' } } } },
     } } },
     meta_data: {

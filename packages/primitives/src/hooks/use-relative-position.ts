@@ -5,6 +5,7 @@ import type { Insets } from '../types';
 import * as React from 'react';
 import {
   Dimensions,
+  Platform,
   type LayoutRectangle,
   type ScaledSize,
   type ViewStyle,
@@ -40,7 +41,8 @@ export function useRelativePosition({
   side,
   disablePositioningStyle,
 }: UseRelativePositionArgs) {
-  const dimensions = Dimensions.get('screen');
+  // On web `screen` is the monitor and `window` the page the content must stay inside; native keeps `screen`.
+  const dimensions = Dimensions.get(Platform.OS === 'web' ? 'window' : 'screen');
 
   return React.useMemo(() => {
     if (disablePositioningStyle) {
@@ -230,6 +232,7 @@ function getContentStyle({
   dimensions,
 }: GetContentStyleArgs) {
   return Object.assign(
+    {},
     POSITION_ABSOLUTE,
     getSidePosition({
       side,

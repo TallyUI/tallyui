@@ -6,10 +6,11 @@
  */
 import type { JSX, ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
-import type { SalesFigures } from '@tallyui/pos';
+import { useFormatMoney } from '@tallyui/core';
+import type { GroupRow, PaymentRow, SalesFigures, TaxRow } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Card } from '../ui/card';
+import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
 
 export type SalesCardId = 'orders' | 'payments' | 'products' | 'categories' | 'taxes' | 'refunds';
 export interface SalesCardsProps {
@@ -17,33 +18,45 @@ export interface SalesCardsProps {
   currency: string;
   /** Opens the card's panel. */
   onOpenCard?: (card: SalesCardId) => void;
+  /** Cards to leave out, e.g. one the backend's report cannot fill; the rest keep their order. Default: all six. */
+  hide?: SalesCardId[];
 }
 
 const SWATCHES = ['bg-primary', 'bg-info', 'bg-success', 'bg-warning', 'bg-destructive'];
 const OTHER_SWATCH = 'bg-muted-foreground';
 const LEGEND_ROWS = 5;
 const TOP_PRODUCTS = 4;
-const UNKNOWN = '—';
-const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+export const UNKNOWN = '—';
+export const percent = (fraction: number) => `${(fraction * 100).toFixed(1)}%`;
+// The row names the cards and the detail panel (card-panel.tsx) share.
+export const paymentLabel = (row: PaymentRow) =>
+  row.label || (row.method === 'unpaid' ? 'Unpaid' : row.method === 'unknown' ? 'Unknown' : row.method);
+export const productLabel = (row: GroupRow) => row.name || 'Unknown';
+export const categoryLabel = (row: GroupRow) => (row.key === '' ? 'Uncategorised' : row.name);
+export const taxLabel = (row: TaxRow) => row.label || 'Tax';
 
 interface Share { label: string; value: number; text: string; note?: string; swatch: string }
 
 function ReportCard({ id, name, figure, onOpen, children }: {
   id: SalesCardId; name: string; figure: string; onOpen?: (card: SalesCardId) => void; children: ReactNode;
 }): JSX.Element {
-  const head = (
-    <View className="flex-row items-baseline justify-between gap-2">
-      <Text className="text-sm text-muted-foreground">{name}</Text>
-      <Text testID={`card-${id}-figure`} className="text-lg font-semibold text-foreground">{figure}</Text>
-    </View>
-  );
+  const label = <Text className="text-sm text-muted-foreground">{name}</Text>;
+  const value = <Text testID={`card-${id}-figure`} className="text-lg font-semibold text-foreground">{figure}</Text>;
   return (
     <Card testID={`card-${id}`} className="min-w-72 flex-1 gap-3 p-4">
       {onOpen ? (
-        <Pressable testID={`card-${id}-open`} accessibilityRole="button" accessibilityLabel={name} onPress={() => onOpen(id)}>
-          {head}
+        // v2 card.tsx: a 44 pt head that dims on press, the chevron after the figure.
+        <Pressable testID={`card-${id}-open`} accessibilityRole="button" accessibilityLabel={name} onPress={() => onOpen(id)}
+          className="min-h-11 flex-row items-center justify-between gap-2 active:opacity-70">
+          {label}
+          <View className="flex-row items-center gap-1">
+            {value}
+            <ChevronRightIcon testID={`card-${id}-chevron`} size={16} className="text-muted-foreground" />
+          </View>
         </Pressable>
-      ) : head}
+      ) : (
+        <View className="flex-row items-baseline justify-between gap-2">{label}{value}</View>
+      )}
       {children}
     </Card>
   );
@@ -93,39 +106,43 @@ function Legend({ shares }: { shares: Share[] }): JSX.Element {
 }
 
 /** The first rows with their own swatch, the rest folded into Other. */
-function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherText: (rest: T[]) => string): Share[] {
+function shares<T>(rows: T[], toShare: (row: T) => Omit<Share, 'swatch'>, otherText: (total: number) => string): Share[] {
   const head = rows.slice(0, LEGEND_ROWS).map((row, i) => ({ ...toShare(row), swatch: SWATCHES[i % SWATCHES.length] }));
   const rest = rows.slice(LEGEND_ROWS);
   if (!rest.length) return head;
-  return [...head, { label: 'Other', value: rest.reduce((sum, row) => sum + toShare(row).value, 0), text: otherText(rest), swatch: OTHER_SWATCH }];
+  const total = rest.reduce((sum, row) => sum + toShare(row).value, 0);
+  return [...head, { label: 'Other', value: total, text: otherText(total), swatch: OTHER_SWATCH }];
 }
 
-export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): JSX.Element {
+export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsProps): JSX.Element {
+  const formatMoney = useFormatMoney();
   const money = (minor: number) => formatMoney({ amount: minor, currency }) ?? '';
   const { totals, payments, products, categories, taxes, refunds } = figures;
   const { margin } = totals;
   const productNet = products.reduce((sum, row) => sum + row.netMinor, 0);
   const categoryNet = categories.reduce((sum, row) => sum + row.netMinor, 0);
   const paymentShares = shares(payments.rows, (row) => ({
-    label: row.label || (row.method === 'unpaid' ? 'Unpaid' : row.method === 'unknown' ? 'Unknown' : row.method),
-    value: row.amountMinor, text: money(row.amountMinor), note: `${row.orders} orders`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.amountMinor, 0)));
+    label: paymentLabel(row), value: row.amountMinor, text: money(row.amountMinor), note: `${row.orders} orders`,
+  }), money);
   const categoryShares = shares(categories, (row) => ({
-    label: row.key === '' ? 'Uncategorised' : row.name, value: row.netMinor, text: money(row.netMinor), note: `${row.quantity} sold`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.netMinor, 0)));
+    label: categoryLabel(row), value: row.netMinor, text: money(row.netMinor), note: `${row.quantity} sold`,
+  }), money);
   const taxShares = shares(taxes, (row) => ({
-    label: row.label || 'Tax', value: row.taxMinor, text: money(row.taxMinor),
+    label: taxLabel(row), value: row.taxMinor, text: money(row.taxMinor),
     note: row.netMinor === null ? undefined : `on ${money(row.netMinor)}`,
-  }), (rest) => money(rest.reduce((sum, row) => sum + row.taxMinor, 0)));
+  }), money);
   const card = { onOpen: onOpenCard };
+  const shows = (id: SalesCardId) => !hide?.includes(id);
 
   return (
     <View testID="sales-cards" className="flex-row flex-wrap gap-4">
-      <ReportCard id="orders" name="Orders" figure={String(totals.orderCount)} {...card}>
+      {shows('orders') && (<ReportCard id="orders" name="Orders" figure={String(totals.orderCount)} {...card}>
         {totals.orderCount === 0 ? <Empty testID="card-orders-empty">No orders in this period</Empty> : (
           <View className="gap-2">
             <StatGrid stats={[
               { label: 'Average order', value: money(totals.averageMinor) },
+              { label: 'Median', value: totals.medianMinor === undefined ? UNKNOWN : money(totals.medianMinor), testID: 'card-orders-median' },
+              { label: 'Largest', value: totals.largestMinor == null ? UNKNOWN : money(totals.largestMinor), testID: 'card-orders-largest' },
               { label: 'Items Sold', value: String(totals.items) },
               { label: 'Items per order', value: (totals.items / totals.orderCount).toFixed(1) },
               { label: 'Discounts', value: money(totals.discountMinor) },
@@ -138,13 +155,13 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             )}
           </View>
         )}
-      </ReportCard>
-      <ReportCard id="payments" name="Payments" figure={money(totals.grossMinor)} {...card}>
+      </ReportCard>)}
+      {shows('payments') && (<ReportCard id="payments" name="Payments" figure={money(totals.grossMinor)} {...card}>
         {payments.rows.length === 0 ? <Empty testID="card-payments-empty">No payments in this period</Empty> : (
           <><ProportionalBar shares={paymentShares} /><Legend shares={paymentShares} /></>
         )}
-      </ReportCard>
-      <ReportCard id="products" name="Top products" figure={String(totals.items)} {...card}>
+      </ReportCard>)}
+      {shows('products') && (<ReportCard id="products" name="Top products" figure={String(totals.items)} {...card}>
         {products.length === 0 ? <Empty testID="card-products-empty">No sales in this period</Empty> : (
           <View className="gap-2">
             {products.slice(0, TOP_PRODUCTS).map((row) => {
@@ -152,7 +169,7 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
               return (
                 <View key={row.key} className="gap-1">
                   <View className="flex-row justify-between gap-2">
-                    <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>{row.name || 'Unknown'}</Text>
+                    <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>{productLabel(row)}</Text>
                     <Text className="text-sm font-medium text-foreground">{money(row.netMinor)}</Text>
                   </View>
                   <View className="h-1.5 overflow-hidden rounded-md bg-muted">
@@ -164,13 +181,13 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             })}
           </View>
         )}
-      </ReportCard>
-      <ReportCard id="categories" name="Categories" figure={money(categoryNet)} {...card}>
+      </ReportCard>)}
+      {shows('categories') && (<ReportCard id="categories" name="Categories" figure={money(categoryNet)} {...card}>
         {categories.length === 0 ? <Empty testID="card-categories-empty">No sales in this period</Empty> : (
           <><ProportionalBar shares={categoryShares} /><Legend shares={categoryShares} /></>
         )}
-      </ReportCard>
-      <ReportCard id="taxes" name="Taxes" figure={money(totals.taxMinor)} {...card}>
+      </ReportCard>)}
+      {shows('taxes') && (<ReportCard id="taxes" name="Taxes" figure={money(totals.taxMinor)} {...card}>
         {taxes.length === 0 ? <Empty testID="card-taxes-empty">None in this period</Empty> : (
           <>
             <ProportionalBar shares={taxShares} /><Legend shares={taxShares} />
@@ -181,8 +198,8 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
             ]} />
           </>
         )}
-      </ReportCard>
-      <ReportCard id="refunds" name="Refunds" figure={money(refunds.amountMinor)} {...card}>
+      </ReportCard>)}
+      {shows('refunds') && (<ReportCard id="refunds" name="Refunds" figure={money(refunds.amountMinor)} {...card}>
         {refunds.count === 0 ? <Empty testID="card-refunds-none">None in this period</Empty> : (
           <StatGrid stats={[
             { label: 'Refunded', value: money(refunds.amountMinor) },
@@ -191,7 +208,7 @@ export function SalesCards({ figures, currency, onOpenCard }: SalesCardsProps): 
               value: totals.grossMinor === 0 ? UNKNOWN : percent((totals.grossMinor - refunds.amountMinor) / totals.grossMinor) },
           ]} />
         )}
-      </ReportCard>
+      </ReportCard>)}
     </View>
   );
 }

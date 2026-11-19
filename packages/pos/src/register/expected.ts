@@ -7,6 +7,8 @@
  * (ADR-080 amendment 1), by the server's rule. WCPOS's `attributeRefunds` fallbacks (allocations,
  * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
+import { legMethodId } from '@tallyui/core';
+import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 
@@ -31,9 +33,12 @@ export type LedgerRow = {
   amountMinor: number;
 };
 
-/** The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change. */
+/**
+ * The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change.
+ * A locked store payment (storePaymentId set) is the store's earlier money, not this till's, and is left out (ADR-090 gate 11).
+ */
 export function paymentLedgerRows(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[]): LedgerRow[] {
-  return orders.flatMap((order) => order.payments.map((payment) => ({
+  return orders.flatMap((order) => tillPayments(order.payments).map((payment) => ({
     session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));
@@ -68,11 +73,12 @@ export function deriveExpected({
   ledgerRowsBySession: readonly LedgerRow[];
   refunds?: readonly RefundRow[];
 }): Record<string, number> {
-  const totals: Record<string, number> = { cash: session.countedFloatMinor };
+  // A Map, so a method id named like an Object.prototype member (`__proto__`) stays an ordinary key.
+  const totals = new Map<string, number>([['cash', session.countedFloatMinor]]);
+  const plus = (method: string, amount: number) => totals.set(method, (totals.get(method) ?? 0) + amount);
   for (const row of ledgerRowsBySession) {
     if (row.session_id !== session.id || row.status !== 'captured') continue;
-    const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    totals[method] = (totals[method] ?? 0) + row.amountMinor;
+    plus(row.kind === 'cash' ? 'cash' : row.method_id, row.amountMinor);
   }
   const voids = new Set(
     movements
@@ -81,14 +87,14 @@ export function deriveExpected({
   );
   for (const row of movements) {
     if (row.session_id !== session.id || row.voided_by || voids.has(row.id)) continue;
-    if (row.type === 'paid_in') totals.cash += row.amountMinor;
-    if (row.type === 'paid_out') totals.cash -= row.amountMinor;
+    if (row.type === 'paid_in') plus('cash', row.amountMinor);
+    if (row.type === 'paid_out') plus('cash', -row.amountMinor);
   }
   for (const refund of refunds ?? []) {
     if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
-    for (const [method, amount] of refundAmounts(refund)) totals[method] = (totals[method] ?? 0) - amount;
+    for (const [method, amount] of refundAmounts(refund)) plus(method, -amount);
   }
-  return totals;
+  return Object.fromEntries(totals);
 }
 
 export interface DrawerTerm { amountMinor: number; count: number }
@@ -122,12 +128,14 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
     target.count += 1;
   };
   const [cashSales, cashRefunds, paidIn, paidOut] = [term(), term(), term(), term()];
-  const otherTenders: Record<string, DrawerTerm> = {};
+  // A Map, so a `__proto__` method id never writes onto Object.prototype.
+  const others = new Map<string, DrawerTerm>();
+  const other = (method: string) => others.get(method) ?? others.set(method, term()).get(method)!;
   let noSales = 0;
   for (const row of ledgerRowsBySession) {
     if (row.session_id !== session.id || row.status !== 'captured') continue;
     const method = row.kind === 'cash' ? 'cash' : row.method_id;
-    add(method === 'cash' ? cashSales : (otherTenders[method] ??= term()), row.amountMinor);
+    add(method === 'cash' ? cashSales : other(method), row.amountMinor);
   }
   const voids = new Set(movements.filter((row) => row.session_id === session.id && row.type === 'void').map((row) => row.voids));
   for (const row of movements) {
@@ -140,13 +148,35 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
     if (refund.status !== 'applied' || refund.sessionId !== session.id) continue;
     for (const [method, amount] of refundAmounts(refund)) {
       if (method === 'cash') add(cashRefunds, amount);
-      else add((otherTenders[method] ??= term()), -amount);
+      else add(other(method), -amount);
     }
   }
+  const otherTenders = Object.fromEntries(others);
   const otherMinor = Object.values(otherTenders).reduce((sum, row) => sum + row.amountMinor, 0);
   return {
     floatMinor: session.countedFloatMinor, cashSales, cashRefunds, paidIn, paidOut, noSales, otherTenders,
     sessionSalesMinor: cashSales.amountMinor - cashRefunds.amountMinor + otherMinor,
     expected: deriveExpected(input),
   };
+}
+
+/**
+ * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) of the
+ * orders whose `sessionId` is `sessionId`, keyed by `legMethodId`'s kind plus id (`external:stripe`), with the number of
+ * payments behind each. Local only, never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070
+ * decision 1). A leg with no methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to
+ * deriveDrawerTerms' cash sales plus other tenders for the same orders. Refunds and movements are not here: they are keyed
+ * by the wire method. The map has no prototype, so a platform id such as `__proto__` or `toString` is a key like any other.
+ */
+export function takingsByMethod(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[], sessionId: string): Record<string, DrawerTerm> {
+  const takings: Record<string, DrawerTerm> = Object.create(null);
+  for (const order of orders) {
+    if (order.sessionId !== sessionId) continue;
+    for (const payment of tillPayments(order.payments)) {
+      const term = (takings[legMethodId(payment)] ??= { amountMinor: 0, count: 0 });
+      term.amountMinor += payment.amountMinor;
+      term.count += 1;
+    }
+  }
+  return takings;
 }

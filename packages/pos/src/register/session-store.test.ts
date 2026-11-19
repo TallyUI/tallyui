@@ -129,6 +129,16 @@ describe('closure refunds (ADR-080 amendment 1)', () => {
     expect(closure.till_expected.voucher).toBe(-300);
   });
 
+  it('keeps a __proto__ method id as an ordinary own key in the persisted payment methods', async () => {
+    const args = await closedInput();
+    const byMethod = JSON.parse('{"__proto__":300}') as Record<string, number>;
+    const closure = await writeClosure({ ...args, refunds: [refund('proto', args.session.id, byMethod)] });
+    const methods = closure.toJSON().breakdowns.payment_methods as Record<string, unknown>;
+    expect(Object.hasOwn(methods, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(methods, '__proto__')?.value).toStrictEqual({ sales_minor: 0, refunds_minor: 300 });
+    expect(Object.getPrototypeOf(methods)).toBe(Object.prototype);
+  });
+
   it('keeps tillExpected authoritative while counting refund totals', async () => {
     const args = await closedInput();
     const tillExpected = { cash: 123, external: 456 };
@@ -360,6 +370,55 @@ it('stores the first close approval on the session without putting it on the Z',
     otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0',
   });
   expect(JSON.stringify(closure.toJSON())).not.toContain('proof-1');
+});
+
+it('closeSession writes the note with the count', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: 'Float short' });
+  expect(closed.toJSON()).toMatchObject({ status: 'closed', counted: { cash: 9000 }, count_note: 'Float short' });
+});
+
+it('a blank note is stored as null', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: '   ' });
+  expect(closed.count_note).toBeNull();
+});
+
+it('closeSession stores the note trimmed', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: '  short by 5  ' });
+  expect(closed.count_note).toBe('short by 5');
+});
+
+it("a repeat close keeps the first close's note", async () => {
+  const doc = await openSession(db.register_sessions, input);
+  await closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note: 'First' });
+  const again = await closeSession(db.register_sessions, doc.id, { counted: { cash: 1 }, note: 'Second' });
+  expect(again.count_note).toBe('First');
+  expect((await db.register_sessions.findOne(doc.id).exec())?.count_note).toBe('First');
+});
+
+it('writeClosure freezes a non-blank count_note as breakdowns.variance_note, and omits it when blank', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const close = async (note?: string) => {
+    const doc = await openSession(db.register_sessions, input);
+    return closeSession(db.register_sessions, doc.id, { counted: { cash: 9000 }, note });
+  };
+  const freeze = async (session: RegisterSession) => writeClosure({
+    closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: 9000,
+    otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0',
+  });
+  expect((await freeze(await close('Float short'))).breakdowns.variance_note).toBe('Float short');
+  // closeSession already nulls a blank note; patch the local-only row so writeClosure's own trim is what runs.
+  const blank = await (await close()).incrementalPatch({ count_note: '  ' });
+  expect(blank.count_note).toBe('  ');
+  expect((await freeze(blank)).breakdowns).not.toHaveProperty('variance_note');
+});
+
+it('a session opened after the upgrade stores count_note null', async () => {
+  const doc = await openSession(db.register_sessions, input);
+  expect(doc.toJSON()).toHaveProperty('count_note', null);
+  expect((await db.register_sessions.findOne(doc.id).exec())?.toJSON()).toHaveProperty('count_note', null);
 });
 
 it('leaves approver_token null when the close has no approval', async () => {

@@ -101,3 +101,20 @@ export function paymentMethodOf(kind: PaymentMethodKind): PaymentMethodDescripto
 export function defaultPaymentMethods(): PaymentMethodDescriptor[] {
   return [paymentMethodOf('cash'), paymentMethodOf('external')];
 }
+
+/** The descriptor kinds whose wire method is 'cash'. */
+const CASH_KINDS: readonly string[] = ['cash'];
+/** The order's wire method for a descriptor (ruling A, 2026-11-18): a cash-kind method is 'cash', every other kind 'external'. The one kind→method rule. */
+export function wireMethodOf(descriptor: Pick<PaymentMethodDescriptor, 'kind'>): PaymentMethodKind {
+  return CASH_KINDS.includes(descriptor.kind) ? 'cash' : 'external';
+}
+
+/**
+ * A leg's takings key, for labels, takings and report rows: its wire `method` when it has no `methodId` or the id is the
+ * method itself (exactly the key before methodId), else `${method}:${methodId}`. Kind plus id, so that a non-cash method
+ * whose platform id happens to be `cash` (`{ method: 'external', methodId: 'cash' }`) never merges with cash. Never for
+ * cash decisions or register rows: those read `method`.
+ */
+export function legMethodId(leg: { method: string; methodId?: string }): string {
+  return leg.methodId === undefined || leg.methodId === leg.method ? leg.method : `${leg.method}:${leg.methodId}`;
+}

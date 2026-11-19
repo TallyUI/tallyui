@@ -1,7 +1,8 @@
-import { ConnectorUnauthorizedError, defaultPaymentMethods } from '@tallyui/core';
+import { defaultPaymentMethods } from '@tallyui/core';
 import type { CaptureModeEntry, PaymentHardware, PaymentMethodDescriptor, PaymentRounding, SyncContext } from '@tallyui/core';
 
 import { wooMinorFromDecimal } from './commands/transport';
+import { throwIfUnauthorized } from './unauthorized';
 
 // The plugin's own default `order` for a gateway without one (woocommerce-pos Descriptor_Builder.php).
 const WOO_DEFAULT_ORDER = 999;
@@ -42,7 +43,7 @@ function hasMoneyString(row: WireRow): boolean {
 async function storeCurrency(context: SyncContext): Promise<string> {
   // Any failure but a refusal is "no store currency".
   const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }).catch(() => undefined);
-  if (response?.status === 401 || response?.status === 403) throw new ConnectorUnauthorizedError(`WooCommerce stores: HTTP ${response.status}`, response.status);
+  throwIfUnauthorized(response, 'stores');
   const stores: unknown = response?.ok ? await response.json().catch(() => undefined) : undefined;
   const currency = Array.isArray(stores) ? objectOr(stores[0]).currency : undefined;
   if (typeof currency !== 'string') throw new Error('WooCommerce payment methods: no store currency');
@@ -101,7 +102,7 @@ export async function wooPaymentMethods(context: SyncContext): Promise<PaymentMe
   const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/payment-methods`, { method: 'GET', headers: context.headers, signal: context.signal });
   // The route shipped in woocommerce-pos 2.0.0; an older plugin keeps today's two methods.
   if (response.status === 404) return defaultPaymentMethods();
-  if (response.status === 401 || response.status === 403) throw new ConnectorUnauthorizedError(`WooCommerce payment methods: HTTP ${response.status}`, response.status);
+  throwIfUnauthorized(response, 'payment methods');
   if (!response.ok) throw new Error(`WooCommerce payment methods: HTTP ${response.status}`);
   const body: unknown = await response.json();
   if (!isObject(body) || !Number.isInteger(body.schema) || typeof body.contract !== 'string' || !Array.isArray(body.methods)) {

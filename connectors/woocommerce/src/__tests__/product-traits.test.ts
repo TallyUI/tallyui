@@ -92,7 +92,7 @@ describe('WooCommerce getVariants', () => {
         options: { Size: 'M', Colour: 'Black' } },
     ].map((variant) => ({ ...variant,
       prices: [{ amount: 2500, currency: 'EUR', kind: 'base' }],
-      stock: { status: 'in_stock', quantity: 10 },
+      stock: { status: 'in_stock', quantity: 10, backorders: 'no' },
     })));
   });
 
@@ -398,6 +398,17 @@ describe('WooCommerce neutral price and stock', () => {
     expect(wooProductTraits.getStock({ stock_status: 'onbackorder', manage_stock: false }).status)
       .toBe('backorder');
     expect(wooProductTraits.getStock({}).status).toBe('unknown');
+  });
+
+  it('passes WooCommerce backorders through getStock and getVariants', () => {
+    expect(wooProductTraits.getStock({ stock_status: 'outofstock', manage_stock: true, stock_quantity: 0, backorders: 'notify' }))
+      .toStrictEqual({ status: 'out_of_stock', quantity: 0, backorders: 'notify' });
+    expect(wooProductTraits.getStock({ stock_status: 'instock', backorders: 'maybe' }))
+      .not.toHaveProperty('backorders');
+    const product = { id: 102, type: 'variable', variation_docs: [
+      { id: 104, status: 'publish', purchasable: true, backorders: 'yes' },
+    ] };
+    expect(wooProductTraits.getVariants!(product, { currency: 'EUR' })[0].stock.backorders).toBe('yes');
   });
 
   it('leaves quantity undefined when stock is not managed', () => {

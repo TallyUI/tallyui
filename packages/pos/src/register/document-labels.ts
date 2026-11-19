@@ -44,3 +44,28 @@ export const labelKeys = {
   void: 'register.void',
   copy: 'reports.document.copy',
 };
+
+// The English wording for offline documents, keyed like `ClosureContext.i18n`.
+export const ENGLISH_CLOSURE_LABELS: Record<keyof typeof labelKeys, string> = {
+  x_report: 'X report', closure: 'Closure',
+  opened: 'Opened', closed: 'Closed',
+  approver: 'Approver', opening_float: 'Opening float',
+  expected: 'Expected', counted: 'Counted',
+  variance: 'Variance', tenders: 'Tenders',
+  tender: 'Tender', cash_movements: 'Cash movements',
+  time: 'Time', type: 'Type',
+  amount: 'Amount', reason: 'Reason',
+  sales: 'Sales', period_sales: 'Period sales',
+  period_refunds: 'Period refunds', transactions: 'Transactions',
+  refunds: 'Refunds', payment_method: 'Payment method',
+  cashiers: 'Cashiers', tax_rates: 'Tax rates',
+  tax_rate: 'Tax rate', net: 'Net',
+  tax: 'Tax', gross: 'Gross',
+  perpetual_totals: 'Perpetual totals', perpetual_sales: 'Perpetual sales',
+  perpetual_refunds: 'Perpetual refunds', unsynced_sales: 'Unsynced sales',
+  short: 'Short', over: 'Over',
+  exact: 'Exact', voided: 'Voided',
+  paid_in: 'Paid in', paid_out: 'Paid out',
+  no_sale: 'No sale', void: 'Void',
+  copy: 'Copy',
+};

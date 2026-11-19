@@ -11,7 +11,10 @@ import type { CategoryNavProps, ProductGrid, ProductStockBadge, ProductTableProp
 // product/input/ui modules the same way medusapos mocked `@tallyui/components`: the tile is composed
 // directly in catalogue.tsx (ProductCard has no children slot), so only ProductTitle and ProductStockBadge
 // need to render real content for the tests below.
-vi.mock('../product', () => ({
+// Loading with no items, the table view renders the real ProductTable, so its header and skeleton rows can be read.
+vi.mock('../product', async () => {
+  const { ProductTable: ActualProductTable } = await vi.importActual<typeof import('../product/product-table')>('../product/product-table');
+  return {
   CategoryNav: ({ categories, selectedId, onSelect }: CategoryNavProps) => (
     <div data-testid="category-nav">
       {categories.map(({ id, name }) => (
@@ -19,17 +22,19 @@ vi.mock('../product', () => ({
       ))}
     </div>
   ),
-  ViewToggle: ({ value, onChange }: ViewToggleProps) => (
-    <div data-testid="view-toggle">
+  ViewToggle: ({ value, onChange, variant }: ViewToggleProps) => (
+    <div data-testid="view-toggle" data-variant={variant}>
       {(['grid', 'table'] as const).map((view) => (
         <button key={view} data-testid={`view-toggle-${view}`} aria-pressed={value === view} onClick={() => onChange(view)}>{view}</button>
       ))}
     </div>
   ),
-  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState }: ProductTableProps) => (
-    <div data-testid="table" data-sort-items={String(sortItems)}>
+  ProductTable: ({ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity, ...rest }: ProductTableProps) => rest.loading && !items.length
+    ? <ActualProductTable {...{ items, sort, sortItems, onSortChange, onSelect, emptyState, showThumbnail, showAddButton, cartQuantity, ...rest }} /> : (
+    <div data-testid="table" data-sort-items={String(sortItems)} data-show-thumbnail={showThumbnail} data-show-add-button={showAddButton}>
       <button data-testid="table-sort" onClick={() => onSortChange?.({ field: 'name', dir: sort?.dir === 'asc' ? 'desc' : 'asc' })}>Sort</button>
-      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
+      {items.length ? items.map((item) => <button key={item.id} data-testid={`table-row-${item.id}`} data-in-cart={cartQuantity?.(item)}
+        onClick={() => onSelect?.(item)}>{item.title}</button>) : emptyState}
     </div>
   ),
   ProductGrid: ({ items, renderItem, emptyState, numColumns }: ComponentProps<typeof ProductGrid>) => (
@@ -43,7 +48,8 @@ vi.mock('../product', () => ({
   ProductStockBadge: ({ doc, showAsOf }: ComponentProps<typeof ProductStockBadge>) => (
     <span data-testid={`stock-badge-${doc.id}`} data-as-of={String(showAsOf)}>{traits.getStock(doc).status}</span>
   ),
-}));
+  };
+});
 vi.mock('../input', () => ({
   SearchInput: ({ value, onChangeText, onSubmitEditing, placeholder, autoFocus }:
     { value: string; onChangeText: (text: string) => void; onSubmitEditing?: (event: unknown) => void; placeholder?: string; autoFocus?: boolean }) => (
@@ -52,7 +58,8 @@ vi.mock('../input', () => ({
       onKeyDown={(event) => { if (event.key === 'Enter') onSubmitEditing?.({}); }} />
   ),
 }));
-vi.mock('../ui', () => ({
+vi.mock('../ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../ui')>(),
   VStack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -296,7 +303,7 @@ describe('Catalogue', () => {
   });
   it('says Loading products… on an empty grid before the first sync completes', () => {
     mount([]);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
   });
   it('a loading={false} override shows No products yet. even without a sync', () => {
@@ -310,13 +317,43 @@ describe('Catalogue', () => {
   });
   it('still says Loading products… before the first sync with a null pullError', () => {
     render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} pullError={null} />);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
   });
   it('a loading={true} override says Loading products… even with a pullError', () => {
     render(<Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} loading={true} pullError={new Error('offline')} />);
-    expect(screen.getByText('Loading products…')).toBeTruthy();
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
     expect(screen.queryByText('No products yet.')).toBeNull();
+  });
+  it('draws skeleton tiles in the grid while the first pull runs', () => {
+    mount([]);
+    const columns = Number(screen.getByTestId('grid').getAttribute('data-columns'));
+    const tiles = screen.getAllByTestId('catalogue-loading-tile');
+    expect(columns).toBeGreaterThan(0);
+    expect(tiles.length).toBeGreaterThan(0);
+    expect(tiles.length % columns).toBe(0);
+    expect(within(screen.getByTestId('catalogue-loading')).getAllByTestId('catalogue-loading-tile')).toHaveLength(tiles.length);
+    expect(screen.queryByText('Loading products…')).toBeNull();
+  });
+  it('draws no skeleton once loaded or with a pullError', () => {
+    const props = { products: [], traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
+    const view = render(<Catalogue {...props} loading={false} />);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+    view.rerender(<Catalogue {...props} pullError={new Error('offline')} />);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+  });
+  it('the table view draws the header and skeleton rows while loading', () => {
+    render(
+      <ConnectorProvider connector={medusaConnector}>
+        <Catalogue products={[]} traits={traits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null} defaultViewState={{ view: 'table' }} />
+      </ConnectorProvider>,
+    );
+    expect(screen.getByText('Name')).toBeTruthy();
+    expect(screen.getByText('Price')).toBeTruthy();
+    expect(screen.getAllByTestId('product-table-skeleton-row').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('catalogue-loading')).toBeNull();
   });
   it('still shows the no-match message while loading', () => {
     const { input } = mount([]);
@@ -616,7 +653,7 @@ describe('Catalogue view state', () => {
     const onStateChange = vi.fn();
     const saveViewState = vi.fn();
     render(<Catalogue {...props} showViewToggle statusText="Synced" onStateChange={onStateChange} saveViewState={saveViewState} />);
-    expect(within(screen.getByTestId('catalogue-status-row')).getByTestId('view-toggle')).toBeTruthy();
+    expect(within(screen.getByTestId('catalogue-search-row')).getByTestId('view-toggle')).toBeTruthy();
     fireEvent.click(screen.getByTestId('view-toggle-grid'));
     expect(onStateChange).not.toHaveBeenCalled();
     expect(saveViewState).not.toHaveBeenCalled();
@@ -625,6 +662,32 @@ describe('Catalogue view state', () => {
     expect(screen.queryByTestId('grid')).toBeNull();
     expect(onStateChange.mock.calls).toEqual([[tableState]]);
     expect(saveViewState.mock.calls).toEqual([[tableState]]);
+  });
+
+  it('puts the view toggle and searchAccessory in the search row, in v2\'s order', () => {
+    const accessory = <span data-testid="search-accessory">Settings</span>;
+    const { rerender } = render(<Catalogue {...props} showViewToggle searchAccessory={accessory} />);
+    const row = within(screen.getByTestId('catalogue-search-row'));
+    const search = row.getByPlaceholderText('Search or scan barcode / SKU');
+    const toggle = row.getByTestId('view-toggle');
+    expect(toggle.getAttribute('data-variant')).toBe('icon');
+    const extra = row.getByTestId('search-accessory');
+    expect(search.compareDocumentPosition(toggle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(toggle.compareDocumentPosition(extra)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByTestId('catalogue-status-row')).toBeNull();
+    rerender(<Catalogue {...props} searchAccessory={accessory} />);
+    const only = within(screen.getByTestId('catalogue-search-row'));
+    expect(only.getByTestId('search-accessory')).toBeTruthy();
+    expect(screen.queryByTestId('view-toggle')).toBeNull();
+  });
+
+  it('renders no search row for an empty searchAccessory', () => {
+    for (const empty of [false, null, undefined, '']) {
+      const { unmount } = render(<Catalogue {...props} searchAccessory={empty} />);
+      expect(screen.queryByTestId('catalogue-search-row')).toBeNull();
+      expect(screen.getByPlaceholderText('Search or scan barcode / SKU')).toBeTruthy();
+      unmount();
+    }
   });
 
   it('uses a synchronous load on the first render and reports without saving', () => {
@@ -652,6 +715,21 @@ describe('Catalogue view state', () => {
     expect(screen.getByTestId('table')).toBeTruthy();
     expect(onStateChange.mock.calls).toEqual([[tableState]]);
     expect(saveViewState).not.toHaveBeenCalled();
+  });
+
+  it('passes tableRow to the table as showThumbnail and showAddButton', () => {
+    const flags = ['data-show-thumbnail', 'data-show-add-button'];
+    const { rerender } = render(<Catalogue {...props} defaultViewState={{ view: 'table' }} tableRow={{ thumbnail: true, addButton: true }} />);
+    expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual(['true', 'true']);
+    rerender(<Catalogue {...props} defaultViewState={{ view: 'table' }} />);
+    expect(flags.map((flag) => screen.getByTestId('table').getAttribute(flag))).toEqual([null, null]);
+  });
+
+  it("passes the cart's summed quantities to the table", () => {
+    render(<Catalogue {...props} defaultViewState={{ view: 'table' }}
+      cartLines={[{ productId: 'shirt', quantity: 2 }, { productId: 'shirt', quantity: 1 }]} />);
+    expect(screen.getByTestId('table-row-shirt').getAttribute('data-in-cart')).toBe('3');
+    expect(screen.getByTestId('table-row-hat').getAttribute('data-in-cart')).toBe('0');
   });
 
   it('fills a synchronous load from defaultViewState', () => {
@@ -746,6 +824,29 @@ describe('Catalogue view state', () => {
   it('merges a fixed column count into the default view state', () => {
     render(<Catalogue {...props} defaultViewState={{ gridColumns: 3 }} />);
     expect(screen.getByTestId('grid').getAttribute('data-columns')).toBe('3');
+  });
+
+  it('renders rowsSlot between the header and the products, in grid and table view, and nothing without it', () => {
+    const rows = <span>Price check only</span>;
+    const { rerender } = render(<Catalogue {...props} rowsSlot={rows} />);
+    for (const body of ['grid', 'table']) {
+      const slot = screen.getByTestId('catalogue-rows');
+      expect(slot.textContent).toBe('Price check only');
+      const search = screen.getByPlaceholderText('Search or scan barcode / SKU');
+      expect(search.compareDocumentPosition(slot)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(slot.compareDocumentPosition(screen.getByTestId(body))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      rerender(<Catalogue {...props} rowsSlot={rows} viewState={{ ...gridState, view: 'table' }} />);
+    }
+    rerender(<Catalogue {...props} />);
+    expect(screen.queryByTestId('catalogue-rows')).toBeNull();
+  });
+
+  it('renders no rows band for an empty rowsSlot', () => {
+    for (const empty of [false, null, undefined, '']) {
+      const { unmount } = render(<Catalogue {...props} rowsSlot={empty} />);
+      expect(screen.queryByTestId('catalogue-rows')).toBeNull();
+      unmount();
+    }
   });
 
   it('shows supplied items in their order despite query and sort, and reports query text', () => {

@@ -24,6 +24,7 @@ Requires a `ConnectorProvider` ancestor in the component tree.
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `doc` | `any` | required | Customer document from RxDB |
+| `traits` | `CustomerTraits<Doc>` | from `ConnectorProvider` | Customer traits used to read the name, email and address summary; read from the connector context when omitted |
 | `className` | `string` | --- | Override container styles |
 
 ## Trait mapping

@@ -1,12 +1,5 @@
 import type { NeutralProduct } from '../data/types';
-
-/**
- * Convert cents (integer) to a WooCommerce-style decimal string.
- * e.g. 129900 -> "1299.00"
- */
-function centsToDecimal(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
+import { centsToDecimal } from '../utils/money';
 
 /**
  * Map a neutral product type to WooCommerce's type field.

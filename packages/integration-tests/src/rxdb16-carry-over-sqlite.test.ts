@@ -104,7 +104,7 @@ describe.each(['v2', 'v3'])('RxDB 16.21.1 %s carry-over to 17.5.0', (version) =>
             // Leave the migration on real timers; control only the outbox's retry timers.
             vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
             outbox = createOrderOutbox({ collection, deviceId: 'carry-over-device', random: () => 0.5, initialBackoffMs: 1,
-              transport: { send: async (batch) => {
+              transport: { send: async (batch: OrderCreateEnvelope[]) => {
                 attempts.push(structuredClone(batch));
                 const [older] = await readFresh(collection, { selector: { id: 'order-0006' } });
                 namesAtSend.push(older.lines[0].name);

@@ -135,6 +135,32 @@ describe('Receipt', () => {
     expect(screen.queryByTestId('receipt-footer')).toBeNull();
   });
 
+  it('actions={false} draws no buttons and still renders the receipt body', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" actions={false} />);
+    expect(screen.queryByText('Print receipt')).toBeNull();
+    expect(screen.queryByText('New sale')).toBeNull();
+    expect(screen.getByText('Shop')).toBeTruthy();
+    expect(screen.getByLabelText(/^Total:/)).toBeTruthy();
+  });
+
+  it('an actions node renders in place of the default buttons, print-hidden', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" actions={<Text>Host footer</Text>} />);
+    expect(screen.getByText('Host footer').closest('[data-print="hide"]')).not.toBeNull();
+    expect(screen.queryByText('Print receipt')).toBeNull();
+    expect(screen.queryByText('New sale')).toBeNull();
+  });
+
+  it('without actions, Print receipt and New sale render and New sale calls newSale', () => {
+    render(<SaleHarness>{() => null}</SaleHarness>);
+    const newSale = vi.fn();
+    render(<Receipt order={sale.order} store={store} cashier="Alex" registerId="register-1" newSale={newSale} />);
+    expect(screen.getByText('Print receipt')).toBeTruthy();
+    fireEvent.click(screen.getByText('New sale'));
+    expect(newSale).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the customer under the cashier when there is one', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     act(() => sale.setCustomer({ id: 'customer-1', name: 'Jane Smith' }));
@@ -270,6 +296,19 @@ describe('Receipt with a prebuilt receipt', () => {
     payments: [{ method: 'pos_card', title: 'Card', kind: 'external', amountMinor: 886 }], refunds: [],
   };
   const receipt = buildReceiptDataFromStoreOrder(storeOrder, { storeName: 'Reprint Shop', register: 'register-1', registerName: 'Front till' });
+
+  it('shows a Refund due row and a zero Change on a reopened sale paid beyond its new total', () => {
+    render(<Receipt receipt={{ ...receipt, refundDueMinor: 800, changeDueMinor: 0 }} newSale={() => {}} />);
+    const amount = formatMoney({ amount: 800, currency: receipt.currency })!;
+    expect(screen.getByText('Refund due')).toBeTruthy();
+    expect(screen.getByLabelText(`Refund due: ${amount}`).textContent).toBe(`Refund due${amount}`);
+    expect(screen.queryByLabelText(/^Change:/)).toBeNull();
+  });
+
+  it('shows no Refund due row without refund-due', () => {
+    render(<Receipt receipt={receipt} newSale={() => {}} />);
+    expect(screen.queryByText('Refund due')).toBeNull();
+  });
 
   it('renders a prebuilt reprint receipt', () => {
     const newSale = vi.fn();

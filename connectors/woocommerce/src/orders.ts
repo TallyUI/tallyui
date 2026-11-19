@@ -49,6 +49,39 @@ function posUuid(metaData: unknown): string | undefined {
 
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
+/** The `_wcpos_payments` ledger: absent, readable (schema 1 with a payments array), or present but unreadable. */
+function paymentLedger(metaData: unknown): { present: boolean; payments: unknown[] | null } {
+  const entry = rows(metaData).find((meta) => meta.key === '_wcpos_payments');
+  if (!entry) return { present: false, payments: null };
+  const value = entry.value;
+  return { present: true, payments: isRow(value) && value.schema === 1 && Array.isArray(value.payments) ? value.payments : null };
+}
+
+/** Captured rows are the store's counting rule; with none, its paid state decides, as its balance and reopen adoption do. */
+function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrder['payments'] {
+  const { payments } = paymentLedger(raw.meta_data);
+  const captured = payments ? rows(payments).filter((row) => row.status === 'captured') : [];
+  if (captured.length) {
+    const title = captured.every((row) => row.method_id === raw.payment_method) ? nonEmpty(raw.payment_method_title) : undefined;
+    return captured.map((row) => {
+      const method = nonEmpty(row.method_id);
+      if (!method || (typeof row.currency === 'string' && row.currency !== currency)) throw unexpected();
+      const kind = PAYMENT_KINDS[method];
+      const id = nonEmpty(row.id);
+      return {
+        ...(id ? { id } : {}),
+        method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: minor(row.amount, currency),
+      };
+    });
+  }
+  const method = nonEmpty(raw.payment_method);
+  const title = nonEmpty(raw.payment_method_title);
+  const kind = method ? PAYMENT_KINDS[method] : undefined;
+  return method && (nonEmpty(raw.date_paid_gmt) || nonEmpty(raw.date_paid)) ? [{
+    method, ...(title ? { title } : {}), ...(kind ? { kind } : {}), amountMinor: totalMinor,
+  }] : [];
+}
+
 /** Maps a WooCommerce order resource (as WCPOS `wcpos/v2/orders` serves it) to a `StoreOrder` (ADR-081). */
 export function toWooStoreOrder(raw: unknown): StoreOrder {
   if (!isRow(raw) || raw.id === undefined || raw.id === null || typeof raw.currency !== 'string' || typeof raw.date_created_gmt !== 'string') {
@@ -68,15 +101,16 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     : null;
 
   const clientOrderId = posUuid(raw.meta_data);
+  const revision = nonEmpty(raw._rxdb_revision);
   const totalMinor = minor(raw.total, currency);
-  const paymentMethod = nonEmpty(raw.payment_method);
-  const paymentTitle = nonEmpty(raw.payment_method_title);
-  const paymentKind = paymentMethod ? PAYMENT_KINDS[paymentMethod] : undefined;
+  const ledger = paymentLedger(raw.meta_data);
+  const paymentRecordUnreadable = ledger.present && ledger.payments === null;
 
   return {
     id: String(raw.id),
     reference: String(raw.number ?? raw.id),
     ...(clientOrderId ? { clientOrderId } : {}),
+    ...(revision ? { revision } : {}),
     status: String(raw.status),
     placedAt: placed.toISOString(),
     currency,
@@ -102,9 +136,15 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
       };
     }),
     fees: rows(raw.fee_lines).map((fee) => ({
+      ...(positiveId(fee.id) ? { id: positiveId(fee.id) } : {}),
+      ...(fee.tax_status === 'taxable' || fee.tax_status === 'none' ? { taxStatus: fee.tax_status } : {}),
+      ...(nonEmpty(fee.tax_class) ? { taxClass: nonEmpty(fee.tax_class) } : {}),
       name: String(fee.name), totalMinor: minor(fee.total, currency), taxMinor: grossTax(fee.total, fee.total_tax, currency),
     })),
     shipping: rows(raw.shipping_lines).map((line) => ({
+      ...(positiveId(line.id) ? { id: positiveId(line.id) } : {}),
+      ...(line.tax_status === 'taxable' || line.tax_status === 'none' ? { taxStatus: line.tax_status } : {}),
+      ...(nonEmpty(line.method_id) ? { methodId: nonEmpty(line.method_id) } : {}),
       name: String(line.method_title), totalMinor: minor(line.total, currency), taxMinor: grossTax(line.total, line.total_tax, currency),
     })),
     coupons: rows(raw.coupon_lines).map((coupon) => ({
@@ -125,9 +165,8 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     discountTaxMinor: minor(raw.discount_tax, currency),
     taxMinor: minor(raw.total_tax, currency),
     totalMinor,
-    payments: paymentMethod ? [{
-      method: paymentMethod, ...(paymentTitle ? { title: paymentTitle } : {}), ...(paymentKind ? { kind: paymentKind } : {}), amountMinor: totalMinor,
-    }] : [],
+    payments: storePayments(raw, currency, totalMinor),
+    ...(paymentRecordUnreadable ? { paymentRecordUnreadable: true } : {}),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
@@ -176,14 +215,23 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       if (before !== undefined) params.set('before', wooGmtSecond(before, 0));
       const { body, headers } = await customerRequest(context, `orders?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw unexpected();
-      const orders = body.map(toWooStoreOrder);
+      let unreadable = 0;
+      const orders = body.flatMap((row) => {
+        try {
+          return [toWooStoreOrder(row)];
+        } catch (error) {
+          if (!(error instanceof CustomerServiceError)) throw error;
+          unreadable += 1;
+          return [];
+        }
+      });
       const totalPages = headers.get('X-WP-TotalPages');
       const hasMore = totalPages !== null && /^\d+$/.test(totalPages.trim())
         ? page < Number.parseInt(totalPages, 10)
-        : orders.length === perPage;
+        : body.length === perPage;
       // X-WP-Total counts every order the query matches.
       const total = headers.get('X-WP-Total');
-      return { orders, hasMore, ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
+      return { orders, hasMore, ...(unreadable ? { unreadable } : {}), ...(total && /^\d+$/.test(total) ? { total: Number(total) } : {}) };
     },
 
     async getOrders(context: SyncContext, ids: readonly string[]) {

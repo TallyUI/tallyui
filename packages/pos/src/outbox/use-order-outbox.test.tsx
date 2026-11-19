@@ -319,6 +319,21 @@ describe('useOrderOutbox options', () => {
     expect(send.mock.calls[1][0][0].id).not.toBe(order.commandId);
   });
 
+  it('discards a rejected order; resolves to false before the store is ready', async () => {
+    const order = sale();
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>()
+      .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected', error: { code: 'unknown_variant', message: 'gone' } }] });
+    const view = renderOptions({ storeKey: null, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+    expect(await outbox.discard(order.id)).toBe(false);
+    view.rerender({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+    await waitFor(() => expect(outbox.orders).not.toBeNull());
+    await act(async () => { await outbox.record(order); });
+    await waitFor(() => expect(outbox.recent[0]?.syncStatus).toBe('rejected'));
+    await act(async () => { expect(await outbox.discard(order.id)).toBe(true); });
+    await waitFor(() => expect(outbox.recent).toEqual([]));
+    expect(outbox.state.rejected).toBe(0);
+  });
+
   it('reopens when the device id changes and sends under the new one', async () => {
     const send = vi.fn<CommandTransport['send']>(appliedResults);
     const options = { storeKey: session.baseUrl, open: openStore, transport: fakeTransport(send) };

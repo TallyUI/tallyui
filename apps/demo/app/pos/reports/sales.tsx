@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, Text } from 'react-native';
 import { Stack } from 'expo-router';
-import { SalesRoom, type SalesFilters } from '@tallyui/components';
+import { SalesCardPanel, SalesRoom, type SalesFilters, type SalesPanelId } from '@tallyui/components';
 import { comparisonRange, daysOf, presetRange, salesFigures, type ReportOrder, type ReportRefund } from '@tallyui/pos';
 
 const TIMEZONE = 'Pacific/Auckland';
@@ -34,12 +34,16 @@ const REFUNDS: ReportRefund[] = [
   { id: 'r1', orderId: 'o1', at: new Date(Date.now() - 3 * HOUR).toISOString(), amountMinor: 450 },
   { id: 'r2', orderId: 'o6', at: new Date(Date.now() - 150 * HOUR).toISOString(), amountMinor: 900 },
 ];
+// The cards with a detail panel; Orders and Refunds have none yet.
+const PANELS: SalesPanelId[] = ['payments', 'products', 'categories', 'taxes'];
 
 export default function SalesRoomScreen() {
   const [filters, setFilters] = useState<SalesFilters>(() => ({
     preset: 'today', range: presetRange('today', new Date(), TIMEZONE), compare: 'previous', status: 'done', cashierId: null, registerId: null,
   }));
   const [opened, setOpened] = useState<string>();
+  const [exported, setExported] = useState<string>();
+  const panel = PANELS.find((id) => id === opened);
   const figures = useMemo(() => {
     const orders = ORDERS.filter((row) => (filters.status === 'all' || row.status !== 'on-hold')
       && (!filters.cashierId || row.cashierId === filters.cashierId)
@@ -62,8 +66,13 @@ export default function SalesRoomScreen() {
           cashierOptions={[{ value: 'u1', label: 'Aroha' }, { value: 'u2', label: 'Sam' }]}
           registerOptions={[{ value: 'r1', label: 'Front counter' }, { value: 'r2', label: 'Window' }]}
           onOpenCard={setOpened} />
-        {opened && <Text className="text-sm text-muted-foreground">{`Opened ${opened}`}</Text>}
+        {opened && !panel && <Text className="text-sm text-muted-foreground">{`Opened ${opened}`}</Text>}
+        {exported && <Text className="text-sm text-muted-foreground">{`Exported ${exported}`}</Text>}
       </ScrollView>
+      {panel && (
+        <SalesCardPanel card={panel} figures={figures} currency="NZD" scope={`${figures.range.from} – ${figures.range.to}`}
+          onClose={() => setOpened(undefined)} onExportCsv={(csv, filename) => setExported(filename)} />
+      )}
     </>
   );
 }

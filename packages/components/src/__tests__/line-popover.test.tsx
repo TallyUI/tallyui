@@ -90,3 +90,132 @@ it('an action closes the popover, then calls its onPress, and writes nothing', (
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(onApply).not.toHaveBeenCalled();
 });
+
+it('commit="close": − and + write the quantity at once, with no Apply or Cancel drawn', () => {
+  const onApply = vi.fn((_value: number): string | null => null);
+  const ui = (value: number) => <><LinePopover kind="quantity" lineName="Shirt" currency="EUR" value={value} onApply={onApply}
+    commit="close" /><PortalHost /></>;
+  const { rerender } = render(ui(3));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit quantity of Shirt' }));
+  fireEvent.click(screen.getByTestId('quantity-popover-step-up'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(4);
+  rerender(ui(4));
+  expect(screen.getByTestId('quantity-popover-value').textContent).toBe('4');
+  fireEvent.click(screen.getByRole('button', { name: 'One fewer' }));
+  expect(onApply.mock.calls).toEqual([[4], [3]]);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(screen.queryByTestId('quantity-popover-apply')).toBeNull();
+  expect(screen.queryByTestId('quantity-popover-cancel')).toBeNull();
+});
+
+it('commit="close": − at quantity 1 reads Remove, calls onRemove and writes nothing', () => {
+  const onRemove = vi.fn();
+  const onApply = open({ kind: 'quantity', value: 1, commit: 'close', onRemove });
+  expect(screen.queryByTestId('quantity-popover-step-down')).toBeNull();
+  const remove = screen.getByTestId('quantity-popover-remove');
+  expect(remove.getAttribute('aria-label')).toBe('Remove');
+  fireEvent.click(remove);
+  expect(onRemove).toHaveBeenCalledOnce();
+  expect(onApply).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  cleanup();
+  const alone = open({ kind: 'quantity', value: 1, commit: 'close' });
+  expect(screen.queryByTestId('quantity-popover-remove')).toBeNull();
+  const down = screen.getByTestId('quantity-popover-step-down');
+  expect(down.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(down);
+  expect(alone).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('commit="close": Done writes the typed quantity; Escape closes and writes nothing; a press outside writes it', () => {
+  const onApply = open({ kind: 'quantity', commit: 'close' });
+  const reopen = () => fireEvent.click(screen.getByRole('button', { name: 'Edit quantity of Shirt' }));
+  keys('5');
+  fireEvent.click(screen.getByTestId('quantity-popover-done'));
+  expect(onApply.mock.calls).toEqual([[5]]);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  reopen();
+  keys('7');
+  physical('Escape');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[5]]);
+  reopen();
+  keys('8');
+  fireEvent.click(screen.getByTestId('quantity-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[5], [8]]);
+});
+
+it('commit="close": a refused step shows the refusal and the stored quantity again', () => {
+  const onApply = open({ kind: 'quantity', value: 2, commit: 'close', onApply: () => 'No more stock' });
+  keys('6');
+  fireEvent.click(screen.getByRole('button', { name: 'One more' }));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(7);
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByRole('alert').textContent).toBe('No more stock');
+  expect(screen.getByTestId('quantity-popover-value').textContent).toBe('2');
+});
+
+it('without commit, Apply and Cancel are drawn and there is no stepper row or Done', () => {
+  const onApply = open({ kind: 'quantity', onRemove: vi.fn() });
+  expect(screen.getByTestId('quantity-popover-apply')).toBeTruthy();
+  expect(screen.getByTestId('quantity-popover-cancel')).toBeTruthy();
+  for (const id of ['step-down', 'step-up', 'remove', 'done']) expect(screen.queryByTestId(`quantity-popover-${id}`)).toBeNull();
+  keys('4');
+  fireEvent.click(screen.getByTestId('quantity-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply).not.toHaveBeenCalled();
+});
+
+it('price commit="close": Done, with no Apply, Cancel or stepper row, writes the typed price once', () => {
+  const onApply = open({ kind: 'price', commit: 'close' });
+  for (const id of ['apply', 'cancel', 'step-down', 'step-up', 'remove']) {
+    expect(screen.queryByTestId(`price-popover-${id}`)).toBeNull();
+    expect(screen.queryByTestId(`quantity-popover-${id}`)).toBeNull();
+  }
+  expect(screen.queryByRole('button', { name: 'One more' })).toBeNull();
+  keys('1', '4', 'Decimal point', '5');
+  fireEvent.click(screen.getByTestId('price-popover-done'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(1450);
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('price commit="close": a press outside writes the typed price; Escape after typing writes nothing', () => {
+  const onApply = open({ kind: 'price', commit: 'close' });
+  keys('9');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(900);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit price of Shirt' }));
+  keys('7');
+  physical('Escape');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onApply.mock.calls).toEqual([[900]]);
+});
+
+it('price commit="close": a quick-discount key then a press outside writes the discounted price', () => {
+  const onApply = open({ kind: 'price', commit: 'close', quickDiscounts: [10] });
+  keys('Discount (10%)');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(1125);
+});
+
+it('price commit="close": a refusal on a press outside goes to onCloseRefused; one on Done shows inline', () => {
+  const onCloseRefused = vi.fn();
+  open({ kind: 'price', commit: 'close', onApply: () => 'No', onCloseRefused });
+  keys('3');
+  fireEvent.click(screen.getByTestId('price-popover-overlay'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(onCloseRefused).toHaveBeenCalledExactlyOnceWith('No');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit price of Shirt' }));
+  keys('4');
+  fireEvent.click(screen.getByTestId('price-popover-done'));
+  expect(within(screen.getByRole('dialog')).getByRole('alert').textContent).toBe('No');
+  expect(onCloseRefused).toHaveBeenCalledOnce();
+});
+
+it('price commit="close": the regular price above the value still shows struck through', () => {
+  open({ kind: 'price', commit: 'close', value: 1000, regularValue: 1250 });
+  expect(within(screen.getByRole('dialog')).getByLabelText(`Regular price ${formatMoney({ amount: 1250, currency: 'EUR' })}`)).toBeTruthy();
+});

@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Cart, Receipt, Tender } from '@tallyui/components';
 import { medusaConnector } from '@tallyui/connector-medusa';
@@ -17,9 +17,12 @@ const entries = catalogueEntries([
   { id: 'shirt', title: 'Shirt', status: 'published', variants: [{ id: 'shirt-blue', title: 'Blue', sku: 'SHIRT', prices: [{ amount: 12.5, currency_code: 'eur' }] }] },
   { id: 'mug', title: 'Mug', status: 'published', variants: [{ id: 'mug-white', title: 'White', sku: 'MUG', prices: [{ amount: 8, currency_code: 'eur' }] }] },
 ], traits);
+// The components' two-column split (packages/components/src/layout/checkout-layout.tsx:20); not exported.
+const splitBreakpoint = 768;
 
-function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
+function Sale({ capabilities, editor }: { capabilities: ServerCapabilities; editor?: string }) {
   const sale = useSale(settings, { registerId: 'demo-register', cashierRef: 'demo-cashier', capabilities });
+  const { width } = useWindowDimensions();
   const { stage } = sale;
   if (stage.kind === 'receipt') {
     return <ScrollView testID="sale-receipt" className="flex-1">
@@ -27,7 +30,9 @@ function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
         registerId="demo-register" newSale={sale.newSale} />
     </ScrollView>;
   }
-  if (stage.kind === 'tender') return <ScrollView className="flex-1"><Tender sale={sale} /></ScrollView>;
+  // v2 tender-checkout.tsx:96-100: a phone's checkout is the pane alone, with its own ledger; wide puts it in the cart.
+  if (stage.kind === 'tender' && width < splitBreakpoint) return <ScrollView className="flex-1"><Tender sale={sale} /></ScrollView>;
+  if (stage.kind === 'tender') return <View className="flex-1 flex-row"><ScrollView className="flex-1"><Tender sale={sale} ledger={false} /></ScrollView><View testID="sale-charges-cart" className="w-96 border-l border-border"><Cart sale={sale} taxClasses={taxClasses} showTotal={false} tenderLedger={{}} /></View></View>;
   return <View className="flex-1">
     <View className="flex-row flex-wrap gap-2 p-3">
       {entries.map((entry) => <Pressable key={entry.variant.id} accessibilityRole="button"
@@ -36,19 +41,22 @@ function Sale({ capabilities }: { capabilities: ServerCapabilities }) {
         <Text className="text-foreground">Add {traits.getName(entry.product)}</Text>
       </Pressable>)}
     </View>
-    <Cart sale={sale} taxClasses={taxClasses} />
+    {editor === 'popover'
+      ? <Cart sale={sale} taxClasses={taxClasses} lineEditor="popover" canEditPrice quickDiscounts={[5, 10, 15]} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />
+      : <Cart sale={sale} taxClasses={taxClasses} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />}
   </View>;
 }
 
-/** `?v=4` is a store on order.create 4, which takes no fees, shipping or custom lines: the Cart offers no "Add charge". */
+/** `?v=4` is a store on order.create 4, which takes no fees, shipping or custom lines: the Cart offers no "Add charge".
+ * `?editor=popover` opens each line's quantity and price in v2's keypad popover, with 5/10/15% quick discounts. */
 export default function SaleChargesScreen() {
-  const { v } = useLocalSearchParams<{ v?: string }>();
+  const { v, editor } = useLocalSearchParams<{ v?: string; editor?: string }>();
   const orderCreate = v === '4' ? 4 : 5;
   return (
     <View className="flex-1 bg-background" testID="sale-charges-screen">
       <Stack.Screen options={{ title: 'Cart charges' }} />
       <TaxProvider {...taxProviderProps(settings)}>
-        <Sale key={orderCreate} capabilities={{ orderCreate, lineTax: { none: true, classes: true } }} />
+        <Sale key={orderCreate} capabilities={{ orderCreate, lineTax: { none: true, classes: true } }} editor={editor} />
       </TaxProvider>
     </View>
   );

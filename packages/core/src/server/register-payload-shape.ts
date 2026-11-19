@@ -1,15 +1,9 @@
+import { isPlainObject, shapeErrors } from './shape-errors'
+
 /** Shape errors before a register command claims a ledger row. Unknown top-level keys are allowed. */
 export function registerPayloadErrors(type: string, payload: unknown): string[] {
-  const errors: string[] = []
-  const object = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
-  const check = (valid: boolean, field: string, expected: string) => {
-    if (!valid && errors.length < 10) errors.push(`${field}: expected ${expected}`)
-  }
-  if (!object(payload)) return ['payload: expected an object']
-  const noNul = (value: unknown, field: string) => {
-    if (typeof value === 'string') check(!value.includes('\u0000'), field, 'no NUL character')
-  }
+  const { errors, check, noNul } = shapeErrors()
+  if (!isPlainObject(payload)) return ['payload: expected an object']
   const string = (field: string, optional = false) => {
     const value = payload[field]
     if (optional && value === undefined) return
@@ -24,8 +18,8 @@ export function registerPayloadErrors(type: string, payload: unknown): string[] 
     check(Number.isSafeInteger(payload[field]) && (payload[field] as number) >= min, field, `a safe integer >= ${min}`)
   const record = (field: string) => {
     const value = payload[field]
-    check(object(value), field, 'a record of integers')
-    if (object(value)) for (const [key, amount] of Object.entries(value)) {
+    check(isPlainObject(value), field, 'a record of integers')
+    if (isPlainObject(value)) for (const [key, amount] of Object.entries(value)) {
       check(key.length > 0 && Number.isSafeInteger(amount), `${field}.${key}`, 'a non-empty key with a safe integer')
       noNul(key, `${field}.${JSON.stringify(key)}`) // quoted, so the NUL is never echoed raw
     }

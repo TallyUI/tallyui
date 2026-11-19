@@ -1,9 +1,11 @@
-import type { OrderCreateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderCreatePayload, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 9 as const;
+export const ORDER_CREATE_MAX_VERSION = 10 as const;
+/** order.create 10 (ruling A, 2026-11-18) is 9 plus each payment's `methodId`, the payment method's own id on the platform. */
+export const PAYMENT_METHOD_ID_ORDER_CREATE_VERSION = 10 as const;
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
@@ -21,6 +23,12 @@ export class UnsupportedOrderVersionError extends Error {
  * every order.create string but `customer.email` (254), `customerId` (64) and `sessionId` (36).
  */
 export const PAYLOAD_STRING_MAX = 255;
+
+/** A store revision's bound (ADR-090): an opaque token, e.g. WooCommerce's 71-character `sha256:` + 64 hex. One number for core's order.reopen and order.update shapes, the rebuild and pos_orders. */
+export const REVISION_MAX = 128;
+
+/** order.update's lowest order.create version (ADR-090, desk Q1 2026-11-17): fees and shipping travel from 5, so an update never drops the store's. */
+const ORDER_UPDATE_MIN_CREATE_VERSION = 5;
 
 /** A non-empty string of at most `max` UTF-16 units with no NUL: what order.create's shape check accepts. */
 export const sendable = (value: unknown, max: number): value is string =>
@@ -98,13 +106,21 @@ function wireNote(note: string | undefined): string | undefined {
  * taxes on the base, so a lower cap throws UnsupportedOrderVersionError(8). At 8 it carries the note, `taxAddress` and
  * the stored addresses; every other field follows the version its content makes, as at 7.
  * Version 9 sends every coupon's stored line shares when the cap allows it, keeping notes and any tax address.
+ * Version 10 is 9 plus each payment's `methodId`: only at a cap of 10 or more, for an order with figures (4+) whose coupons all have lines and a leg with an id.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
+ * A reopened sale (`storeOrderId`) throws: it goes as `order.update` (`toOrderUpdateEnvelope`).
  */
 export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt = 1,
   options?: { maxVersion?: number }): OrderCreateEnvelope {
+  if (order.storeOrderId !== undefined) throw new Error(`Order ${order.id} reopened store order ${order.storeOrderId}: it is sent as order.update, never order.create (ADR-090)`);
+  return createEnvelope(order, deviceId, attempt, options);
+}
+
+function createEnvelope(order: PosOrder, deviceId: string, attempt: number, options?: { maxVersion?: number }, floor?: 5): OrderCreateEnvelope {
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
+  if (floor !== undefined && cap !== undefined && cap < floor) throw new UnsupportedOrderVersionError(floor, cap);
   if (content === 5 && cap !== undefined && cap < 5) throw new UnsupportedOrderVersionError(5, cap);
   if (content === 6 && cap !== undefined && cap < 6) throw new UnsupportedOrderVersionError(6, cap);
   if (grossMinor > 0 && cap !== undefined && cap < 2) throw new UnsupportedOrderVersionError(2, cap);
@@ -113,16 +129,20 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
     throw new UnsupportedOrderVersionError(TAX_ADDRESS_ORDER_CREATE_VERSION, cap);
   }
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
-  const base = (content === 3 && cap !== undefined && cap >= 4 ? 4
+  const base = Math.max(floor ?? 1, content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
   // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
   // Every other field follows `base`, so a note changes nothing else in the payload.
   const note = wireNote(order.note);
   if (taxAddress && base < 3) throw new Error(`Order ${order.id} is taxed on the customer's ${taxAddress} address but has no figures`);
   const couponLines = !!order.coupons?.length && order.coupons.every((coupon) => coupon.lines !== undefined);
-  const version = (couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+  // Version 10 is 9 plus each payment's methodId: only when the cap allows 10, the payload has figures (net discounts, 4+),
+  // every coupon carries its lines (10 sends them as 9 does), and a leg has an id. Otherwise the version is today's and no id is sent.
+  const methodIds = cap !== undefined && cap >= PAYMENT_METHOD_ID_ORDER_CREATE_VERSION && base >= 4
+    && (!order.coupons?.length || couponLines) && order.payments.some((payment) => payment.methodId !== undefined);
+  const version = (methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
-  const withTaxAddress = version === 8 || (version === 9 && taxAddress !== undefined);
+  const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -158,7 +178,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       })) } : {}),
       ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
-        ...(version === 9 ? { lines: lines!.map(({ lineId, discountMinor, discountTaxMinor }) =>
+        ...(version >= 9 ? { lines: lines!.map(({ lineId, discountMinor, discountTaxMinor }) =>
           ({ clientLineId: lineId, discountMinor, discountTaxMinor })) } : {}),
       })) } : {}),
       payments: order.payments.map((payment) => ({
@@ -166,6 +186,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
         ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
         ...(payment.changeMinor !== undefined ? { changeMinor: payment.changeMinor } : {}),
         ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
+        ...(version === 10 && payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       })),
       subtotalMinor: order.subtotalMinor,
       ...(discountMinor > 0 ? { discountMinor } : {}),
@@ -192,4 +213,40 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
       ...(withTaxAddress ? { taxAddress } : {}),
     },
   };
+}
+
+/** Gate 8 (ADR-090): each kept item's store id goes on the update item with the same client id, never by position. */
+export function pairStoreIds(payload: OrderCreatePayload, order: PosOrder): Pick<OrderUpdatePayload, 'lines' | 'payments' | 'fees' | 'shipping'> {
+  const lines = new Map<string, string | undefined>(order.lines.map((line) => [line.id, line.storeLineId]));
+  const fees = new Map<string, string | undefined>((order.fees ?? []).map((fee) => [fee.id, fee.storeLineId]));
+  const shipping = new Map<string, string | undefined>((order.shipping ?? []).map((charge) => [charge.id, charge.storeLineId]));
+  const payments = new Map<string, string | undefined>(order.payments.map((payment) => [payment.id, payment.storePaymentId]));
+  return {
+    lines: payload.lines.map((line) => {
+      const id = lines.get(line.clientLineId); return id !== undefined ? { ...line, storeLineId: id } : line;
+    }),
+    payments: payload.payments.map((payment) => {
+      const id = payments.get(payment.clientPaymentId); return id !== undefined ? { ...payment, paymentId: id } : payment;
+    }),
+    ...(payload.fees ? { fees: payload.fees.map((fee) => {
+      const id = fees.get(fee.clientFeeId); return id !== undefined ? { ...fee, storeLineId: id } : fee;
+    }) } : {}),
+    ...(payload.shipping ? { shipping: payload.shipping.map((charge) => {
+      const id = shipping.get(charge.clientShippingId); return id !== undefined ? { ...charge, storeLineId: id } : charge;
+    }) } : {}),
+  };
+}
+
+/** Builds at order.create version 5 or more (a store's cap below 5 throws UnsupportedOrderVersionError(5, cap)).
+ * Refuses a row without baseRevision or figures, and pairs store ids by client id. */
+export function toOrderUpdateEnvelope(order: PosOrder, deviceId: string, attempt = 1, options?: { maxVersion?: number }): OrderUpdateEnvelope {
+  if (order.storeOrderId === undefined) throw new Error(`Order ${order.id} has no storeOrderId: it is sent as order.create`);
+  if (order.baseRevision === undefined) throw new Error(`Order ${order.id} reopened store order ${order.storeOrderId} without its base revision: order.update needs it (ADR-090)`);
+  if (!order.display || !order.taxByRate) throw new Error(`Order ${order.id} has no figures: order.update goes at order.create version 5 or more, which needs them (ADR-090)`);
+  const create = createEnvelope(order, deviceId, attempt, options, ORDER_UPDATE_MIN_CREATE_VERSION);
+  return { id: create.id, type: 'order.update', version: 1, createdAt: create.createdAt,
+    deviceId: create.deviceId, attempt: create.attempt, payload: { ...create.payload, orderId: order.storeOrderId,
+      baseRevision: order.baseRevision, createVersion: create.version,
+      ...pairStoreIds(create.payload, order),
+    } };
 }

@@ -1,0 +1,25 @@
+---
+title: ConnectivityToast
+description: ConnectivityToast tells the cashier when the till goes offline, loses the store, or reconnects.
+---
+
+## Import
+
+```tsx
+import { ConnectivityToast } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ConnectivityToast state={connectivity} />
+```
+
+Mount it once, as the last child of the screen's root view. It shows WCPOS v2's toast at the top centre when the verdict changes and holds for 5 seconds, stays for 4 seconds, and never shows on mount: "Device went offline" and "Website is unreachable" (warnings, with "Nothing to do — keep selling. Changes send automatically when the connection returns.") and "Connection restored".
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `state` | `ConnectivityState` | required | The till's connectivity verdict, e.g. a `@tallyui/database` connectivity tracker's `state` |
+| `testID` | `string` | `'connectivity-toast'` | Test identifier |

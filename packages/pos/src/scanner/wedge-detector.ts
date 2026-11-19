@@ -4,6 +4,9 @@
 export interface WedgeSettings {
   /** Folded-average gap (ms) below which input latches as a scan. */
   threshold: number;
+  /** 'folded' (default): v2's folded average, latched for the rest of the burst. 'every': each gap must be under
+   * the threshold; a slower key drops the burst and starts a new one. */
+  gapRule?: 'folded' | 'every';
   /** Stripped only when it equals the first key. */
   prefix: string;
   /** Stripped only when it equals the last key. */
@@ -24,42 +27,53 @@ export interface WedgeState {
   lastTimeMs: number | null;
   /** Time of the first key of the current burst's stack. */
   startedAtMs: number | null;
+  /** Lowest finite folded average seen (v2); `createWedgeState` starts it at +Infinity. */
+  minAvgGapMs?: number;
   /** An Enter/Tab arrived during the burst — the signature of a scanner terminator. */
   sawTerminator: boolean;
 }
 
+/** @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function createWedgeState(): WedgeState {
-  return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, sawTerminator: false };
+  return { avg: 0, detecting: false, stack: [], lastTimeMs: null, startedAtMs: null, minAvgGapMs: Number.POSITIVE_INFINITY, sawTerminator: false };
 }
 
 /** Fold one key, mutating and returning state. Kept bug-for-bug with v2:
  * only length-1 keys advance timing; the first gap is +Infinity; the average
  * folds as (avg + gap) / 2. Scanning latches below threshold for the burst;
- * a slow key outside a burst resets the average and restarts the stack. */
-export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, threshold: number): WedgeState {
+ * a slow key outside a burst resets the average and restarts the stack;
+ * 'every' ends the burst on a slow gap.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
+export function foldWedgeKey(state: WedgeState, key: string, timeMs: number, threshold: number, gapRule: 'folded' | 'every' = 'folded'): WedgeState {
   if (key.length !== 1) return state;
   let gap = Number.POSITIVE_INFINITY;
   if (state.lastTimeMs !== null) gap = timeMs - state.lastTimeMs;
   state.avg = state.avg === 0 ? gap : (state.avg + gap) / 2;
-  if (state.detecting || state.avg < threshold) {
+  if (Number.isFinite(state.avg)) state.minAvgGapMs = Math.min(state.minAvgGapMs ?? Number.POSITIVE_INFINITY, state.avg);
+  if (gapRule === 'every' ? gap < threshold : state.detecting || state.avg < threshold) {
     state.detecting = true;
     state.stack.push(key);
   } else {
     state.avg = 0;
     state.stack = [key];
+    if (gapRule === 'every') {
+      state.detecting = false;
+      state.sawTerminator = false;
+    }
   }
   if (state.stack.length === 1) state.startedAtMs = timeMs;
   state.lastTimeMs = timeMs;
   return state;
 }
 
-/** Strip a configured prefix/suffix only when it equals the single key at
- * that edge of the stack — never as a substring. */
+/** Match whole strings at the edges: prefix first, then suffix on the remainder.
+ * A one-character setting behaves as before.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function stripBoundary(stack: string[], settings: WedgeSettings): string {
-  const inputStack = [...stack];
-  if (settings.prefix && inputStack[0] === settings.prefix) inputStack.shift();
-  if (settings.suffix && inputStack[inputStack.length - 1] === settings.suffix) inputStack.pop();
-  return inputStack.join('');
+  let code = stack.join('');
+  if (settings.prefix && code.startsWith(settings.prefix)) code = code.slice(settings.prefix.length);
+  if (settings.suffix && code.endsWith(settings.suffix)) code = code.slice(0, -settings.suffix.length);
+  return code;
 }
 
 export interface TraceKey { key: string; timeMs: number; }
@@ -68,14 +82,18 @@ export interface WedgeReplayResult {
   detectedAsScan: boolean;
   /** The barcode the detector would emit, with prefix/suffix stripped. */
   code: string;
+  /** Lowest folded average gap in ms (+Infinity when no gap was measured). */
+  minAvgGapMs: number;
 }
 
-/** Replay the detector over a completed keystroke trace. */
+/** Replay the detector over a completed keystroke trace.
+ * @deprecated Internal helper, not supported API; leaves the public entry at the next major. */
 export function replayWedgeDetector(keys: TraceKey[], settings: WedgeSettings): WedgeReplayResult {
   const state = createWedgeState();
-  for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold);
-  if (!state.detecting) return { detectedAsScan: false, code: '' };
-  return { detectedAsScan: true, code: stripBoundary(state.stack, settings) };
+  for (const entry of keys) foldWedgeKey(state, entry.key, entry.timeMs, settings.threshold, settings.gapRule);
+  const minAvgGapMs = state.minAvgGapMs ?? Number.POSITIVE_INFINITY;
+  if (!state.detecting) return { detectedAsScan: false, code: '', minAvgGapMs };
+  return { detectedAsScan: true, code: stripBoundary(state.stack, settings), minAvgGapMs };
 }
 
 export interface WedgeScanMeta {
@@ -132,7 +150,7 @@ export function createWedgeDetector(options: WedgeDetectorOptions): WedgeDetecto
       return false;
     }
     const settings = options.getSettings();
-    foldWedgeKey(state, key, time, settings.threshold);
+    foldWedgeKey(state, key, time, settings.threshold, settings.gapRule);
     if (!state.detecting) return false;
     clearTimer();
     function settle() {

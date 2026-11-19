@@ -131,6 +131,16 @@ describe('OrderFilterBar', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith({ customerId: '12' });
   });
 
+  it("keeps the search above the scrolling list, as v2's does", () => {
+    setup();
+    press('order-filter-customer');
+    // The menu's child that holds the options is the list's scroll container; the search sits outside it.
+    const option = screen.getByTestId('order-filter-customer-12');
+    const list = Array.from(screen.getByTestId('order-filter-customer-menu').children).find((child) => child.contains(option));
+    expect(list?.contains(screen.getByTestId('order-filter-customer-0')), 'options share the list').toBe(true);
+    expect(list?.contains(screen.getByTestId('order-filter-customer-search'))).toBe(false);
+  });
+
   it("gives the cashier search v2's placeholder", () => {
     setup();
     press('order-filter-cashier');

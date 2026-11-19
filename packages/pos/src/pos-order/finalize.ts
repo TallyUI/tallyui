@@ -3,8 +3,9 @@ import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddres
 import type { Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
+import { taxedLinesFor } from '../tax/taxed-lines';
 import { outboxLogger } from '../outbox/logger';
-import { cutText, PAYLOAD_STRING_MAX, sendable } from './command';
+import { cutText, PAYLOAD_STRING_MAX, REVISION_MAX, sendable } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -137,6 +138,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     && (options.capabilities?.orderCreate ?? 1) < 5) {
     throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
   }
+  if (order.storeOrder && (options.capabilities?.orderCreate ?? 1) < 5) throw new Error("finalize: a reopened store order needs the store to accept order.create version 5; update the store's TallyUI plugin");
   if (order.coupons?.length && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
@@ -168,9 +170,36 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     }
     if (legStatus(payment) !== 'captured') throw new Error(`finalize: the ${payment.method} payment is ${legStatus(payment)}, not captured`);
   }
+  // A reopened sale's store ids (ADR-090 D7c5), checked before any id is minted: a dropped or bent id makes the store
+  // take a kept line or a captured payment as new. Gate 1 is core's id rule, gate 3 its uniqueness rule.
+  const reopened = order.storeOrder !== undefined;
+  const storeLineIds = [...order.lineItems, ...(order.fees ?? []), ...(order.shipping ?? [])]
+    .flatMap((item) => item.storeLineId !== undefined ? [item.storeLineId] : []);
+  const storePaymentIds = order.payments.flatMap((payment) => payment.storePaymentId !== undefined ? [payment.storePaymentId] : []);
+  if (!reopened && (storeLineIds.length || storePaymentIds.length || order.payments.some((payment) => payment.locked))) {
+    throw new Error('finalize: a store id on a sale that reopened no store order');
+  }
+  if (order.storeOrder && (![order.storeOrder.id, ...storeLineIds, ...storePaymentIds].every((value) => sendable(value, 64))
+    || !sendable(order.storeOrder.revision, REVISION_MAX))) {
+    throw new Error('finalize: the reopened order carries a store id the store would refuse');
+  }
+  if (reopened && (new Set(storeLineIds).size !== storeLineIds.length || new Set(storePaymentIds).size !== storePaymentIds.length)) {
+    throw new Error('finalize: the reopened order carries a store id twice');
+  }
+  if (order.payments.some((payment) => (payment.storePaymentId !== undefined) !== (payment.locked === true)
+    || (payment.locked && payment.method !== 'external'))) {
+    throw new Error('finalize: a payment the store already holds must be locked, external and carry its store id');
+  }
+  // Desk Q6: once the store's own legs cover the new total, the sale completes as refund-due and takes nothing here.
+  const lockedMinor = order.payments.reduce((sum, p) => sum + (p.locked ? p.amountMinor : 0), 0);
+  const heldByStore = reopened && lockedMinor >= order.totalMinor;
+  if (heldByStore && order.payments.some((p) => !p.locked)) {
+    throw new Error('finalize: the store already holds the new total; remove the payments taken here');
+  }
+  const refundDue = heldByStore ? lockedMinor - order.totalMinor : 0;
   if (order.paidMinor < order.totalMinor) throw new Error('finalize: underpaid');
-  let change = order.paidMinor - order.totalMinor;
-  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' ? p.amountMinor : 0), 0);
+  let change = heldByStore ? 0 : order.paidMinor - order.totalMinor;
+  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' && !p.locked ? p.amountMinor : 0), 0);
   if (change > cash) throw new Error('finalize: change exceeds cash');
   // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
   // v3 also sends each line discount's id and each tax code (as taxByRate's codes); an id is never clamped.
@@ -190,7 +219,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const newId = options.newId ?? uuidv7;
   const id = newId();
   const lines: PosOrder['lines'] = order.lineItems.map((line) => ({
-    id: newId(), productId: line.productId,
+    id: newId(), ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
     ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
       ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
@@ -207,7 +236,10 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const fees = order.fees?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const shipping = order.shipping?.map((charge) => ({ ...charge, id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
-    id: newId(), method: payment.method as PosOrderPayment['method'], amountMinor: payment.amountMinor,
+    id: newId(), ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
+    method: payment.method as PosOrderPayment['method'],
+    ...(payment.methodId !== undefined && sendable(payment.methodId, 64) ? { methodId: payment.methodId } : {}),
+    amountMinor: payment.amountMinor,
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
@@ -230,7 +262,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     payment.amountMinor -= payment.changeMinor;
     change -= payment.changeMinor;
   }
-  if (payments.reduce((sum, p) => sum + p.amountMinor, 0) !== order.totalMinor) {
+  // A reopened sale's refund due is the locked legs beyond the new total (desk Q4); a till sale's is 0.
+  if (payments.reduce((sum, p) => sum + p.amountMinor, 0) - refundDue !== order.totalMinor) {
     throw new Error('finalize: payments do not reconcile');
   }
   let display: PosOrder['display'];
@@ -250,8 +283,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
         })),
       })),
     };
-    const taxedLines = [...order.lineItems, ...[...(order.fees ?? []), ...(order.shipping ?? [])]
-      .map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
+    const taxedLines = taxedLinesFor(order.lineItems, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
     taxByRate = taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding).map(({ ratePpm, code, netMinor, amountMinor }) => ({
       ratePpm, ...(code !== undefined ? { code } : {}), netMinor, amountMinor, grossMinor: netMinor + amountMinor,
     }));
@@ -280,6 +312,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
+    ...(order.storeOrder ? { storeOrderId: order.storeOrder.id, baseRevision: order.storeOrder.revision, refundDueMinor: refundDue } : {}),
     ...(order.coupons?.length ? { coupons: order.coupons.map((coupon) => ({
       code: coupon.code, couponId: coupon.couponId, discountMinor: coupon.discountMinor, discountTaxMinor: coupon.discountTaxMinor,
       ...(coupon.lines !== undefined ? { lines: coupon.lines.map(({ lineId, discountMinor, discountTaxMinor }) => {

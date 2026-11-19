@@ -9,10 +9,8 @@ type WooCustomerRow = {
   last_name?: string | null;
   email?: string | null;
   date_created_gmt?: string | null;
-  billing?: {
-    first_name?: string | null; last_name?: string | null; email?: string | null;
-    phone?: string | null; company?: string | null;
-  } | null;
+  billing?: WooAddressRow | null;
+  shipping?: Omit<WooAddressRow, 'email'> | null;
   meta_data?: { key?: string; value?: unknown }[];
   _rxdb_revision?: unknown;
 };
@@ -23,6 +21,18 @@ const WOO_ADDRESS = [
   ['address_2', 'address2'], ['city', 'city'], ['postcode', 'postcode'], ['country', 'country'], ['state', 'state'],
   ['email', 'email'], ['phone', 'phone'],
 ] as const;
+
+type WooAddressRow = { [key in (typeof WOO_ADDRESS)[number][0]]?: string | null };
+
+/** The inverse of toWooAddress: the non-empty fields of a read Woo address, or undefined when none is left. */
+function fromWooAddress(raw: WooAddressRow | null | undefined, kind: 'billing' | 'shipping'): CustomerAddress | undefined {
+  const address: CustomerAddress = {};
+  for (const [key, field] of WOO_ADDRESS) {
+    const value: unknown = raw?.[key];
+    if ((kind === 'billing' || key !== 'email') && typeof value === 'string' && value.length > 0) address[field] = value;
+  }
+  return Object.keys(address).length > 0 ? address : undefined;
+}
 
 /** The whole Woo address, '' for an absent field, so a patch replaces the stored address rather than merging into it. */
 function toWooAddress(address: CustomerAddress, kind: 'billing' | 'shipping'): Record<string, string> {
@@ -57,6 +67,10 @@ export function toWooCustomer(raw: WooCustomerRow): Customer {
   ] as const) {
     if (typeof value === 'string' && value.length > 0) customer[key] = value;
   }
+  const billing = fromWooAddress(raw.billing, 'billing');
+  if (billing) customer.billing = billing;
+  const shipping = fromWooAddress(raw.shipping, 'shipping');
+  if (shipping) customer.shipping = shipping;
   const created = raw.date_created_gmt; // UTC without a zone suffix; `date_created` is site-local
   if (typeof created === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(created)) customer.createdAt = `${created}Z`;
   customer.name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.company || customer.email || customer.id;
@@ -92,6 +106,13 @@ export async function customerRequest(context: SyncContext, route: string, init:
 
 export function createWooCustomers(options?: { newId?: () => string }) {
   const newId = options?.newId ?? newWooId;
+  /** The one customer row with this numeric id (any role), or undefined when the store has none. */
+  const readCustomerRow = async (context: SyncContext, id: string): Promise<WooCustomerRow | undefined> => {
+    const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
+    const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
+    if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
+    return body.find((row: WooCustomerRow) => String(row.id) === id);
+  };
   const api = {
     async searchCustomers(context: SyncContext, query: string, options?: { limit?: number }): Promise<Customer[]> {
       return (await api.searchCustomersPage(context, query, { limit: options?.limit })).customers;
@@ -117,10 +138,7 @@ export function createWooCustomers(options?: { newId?: () => string }) {
 
     async getCustomer(context: SyncContext, id: string): Promise<Customer | null> {
       if (!/^\d+$/.test(id)) return null;
-      const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
-      const { body } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
-      if (!Array.isArray(body)) throw new CustomerServiceError('server', 'unexpected response');
-      const raw = body.find((row: WooCustomerRow) => String(row.id) === id);
+      const raw = await readCustomerRow(context, id);
       return raw ? toWooCustomer(raw) : null;
     },
 
@@ -150,10 +168,7 @@ export function createWooCustomers(options?: { newId?: () => string }) {
     async updateCustomer(context: SyncContext, id: string, patch: CustomerPatch): Promise<Customer> {
       if (!/^\d+$/.test(id)) throw new CustomerServiceError('invalid', 'Unknown customer');
       if (patch.shipping?.email) throw new CustomerServiceError('invalid', 'WooCommerce shipping addresses have no email');
-      const params = new URLSearchParams({ include: id, per_page: '1', role: 'all' });
-      const { body: rows } = await customerRequest(context, `customers?${params}`, { method: 'GET' });
-      if (!Array.isArray(rows)) throw new CustomerServiceError('server', 'unexpected response');
-      const row: WooCustomerRow | undefined = rows.find((raw: WooCustomerRow) => String(raw.id) === id);
+      const row = await readCustomerRow(context, id);
       if (!row) throw new CustomerServiceError('invalid', 'Unknown customer');
       const uuid = row.meta_data?.find((entry) => entry.key === WCPOS_UUID_META_KEY)?.value;
       if (typeof uuid !== 'string' || !uuid) throw new CustomerServiceError('server', 'unexpected response');

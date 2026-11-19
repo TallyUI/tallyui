@@ -1,11 +1,6 @@
 import { minorUnitDigits, woocommerceCoupons } from '@tallyui/core';
 import type { SaleDiscountCodes } from '../discount-codes';
-import { couponLineItems, couponRefusal, type SaleCoupon, type SaleCouponSource } from './coupons';
-
-function wooCustomerId(customer: { id?: string } | null | undefined): number | null {
-  const id = Number(customer?.id);
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
-}
+import { couponLineItems, couponRefusal, wooCustomerId, type SaleCoupon, type SaleCouponSource } from './coupons';
 
 /** WooCommerce coupons as the sale's discount codes (ADR-077): the source's coupons, checked by woocommerceCoupons.validateCoupon. */
 export function createDiscountCodes(source: SaleCouponSource): SaleDiscountCodes<SaleCoupon> {

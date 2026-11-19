@@ -109,7 +109,7 @@ Plus all React Native `ViewProps`.
 
 ### Combobox.Trigger
 
-Renders a `Pressable`. Pressing it toggles the list open and closed.
+Renders a `Pressable`. Pressing it toggles the list open and closed; a press on a `Combobox.Input` inside it only opens the list.
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -133,6 +133,7 @@ Renders a `View` only while the list is open, unless `forceMount` is set.
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `forceMount` | `true` | — | Always render the content |
+| `onEscapeKeyDown` | `(event: KeyboardEvent) => void` | — | Web only. Called before Escape closes; `preventDefault()` keeps it open |
 | `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
 
 Plus all React Native `ViewProps`.
@@ -174,3 +175,4 @@ Plus all React Native `ViewProps`.
 - Roles: `combobox` on Input, `button` on Trigger, `listbox` on Content, `option` on each Item.
 - ARIA: `aria-expanded` on Input and Trigger reflects the open state; `aria-autocomplete="list"` on Input; `aria-selected` on the selected Item.
 - No keyboard navigation between options is built in.
+- Escape closes the open list on web (topmost layer only, so a Combobox inside a Dialog closes first).

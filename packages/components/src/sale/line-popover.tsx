@@ -3,26 +3,16 @@
 // (packages/core/src/screens/main/pos/cart/cells/quantity-keypad.tsx and cells/price.tsx); MIT, WCPOS.
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { formatMoney, minorUnitDigits } from '@tallyui/core';
+import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
-import { DIGIT_ROWS, Keypad, type KeypadKey } from '../input/keypad';
+import { decimalRows, typeDecimal } from '../input/decimal-entry';
+import { Keypad } from '../input/keypad';
 import { lessPercent, parsePrice, QuickDiscountKeys, quickKeys } from './price-form';
 
 /** nav-drawer.tsx's focus targets. */
 const FOCUSABLE = 'button, [href], input, [tabindex]:not([tabindex="-1"])';
-const BACKSPACE: KeypadKey = { name: 'backspace', label: 'Delete last digit', text: '⌫' };
 const button = 'min-h-11 flex-1 items-center justify-center rounded-md border border-border px-3 py-2';
-
-/** v2's typeDecimal: `.` once and only with places, a digit past the places refused, a lone 0 replaced. */
-function typeDecimal(buffer: string, key: string, places: number): string {
-  if (key === 'backspace') return buffer.slice(0, -1);
-  if (key === 'decimal') return places > 0 && !buffer.includes('.') ? `${buffer || '0'}.` : buffer;
-  if (!/^[0-9]$/.test(key)) return buffer;
-  const point = buffer.indexOf('.');
-  if (point >= 0) return buffer.length - point > places ? buffer : buffer + key;
-  return buffer === '0' ? key : buffer + key;
-}
 
 export interface LinePopoverProps {
   /** `quantity` takes whole numbers only, with no decimal key (decimal quantities need an ADR first, TallyUI#486). */
@@ -43,14 +33,24 @@ export interface LinePopoverProps {
   /** Buttons drawn in the open panel above Apply / Cancel, e.g. the cart line's Discount and Remove. Pressing one closes
    * the popover, then calls its `onPress`. `destructive` draws it in the destructive colour. */
   actions?: ReadonlyArray<{ id: string; label: string; onPress: () => void; destructive?: boolean }>;
+  /** `apply` (default): today's Apply / Cancel. `close`: v2's grow keypad. There is no Apply or Cancel, and a full-width
+   * Done writes what was typed. Escape closes without writing, and any other close (a press outside, the overlay) writes
+   * it; a refusal on that path goes to `onCloseRefused`, as the popover is already closing. A quantity also gets v2's − / +
+   * steppers, which write at once. */
+  commit?: 'apply' | 'close';
+  /** `commit="close"` only: called with the refusal when the write on a close other than Done is refused; the popover is already closing, so the host shows it. */
+  onCloseRefused?: (message: string) => void;
+  /** Quantity with `commit="close"` only: − becomes Remove at a shown quantity of 1 or less, closes without writing and calls this. */
+  onRemove?: () => void;
 }
 
 /**
  * A cart line's quantity or price that opens v2's keypad: the cashier types (or picks a quick discount),
- * Apply writes through `onApply`, and Cancel, Escape or a press outside close without writing.
+ * Apply writes through `onApply`, and Cancel, Escape or a press outside close without writing (`commit="close"` differs).
  */
 export function LinePopover({ kind, lineName, currency, value, onApply, quickDiscounts, textClassName, regularValue,
-  actions }: LinePopoverProps) {
+  actions, commit = 'apply', onRemove, onCloseRefused }: LinePopoverProps) {
+  const formatMoney = useFormatMoney();
   const [open, setOpen] = useState(false);
   // v2's entry: the typed buffer (`.` as its separator), or the lit quick key, a percentage off `value`.
   const [entry, setEntry] = useState<{ buffer: string; percent?: number }>({ buffer: '' });
@@ -67,12 +67,20 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
   const draft = !price ? (Number.parseInt(typed, 10) > 0 ? Number.parseInt(typed, 10) : undefined)
     : percent !== undefined ? lessPercent(value, percent) : typed ? parsePrice(typed, currency) : undefined;
   const title = `${price ? 'Price' : 'Quantity'} for ${lineName}`;
-  const rows = [...DIGIT_ROWS, places
-    ? [{ name: 'decimal', label: 'Decimal point', text: '.' }, { name: '0', label: '0' }, BACKSPACE]
-    : [{ name: '0', label: '0', span: 2 }, BACKSPACE]];
+  const rows = decimalRows(places);
+  const close = commit === 'close';
+  const shown = typeof draft === 'number' ? draft : value;
+  // v2's trash: at 1 or less, − removes the line when the host can; without onRemove it stops at 1.
+  const trash = shown <= 1 && onRemove !== undefined;
+  // Set by Escape and Remove: the close that follows writes nothing.
+  const discard = useRef(false);
 
   const openChange = (next: boolean) => {
-    if (next) { setEntry({ buffer: '' }); setError(null); }
+    if (next) { setEntry({ buffer: '' }); setError(null); discard.current = false; }
+    else if (close && !discard.current && typeof draft === 'number' && draft !== value) {
+      const refused = onApply(draft);
+      if (refused) onCloseRefused?.(refused);
+    }
     setOpen(next);
   };
   const press = (name: string) => {
@@ -89,8 +97,18 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
     setError(refused);
     if (refused === null) setOpen(false);
   }
+  // A step writes at once; the display then follows `value`, or shows it again after a refusal.
+  const step = (to: number) => {
+    setError(onApply(to));
+    setEntry({ buffer: '' });
+  };
+  const remove = () => {
+    discard.current = true;
+    setOpen(false);
+    onRemove?.();
+  };
   const onKey = (key: string) => {
-    if (key === 'Escape') setOpen(false);
+    if (key === 'Escape') { discard.current = true; setOpen(false); }
     else if (/^[0-9]$/.test(key)) press(key);
     else if (key === 'Backspace') press('backspace');
     else if ((key === '.' || key === ',') && places) press('decimal');
@@ -102,9 +120,9 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
       <Text className={cn('text-sm tabular-nums text-foreground', textClassName)}>{format(value)}</Text>
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Overlay style={StyleSheet.absoluteFill} />
+      <Popover.Overlay testID={`${kind}-popover-overlay`} style={StyleSheet.absoluteFill} />
       <Popover.Content testID={`${kind}-popover`} align={price ? 'end' : 'start'} sideOffset={4}
-        aria-labelledby={titleId} aria-describedby={undefined}
+        aria-labelledby={titleId} aria-describedby={undefined} onEscapeKeyDown={() => { discard.current = true; }}
         className="w-64 rounded-md border border-border bg-popover p-4 shadow-md">
         <Panel onKey={onKey}>
           <Text nativeID={titleId} className="font-semibold text-popover-foreground">{title}</Text>
@@ -113,8 +131,18 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
               className="text-sm tabular-nums text-muted-foreground line-through">{regular}</Text> : null}
             {percent !== undefined ? <Text className="text-sm text-muted-foreground">{`${format(value)} −${percent}%`}</Text> : null}
             <Text testID={`${kind}-popover-value`} numberOfLines={1} className="text-2xl font-semibold tabular-nums text-popover-foreground">
-              {buffer || format(typeof draft === 'number' ? draft : value)}</Text>
+              {buffer || format(shown)}</Text>
           </View>
+          {close && !price ? <View className="flex-row items-center gap-2">
+            {trash ? <Pressable testID="quantity-popover-remove" accessibilityRole="button" accessibilityLabel="Remove"
+              onPress={remove} className={`${button} bg-card`}><Text className="text-destructive">Remove</Text></Pressable>
+              : <Pressable testID="quantity-popover-step-down" accessibilityRole="button" accessibilityLabel="One fewer"
+                disabled={shown <= 1} accessibilityState={{ disabled: shown <= 1 }} onPress={() => { if (shown > 1) step(shown - 1); }}
+                className={cn(button, 'bg-card', shown <= 1 && 'opacity-50')}><Text className="text-foreground">−</Text></Pressable>}
+            <Text className="flex-1 text-center tabular-nums text-popover-foreground">{format(shown)}</Text>
+            <Pressable testID="quantity-popover-step-up" accessibilityRole="button" accessibilityLabel="One more"
+              onPress={() => step(shown + 1)} className={`${button} bg-card`}><Text className="text-foreground">+</Text></Pressable>
+          </View> : null}
           {keys.length ? <QuickDiscountKeys keys={keys} percent={percent} onPress={quick} /> : null}
           <Keypad testID={`${kind}-popover-keypad`} rows={rows} onPress={press} />
           {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
@@ -125,12 +153,15 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
               <Text className={action.destructive ? 'text-destructive' : 'text-foreground'}>{action.label}</Text>
             </Pressable>)}
           </View> : null}
-          <View className="flex-row gap-2">
+          {close ? <View className="flex-row">
+            <Pressable testID={`${kind}-popover-done`} accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
+              <Text className="font-semibold text-primary-foreground">Done</Text></Pressable>
+          </View> : <View className="flex-row gap-2">
             <Pressable testID={`${kind}-popover-apply`} accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
               <Text className="font-semibold text-primary-foreground">Apply</Text></Pressable>
             <Pressable testID={`${kind}-popover-cancel`} accessibilityRole="button" onPress={() => setOpen(false)} className={`${button} bg-card`}>
               <Text className="text-foreground">Cancel</Text></Pressable>
-          </View>
+          </View>}
         </Panel>
       </Popover.Content>
     </Popover.Portal>

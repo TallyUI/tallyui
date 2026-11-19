@@ -6,6 +6,16 @@ import { encode, MAX_MESSAGE_BYTES, messageBytes } from './snapshot';
 /** A display clock that also tells the time, for the snapshot re-send and the idle clear. */
 export interface ServiceClock extends DisplayClock { now(): number }
 
+/** The real timers and `Date.now`: every display module's default clock. */
+export const systemClock: ServiceClock = {
+  now: () => Date.now(),
+  setTimeout: (run, ms) => setTimeout(run, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+/** The sale states a display shows: its current event, which the snapshot carries. */
+export const SALE_ACTIONS: ReadonlySet<string> = new Set(['cart.updated', 'payment.state', 'display.idle']);
+
 export interface SnapshotBody { v: 1; seq: number; config: DisplayConfig; event: DisplayEnvelope }
 
 export interface SnapshotSenderOptions {
@@ -21,9 +31,12 @@ export interface SnapshotSender {
 }
 
 // Rate and re-send follow WCPOS v2's display-session.ts (ADR-085 context and d8).
+/** @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SNAPSHOT_MIN_INTERVAL_MS = 1000;
+/** @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SNAPSHOT_RESEND_MS = 20_000;
-/** The server keeps a snapshot for at most 60 s (ADR-085 d8). */
+/** The server keeps a snapshot for at most 60 s (ADR-085 d8).
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SNAPSHOT_LIFETIME_MS = 60_000;
 
 type State = Parameters<SnapshotSender['update']>[0];

@@ -2,6 +2,7 @@ import { MAX_COMMANDS_PER_BATCH } from '../commands'
 import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
+import { orderCreatePart, updatePayloadErrors } from './update-payload-shape'
 
 /** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
  *  safe integer (precheckCommand decides which versions this server supports). */
@@ -9,6 +10,8 @@ export type ValidatedCommandEnvelope =
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'version'> & { type: 'order.create'; version: number })
   | RegisterCommandEnvelope<Record<string, unknown>>
   | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.refund'; version: number })
+  | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.reopen'; version: number })
+  | (Omit<CommandEnvelope<Record<string, unknown>>, 'type' | 'version'> & { type: 'order.update'; version: number })
 
 /** Validates every envelope before any command is claimed. */
 export function validateBatch(body: unknown):
@@ -31,7 +34,7 @@ export function validateBatch(body: unknown):
     }
     let field: string | undefined
     if (typeof command.id !== 'string' || command.id.length === 0 || command.id.length > 64) field = 'id'
-    else if (!['order.create', 'order.refund', 'register.session.open', 'register.session.transition', 'register.movement.record',
+    else if (!['order.create', 'order.refund', 'order.reopen', 'order.update', 'register.session.open', 'register.session.transition', 'register.movement.record',
       'register.movement.void', 'register.closure.submit'].includes(command.type)) field = 'type'
     else if (!Number.isSafeInteger(command.version) || command.version < 1) field = 'version'
     else if (typeof command.payload !== 'object' || command.payload === null || Array.isArray(command.payload)) field = 'payload'
@@ -49,6 +52,15 @@ const rejected = (id: string, code: 'unsupported_version' | 'invalid_payload', m
 // A server lists at most ten payload errors in one message.
 const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
 
+/** The `unsupported_version` result for a command whose version list the server may leave out (absent or empty: it takes none). */
+function unsupportedOptional(envelope: { id: string; type: string; version: number },
+  key: 'orderRefund' | 'orderReopen' | 'orderUpdate', versions: readonly number[], noun: string): CommandResult | undefined {
+  if (versions.includes(envelope.version)) return undefined
+  return rejected(envelope.id, 'unsupported_version',
+    `${envelope.type} version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : `takes no ${noun}`}`,
+    { [key]: versions.length ? Math.max(...versions) : 0 })
+}
+
 /**
  * The rejection a batch returns for this command before any executor runs, or undefined
  * when the command goes on to the plugin's executor. A plugin's batch handler calls
@@ -59,27 +71,33 @@ const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
  * claim, in the executor (order.create; register commands follow ADR-068). It pushes any result
  * one of those steps returns and moves on.
  *
+ * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids, and below
+ * createVersion 5 precheckCommand does not repeat it.
+ *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
  *
  * `supported` is the SERVER's own list (what its /info advertises), never core's constants, which are the
  * till's capability (#297). The version check, the `unsupported_version` message and its `data` all use it:
- * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1] })` (`orderRefund` is optional).
+ * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1], orderReopen: [1], orderUpdate: [1] })` (`orderRefund`, `orderReopen` and `orderUpdate` are optional).
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[] }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[] }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
   }
-  if (envelope.type === 'order.refund') {
-    const versions = supported.orderRefund ?? []
-    if (!versions.includes(envelope.version)) {
-      return rejected(envelope.id, 'unsupported_version',
-        `order.refund version ${envelope.version} is not supported; this server ${versions.length ? `supports ${versions.join(', ')}` : 'takes no refunds'}`,
-        { orderRefund: versions.length ? Math.max(...versions) : 0 })
-    }
-    return undefined
+  if (envelope.type === 'order.refund') return unsupportedOptional(envelope, 'orderRefund', supported.orderRefund ?? [], 'refunds')
+  if (envelope.type === 'order.reopen') return unsupportedOptional(envelope, 'orderReopen', supported.orderReopen ?? [], 'reopens')
+  if (envelope.type === 'order.update') {
+    const refusal = unsupportedOptional(envelope, 'orderUpdate', supported.orderUpdate ?? [], 'updates')
+    if (refusal) return refusal
+    const payload = envelope.payload as Record<string, unknown>
+    const createPayload = orderCreatePart(payload)
+    const shape = payloadShapeErrors(createPayload)
+    const errors = updatePayloadErrors(payload).filter(error => !shape.includes(error))
+    if (errors.length) return rejected(envelope.id, 'invalid_payload', firstTen(errors))
+    return precheckCommand({ id: envelope.id, type: 'order.create', version: payload.createVersion as number, payload: createPayload }, supported)
   }
   if (envelope.type !== 'order.create') {
     if (!supported.register.includes(envelope.version)) {
@@ -118,6 +136,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   const coupons = Array.isArray(payload.coupons) ? payload.coupons.filter(coupon => typeof coupon === 'object' && coupon !== null && !Array.isArray(coupon)) : []
   const couponLines = coupons.filter(coupon => coupon.lines !== undefined)
   const couponsWithoutLines = coupons.filter(coupon => coupon.lines === undefined)
+  const paymentsWithMethodId = Array.isArray(payload.payments) && payload.payments.some(payment =>
+    typeof payment === 'object' && payment !== null && (payment as { methodId?: unknown }).methodId !== undefined)
   let versionError = command.version < 5 && v5Fields.length ? v5Fields.map(field => `${field} requires version 5`).join('; ')
     : command.version < 6 && v6Fields.length ? v6Fields.map(field => `${field} requires version 6`).join('; ')
     : command.version < 7 && payload.note !== undefined ? 'note requires version 7'
@@ -125,6 +145,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     : command.version < 8 && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)
       ? 'customer address requires version 8'
     : command.version < 9 && couponLines.length ? 'coupons[].lines requires version 9'
+    : command.version < 10 && paymentsWithMethodId ? 'payments[].methodId requires version 10'
     : command.version >= 9 && couponsWithoutLines.length ? 'version 9 requires coupons[].lines'
     : command.version === 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
     : command.version >= 9 && payload.taxAddress === undefined && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)

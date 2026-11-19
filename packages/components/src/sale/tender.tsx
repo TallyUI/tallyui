@@ -1,20 +1,29 @@
 import { useReducer, type JSX } from 'react';
-import type { PaymentMethodDescriptor } from '@tallyui/core';
+import { wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { initTenderState, tenderReducer, type useSale } from '@tallyui/pos';
+import { offeredMethods } from './offered-methods';
 import { TenderPane } from './tender-pane';
 
 type Sale = ReturnType<typeof useSale>;
 
-function HostedPane({ sale, method, methods }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[] }) {
-  const [state, dispatch] = useReducer(tenderReducer, { methodId: method, balanceMinor: sale.order.balanceDueMinor }, initTenderState);
-  return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} />;
+/** The offered method `startTender`'s wire method opens on: that id when offered, else the first offered method recording it, else the method itself. */
+function openingMethodId(method: string, methods?: PaymentMethodDescriptor[]): string {
+  const offered = offeredMethods(methods);
+  if (offered.some(({ id }) => id === method)) return method;
+  return offered.find((descriptor) => wireMethodOf(descriptor) === method)?.id ?? method;
 }
 
-type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[] };
+function HostedPane({ sale, method, methods, ledger, back, confirmVoid }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[]; ledger?: boolean; back?: boolean; confirmVoid?: boolean }) {
+  const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor }, initTenderState);
+  return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} />;
+}
+
+type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[]; /** Passed to TenderPane: `false` leaves the ledger to Cart's `tenderLedger`. Default `true`. */ ledger?: boolean; /** Passed to TenderPane: `false` hides Back (v2's phone checkout). Default `true`. */ back?: boolean;
+  /** Passed to TenderPane's ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`. */ confirmVoid?: boolean };
 
 /** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
-export function Tender({ sale, methods }: TenderProps): JSX.Element | null {
-  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} /> : null;
+export function Tender({ sale, methods, ledger, back, confirmVoid }: TenderProps): JSX.Element | null {
+  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} /> : null;
 }
 
 /** @deprecated Use Tender: the pane now handles split payments. */

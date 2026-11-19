@@ -69,12 +69,35 @@ it('shows the closure number, and figures and variance per tender, and dismisses
   );
   await waitFor(() => expect(screen.getByTestId('closure-title').textContent).toBe('Register closed'));
   expect(screen.getByTestId('closure-number').textContent).toBe('Closure #1');
-  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('Counted €63.30');
-  expect(screen.getByTestId('closure-expected-cash').textContent).toBe('Expected €100.00');
-  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('€36.70 short');
+  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('€63.30');
+  expect(screen.getByTestId('closure-expected-cash').textContent).toBe('€100.00');
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('−€36.70');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · short');
   expect(screen.getByTestId('closure-counted-external').textContent).toBe('Counted €22.00');
   fireEvent.click(screen.getByTestId('closure-done'));
   expect(onDone).toHaveBeenCalledTimes(1);
+});
+
+it('leads with an over variance as a plus figure, and an exact count as zero', async () => {
+  await closeWithCount(12345);
+  await renderClosure();
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('+€23.45');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · over');
+  // A second render on a fresh register: the exact count.
+  cleanup();
+  await db.remove();
+  db = await createRegisterDb();
+  await closeWithCount(10000);
+  await renderClosure();
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('€0.00');
+  expect(screen.getByTestId('closure-variance-eyebrow').textContent).toBe('Variance · Exact');
+});
+
+it('shows a large count and variance in full', async () => {
+  await closeWithCount(123456789);
+  await renderClosure();
+  expect(screen.getByTestId('closure-counted-cash').textContent).toBe('€1,234,567.89');
+  expect(screen.getByTestId('closure-variance-cash').textContent).toBe('+€1,234,467.89');
 });
 
 it('blind closure hides every figure, but still shows the closure number', async () => {
@@ -152,6 +175,26 @@ it('marks the approver "not yet verified" until the store applies the closure wi
   expect(screen.getByTestId('closure-sheet').textContent).not.toContain('proof-z');
 });
 
+it('shows the variance note when there is one', async () => {
+  const session = await seedSession(db, 10000);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 9000 }, note: 'Float short' });
+  await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 9000,
+    otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0' });
+  await renderClosure({ blind: true });
+  expect(screen.getByTestId('closure-variance-note').textContent).toBe('Note · Float short');
+});
+
+it('draws no note line for a blank or missing note', async () => {
+  const closure = await closeWithCount(10000);
+  await renderClosure();
+  expect(screen.queryByTestId('closure-variance-note')).toBeNull();
+  cleanup();
+  // closeSession already nulls a blank note, so the blank reaches the frozen breakdowns by hand.
+  await closure.incrementalPatch({ breakdowns: { ...closure.breakdowns, variance_note: '  ' } });
+  await renderClosure();
+  expect(screen.queryByTestId('closure-variance-note')).toBeNull();
+});
+
 it('shows no approved-by line without an approver', async () => {
   await closeWithCount(10000);
   await renderClosure();
@@ -180,6 +223,22 @@ it.each([
   const line = screen.queryByTestId('closure-tax-rounding-mixed');
   expect(line?.textContent ?? null).toBe(mixed
     ? "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed." : null);
+});
+
+// ADR-090 ruling 38: a session holding a reopened sale says its tax rates include what was paid earlier in the store.
+it.each([[true], [false]])('shows the store-paid tax note only when the flag is set (reopened sale: %s)', async (reopened) => {
+  const session = await seedSession(db, 10000);
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: 10000 } });
+  // Only what a closure reads from a sale. A reopened sale carries one locked leg (storePaymentId set): the label needs it, and it is
+  // the store's earlier money, not takings, so the count is unchanged. A till sale has no payments.
+  const sale = { id: 'a', sessionId: session.id, syncStatus: 'applied', pricesIncludeTax: false, lines: [], taxMinor: 0,
+    payments: reopened ? [{ id: 'p1', storePaymentId: 'p1', method: 'cash', amountMinor: 500 }] : [],
+    ...(reopened ? { storeOrderId: '41' } : {}) } as unknown as PosOrder;
+  await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000,
+    otherTenders: {}, movements: [], softwareVersion: '1.0.0', orders: [sale] });
+  await renderClosure();
+  expect(screen.queryByTestId('closure-tax-store-paid')?.textContent ?? null)
+    .toBe(reopened ? 'Tax rates include tax on amounts paid earlier in the store.' : null);
 });
 
 it('renders nothing before any session has closed', async () => {

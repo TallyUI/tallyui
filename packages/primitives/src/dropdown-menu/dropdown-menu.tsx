@@ -8,6 +8,8 @@ import {
   type LayoutRectangle,
 } from 'react-native';
 import { useAugmentedRef, useControllableState, useRelativePosition, type LayoutPosition } from '../hooks';
+import { measureTrigger } from '../hooks/measure-trigger';
+import { useEscapeDismiss } from '../hooks/use-escape-dismiss';
 import { Portal as RNPortal } from '../portal';
 import { Slot } from '../slot';
 import type {
@@ -140,9 +142,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
     methods: {
       open: () => {
         onOpenChange(true);
-        augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
-          setTriggerPosition({ width, pageX, pageY, height });
-        });
+        measureTrigger(augmentedRef.current, setTriggerPosition);
       },
       close: () => {
         setTriggerPosition(null);
@@ -154,9 +154,7 @@ const Trigger = React.forwardRef<View, TriggerProps>(function Trigger(
   const onPress = React.useCallback(
     (ev: GestureResponderEvent) => {
       if (disabled) return;
-      augmentedRef.current?.measure?.((_x, _y, width, height, pageX, pageY) => {
-        setTriggerPosition({ width, pageX, pageY, height });
-      });
+      measureTrigger(augmentedRef.current, setTriggerPosition);
       onOpenChange(!open);
       onPressProp?.(ev);
     },
@@ -250,11 +248,23 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
     style,
     disablePositioningStyle,
     onLayout: onLayoutProp,
+    onEscapeKeyDown,
     ...props
   },
   ref
 ) {
-  const { open, triggerPosition, contentLayout, setContentLayout } = useRootContext();
+  const { open, onOpenChange, triggerPosition, contentLayout, setTriggerPosition, setContentLayout } =
+    useRootContext();
+
+  useEscapeDismiss(
+    open,
+    () => {
+      setTriggerPosition(null);
+      setContentLayout(null);
+      onOpenChange(false);
+    },
+    onEscapeKeyDown
+  );
 
   const positionStyle = useRelativePosition({
     align,
@@ -615,7 +625,9 @@ const SubContent = React.forwardRef<View, SubContentProps>(function SubContent(
   { asChild, forceMount, ...props },
   ref
 ) {
-  const { open, nativeID } = useSubContext();
+  const { open, nativeID, onOpenChange } = useSubContext();
+
+  useEscapeDismiss(open, () => onOpenChange(false));
 
   if (!forceMount && !open) {
     return null;

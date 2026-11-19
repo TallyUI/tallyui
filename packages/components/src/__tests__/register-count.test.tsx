@@ -63,6 +63,10 @@ async function renderCounting(
 }
 const enter = (value: string) => fireEvent.change(screen.getByTestId('count-amount'), { target: { value } });
 const closeButton = () => screen.getByTestId('count-close') as HTMLButtonElement;
+const openTiles = () => fireEvent.click(screen.getByTestId('count-denominations'));
+const openTenders = async () => fireEvent.click(await screen.findByTestId('count-other-tenders'));
+const amount = () => (screen.getByTestId('count-amount') as HTMLInputElement).value;
+const key = (name: string) => fireEvent.click(screen.getByTestId(`count-key-${name}`));
 
 it('labels the amount field, and shows a live variance line against the expected float', async () => {
   await renderCounting();
@@ -74,9 +78,16 @@ it('labels the amount field, and shows a live variance line against the expected
   expect(screen.getByTestId('count-variance').textContent).toContain('Exact');
 });
 
-it('counts two notes, clears their contribution on typing, and clears the tiles', async () => {
-  // Unlike WCPOS's fold, this design's tiles are always visible (no 'count-denominations' toggle).
+it('frames the cash field as a large figure with the currency symbol', async () => {
   await renderCounting();
+  expect(screen.getByTestId('count-amount-symbol').textContent).toBe('€');
+  expect(screen.getByTestId('count-amount').getAttribute('placeholder')).toBe('0.00');
+});
+
+it('counts two notes, clears their contribution on typing, and clears the tiles', async () => {
+  // As v2's fold, the tiles sit under 'count-denominations', closed until it is pressed.
+  await renderCounting();
+  openTiles();
   fireEvent.click(screen.getByTestId('den-tile-2000'));
   fireEvent.click(screen.getByTestId('den-tile-2000'));
   expect(screen.getByTestId('den-count-2000').textContent).toBe('2');
@@ -91,6 +102,7 @@ it('counts two notes, clears their contribution on typing, and clears the tiles'
 
 it('labels whole notes and coins without decimals, and a fraction as money (the Front desk, fix round)', async () => {
   await renderCounting();
+  openTiles();
   expect(screen.getByTestId('den-tile-2000').getAttribute('aria-label')).toBe('€20');
   expect(screen.getByTestId('den-tile-500').getAttribute('aria-label')).toBe('€5');
   expect(screen.getByTestId('den-tile-50').getAttribute('aria-label')).toBe('€0.50');
@@ -107,6 +119,7 @@ it('holds for ten, repeats, and does not also single tap', async () => {
   const ui = <RegisterHarness db={db}>{(register) => <RegisterCount register={register} currency="EUR" />}</RegisterHarness>;
   const { rerender } = render(ui);
   await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+  openTiles();
   rerender(ui);
   const tile = screen.getByTestId('den-tile-2000');
   vi.useFakeTimers();
@@ -136,6 +149,7 @@ it('rejects blank, negative-shaped, exponent and overflow counts, keeping Close 
 it('keeps an entered other tender, and closes with both counted in minor units', async () => {
   const session = await renderCounting();
   await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  await openTenders();
   await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
   expect(screen.getByTestId('count-tender-external-label').textContent).toBe('Card counted (€)');
   enter('100.00');
@@ -146,6 +160,30 @@ it('keeps an entered other tender, and closes with both counted in minor units',
     const [row] = await db.register_sessions.find({ selector: { status: 'closed' } }).exec();
     expect(row?.counted).toEqual({ cash: 10000, external: 2200 });
   });
+});
+
+it('other tenders fold under Other tenders, closed at first', async () => {
+  const session = await renderCounting();
+  await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  const toggle = await screen.findByTestId('count-other-tenders');
+  expect(screen.queryByTestId('count-tender-external')).toBeNull();
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle);
+  expect(screen.getByTestId('count-tender-external')).toBeTruthy();
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '22' } });
+  fireEvent.click(toggle);
+  expect(screen.queryByTestId('count-tender-external')).toBeNull();
+  fireEvent.click(toggle);
+  expect((screen.getByTestId('count-tender-external') as HTMLInputElement).value).toBe('22');
+});
+
+it('no other tenders, no toggle', async () => {
+  const session = await renderCounting();
+  await sale('order-1', session.id, [{ method: 'cash', amountMinor: 500 }]);
+  enter('1.00');
+  await waitFor(() => expect(screen.getByTestId('count-variance').textContent).toContain('€105.00'));
+  expect(screen.queryByTestId('count-other-tenders')).toBeNull();
 });
 
 it('blind mode hides the variance line but still refuses to close over threshold', async () => {
@@ -195,6 +233,30 @@ it("passes approve()'s approvedBy and approvedByName to closeSession, and the Z 
   const closure = await db.closures.findOne(session.id).exec();
   expect(closure?.breakdowns).toMatchObject({ approved_by: 'mgr-1', approved_by_name: 'Morgan Lee' });
   expect((await db.register_sessions.findOne(session.id).exec())?.approved_by).toBe('mgr-1');
+});
+
+const typeNote = (value: string) => fireEvent.change(screen.getByTestId('count-note'), { target: { value } });
+
+it('a note typed before Close reaches the closure', async () => {
+  const session = await renderCounting();
+  expect(screen.getByTestId('count-note').getAttribute('placeholder')).toBe('Explain any difference');
+  enter('99.00');
+  typeNote('Float short by a euro');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect((await db.closures.findOne(session.id).exec())?.breakdowns.variance_note).toBe('Float short by a euro');
+  expect((await db.register_sessions.findOne(session.id).exec())?.count_note).toBe('Float short by a euro');
+});
+
+it('the approved close carries the note too', async () => {
+  const approve = vi.fn(async () => ({ approvedBy: 'mgr-1' }));
+  const session = await renderCounting({ varianceThreshold: 500 }, approve);
+  enter('1.00');
+  typeNote('Till skimmed');
+  fireEvent.click(closeButton());
+  await waitFor(async () => expect(await db.closures.findOne(session.id).exec()).not.toBeNull());
+  expect(approve).toHaveBeenCalledTimes(1);
+  expect((await db.closures.findOne(session.id).exec())?.breakdowns.variance_note).toBe('Till skimmed');
 });
 
 // approved-by: the hook gates too. Here the screen is handed no threshold, so only the hook's gate
@@ -284,6 +346,7 @@ it('calls approve with the count typed, cash and other tenders in minor units', 
   const approve = vi.fn(async (_input: { counted: Record<string, number> }) => null);
   const { session } = await renderSpied(approve);
   await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+  await openTenders();
   await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
   enter('1.00');
   fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '21.50' } });
@@ -371,3 +434,121 @@ it("asks again when a sale lands after the approval's variance, which the hook's
   await waitFor(async () => expect(await closedRows()).toBe(1));
   expect(approve).toHaveBeenCalledTimes(2);
 });
+
+it('the keypad is open at first and types the cash amount', async () => {
+  await renderCounting();
+  expect(screen.getByTestId('count-keypad')).toBeTruthy();
+  for (const name of ['1', '2', 'decimal', '5']) key(name);
+  expect(amount()).toBe('12.5');
+  key('backspace');
+  expect(amount()).toBe('12.');
+  key('5');
+  key('0');
+  key('9');
+  expect(amount()).toBe('12.50');
+}, 20_000);
+
+it('the keypad collapses when a valid amount loses focus outside the entry, and reopens on focus', async () => {
+  await renderCounting();
+  const field = screen.getByTestId('count-amount');
+  fireEvent.blur(field, { relatedTarget: closeButton() });
+  expect(screen.getByTestId('count-keypad')).toBeTruthy();
+  key('5');
+  fireEvent.blur(field, { relatedTarget: screen.getByTestId('count-key-1') });
+  expect(screen.getByTestId('count-keypad')).toBeTruthy();
+  fireEvent.blur(field, { relatedTarget: closeButton() });
+  expect(screen.queryByTestId('count-keypad')).toBeNull();
+  expect(screen.getByTestId('count-tap-to-change').textContent).toBe('Tap the amount to edit it');
+  fireEvent.focus(field);
+  expect(screen.getByTestId('count-keypad')).toBeTruthy();
+}, 20_000);
+
+it('tiles fold under Count by notes and coins', async () => {
+  await renderCounting();
+  expect(screen.queryByTestId('den-tile-2000')).toBeNull();
+  expect(screen.getByTestId('count-denominations').textContent).toBe('Count by notes and coins');
+  openTiles();
+  expect(screen.getByTestId('den-tile-2000')).toBeTruthy();
+  expect(screen.getByTestId('count-denominations').getAttribute('aria-expanded')).toBe('true');
+  openTiles();
+  expect(screen.queryByTestId('den-tile-2000')).toBeNull();
+}, 20_000);
+
+it('a tile collapses the keypad and the next key starts fresh', async () => {
+  await renderCounting();
+  key('9');
+  openTiles();
+  fireEvent.click(screen.getByTestId('den-tile-2000'));
+  fireEvent.click(screen.getByTestId('den-tile-2000'));
+  expect(amount()).toBe('40.00');
+  expect(screen.queryByTestId('count-keypad')).toBeNull();
+  fireEvent.focus(screen.getByTestId('count-amount'));
+  key('5');
+  expect(amount()).toBe('5');
+  expect(screen.getByTestId('den-count-2000').textContent).toBe('0');
+  fireEvent.click(screen.getByTestId('count-clear'));
+  expect(amount()).toBe('0.00');
+  key('7');
+  expect(amount()).toBe('7');
+}, 20_000);
+
+/** A RegisterCount whose `closeSession` is `close` (not the hook's), recording the call order with `onPrint`. */
+async function renderPrinting(close: () => Promise<void>, onPrint?: () => Promise<void>, overrides?: { varianceThreshold: number },
+  approve?: RegisterCountProps['approve']) {
+  const calls: string[] = [];
+  const closeSession = vi.fn(async (_input: CloseInput) => { calls.push('close'); await close(); });
+  const print = onPrint && vi.fn(async () => { calls.push('print'); await onPrint(); });
+  const session = await seedSession(db, 10000);
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  render(
+    <RegisterHarness db={db} overrides={overrides}>
+      {(register) => (
+        <RegisterCount register={{ ...register, actions: { ...register.actions, closeSession: closeSession as unknown as Register['actions']['closeSession'] } }}
+          currency="EUR"
+          approve={approve} onPrint={print} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+  return { calls, closeSession, print };
+}
+
+it('with onPrint, Close & print closes then prints', async () => {
+  const { calls, closeSession, print } = await renderPrinting(async () => {}, async () => {});
+  expect(closeButton().textContent).toBe('Close & print');
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+  expect(closeSession).toHaveBeenCalledWith({ counted: { cash: 10000 } });
+  expect(calls).toEqual(['close', 'print']);
+  cleanup();
+  await db.remove();
+  db = await createRegisterDb();
+  await renderCounting();
+  expect(closeButton().textContent).toBe('Close register');
+}, 20_000);
+
+it('with onPrint, a failed close prints nothing and a failed print shows the error', async () => {
+  const failed = await renderPrinting(async () => { throw new Error('Store unreachable'); }, async () => {});
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(screen.getByTestId('count-error')).toBeTruthy());
+  expect(failed.calls).toEqual(['close']);
+  cleanup();
+  await db.remove();
+  db = await createRegisterDb();
+  const jammed = await renderPrinting(async () => {}, async () => { throw new Error('Printer jammed'); });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(screen.getByTestId('count-error').textContent).toContain('Printer jammed'));
+  expect(jammed.calls).toEqual(['close', 'print']);
+}, 20_000);
+
+it('an approved close prints too', async () => {
+  const approve = vi.fn(async () => ({ approvedBy: 'mgr-1' }));
+  const { calls } = await renderPrinting(async () => {}, async () => {}, { varianceThreshold: 500 }, approve);
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(calls).toEqual(['close', 'print']));
+  expect(approve).toHaveBeenCalledTimes(1);
+}, 20_000);

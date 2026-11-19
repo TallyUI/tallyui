@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { formatMoney, knownWarnings } from '@tallyui/core';
-import { isRequeueable, needsAttention, noteDelivery, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { useFormatMoney, knownWarnings } from '@tallyui/core';
+import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { NOTE_NOT_SENT, orderReference } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -32,11 +32,61 @@ const REFUSAL_SENTENCES = new Map([
 ]);
 // Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
+const REOPEN_AGAIN_SENTENCE = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
 function defaultFormatDate(iso: string) {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+export type OrderSyncNoticesProps = {
+  order: PosOrder;
+  /** The outbox's `state.stuck`, as OrdersList takes it. */
+  stuck?: OutboxState['stuck'];
+  /** Rendered between the notes (note not sent) and the store's warnings: OrdersList's Retry goes here. */
+  children?: ReactNode;
+};
+
+/** The per-sale sync notices OrdersList shows under each order, for an app's own order screen. */
+export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesProps) {
+  const formatMoney = useFormatMoney();
+  // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
+  const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
+  const sentence = order.syncStatus === 'rejected'
+    ? order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? '')
+      ? REOPEN_AGAIN_SENTENCE : refusalSentence(order.error?.code)
+    : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
+  return <>
+    {stuckEntry ? <Text className="text-destructive">
+      {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
+      {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
+    </Text> : null}
+    {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
+    {sentence ? <Text className="text-destructive">{sentence}</Text> : null}
+    {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
+    {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
+    {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
+      {warning.code === 'customer_omitted'
+        ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
+        : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
+    </Text>)}
+    {noteDelivery(order) === 'not_sent' ? <Text testID={`order-note-not-sent-${order.id}`} className="text-foreground">{NOTE_NOT_SENT}</Text> : null}
+    {children}
+    {knownWarnings(order.warnings).filter((warning) => warning.code !== 'register_session_unknown').map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
+      {warning.code === 'insufficient_stock'
+        ? `${warning.quantity} sold without stock: ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
+        : warning.code === 'tax_rate_mismatch'
+        ? `Tax at ${(warning.ratePpm / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 })}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
+        : warning.code === 'customer_ignored'
+        ? `The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: ${warning.customerId}.`
+        : warning.code === 'figures_mismatch'
+        ? `The online store worked out different figures for this sale. ${warning.fields.map(({ field, tillMinor, serverMinor }) => `${FIGURE_LABELS.get(field) ?? field}: till ${formatMoney({ amount: tillMinor, currency: order.currency })}, store ${formatMoney({ amount: serverMinor, currency: order.currency })}.`).join(' ')}`
+        : warning.bridgeMinor !== undefined
+        ? `Store calculated ${formatMoney({ amount: warning.serverMinor, currency: order.currency })}; a rounding line of ${warning.bridgeMinor > 0 ? '+' : ''}${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} brought it to ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
+        : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}
+    </Text></View>)}
+  </>;
 }
 
 /** The "Needs attention" (when not empty) and "Recent" orders, lifted from medusapos/app's orders screen (ADR-052).
@@ -51,6 +101,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   history?: OrderHistoryRow[];
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
 }) {
+  const formatMoney = useFormatMoney();
+  const hintId = useId();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
   const [expanded, setExpanded] = useState(new Set<string>());
@@ -69,7 +121,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     return bTime - aTime;
   });
   return <ScrollView className="flex-1 bg-background p-4">
-    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section) => (
+    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
         {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
@@ -87,13 +139,14 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             </View>;
           }
           const count = order.lines.reduce((sum, line) => sum + line.quantity, 0);
+          const refundDueMinor = refundDueOf(order);
           const key = `${section.title}:${order.id}`;
           const isExpanded = expanded.has(key);
-          // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
-          const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
-            <Pressable accessibilityRole="button" aria-expanded={isExpanded}
+            {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
+            <Text id={`${hintId}-${sectionIndex}-${order.id}`} className="hidden">Shows the items and payments of this sale</Text>
+            <Pressable accessibilityRole="button" aria-expanded={isExpanded} aria-describedby={`${hintId}-${sectionIndex}-${order.id}`}
               accessibilityHint="Shows the items and payments of this sale" testID={`order-row-${order.id}`} className="gap-1"
               onPress={() => setExpanded((current) => {
                 const next = new Set(current);
@@ -113,24 +166,13 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
                 {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
               </Text>)}
+              {refundDueMinor > 0 ? <Text testID={`order-refund-due-${order.id}`} className="text-foreground">
+                {`Refund due ${formatMoney({ amount: refundDueMinor, currency: order.currency })}`}</Text> : null}
               {order.note ? <Text testID={`order-note-${order.id}`} className="text-foreground">{`Customer note: ${order.note}`}</Text> : null}
             </View> : null}
-            {stuckEntry ? <Text className="text-destructive">
-              {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
-              {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
-            </Text> : null}
-            {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
-            {order.syncStatus === 'rejected' ? <Text className="text-destructive">{refusalSentence(order.error?.code)}</Text> : null}
-            {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
-            {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
-            {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
-              {warning.code === 'customer_omitted'
-                ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`
-                : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
-            </Text>)}
-            {noteDelivery(order) === 'not_sent' ? <Text testID={`order-note-not-sent-${order.id}`} className="text-foreground">{NOTE_NOT_SENT}</Text> : null}
-            {/* Retry is offered only for a code the outbox resends (isRequeueable). */}
-            {section.title === 'Needs attention' && order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
+            <OrderSyncNotices order={order} stuck={stuck}>
+            {/* Retry is offered only for an order the outbox resends (isRequeueableOrder). */}
+            {section.title === 'Needs attention' && isRequeueableOrder(order)
               ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
                 if (retrying.current.has(order.id)) return;
                 retrying.current.add(order.id);
@@ -142,19 +184,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">Retry</Text>
               </Pressable> : null}
-            {knownWarnings(order.warnings).filter((warning) => warning.code !== 'register_session_unknown').map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
-              {warning.code === 'insufficient_stock'
-                ? `${warning.quantity} sold without stock: ${order.lines.find((line) => line.variantId === warning.variantId)?.name}`
-                : warning.code === 'tax_rate_mismatch'
-                ? `Tax at ${(warning.ratePpm / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 })}%: store ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
-                : warning.code === 'customer_ignored'
-                ? `The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: ${warning.customerId}.`
-                : warning.code === 'figures_mismatch'
-                ? `The online store worked out different figures for this sale. ${warning.fields.map(({ field, tillMinor, serverMinor }) => `${FIGURE_LABELS.get(field) ?? field}: till ${formatMoney({ amount: tillMinor, currency: order.currency })}, store ${formatMoney({ amount: serverMinor, currency: order.currency })}.`).join(' ')}`
-                : warning.bridgeMinor !== undefined
-                ? `Store calculated ${formatMoney({ amount: warning.serverMinor, currency: order.currency })}; a rounding line of ${warning.bridgeMinor > 0 ? '+' : ''}${formatMoney({ amount: warning.bridgeMinor, currency: order.currency })} brought it to ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`
-                : `Store total ${formatMoney({ amount: warning.serverMinor, currency: order.currency })} vs POS ${formatMoney({ amount: warning.expectedMinor, currency: order.currency })}`}
-            </Text></View>)}
+            </OrderSyncNotices>
           </View>
           );
         })}

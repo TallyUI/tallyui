@@ -20,9 +20,21 @@ const input = {
   email: 'g4-fixture-1791256221@example.invalid', firstName: 'Gee', lastName: 'Four',
   phone: '555-0144', company: 'Fourfold Supplies',
 };
-const customer = { id: '3', name: 'Gee Four', ...input, createdAt: `${search[0]!.date_created_gmt}Z` };
+// The recorded billing carries the contact fields, all address fields blank; the recorded shipping is all blank.
+const recordedBilling = { firstName: 'Gee', lastName: 'Four', company: input.company, email: input.email, phone: input.phone };
+const customer = { id: '3', name: 'Gee Four', ...input, billing: recordedBilling, createdAt: `${search[0]!.date_created_gmt}Z` };
 const { createdAt: _undated, ...undatedCustomer } = customer;
 const customers = createWooCustomers({ newId: () => createRequest.mutationId });
+// Hand-built from a recorded 1.10.20 row; recorded rows have every address key, with only billing's contact fields filled.
+// Only existing keys are filled (one set to null); no key the recorded row lacks is added.
+const addressedRow = {
+  ...search[0]!,
+  billing: { ...search[0]!.billing, address_1: '1 Park Row', city: 'Leeds', postcode: 'LS1 5AB', country: 'GB' },
+  shipping: {
+    ...search[0]!.shipping, first_name: 'Gee', last_name: 'Four', address_1: '2 Dock St', city: 'Leeds', postcode: 'LS10 1JF',
+    country: 'GB', state: null, phone: '0113 496 0000',
+  },
+};
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -189,6 +201,13 @@ describe('WooCommerce customers', () => {
       expect(sent.payload).toStrictEqual({ shipping: { ...blankShipping, first_name: 'Gee', address_2: 'Unit 4', postcode: '6000' } });
     });
 
+    it('pushes a read address back unchanged, with blank only where the row was blank or null', async () => {
+      const read = toWooCustomer(addressedRow);
+      const { sent } = await update({ billing: read.billing!, shipping: read.shipping! });
+      const asStored = (row: Record<string, string | null>) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value ?? '']));
+      expect(sent.payload).toStrictEqual({ billing: asStored(addressedRow.billing), shipping: asStored(addressedRow.shipping) });
+    });
+
     it.each([
       [[{ type: 'au_abn', value: '51824753556', country: 'AU' }, { type: 'other', value: 'R-1', label: 'Ref' }]],
       [[]],
@@ -250,9 +269,32 @@ describe('WooCommerce customers', () => {
     expect(toWooCustomer({ id: 3, first_name: 'Top', last_name: 'Level', email: 'top@example.invalid', billing: search[0]!.billing }))
       .toStrictEqual({ ...undatedCustomer, firstName: 'Top', lastName: 'Level', name: 'Top Level', email: 'top@example.invalid' });
     expect(toWooCustomer({ id: 3, email: input.email, billing: { company: input.company } }))
-      .toStrictEqual({ id: '3', name: input.company, email: input.email, company: input.company });
+      .toStrictEqual({ id: '3', name: input.company, email: input.email, company: input.company, billing: { company: input.company } });
     expect(toWooCustomer({ id: 3, email: input.email })).toStrictEqual({ id: '3', name: input.email, email: input.email });
     expect(toWooCustomer({ id: 3, first_name: '', billing: { phone: '', company: '' } })).toStrictEqual({ id: '3', name: '3' });
+  });
+
+  it('maps the filled billing and shipping fields under CustomerAddress names', () => {
+    const mapped = toWooCustomer(addressedRow);
+    expect(mapped.billing).toStrictEqual({
+      firstName: 'Gee', lastName: 'Four', company: input.company, address1: '1 Park Row', city: 'Leeds', postcode: 'LS1 5AB', country: 'GB',
+      email: input.email, phone: input.phone,
+    });
+    expect(mapped.shipping).toStrictEqual({ firstName: 'Gee', lastName: 'Four', address1: '2 Dock St', city: 'Leeds', postcode: 'LS10 1JF', country: 'GB', phone: '0113 496 0000' });
+    // The recorded row as captured: billing keeps only its non-empty contact fields; the all-blank shipping maps to no key.
+    const captured = toWooCustomer(search[0]!);
+    expect(captured.billing).toStrictEqual(recordedBilling);
+    expect('shipping' in captured).toBe(false);
+  });
+
+  it('leaves out an all-blank billing and never reads a shipping email', () => {
+    const blank = { first_name: '', last_name: null, company: '', address_1: '', address_2: null, city: '', postcode: 6000 as unknown as string,
+      country: '', state: '', email: '', phone: null };
+    expect('billing' in toWooCustomer({ id: 3, billing: blank })).toBe(false);
+    const shippingWithEmail = { city: 'Leeds', email: 'ship@example.invalid' };
+    expect(toWooCustomer({ id: 3, shipping: shippingWithEmail }).shipping).toStrictEqual({ city: 'Leeds' });
+    const emailOnly = { city: '', email: 'ship@example.invalid' };
+    expect('shipping' in toWooCustomer({ id: 3, shipping: emailOnly })).toBe(false);
   });
 
   it('maps date_created_gmt to a UTC createdAt', () => {

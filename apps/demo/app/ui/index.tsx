@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Text, Pressable, ScrollView } from 'react-native';
 import { Link, Stack } from 'expo-router';
 import { MUTED_FOREGROUND } from '../../lib/theme-colors';
 
@@ -15,6 +15,7 @@ const screens = [
   // Interactive
   { href: '/ui/button', label: 'Button' },
   { href: '/ui/icon-button', label: 'IconButton' },
+  { href: '/ui/list-row', label: 'ListRow' },
   // Form
   { href: '/ui/label', label: 'Label' },
   { href: '/ui/input', label: 'Input' },

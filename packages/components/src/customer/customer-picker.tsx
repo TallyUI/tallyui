@@ -4,6 +4,7 @@ import { customerTraits, CustomerServiceError, ConnectorUnauthorizedError, type 
 import { cn } from '@tallyui/theme';
 import { CustomerCard } from './customer-card';
 import { CustomerSelect } from './customer-select';
+import { GuestGlyph } from './customer-dropdown';
 import { CustomerForm, type CustomerFormValues } from './customer-form';
 
 export interface CustomerPickerProps {
@@ -22,6 +23,10 @@ export interface CustomerPickerProps {
   className?: string;
   /** testID of the search field, for e2e tests. Default `customer-picker-search`. */
   testID?: string;
+  /** Draws v2's initials avatar on each result row (the selected customer's card above stays without one). Default `false`. */
+  showAvatar?: boolean;
+  /** Draws a Guest row above the results, as v2's `withGuest`; pressing it calls `onSelect(null)`. Default `false`. */
+  withGuest?: boolean;
 }
 
 /** `@tallyui/core/server`'s `payloadBoundErrors` bound on `customer.email`, in UTF-16 code units. */
@@ -29,7 +34,18 @@ const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
-export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search' }: CustomerPickerProps) {
+/** The cashier's text for a customer search or create error (CustomerPicker's and CustomerDropdown's). */
+export function customerErrorText(error: unknown): string {
+  if (error instanceof CustomerServiceError) {
+    return error.code === 'network' ? "Couldn't reach the store. Try again."
+      : error.code === 'server' ? "The store couldn't do that. Try again." : error.message;
+  }
+  return error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
+    : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
+      : 'Something went wrong. Try again.';
+}
+
+export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search', showAvatar = false, withGuest = false }: CustomerPickerProps) {
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -40,17 +56,12 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
   const searchRef = useRef(search);
   searchRef.current = search;
   const [noResults, setNoResults] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   function handleError(error: unknown) {
-    if (error instanceof CustomerServiceError) {
-      setError(error.code === 'network' ? "Couldn't reach the store. Try again."
-        : error.code === 'server' ? "The store couldn't do that. Try again." : error.message);
-    } else {
-      setError(error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
-        : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
-          : 'Something went wrong. Try again.');
-      onError?.(error);
-    }
+    setError(customerErrorText(error));
+    if (!(error instanceof CustomerServiceError)) onError?.(error);
   }
 
   useEffect(() => {
@@ -82,13 +93,15 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
         ...(values.lastName.trim() ? { lastName: values.lastName.trim() } : {}),
         ...(values.phone.trim() ? { phone: values.phone.trim() } : {}),
       });
+      // The host closed the picker while this create was in flight: a late create must not pick a customer.
+      if (!mounted.current) return;
       onSelect(created);
       setValues({ firstName: '', lastName: '', email: '', phone: '', address: '' });
       setShowForm(false);
     } catch (error) {
-      handleError(error);
+      if (mounted.current) handleError(error); else if (!(error instanceof CustomerServiceError)) onError?.(error);
     } finally {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
     }
   }
 
@@ -104,7 +117,12 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
     {!online && <Text className="text-sm text-muted-foreground">Connect to search or add customers.</Text>}
     {noResults && <Text className="text-sm text-muted-foreground">No customers found.</Text>}
     {error && <Text accessibilityRole="alert" className="text-sm text-destructive">{error}</Text>}
-    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery} showSearch={false}
+    {withGuest && <Pressable role="option" aria-selected={selected === null} testID="customer-picker-option-guest" accessibilityLabel="Guest"
+      onPress={() => { onSelect(null); setQuery(''); }} className="min-h-11 flex-row items-center gap-2 rounded-md px-2">
+      <GuestGlyph />
+      <Text className="text-foreground">Guest</Text>
+    </Pressable>}
+    <CustomerSelect customers={customers} traits={customerTraits} onSearch={setQuery} showSearch={false} showAvatar={showAvatar}
       onSelect={(customer) => { onSelect(customer); setQuery(''); }} />
     {create && <Pressable accessibilityRole="button" disabled={!online || creating} onPress={() => setShowForm(true)}
       className={cn('items-center rounded-lg border border-border px-4 py-3', (!online || creating) && 'opacity-50')}>

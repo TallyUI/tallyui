@@ -120,7 +120,7 @@ export { createVendureVariantFeedReplication } from './replication/variant-feed'
 export { vendureStockReconcile } from './reconcile/stock';
 export { vendureStoreSettings } from './store-settings';
 export { vendureGlobalStockSettings } from './global-settings';
-export { searchVendureCustomers, createVendureCustomer, getVendureCustomer, updateVendureCustomer, toVendureCustomer } from './customers';
+export { searchVendureCustomers, createVendureCustomer, getVendureCustomer, updateVendureCustomer, toVendureCustomer, listVendureCustomers, type VendureCustomerListOptions } from './customers';
 export { listVendureOrders, getVendureOrder, listVendureOrderDetails, type VendureOrderListOptions, type VendureOrderList, type VendureOrderSummary, type VendureOrder } from './orders';
 export { createVendureOrders, toVendureStoreOrder } from './store-orders';
 export { vendureRefundable, vendureLineRefundWithTax, type VendureRefundableLine, type VendureRefundable } from './refunds';

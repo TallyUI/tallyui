@@ -51,6 +51,10 @@ export interface ServerCapabilities {
   register?: number;
   /** The highest `order.refund` version; absent or 0 means the store takes no refunds and the app hides the action (ADR-080). */
   orderRefund?: number;
+  /** The highest `order.reopen` version; absent or 0 means the store cannot reopen orders and the app hides the action (ADR-090). */
+  orderReopen?: number;
+  /** The highest `order.update` version; a store that lists `order.reopen` lists it (ADR-090). */
+  orderUpdate?: number;
   /** How the store rounds tax (#287). Absent: an older server, per_order + half_away_from_zero. */
   taxRounding?: TaxRounding;
   /** Whether one order may carry several payments. Absent means it may: order.create's `payments` has always been a
@@ -79,6 +83,9 @@ export interface ServerCapabilities {
    * `customerDisplay`. Absent means no second-device display.
    */
   customerDisplay?: DisplayAdvertisement;
+  /** The receipt-email version a store's `/tally/v1/info` advertises as `receiptEmail: { v: n }` (vendurepos gap 12.1b).
+   * Absent means the store does not email receipts. */
+  receiptEmail?: number;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -124,6 +131,7 @@ export function parseTaxRounding(value: unknown, warn?: (reason: string) => void
   return undefined;
 }
 
+/** Reads an info response's lineTax capability: { none, classes } as two booleans, or undefined when absent or malformed (with warn only when malformed). */
 export function parseLineTax(value: unknown, warn?: (reason: string) => void): { none: boolean; classes: boolean } | undefined {
   if (value === undefined) return undefined;
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
@@ -144,6 +152,14 @@ function parseRegisterApproval(value: unknown, warn?: (reason: string) => void):
   return undefined;
 }
 
+function parseReceiptEmail(value: unknown, warn?: (reason: string) => void): number | undefined {
+  if (value === undefined) return undefined;
+  const v = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as { v?: unknown }).v : undefined;
+  if (typeof v === 'number' && Number.isSafeInteger(v) && v > 0) return v;
+  warn?.('ignoring a malformed receiptEmail');
+  return undefined;
+}
+
 const maxVersion = (list: unknown): number | undefined => {
   const valid = Array.isArray(list) ? list.filter((v): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0) : [];
   return valid.length > 0 ? Math.max(...valid) : undefined;
@@ -155,7 +171,10 @@ const maxVersion = (list: unknown): number | undefined => {
  * `contracts.register` when valid; `taxRounding` is the top-level sibling of `contracts` (#287); malformed `lineTax` is ignored.
  * A malformed `registerApproval` is ignored (ADR-082). `coupons` is true only when the body says `coupons: true` (#709).
  * `orderRefund` is the max of `contracts["order.refund"]` when valid, otherwise absent (ADR-080).
+ * `orderReopen` is the max of `contracts["order.reopen"]` when valid, otherwise absent (ADR-090).
+ * `orderUpdate` is the max of `contracts["order.update"]` when valid, otherwise absent (ADR-090).
  * `customerDisplay` is present only when `parseDisplayAdvertisement` accepts it; a malformed one warns (ADR-085).
+ * `receiptEmail` is `v` of `receiptEmail: { v }` when `v` is a safe integer above 0; a malformed one is left out and warns.
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
  */
@@ -164,9 +183,11 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay, receiptEmail } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown; receiptEmail?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
+  const orderReopen = maxVersion(contracts?.['order.reopen']);
+  const orderUpdate = maxVersion(contracts?.['order.update']);
   const rounding = parseTaxRounding(taxRounding);
   if (taxRounding !== undefined && rounding === undefined) {
     warn?.(`malformed taxRounding: rounding is unknown, so settings wait: ${JSON.stringify(taxRounding)}`);
@@ -175,12 +196,15 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
   const parsedLineTax = parseLineTax(lineTax, warn);
   const parsed = parseRegisterApproval(registerApproval, warn);
   const display = parseDisplayAdvertisement(customerDisplay, warn);
+  const emailVersion = parseReceiptEmail(receiptEmail, warn);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
+    ...(orderReopen !== undefined ? { orderReopen } : {}),
+    ...(orderUpdate !== undefined ? { orderUpdate } : {}),
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
     ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
     ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}),
-    ...(display ? { customerDisplay: display } : {}) };
+    ...(display ? { customerDisplay: display } : {}), ...(emailVersion !== undefined ? { receiptEmail: emailVersion } : {}) };
 }
 
 export interface AuthField {

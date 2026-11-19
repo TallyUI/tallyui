@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import { buildReceiptData, noteDelivery, type ReceiptData, type SentOrder } from '@tallyui/pos';
 import type { PosOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
@@ -10,7 +10,6 @@ import { NOTE_NOT_SENT, orderReference } from './order-reference';
 const defaultFormatDate = (iso: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 
 type ReceiptProps = {
-  newSale: () => void;
   taxLabel?: (ratePpm: number) => string; topInset?: number; formatDate?: (iso: string) => string;
   /** Prints after the Change row and above the on-screen buttons (e.g. an app's register/software block). */
   footerSlot?: ReactNode;
@@ -30,13 +29,18 @@ type ReceiptProps = {
   /** With it the receipt prints its reference, the same as Orders; without it, the receipt's own order number. */
   posOrder?: PosOrder;
   order?: never; store?: never; cashier?: never; registerId?: never; registerName?: never;
+}) & ({ newSale: () => void; actions?: undefined } | {
+  newSale?: () => void;
+  /** Replaces Print receipt and New sale (never printed), e.g. a host footer as in v2's receipt stage; `false` draws no buttons. */
+  actions: ReactNode | false;
 });
 
 /** `store`/`taxLabel`/`topInset`/`formatDate` replace the app's Medusa settings, hard-coded VAT (default matches
  * TV6a's `Cart`), outbox strip and date util, so `Receipt` stays platform-neutral (ADR-052). */
 export function Receipt(props: ReceiptProps) {
+  const formatMoney = useFormatMoney();
   const { posOrder, newSale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`,
-    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale' } = props;
+    topInset = 0, formatDate = defaultFormatDate, footerSlot, doneLabel = 'New sale', actions } = props;
   useEffect(injectPrintStyle, []);
   const order = props.receipt === undefined ? props.order : undefined;
   const receipt = props.receipt === undefined ? buildReceiptData(props.order, {
@@ -70,7 +74,7 @@ export function Receipt(props: ReceiptProps) {
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}
       {row(`${line.quantity} × ${money(line.unitPriceMinor)}`, money(line.displayAmountMinor))}
       {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(`${order ? discountLabel(
-        order.lineItems[index].discounts[i], receipt.currency) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
+        order.lineItems[index].discounts[i], receipt.currency, formatMoney) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
     </View>)}
     {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
         the order discount appears once. order.display's figures (ADR-063; medusapos ADR 0008). */}
@@ -86,6 +90,7 @@ export function Receipt(props: ReceiptProps) {
       : order || payment.method === 'external' ? 'Card terminal' : payment.method,
       money(payment.amountMinor) + (payment.reference ? ` · ${payment.reference}` : ''), false, index))}
     {order || receipt.changeDueMinor > 0 ? row('Change', money(receipt.changeDueMinor)) : null}
+    {receipt.refundDueMinor ? row('Refund due', money(receipt.refundDueMinor)) : null}
     {receipt.footer.note ? <View testID="receipt-note" className="gap-1">
       <Text className="text-foreground">{receipt.footer.note}</Text>
       {/* ADR-083 condition 2: for the cashier, so it is not printed. */}
@@ -93,11 +98,13 @@ export function Receipt(props: ReceiptProps) {
         ? <View dataSet={{ print: 'hide' }}><Text testID="receipt-note-not-sent" className="text-destructive">{NOTE_NOT_SENT}</Text></View> : null}
     </View> : null}
     {footerSlot ? <View testID="receipt-footer" className="mt-3 items-center border-t border-dashed border-border pt-3">{footerSlot}</View> : null}
-    <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
+    {actions === false ? null : <View dataSet={{ print: 'hide' }} className="flex-row gap-4">
+      {actions !== undefined ? actions : <>
       <Pressable accessibilityRole="button" onPress={() => { if (typeof window !== 'undefined' && typeof window.print === 'function') window.print(); }} className="rounded-md border border-border bg-card px-4 py-3">
         <Text className="text-center text-foreground">Print receipt</Text>
       </Pressable>
       <Pressable accessibilityRole="button" onPress={newSale} className="rounded-md bg-primary px-4 py-3"><Text className="text-center font-semibold text-primary-foreground">{doneLabel}</Text></Pressable>
-    </View>
+      </>}
+    </View>}
   </View></>;
 }

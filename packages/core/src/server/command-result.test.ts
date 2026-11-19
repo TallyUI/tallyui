@@ -151,6 +151,35 @@ it.each([
   expect((error as Error).message).toBe(`Invalid ${field}`)
 })
 
+it.each([{ orderId: 'order-1', status: 'pos-open' }, { orderId: 'order-1', status: 'pos-open', revision: 'sha256:0dde575797fdab13e429b1132686c07af48e46096a03ea7adc6c3027082b8d2a' }])(
+  'parses an applied reopen without serverRefs and drops undeclared fields (ADR-090): %j', reopen => {
+    const value = { id: 'c', status: 'applied', reopen }
+    expect(parseCommandResult(value)).toStrictEqual(value)
+    expect(parseCommandResult({ ...value, reopen: { ...reopen, extra: true } })).toStrictEqual(value)
+    expect(parseCommandResult({ ...value, reopen: Object.assign(Object.create(null), reopen) })).toStrictEqual(value)
+  },
+)
+
+it('omits an undefined reopen revision', () => {
+  const reopen = { orderId: 'order-1', status: 'pos-open' }
+  expect(parseCommandResult({ id: 'c', status: 'applied', reopen: { ...reopen, revision: undefined } }).reopen)
+    .toStrictEqual(reopen)
+})
+
+it.each([null, [], 'text', 1, new Date()])('refuses a non-object reopen: %s', reopen => {
+  const error = thrown({ ...applied, reopen })
+  expect(error).toBeInstanceOf(CommandResultError)
+  expect((error as Error).message).toBe('Invalid reopen')
+})
+
+it.each(['orderId', 'status', 'revision'])('rejects invalid reopen.%s with its first bad path', field => {
+  for (const value of ['', null, 1, ...(field === 'revision' ? [] : [undefined])]) {
+    const error = thrown({ ...applied, reopen: { orderId: 'order-1', status: 'pos-open', [field]: value } })
+    expect(error).toBeInstanceOf(CommandResultError)
+    expect((error as Error).message).toBe(`Invalid reopen.${field}`)
+  }
+})
+
 it('keeps error.data on a rejected result', () => {
   const data = { sessionId: 's', counters: { lastClosureNumber: 1 } }
   const value = { ...rejected, error: { ...rejected.error, data } }

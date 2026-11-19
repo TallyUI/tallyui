@@ -1,4 +1,4 @@
-import type { OrderCreateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
@@ -17,7 +17,7 @@ export interface UseOrderOutboxOptions {
   /** Opens the order store for `storeKey`; `close()` is called when the key or device id changes, or on unmount. */
   open(storeKey: string): Promise<{ orders: RxCollection<PosOrder>; close(): Promise<void> }>;
   /** Builds the command transport for `storeKey` (the app's HTTP transport and auth headers). Read once per open. */
-  transport(storeKey: string): CommandTransport<OrderCreateEnvelope>;
+  transport(storeKey: string): CommandTransport<OrderCreateEnvelope | OrderUpdateEnvelope>;
   /** The device id sent on every command (see `getDeviceId`). A change reopens. */
   deviceId: string;
   /** Presence is fixed when the store opens; calls use the latest function. Reopen to add or remove. */
@@ -54,6 +54,8 @@ export interface UseOrderOutboxResult {
   flush(): Promise<void>;
   /** Moves rejected orders back to pending (see `OrderOutbox.requeue`); resolves to 0 before the current store is ready. */
   requeue(orderIds?: string[]): Promise<number>;
+  /** Removes one rejected order (see `OrderOutbox.discard`); resolves to false before the current store is ready. */
+  discard(orderId: string): Promise<boolean>;
   /**
    * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
    * (closing the store) while this is above 0, because a close that lands under a write stuck in
@@ -128,6 +130,10 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     async requeue(orderIds) {
       const opened = current.current;
       return opened && opened.storeKey === storeKey ? opened.outbox.requeue(orderIds) : 0;
+    },
+    async discard(orderId) {
+      const opened = current.current;
+      return opened && opened.storeKey === storeKey ? opened.outbox.discard(orderId) : false;
     },
     savesInFlight: savesInFlightCount,
     stuckCommandIds,

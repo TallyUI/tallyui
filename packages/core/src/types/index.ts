@@ -20,7 +20,7 @@ export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAda
 
 export type { StoreSettings, StoreSettingsChoice, StoreTaxClass, StoreTaxRate, StoreTaxRateLocation } from './store-settings';
 
-export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
+export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory, ProductTerm } from './traits/product';
 
 export type { Money, ProductPrice, ResolvedPrice } from './money';
 
@@ -33,6 +33,9 @@ export type {
   RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
   OrderRefundLine, OrderRefundPayload, OrderRefundEnvelope, OrderRefundResult, OrderRefundRejectionCode,
   OrderRefundQuantityExceedsData, OrderRefundAmountMismatchData, OrderRefundOrderStateData, OrderRefundNoOpenSessionData,
+  OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
+  OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
+  OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,

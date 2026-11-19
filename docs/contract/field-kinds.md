@@ -208,6 +208,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.payments[].tenderedMinor` | informational | 1 |
 | `payload.payments[].changeMinor` | informational | 1 |
 | `payload.payments[].reference` | informational | 1 |
+| `payload.payments[].methodId` | informational | 10 |
 | `payload.display` | informational | 3 |
 | `payload.display.currency` | informational | 3 |
 | `payload.display.exponent` | informational | 3 |
@@ -269,6 +270,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   `city`, `state`, `postcode`, `country`, `phone`, each at most 255
   characters) travel only at 8.
 - `payload.coupons[].lines` (version 9) is each coupon's share of each line it reduced, apportioned so the shares sum exactly to the coupon's figures (`docs/contract/order-create-v9.md`). A server may ignore it and allocate the coupon itself, as at version 6. A server that writes per-line adjustments uses it as sent. At 9 every coupon carries it; below 9 none does.
+- `payload.payments[].methodId` (version 10) is the payment method's own id on the platform, 1–64 characters, no NUL; `method` still decides cash. At 10 a leg may carry it; below 10 none does.
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

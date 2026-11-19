@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
-import { SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
+import { SALE_SAVING, SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { blue, click, discount, pricing, SaleHarness, sale, totals, traits } from './sale-harness';
@@ -54,25 +54,102 @@ describe('Cart', () => {
     const fee = screen.getByTestId('cart-fee-0');
     const shipping = screen.getByTestId('cart-shipping-0');
     expect(within(fee).getByText('Bag')).toBeTruthy();
-    expect(within(fee).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
+    expect(within(fee).getByTestId('cart-charge-price').textContent).toBe(money(sale.order.fees![0].amountMinor));
+    expect(within(fee).getByTestId('cart-charge-total').textContent).toBe(money(sale.order.display.fees![0].amountMinor));
     expect(within(shipping).getByText('Delivery')).toBeTruthy();
-    expect(within(shipping).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
+    expect(within(shipping).getByTestId('cart-charge-price').textContent).toBe(money(sale.order.shipping![0].amountMinor));
+    expect(within(shipping).getByTestId('cart-charge-total').textContent).toBe(money(sale.order.display.shipping![0].amountMinor));
     expect(within(row('Alteration')).getAllByText(money(360))).toHaveLength(2);
     expect(screen.getByText('Alteration').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const footer = within(screen.getByTestId('cart-footer'));
     expect(within(footer.getByText('Subtotal').parentElement!).getByText(money(sale.order.display.subtotalMinor))).toBeTruthy();
-    expect(within(footer.getByText(inclusive ? 'incl. Tax 25%' : 'Tax 25%').parentElement!).getByText(money(sale.order.display.taxMinor))).toBeTruthy();
+    const taxRow = within(footer.getByTestId('cart-total-tax-0'));
+    expect(taxRow.getByText('Tax 25%')).toBeTruthy();
+    expect(taxRow.getByText(inclusive ? 'Including tax' : 'Excluding tax')).toBeTruthy();
+    expect(taxRow.getByText(money(sale.order.display.taxMinor))).toBeTruthy();
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+    expect(within(footer.getByTestId('cart-total-fees')).getByText(money(sale.order.display.fees![0].amountMinor))).toBeTruthy();
+    expect(within(footer.getByTestId('cart-total-shipping')).getByText(money(sale.order.display.shipping![0].amountMinor))).toBeTruthy();
+    click('Edit total of Bag');
     click('Remove Bag');
     expect(screen.queryByTestId('cart-fee-0')).toBeNull();
     expect(sale.order.fees ?? []).toEqual([]);
+    expect(footer.queryByTestId('cart-total-fees')).toBeNull();
+    click('Edit total of Delivery');
     click('Remove Delivery');
     expect(screen.queryByTestId('cart-shipping-0')).toBeNull();
     expect(sale.order.shipping ?? []).toEqual([]);
+    expect(footer.queryByTestId('cart-total-shipping')).toBeNull();
     click('Remove Alteration');
     expect(totals(sale.order)).toEqual(before);
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
+  });
+
+  it("draws each charge in the cart's columns, after the lines", () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
+      click('Add charge');
+      click(kind);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    const fee = screen.getByTestId('cart-fee-0');
+    const shipping = screen.getByTestId('cart-shipping-0');
+    for (const charge of [fee, shipping]) {
+      const chargeRow = within(charge).getByTestId('cart-charge-line');
+      expect(chargeRow.children).toHaveLength(screen.getAllByRole('columnheader').length);
+      expect(chargeRow.firstElementChild!.textContent).toBe('');
+    }
+    expect(screen.getByText('Shirt').compareDocumentPosition(fee) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(fee.compareDocumentPosition(shipping) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("edits a fee and a shipping charge from the row's strip", { timeout: 20_000 }, () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
+      click('Add charge');
+      click(kind);
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    click('Edit total of Bag');
+    click('Edit Bag');
+    const feeForm = within(screen.getByRole('group', { name: 'Edit Bag' }));
+    expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Name' }).value).toBe('Bag');
+    expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('1.20');
+    fireEvent.change(feeForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+    click('Apply');
+    expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
+    expect(sale.order.shipping).toMatchObject([{ name: 'Delivery', amountMinor: 240 }]);
+    expect(within(screen.getByTestId('cart-fee-0')).getByTestId('cart-charge-price').textContent).toBe(money(200));
+    click('Edit total of Delivery');
+    click('Edit Delivery');
+    const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
+    fireEvent.change(shippingForm.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
+    fireEvent.change(shippingForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '3.00' } });
+    click('Apply');
+    expect(sale.order.shipping).toMatchObject([{ name: 'Courier', amountMinor: 300 }]);
+    expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
+  });
+
+  it("folds a charge's Price cell on a phone, as the heads do", () => {
+    dimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    click('Add charge');
+    click('Fee');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Bag' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1.20' } });
+    click('Apply');
+    expect(screen.queryByRole('columnheader', { name: 'Price' })).toBeNull();
+    const fee = within(screen.getByTestId('cart-fee-0'));
+    expect(fee.queryByTestId('cart-charge-price')).toBeNull();
+    expect(fee.getByTestId('cart-charge-total')).toBeTruthy();
   });
 
   it('keeps only one charge, discount or price form open', () => {
@@ -193,6 +270,10 @@ describe('Cart', () => {
     expect(screen.queryByText('Price', notHead)).toBeNull();
   });
 
+  // The web keyboard's Escape, and keys pressed on the open price keypad.
+  const escape = () => act(() => { fireEvent.keyDown(document, { key: 'Escape' }); });
+  const priceKeys = (...names: string[]) => names.forEach((name) =>
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Price for Shirt' })).getByRole('button', { name })));
   // The actions a line's open popover lists, by their accessible names.
   const popoverActions = (dialog: string) => within(screen.getByRole('dialog', { name: dialog })).getAllByRole('button')
     .map((button) => button.getAttribute('aria-label')).filter((name) => / Shirt$/.test(name ?? ''));
@@ -236,6 +317,68 @@ describe('Cart', () => {
     expect(popoverActions('Quantity for Shirt')).toEqual(['Discount Shirt', 'Price Shirt', 'Remove Shirt']);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Price Shirt' }));
     expect(screen.getByTestId('price-form')).toBeTruthy();
+  });
+
+  it('lineCommit="close" opens the quantity keypad with steppers and no Remove action; the price popover draws Done, not Apply', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" lineCommit="close" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    expect(screen.getByTestId('price-popover-done')).toBeTruthy();
+    expect(screen.queryByTestId('price-popover-apply')).toBeNull();
+    escape();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    click('Edit quantity of Shirt');
+    expect(screen.queryByTestId('quantity-popover-action-remove')).toBeNull();
+    fireEvent.click(screen.getByTestId('quantity-popover-step-up'));
+    expect(sale.order.lineItems[0].quantity).toBe(2);
+    fireEvent.click(screen.getByTestId('quantity-popover-step-down'));
+    expect(sale.order.lineItems[0].quantity).toBe(1);
+    fireEvent.click(screen.getByTestId('quantity-popover-remove'));
+    expect(sale.order.lineItems).toEqual([]);
+  });
+
+  it('lineCommit="close": a price typed in the price popover is written on a press outside, and reported once', () => {
+    const onPriceChange = vi.fn();
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" lineCommit="close"
+      onPriceChange={onPriceChange} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    const lineId = sale.order.lineItems[0].id;
+    click('Edit price of Shirt');
+    priceKeys('1', '0');
+    fireEvent.click(screen.getByTestId('price-popover-overlay'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1000);
+    expect(onPriceChange).toHaveBeenCalledExactlyOnceWith({ lineId, fromMinor: 1250, toMinor: 1000, reason: undefined });
+  });
+
+  it('lineCommit="close": a price refused on a press outside shows under the line until a later write goes through', () => {
+    // The harness's real sale refuses only while saving, so Cart gets the sale with setUnitPrice wrapped to refuse.
+    let refuse = true;
+    render(<><SaleHarness>{(sale) => <Cart canEditPrice lineEditor="popover" lineCommit="close" sale={{ ...sale,
+      setUnitPrice: (lineId, amountMinor) => (refuse ? SALE_SAVING : sale.setUnitPrice(lineId, amountMinor)) }} />}</SaleHarness>
+      <PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    priceKeys('9');
+    fireEvent.click(screen.getByTestId('price-popover-overlay'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('cart-line-price-error').textContent).toBe(SALE_SAVING);
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(1250);
+    refuse = false;
+    click('Edit price of Shirt');
+    priceKeys('9');
+    fireEvent.click(screen.getByTestId('price-popover-done'));
+    expect(sale.order.lineItems[0].unitPriceMinor).toBe(900);
+    expect(screen.queryByTestId('cart-line-price-error')).toBeNull();
+  });
+
+  it('without lineCommit, the price popover draws Apply and Cancel', () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} canEditPrice lineEditor="popover" />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('Edit price of Shirt');
+    expect(screen.getByTestId('price-popover-apply')).toBeTruthy();
+    expect(screen.getByTestId('price-popover-cancel')).toBeTruthy();
+    expect(screen.queryByTestId('price-popover-done')).toBeNull();
   });
 
   it('renders lines with their display amount, each discount chip with its own display amount, and the order chip with orderDiscountMinor', () => {
@@ -291,7 +434,9 @@ describe('Cart', () => {
       {(sale) => <Cart sale={sale} taxLabel={(ratePpm) => `VAT ${ratePpm / 10000}%`} />}
     </SaleHarness>);
     act(() => sale.add(blue, traits));
-    expect(screen.getByText('incl. VAT 25%')).toBeTruthy();
+    const taxRow = within(screen.getByTestId('cart-total-tax-0'));
+    expect(taxRow.getByText('VAT 25%')).toBeTruthy();
+    expect(taxRow.getByText('Including tax')).toBeTruthy();
   });
 
   it('renders afterSubtotal inside the footer', () => {
@@ -453,6 +598,41 @@ describe('Cart', () => {
 describe('Cart checkout', () => {
   const checkoutButton = () => screen.getByRole('button', { name: /^Checkout / });
 
+  it("noteSheet: Order details opens the sheet, typing sets the sale's note and the row shows it", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{}}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn(), destructive: true }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    expect(screen.queryByTestId('cart-note-row')).toBeNull();
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Order details', 'Void']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Order details' }));
+    expect(screen.getByTestId('order-note-sheet')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Customer note' }), { target: { value: 'Leave at door' } });
+    expect(sale.order.note).toBe('Leave at door');
+    fireEvent.click(screen.getByTestId('order-note-close'));
+    expect(screen.queryByTestId('order-note-sheet')).toBeNull();
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Leave at door');
+  });
+
+  it("noteSheet: the note row opens the sheet holding the note, under the platform's label", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} noteSheet={{ label: 'Order note' }}
+      checkout={{ onCheckout: () => {} }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setNote('Gift wrap'));
+    click('Edit note: Gift wrap');
+    expect((screen.getByRole('textbox', { name: 'Order note' }) as HTMLTextAreaElement).value).toBe('Gift wrap');
+  });
+
+  it("without noteSheet the ⋮ has only the host's actions", () => {
+    render(<><SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout: () => {}, actions: [{ label: 'Void', onPress: vi.fn() }] }} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    click('More actions');
+    const menu = screen.getByRole('menu', { name: 'More actions' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Void']);
+  });
+
   it('keeps Cash and Card terminal, and no Checkout, without the prop', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
@@ -470,6 +650,15 @@ describe('Cart checkout', () => {
     expect(screen.queryByRole('button', { name: 'Card terminal' })).toBeNull();
     fireEvent.click(checkoutButton());
     expect(onCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the checkout note to the foot for a non-empty sale', () => {
+    const onCheckout = vi.fn();
+    const onPress = vi.fn();
+    render(<SaleHarness>{(sale) => <Cart sale={sale}
+      checkout={{ onCheckout, note: { text: 'Leave at door', onPress } }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    expect(screen.getByTestId('cart-note-row').textContent).toBe('Leave at door');
   });
 
   it("lists the host's actions in the ⋮ menu and calls the one pressed", () => {

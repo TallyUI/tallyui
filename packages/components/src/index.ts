@@ -23,6 +23,8 @@ export {
   type ViewToggleProps,
   defaultProductColumns,
   useDefaultProductColumns,
+  productsScreenColumns,
+  useProductsScreenColumns,
   type ProductTableProps,
   type ProductTableColumn,
   type ProductTitleProps,
@@ -76,6 +78,7 @@ export {
   CartColumnHeads,
   type CartColumnHeadsProps,
   cartColumnIds,
+  type CartColumnId,
   type CartColumnSettings,
   CartFoot,
   type CartFootProps,
@@ -112,6 +115,12 @@ export {
   type CustomerFormValues,
   CustomerOrderHistory,
   type CustomerOrderHistoryProps,
+  CustomerDropdown,
+  type CustomerDropdownProps,
+  AddressFields,
+  ShippingAddressFields,
+  type AddressFieldsProps,
+  type ShippingAddressFieldsProps,
 } from './customer';
 
 // Checkout components
@@ -121,6 +130,7 @@ export {
   type PaymentMethodCardProps,
   type PaymentSelectorProps,
   type PaymentMethod,
+  type PaymentSelectorMethod,
   OrderSummaryLine,
   OrderSummary,
   type OrderSummaryLineProps,
@@ -147,6 +157,7 @@ export {
   OrderDetail,
   type OrderDetailProps,
   type OrderDetailLineItem,
+  type OrderDetailTaxLine,
   RefundForm,
   type RefundFormProps,
   type RefundFormValue,
@@ -193,7 +204,10 @@ export {
   type SwitchConfirmProps,
   HandoverSlip,
   type HandoverSlipProps,
+  CashierSheet,
+  type CashierSheetProps,
 } from './register';
+export type { CashierSheetCashier, CashierSheetDrawer, CashierSheetHandTo, CashierSheetPlace } from './register/cashier-sheet';
 
 // Settings components
 export {
@@ -210,6 +224,11 @@ export {
   type TaxCalculationSettingsProps,
   CustomerDisplaySettings,
   type CustomerDisplaySettingsProps,
+  PrintingSettings,
+  type PrintingSettingsProps,
+  BarcodeScanningSettings,
+  type BarcodeScanningSettingsProps,
+  type BarcodeScanningValues,
 } from './settings';
 
 // Tax components
@@ -220,11 +239,13 @@ export {
   Cart, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
   PriceForm, parsePrice, LinePopover, type LinePopoverProps,
   ChargeForm, type ChargeFormProps,
-  Catalogue, formatStockSyncTime, Receipt, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, type OrderHistoryRow, orderReference,
+  OrderNoteSheet, type OrderNoteSheetProps,
+  Catalogue, formatStockSyncTime, Receipt, ReceiptSheet, type ReceiptSheetProps, type ReceiptSheetEmail, type ReceiptSheetTemplate, injectPrintStyle, SyncStatus, syncStatusQuiet, OrdersList, OrderSyncNotices, type OrderSyncNoticesProps, type OrderHistoryRow, orderReference,
   ParkedSales, type ParkedSalesProps, OpenSaleTabs, type OpenSaleTabsProps, CustomerDisplayScreen,
   CustomerDisplayPairing, type CustomerDisplayPairingProps,
-  ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters,
+  ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters, type ProductTermFilter, type FilterOption,
 } from './sale';
+export type { DiscountCoupon } from './sale/discount-form';
 
 // Layout components
 export {
@@ -244,11 +265,14 @@ export {
 // App shell
 export {
   AppShell, type AppShellProps, NavRail, type NavRailProps, NavDrawer, type NavDrawerProps, type ShellNavItem,
+  ConnectivityToast, type ConnectivityToastProps,
+  AddedToCartToast, type AddedToCartToastProps, type AddedToCartEvent,
 } from './shell';
 
 // Reports components
 export {
   SalesRoom, type SalesRoomProps, SalesHero, type SalesHeroProps, SalesCards, type SalesCardsProps, type SalesCardId,
+  SalesCardPanel, type SalesCardPanelProps, type SalesPanelId,
   SalesFiltersBar, type SalesFiltersBarProps, type SalesFilters, type SalesOption,
   DateRangeMenu, type DateRangeMenuProps,
 } from './reports';

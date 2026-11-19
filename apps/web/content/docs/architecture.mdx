@@ -32,13 +32,14 @@ The active connector determines which implementation runs. Components never impo
 ```tsx
 // This component works identically with WooCommerce, Medusa, or any connector
 function ProductCard({ doc }) {
-  const { getName, getPrice, getImageUrl } = useProductTraits();
+  const { getName, getPrices, getImageUrl } = useProductTraits();
+  const price = resolvePrice(getPrices(doc, useTraitContext()))?.current;
 
   return (
     <View className="bg-card rounded-lg p-4 gap-2">
       <Image source={{ uri: getImageUrl(doc) }} className="rounded w-16 h-16" />
       <Text className="text-base font-semibold text-foreground">{getName(doc)}</Text>
-      <Text className="text-sm text-price">${getPrice(doc)}</Text>
+      <Text className="text-sm text-price">{price ? formatMoney(price) : null}</Text>
     </View>
   );
 }
@@ -52,6 +53,7 @@ A connector is a package that knows how to talk to a specific backend. It implem
 interface TallyConnector {
   id: string;           // 'woocommerce', 'medusa', etc.
   name: string;         // Human-readable name
+  description: string;  // Description of the backend
   auth: ConnectorAuth;  // How to authenticate
   schemas: {            // RxDB schemas (per-connector shape)
     products: RxJsonSchema;
@@ -59,11 +61,17 @@ interface TallyConnector {
   traits: {             // Accessor functions
     product: ProductTraits;
   };
-  replication: {        // Pull-only sync via RxDB replication
-    products: ReplicationAdapter;
+  sync: {               // Deprecated, still required
+    products: CollectionSync;
   };
+  replication?: {       // Pull-only sync via RxDB replication
+    products?: ReplicationAdapter<any>;
+  };
+  // ...optional members switch on features: see Connectors
 }
 ```
+
+See [The TallyConnector contract](/docs/connectors#the-tallyconnector-contract) for every member and whether it is required.
 
 ### Per-Connector Schemas
 
@@ -93,7 +101,7 @@ When you need connector-specific fields that aren't covered by traits, you can a
                    │ documents
 ┌──────────────────▼──────────────────────┐
 │  Trait Layer                            │
-│  getName() getPrice() getSku() ...      │
+│  getName() getPrices() getSku() ...     │
 └──────────────────┬──────────────────────┘
                    │ hooks
 ┌──────────────────▼──────────────────────┐

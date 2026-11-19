@@ -1,6 +1,6 @@
 ---
 title: OrderStatusBadge
-description: OrderStatusBadge shows a colored dot and label for pending, processing, completed, refunded, or cancelled orders.
+description: OrderStatusBadge shows a colored dot and label for pending, processing, completed, on hold, failed, POS open, POS partial, refunded, cancelled, trash, or Draft orders.
 ---
 
 ## Import
@@ -15,19 +15,27 @@ import { OrderStatusBadge } from '@tallyui/components';
 <OrderStatusBadge status="completed" />
 ```
 
-Renders a small pill with a coloured dot and label. Each status maps to a distinct colour so cashiers can scan order states at a glance.
+Renders as `StatusBadge`: a coloured dot and the status word in the foreground colour, with no tinted pill behind it, as WCPOS v2 does. The colour is on the dot, so a status never reads by colour alone.
+
+`'cancelled'` and Medusa's `'canceled'` both show as **Cancelled**.
+
+`'pos-open'` and `'pos-partial'` are WCPOS's own statuses and show as **POS open** and **POS partial**, as in WCPOS v2.
+
+`'trash'` shows as **Trash** and WooCommerce's `'checkout-draft'` as **Draft**. `'refunded'`, `'cancelled'` and `'trash'` share the muted tone.
+
+A status the badge does not know shows the raw string with the default (primary) dot, as WCPOS v2 does.
 
 ## Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, or `'cancelled'` |
-| `className` | `string` | — | Override container styles |
+| `status` | `OrderStatus` | required | One of `'pending'`, `'processing'`, `'completed'`, `'refunded'`, `'cancelled'`, `'canceled'`, `'on-hold'`, `'failed'`, `'pos-open'`, `'pos-partial'`, `'trash'`, or `'checkout-draft'` |
+| `className` | `string` | — | Merged onto the row; use it to add a background if an app needs one |
 
 ### OrderStatus
 
 ```ts
-type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled';
+type OrderStatus = 'pending' | 'processing' | 'completed' | 'refunded' | 'cancelled' | 'canceled' | 'on-hold' | 'failed' | 'pos-open' | 'pos-partial' | 'trash' | 'checkout-draft';
 ```
 
 ## Live demo

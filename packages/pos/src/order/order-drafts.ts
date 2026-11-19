@@ -64,6 +64,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     currency,
     taxContext,
     id: saved.id,
+    ...(saved.storeOrder !== undefined ? { storeOrder: saved.storeOrder } : {}),
   });
 
   // Restore state from saved order
@@ -79,6 +80,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   for (const line of saved.lineItems) {
     const lineId = builder.addLine({
       productId: line.productId,
+      ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
       custom: line.custom,
       taxStatus: line.taxStatus,
       ...(taxContext.rounding?.granularity === 'woocommerce' ? { taxClass: line.taxClass } : {}),
@@ -126,6 +128,9 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       changeMinor: payment.changeMinor,
       reference: payment.reference,
       ...(payment.status !== undefined ? { status: payment.status } : {}),
+      ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
+      ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
+      ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
   }
   return builder;

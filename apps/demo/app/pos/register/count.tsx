@@ -10,6 +10,14 @@ async function seed(db: DemoRegisterDb) {
     registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
     openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
   });
+  // One card sale, so the count shows an other tender (the shape of the `sale` test helper).
+  await db.pos_orders.insert({
+    id: 'demo-sale-1', commandId: 'command-demo-sale-1', createdAt: '2026-09-20T10:00:00.000Z', updatedAt: '2026-09-20T10:00:00.000Z',
+    currency: 'EUR', pricesIncludeTax: false, lines: [], subtotalMinor: 2200, discountMinor: 0, taxMinor: 0, totalMinor: 2200,
+    customer: null, syncStatus: 'pending', sessionId: session.id, cashierRef: 'demo-cashier',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' },
+    payments: [{ id: 'demo-sale-1-payment-0', method: 'external', amountMinor: 2200 }],
+  });
   await startCounting(db.register_sessions, session.id);
 }
 
@@ -17,6 +25,9 @@ async function seed(db: DemoRegisterDb) {
 export default function RegisterCountScreen() {
   const { register, ready } = useDemoRegister({ seed, varianceThreshold: 500 });
   const [showClosure, setShowClosure] = useState(false);
+  // No real printer here: the Z report "prints" by showing a line.
+  const [printed, setPrinted] = useState(false);
+  const onPrint = () => setPrinted(true);
   // A close passes through an intermediate 'closed, closure not yet written' snapshot before
   // `lastClosure` is set, so this remembers "was counting" across that gap rather than reading
   // only the immediately preceding render's status.
@@ -33,8 +44,9 @@ export default function RegisterCountScreen() {
     <>
       <Stack.Screen options={{ title: 'RegisterCount' }} />
       <View className="flex-1 bg-background p-4" testID="register-count-screen">
-        {!ready ? <Text>Loading…</Text> : <RegisterCount register={register} currency="EUR" />}
-        {showClosure && <ClosureSheet register={register} currency="EUR" onDone={() => setShowClosure(false)} />}
+        {!ready ? <Text>Loading…</Text> : <RegisterCount register={register} currency="EUR" onPrint={onPrint} />}
+        {printed && <Text testID="demo-z-printed">Z report sent to the demo printer</Text>}
+        {showClosure && <ClosureSheet register={register} currency="EUR" onPrint={onPrint} onDone={() => setShowClosure(false)} />}
       </View>
     </>
   );

@@ -6,10 +6,10 @@
 // (2026-09-27 review): "redirects Orders to login when signed out" (session/routing, stays in the app, not
 // OrdersList) and "shows retry seconds and updates the countdown" (exercises `<SyncStatus>` directly, not
 // OrdersList). Every other test here is TallyUI's own, written from OrdersList's code.
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
-import type { PosOrder } from '@tallyui/pos';
+import { UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
 import { OrdersList, type OrderHistoryRow } from '../sale/orders-list';
 import { orderReference } from '../sale/order-reference';
 
@@ -34,6 +34,52 @@ function historyRow(id: string, overrides: Partial<OrderHistoryRow> = {}): Order
 }
 const formatDate = (iso: string) => `date:${iso.slice(0, 10)}`;
 const headers = () => screen.getAllByRole('heading').map((heading) => heading.textContent);
+
+describe('OrdersList refund-due', () => {
+  it('shows Refund due in an expanded order that the store owes money back on', () => {
+    render(<OrdersList orders={[order('o1', { refundDueMinor: 800 })]} onRetry={async () => 0} />);
+    expect(screen.queryByTestId('order-refund-due-o1')).toBeNull();
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    expect(screen.getByTestId('order-refund-due-o1').textContent).toBe(`Refund due ${formatMoney({ amount: 800, currency: 'EUR' })}`);
+  });
+
+  it('shows no Refund due line for an ordinary order', () => {
+    render(<OrdersList orders={[order('o1')]} onRetry={async () => 0} />);
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+    expect(screen.queryByTestId('order-refund-due-o1')).toBeNull();
+  });
+});
+
+describe('OrdersList row hint on web', () => {
+  it('describes each row by its own hidden hint element (aria-describedby)', () => {
+    render(<OrdersList orders={[order('o1'), order('o2')]} onRetry={async () => 0} />);
+    const ids = ['o1', 'o2'].map((id) => screen.getByTestId(`order-row-${id}`).getAttribute('aria-describedby'));
+    for (const id of ids) {
+      expect(id).toBeTruthy();
+      expect(document.getElementById(id!)?.textContent).toBe('Shows the items and payments of this sale');
+    }
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('gives an order shown in both sections a different hint id in each', () => {
+    const since = new Date(2026, 8, 29, 14, 2).getTime();
+    const stuck = order('s', { createdAt: '2026-09-25T09:00:00.000Z' });
+    render(<OrdersList orders={[stuck, order('p'), order('x', { commandId: 'command-a', syncStatus: 'applied' })]} onRetry={async () => 0}
+      formatDate={formatDate} stuck={{ commandIds: ['command-s', 'command-a'], reason: 'status_503', since,
+        orders: ['command-s', 'command-a'].map((commandId) => ({ commandId, since, reason: 'status_503' })) }} />);
+    const rows = screen.getAllByTestId('order-row-s');
+    expect(rows).toHaveLength(2);
+    const ids = rows.map((row) => row.getAttribute('aria-describedby')!);
+    expect(ids[0]).not.toBe(ids[1]);
+    for (const id of ids) {
+      expect(id).toBeTruthy();
+      expect(id).not.toMatch(/\s/);
+      const matches = document.querySelectorAll(`[id="${id}"]`);
+      expect(matches).toHaveLength(1);
+      expect(matches[0].textContent).toBe('Shows the items and payments of this sale');
+    }
+  });
+});
 
 describe('OrdersList sale note (ADR-083 condition 2)', () => {
   it.each<[string, Partial<PosOrder>, boolean]>([
@@ -139,6 +185,49 @@ const refusals = {
   underpaid: 'The online store refused this sale: the payments add up to less than the total.',
   unsupported_currency: "The online store refused this sale: the store doesn't take this currency.",
 };
+
+const reopenAgain = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
+
+describe('OrdersList reopened sale (ADR-090 W4c)', () => {
+  it('shows an unsendable update under Needs attention with a working Retry', async () => {
+    const onRetry = vi.fn(async () => 1);
+    render(<OrdersList orders={[order('u', { storeOrderId: 's1', error: { code: 'update_unsendable', message: 'x' } })]}
+      onRetry={onRetry} />);
+    expect(headers()).toEqual(['Needs attention', 'Recent']);
+    const attention = within(screen.getByRole('heading', { name: 'Needs attention' }).parentElement!);
+    expect(attention.getByTestId('order-row-u')).toBeTruthy();
+    expect(attention.getByText(UPDATE_UNSENDABLE_MESSAGE)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+    await act(async () => { fireEvent.click(attention.getByRole('button', { name: 'Retry' })); });
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledWith(['u']);
+  });
+
+  it.each(['reopen_required', 'revision_conflict'])('asks to reopen again without Retry for a reopened %s', (code) => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected', storeOrderId: 's1', error: { code, message: 'x' } })]}
+      onRetry={async () => 0} />);
+    expect(screen.getAllByText(reopenAgain)).toHaveLength(2);
+    expect(screen.queryByText(refusals.platform_error)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it.each(['reopen_required', 'revision_conflict'])('keeps the fallback sentence and Retry for a new sale with %s', (code) => {
+    render(<OrdersList orders={[order('r', { syncStatus: 'rejected', error: { code, message: 'x' } })]}
+      onRetry={async () => 0} />);
+    expect(screen.getAllByText(refusals.platform_error)).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
+  });
+
+  it.each([false, true])('shows neither sentence nor Retry for pending without an error (stuck: %s)', (isStuck) => {
+    const entry = { commandId: 'command-p', since: 0, reason: 'status_503' };
+    render(<OrdersList orders={[order('p', { storeOrderId: 's1' })]} onRetry={async () => 0}
+      stuck={isStuck ? { ...entry, commandIds: [entry.commandId], orders: [entry] } : undefined} />);
+    expect(screen.queryByText(UPDATE_UNSENDABLE_MESSAGE)).toBeNull();
+    expect(screen.queryByText(reopenAgain)).toBeNull();
+    expect(screen.queryByText(refusals.platform_error)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+});
 
 describe('OrdersList', () => {
   it('says there are no sales yet when the list is empty', () => {
@@ -575,15 +664,17 @@ describe('OrdersList history rows (ADR-052 amendment 1)', () => {
       order('early', { createdAt: '2026-09-25T08:00:00.000Z' }),
       order('rej', { syncStatus: 'rejected', createdAt: '2026-09-25T10:00:00.000Z' }),
     ];
-    const original = render(<OrdersList orders={orders} onRetry={async () => 0} />).container.innerHTML;
+    // Each render takes a fresh useId for the row hints, so the hint ids are blanked before comparing.
+    const html = (container: HTMLElement) => container.innerHTML.replace(/(\bid|aria-describedby)="[^"]*"/g, '$1=""');
+    const original = html(render(<OrdersList orders={orders} onRetry={async () => 0} />).container);
     expect(screen.getAllByTestId(/^(order|history)-row-/).map((row) => row.getAttribute('data-testid')).slice(-3)).toEqual([
       'order-row-late', 'order-row-early', 'order-row-rej',
     ]);
     cleanup();
-    const empty = render(<OrdersList orders={orders} history={[]} onRetry={async () => 0} />).container.innerHTML;
+    const empty = html(render(<OrdersList orders={orders} history={[]} onRetry={async () => 0} />).container);
     expect(empty).toBe(original);
     cleanup();
-    const hidden = render(<OrdersList orders={orders} history={[historyRow('x', { clientOrderId: 'late' })]} onRetry={async () => 0} />).container.innerHTML;
+    const hidden = html(render(<OrdersList orders={orders} history={[historyRow('x', { clientOrderId: 'late' })]} onRetry={async () => 0} />).container);
     expect(hidden).toBe(original);
   });
 
@@ -593,5 +684,20 @@ describe('OrdersList history rows (ADR-052 amendment 1)', () => {
     cleanup();
     render(<OrdersList orders={[]} history={[]} onRetry={async () => 0} />);
     expect(screen.getByTestId('orders-empty')).toBeTruthy();
+  });
+});
+
+describe('OrdersList Retry place', () => {
+  it('puts Retry after the notes and before the store warnings under Needs attention', () => {
+    const rejected = order('r', { syncStatus: 'rejected', error: { code: 'platform_error', message: 'store message' },
+      note: 'Deliver after 5', sentVersion: 6, warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] });
+    render(<OrdersList orders={[rejected]} onRetry={async () => 0} />);
+    const [sentence] = screen.getAllByText("The online store refused this sale. Ask the store owner to look at the till's sync log.");
+    const [note] = screen.getAllByTestId('order-note-not-sent-r');
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    const [warning] = screen.getAllByText(`Store total ${formatMoney({ amount: 1000, currency: 'EUR' })} vs POS ${formatMoney({ amount: 1200, currency: 'EUR' })}`);
+    for (const [before, after] of [[sentence, note], [note, retry], [retry, warning]]) {
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 });

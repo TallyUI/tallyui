@@ -14,7 +14,7 @@ export const WCPOS_DEFAULT_I18N: Readonly<Record<string, string>> = {
   subtotal: 'Subtotal', total_saved: 'Total saved', total: 'Total', tax: 'Tax', tax_summary: 'Tax Summary',
   included_tax: 'Tax included', total_tax: 'Total Tax', tax_amount_short: 'Tax', taxable_excl_short: 'Taxable excl.',
   taxable_incl_short: 'Taxable incl.', total_refunded: 'Total Refunded', refunded: 'Refunded', net_total: 'Net Total',
-  tendered: 'Tendered', change: 'Change', thank_you: 'Thank you', thank_you_purchase: 'Thank you for your purchase!',
+  tendered: 'Tendered', change: 'Change', refund_due: 'Refund due', thank_you: 'Thank you', thank_you_purchase: 'Thank you for your purchase!',
 };
 
 /** The built-in label per WCPOS tax-ID type. */
@@ -125,7 +125,7 @@ export function formatWcposReceiptData(data: WcposReceiptData, options: FormatWc
       ...totals,
       ...displays(totals, [
         ...tri('subtotal'), ...tri('discount_total'), ...tri('total'), 'tax_total', 'paid_total', 'change_total',
-        'refund_total', 'net_total',
+        'refund_due_total', 'refund_total', 'net_total',
       ], money),
       ...displays(totals, [...tri('sale_savings_total'), ...tri('total_saved')], saving),
     } as WcposReceiptView['totals'],

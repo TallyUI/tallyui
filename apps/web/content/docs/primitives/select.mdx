@@ -101,6 +101,7 @@ The positioned dropdown panel. Accepts all `PositionedContentProps`.
 | `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
 | `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
 | `forceMount` | `true` | — | Always render the content |
+| `onEscapeKeyDown` | `(event: KeyboardEvent) => void` | — | Web only. Called before Escape closes; `preventDefault()` keeps it open |
 | `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
 
 Plus all React Native `ViewProps`.
@@ -175,3 +176,4 @@ Plus all React Native `ViewProps`.
 - Role: `combobox` on Trigger, `listbox` on Content, `option` on each Item
 - ARIA: `aria-expanded`, `aria-selected`, `aria-disabled`
 - Keyboard navigation through options on web
+- Escape closes the open list on web (topmost layer only, so a Select inside a Dialog closes first)

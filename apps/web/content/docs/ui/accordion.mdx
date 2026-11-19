@@ -65,19 +65,21 @@ Plus all React Native `ViewProps`.
 
 ### AccordionTrigger
 
-Pressable header that toggles its parent `AccordionItem`. Text inside is styled through `TextClassContext` with `text-sm font-medium`. On web, triggers show an underline on hover.
+Pressable header that toggles its parent `AccordionItem`. Text inside is styled through `TextClassContext` with `text-sm font-medium`. On web, triggers show an underline on hover. It draws an 18px down chevron, on the right unless `chevronPosition="left"`, that turns 180° when the item opens (250ms opening, 200ms closing).
 
 **Default classes:** `flex flex-1 flex-row items-center justify-between py-4 font-medium`
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
+| `chevronPosition` | `'left' \| 'right'` | `'right'` | Which side of the label the chevron sits on |
+| `headerClassName` | `string` | - | Classes for the outer header wrapper, merged after `flex` (useful for flex sizing) |
 | `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
 
 Plus all React Native `PressableProps`.
 
 ### AccordionContent
 
-The collapsible body of an accordion item. Content is wrapped in a padded container and uses `TextClassContext` to apply `text-sm` to descendant text.
+The collapsible body of an accordion item. Content is wrapped in a padded container and uses `TextClassContext` to apply `text-sm` to descendant text. It folds open and shut over 200ms; the fold is instant under reduced motion, and there is none with `forceMount`.
 
 **Default classes:** `overflow-hidden text-sm`
 
@@ -86,7 +88,7 @@ The collapsible body of an accordion item. Content is wrapped in a padded contai
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `forceMount` | `boolean` | `false` | When `true`, content stays in the DOM even when collapsed |
-| `className` | `string` | - | Additional NativeWind classes merged via `cn()` |
+| `className` | `string` | - | Additional NativeWind classes merged via `cn()` onto the inner padded view (`pb-4 pt-0`), as in WCPOS v2; a padding class replaces the default |
 
 Plus all React Native `ViewProps`.
 

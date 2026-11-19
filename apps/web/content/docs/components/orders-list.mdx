@@ -21,6 +21,8 @@ import { OrdersList } from '@tallyui/components';
 
 Renders Recent orders and a Needs attention section when applicable, with expandable line and payment details, sync status, and warnings. Eligible rejected orders have a Retry action that calls `onRetry`.
 
+`OrderSyncNotices` renders one sale's sync notices on their own, for an app's own order screen: `<OrderSyncNotices order={order} stuck={outbox.state.stuck}>{retry}</OrderSyncNotices>`. Its `children` go where OrdersList puts Retry, between the notes and the store's warnings.
+
 ## Server order history
 
 Pass the store's order history as `history` to show it in Recent with the till's own sales. Each row is platform-neutral, and the app maps its own store's orders into it:

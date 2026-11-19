@@ -2,12 +2,13 @@ export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment,
 export { uuidv7 } from './uuidv7';
 export { finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
-export { toOrderCreateEnvelope, UnsupportedOrderVersionError } from './command';
+export { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError } from './command';
 export { posOrderSchema, posOrderCollection } from './schema';
 export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from './open';
 export { getDeviceId } from './device-id';
-export { needsAttention } from './needs-attention';
+export { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
 export { isReopened, replacedOrderIds } from './reopened';
 export { noteDelivery, type NoteDelivery } from './note-delivery';
 export { sameSale, OrderContentMismatchError } from './same-sale';
+export { refundDueOf } from './refund-due';

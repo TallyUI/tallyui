@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { createOrderBuilder } from '../order';
 import { finalizeOrder } from './finalize';
-import { needsAttention } from './needs-attention';
+import { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 import type { PosOrder } from './types';
 
 function sale(): PosOrder {
@@ -13,6 +13,14 @@ function sale(): PosOrder {
 }
 
 describe('needsAttention', () => {
+  it('shows a pending reopened sale the outbox could not build', () => {
+    const order: PosOrder = { ...sale(), storeOrderId: 'store-1', error: { code: UPDATE_UNSENDABLE, message: UPDATE_UNSENDABLE_MESSAGE } };
+    expect(needsAttention([order])).toEqual([order]);
+  });
+  it('does not show a pending order without that mark', () => {
+    expect(needsAttention([sale()])).toEqual([]);
+  });
+
   it.each<Partial<PosOrder>>([{}, { localWarnings: [{ code: 'customer_omitted', field: 'email' }] }, { lateSessionId: 'closed' }])(
     'leaves out refused orders only once a finalized successor is in the list: %j', (extra) => {
       const rejected: PosOrder = { ...sale(), syncStatus: 'rejected', createdAt: '2026-01-01T00:00:00Z', ...extra };

@@ -1,0 +1,32 @@
+---
+title: CustomerDropdown
+description: The cart header's customer chip; pressing it opens a search dropdown anchored to it, Guest first, then the results.
+---
+
+## Import
+
+```tsx
+import { CustomerDropdown } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerDropdown search={searchCustomers} selected={customer} onSelect={setCustomer} online={online} />
+```
+
+The chip names the sale's customer, or Guest. While the dropdown is open it reads "Select Customer"; the search is debounced, a stale response is dropped and nothing is sent offline. With `browse`, an empty query lists the browsed customers under Guest, as v2 does; without it an empty query lists Guest alone. At the end of the list the dropdown asks for the next 50 with `page` (1-based) and appends them, as v2; a page with fewer than 50, or one with no new customers, is the last, and rows are kept by customer id. Guest is always the first row. On the web the arrow keys move between the field and the rows, Enter or Space picks, Escape closes. `CustomerPicker` stays for the modal and inline picker. It takes `showAvatar` to draw v2's initials on each result and `withGuest` to draw a Guest row first, which picks `null`. As in v2, Guest is drawn with a person glyph, not initials, and the address pin beside the chip appears only when `onEditAddress` is given.
+
+## Props
+
+- `search` (`(query: string, page?: number) => Promise<Customer[]>`, required): the connector's searchCustomers, bound by the app; `page` (1-based) asks for the next 50 at the end of the list, absent means the first page.
+- `browse` (`(page?: number) => Promise<Customer[]>`): the first customers for an empty query, called each time the dropdown opens or the query is cleared, with the same stale and offline handling as `search`; v2 lists the first 50 by last name. `page` (1-based) asks for the next 50 at the end of the list, absent means the first page.
+- `selected` (`Customer | null`, required): the sale's customer; `null` is Guest.
+- `onSelect` (`(customer: Customer | null) => void`, required): called with the picked customer, or `null` for Guest.
+- `onError` (`(error: unknown) => void`): errors the dropdown can't explain to the cashier, as CustomerPicker's.
+- `online` (`boolean`, required): `false` disables search; Guest stays selectable.
+- `debounceMs` (`number`, default `250`): wait before a search, ms.
+- `className` (`string`): classes for the row holding the label and the chip.
+- `testID` (`string`, default `'customer-dropdown-chip'`): testID of the chip.
+- `onEditAddress` (`() => void`): opens the app's editor for the sale's addresses (v2's split pin beside the chip). Absent: no pin.
+- `hasAddress` (`boolean`, default `false`): `false` greys the pin until the sale's billing has an address, as in v2.

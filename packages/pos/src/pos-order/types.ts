@@ -34,6 +34,8 @@ export interface PosOrderCouponLine {
 
 export interface PosOrderLine {
   id: string;
+  /** The store's id of a kept line (ADR-090); absent on a line added at the till. */
+  storeLineId?: string;
   productId: string;
   variantId?: string;
   custom?: OrderCreateLine['custom'];
@@ -59,7 +61,11 @@ export interface PosOrderLine {
 
 export interface PosOrderPayment {
   id: string;
+  /** The store's id of a payment already on the order (ADR-090): a captured leg, never re-taken. Sent as `order.update`'s `paymentId`. */
+  storePaymentId?: string;
   method: PaymentMethodKind;
+  /** The payment method's own id on the platform, kept for labels and takings (`legMethodId`); `method` decides cash. */
+  methodId?: string;
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;
@@ -70,18 +76,30 @@ export interface PosOrder {
   id: string;
   /** The sale order's id (the builder's), set by finalizeOrder (pos_orders v7, ADR-072): support traceability from a draft or preview to this stored order. Never sent, never printed. */
   saleId?: string;
+  /** The store order this sale reopened (ADR-090); the outbox sends such a row as `order.update`, never `order.create`. */
+  storeOrderId?: string;
+  /** The store's revision of that order as the reopen left it (ADR-090). */
+  baseRevision?: string;
   createdAt: string;
   currency: string;
   pricesIncludeTax: boolean;
   lines: PosOrderLine[];
   /** pos_orders v9, ADR-077 d2; present only on a sale with coupons */
   coupons?: PosOrderCoupon[];
-  fees?: FeeLine[];
-  shipping?: ShippingLine[];
+  fees?: Array<FeeLine & {
+    /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
+    storeLineId?: string;
+  }>;
+  shipping?: Array<ShippingLine & {
+    /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
+    storeLineId?: string;
+  }>;
   subtotalMinor: number;
   discountMinor: number;
   taxMinor: number;
   totalMinor: number;
+  /** What the store owes back on a reopened sale whose locked payments exceed its new total, in minor units (pos_orders v15, ADR-090). `finalizeOrder` writes it on every reopened sale, 0 when nothing is due; absent on a till sale. */
+  refundDueMinor?: number;
   payments: PosOrderPayment[];
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
   customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress } | null;
@@ -105,9 +123,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */

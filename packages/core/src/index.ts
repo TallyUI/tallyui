@@ -17,6 +17,7 @@ export type {
   VariantSummary,
   VariantOptionGroup,
   ProductCategory,
+  ProductTerm,
   CustomerTraits,
   Money,
   ProductPrice,
@@ -46,7 +47,7 @@ export { classifyFailure, neutralFailureClass, noResponse, type ConnectivityStat
 export type { SignInErrorCode } from './sign-in';
 export { StoreSettingsError } from './store-settings';
 export { customerTraits, CustomerServiceError, type Customer, type CustomerInput, type CustomerAddress, type CustomerTaxId, type CustomerPatch, type CustomerPage } from './types/customers';
-export { paymentMethodOf, defaultPaymentMethods } from './types/payment-methods';
+export { paymentMethodOf, defaultPaymentMethods, wireMethodOf, legMethodId } from './types/payment-methods';
 export type {
   PaymentMethodDescriptor, PaymentKind, CaptureMode, CaptureModeEntry, PaymentHardware, PaymentTransport,
   PaymentOfflineMode, PaymentTipsMode, PaymentRounding,
@@ -65,6 +66,9 @@ export type {
   RegisterCommandType, RegisterCommandEnvelope, AnyCommandEnvelope,
   OrderRefundLine, OrderRefundPayload, OrderRefundEnvelope, OrderRefundResult, OrderRefundRejectionCode,
   OrderRefundQuantityExceedsData, OrderRefundAmountMismatchData, OrderRefundOrderStateData, OrderRefundNoOpenSessionData,
+  OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
+  OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
+  OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
   CommandWarning, CommandError, CommandResult, OrderCreateLine,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
@@ -83,10 +87,12 @@ export {
 } from './commands';
 
 // Money helpers
-export { currencySymbol, formatMoney, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
+export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
+export { minorToMajor } from './server/money';
 export { findVariantByCode } from './variants';
 export { knownWarnings } from './known-warnings';
 export { compareIds } from './utils/compare-ids';
+export { fnv1a32 } from './fnv1a32';
 export { STOCK_LEVELS_LAST_PASS, withStockOverlay, getProductStock } from './stock-overlay';
 export { combinePullAdapters } from './replication/combine';
 export { createReconcileFeed } from './replication/reconcile-feed';
@@ -104,6 +110,7 @@ export {
   useStockOverlayAsOf,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
+export { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, type MoneyFormatProviderProps } from './context/money-format-context';
 export * as woocommerceTax from './tax/woocommerce';
 export * as woocommerceCoupons from './coupons/woocommerce';
 
@@ -112,3 +119,5 @@ export * as woocommerceCoupons from './coupons/woocommerce';
 export { parseCommandResult, CommandResultError } from './server/command-result';
 // Browser-safe: register-figures.ts has no imports. The till and demo backends derive the same session figures.
 export { deriveSessionFigures, deriveVariance } from './server/register-figures';
+// Browser-safe: tax-rate.ts has no imports. The till and servers convert percentages to the same integer ppm.
+export { ratePpmFromPercent } from './server/tax-rate';

@@ -3153,6 +3153,16 @@ interface OrderCreatePayload {
   (`sentVersion`, `pos_orders` v5) before its first send, and every
   retry resends that version; with the max unknown, 3. `requeue()`
   clears it, since a new `commandId` is a new idempotency key.
+- **Amended: sales finalized before #834 (Front desk, 2026-11-17).**
+  Before #834, `finalizeOrder` split a WooCommerce-rounded sale's tax
+  by rate with each converted line in its own tax mode, while the
+  receipt rounded it in the store's. The stored `taxByRate` of such a
+  sale (a line with `netMicros` and a stored `taxInclusive`) is never
+  trusted on read: the reprint and Reports recompute it with
+  `taxedLinesFor` (`recordedTaxByRate`), which equals the stored split
+  for a sale finalized after #834. Stored documents are not rewritten,
+  and the `taxByRate` already sent in `order.create` stays the
+  store's record; a Z report closed after #834 already recomputes.
 
 ## ADR-066 Standalone app: TallyUI with no backend
 
@@ -3613,6 +3623,12 @@ interface OrderCreatePayload {
      There's no register-creation flow in the POS.
   9. **Refunds are out of scope** until Paul's refund model.
      `period_refunds` stays 0, and the server figures exclude refunds.
+     **Amended by ADR-080 (2026-10-07):** refunds are counted in the
+     session that made them. `writeClosure` sets `period_refunds_total_minor`
+     to the sum of the session's applied refund records
+     (`packages/pos/src/register/session-store.ts:563`:
+     `period_refunds_total_minor: sum(countedRefunds.flatMap(...))`), and
+     `deriveSessionFigures` lowers the server figures by them.
   10. **The residual window of ADR-032** (a sale stamped between the
       count gate and `writeClosure`) closes by refusing stamps while the
       session is counting (c2b-1).
@@ -5548,9 +5564,10 @@ interface OrderCreatePayload {
 
 ## ADR-081 Order history in core: optional `listOrders`/`getOrders`, and reprint from a stored order (G7)
 
-- **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Relates to:** ADR-079 (Vendure
-  order history, whose "Open: a core order-history contract waits for a second platform" this settles), ADR-080
-  (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order transport)
+- **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Amended by ADR-090:** decision 5,
+  reopen-to-edit · **Relates to:** ADR-079 (Vendure order history, whose "Open: a core order-history contract
+  waits for a second platform" this settles), ADR-080 (`order.refund` v1), ADR-065 (the stored order's display
+  figures), ADR-073 (the WooCommerce order transport)
 - **Context:**
   - The tallyui-woocommerce app's M6 needs to browse past orders, reprint one and refund it
     (~/agent/handoff/tallyui-woo-g7-gap-2026-10-14.md). Before this change, `TallyConnector` had no order read. The
@@ -6347,3 +6364,197 @@ interface OrderCreatePayload {
   creates none behaves exactly as before. The slice's exit test is medusapos's `CouponField` and `useGatedSale`
   rewritten as one extension with no other TallyUI change.
 - **Evidence:** `packages/extensions/src/host.test.ts`, `react.test.tsx`, `sale-source.test.tsx`, `pipeline.test.ts`.
+
+## ADR-090 Reopen a store order to edit it: `order.reopen` v1 and `order.update` v1 (parity D7)
+
+- **Date:** 2026-11-17 · **Status:** Accepted with conditions (front desk ruling on the D7 reopen draft, 2026-11-16:
+  departures 1 to 4 are architecture, the desk's call; conditions Q1, the spike's store and the paid-above-total
+  section are written in below; spike result and condition 4 added 2026-11-17, phases c to e wait for the desk)
+  · **Amends:** ADR-081 decision 5 ("M6 drops reopen-to-edit … no core support")
+  · **Relates to:** ADR-038 (the command contract), ADR-070 (strict payloads), ADR-073 (the WooCommerce order
+  transport), ADR-080 (`order.refund` v1, whose pattern this follows), WCPOS v2's reopen (the reference for features
+  and taste)
+- **Context (v2 facts; M = wcpos monorepo origin/main, W = woocommerce-pos origin/main 18c41490):**
+  - **Reopen is a status change, and every payment still counts**
+    (W `docs/adr/0040-server-derives-paid-no-money-epoch.md:11-12,85-89`). It is refused only while money is in
+    motion, i.e. a provider leg is `pending` or `authorized`, a gateway attempt is unresolved, or a refund allocation
+    is pending: HTTP 422 `wcpos_money_in_motion`,
+    `data: { payment_id, attempt_id }` (W `Order_Writer.php:765-801`, `Sale_State.php:147-165`).
+  - **The write** is `POST wcpos/v2/push/orders` with
+    `{ mutationId, operation: 'update', collection: 'orders', recordId, baseRevision, payload }`, `Idempotency-Key`
+    and `If-Match` (M `sync-core/src/recordPushAdapter.ts:205-237`). The payload is `status: 'pos-open'` plus identity
+    meta (M `pos-carrier/carrier.ts:46-59,159-188`). It carries no lines and no totals.
+  - **The server decides which statuses reopen.** It reopens a locked order (not editable, or completion stands) to
+    `pos-open`. Its other refusals are `wcpos_status_not_pushable`, `wcpos_currency_locked` and `reopen_required`
+    (W `Sale_State.php:23,108-124`).
+  - **After a reopen** the order is the cart. Completion is `POST wcpos/v2/orders/{id}/close`, and the server derives
+    paid (ADR 0040 rule 1). The balance is total − paid + refunded (W `Ledger.php:503`, `signed_balance`). A
+    gateway-paid order's tender is adopted as a captured row (W `Order_Writer.php:453,708-713`).
+  - v2 writes `pos-open` locally first and rolls it back on a refusal
+    (M `packages/core/src/screens/main/orders/commands/use-order-record.ts:23-48`, undo at `:54-93`).
+  - TallyUI's store orders are online reads (ADR-081). The order outbox only creates. `reopenRefusedOrder` (ADR-077
+    d4b) is unrelated: it turns a refused local sale back into a parked cart.
+- **Departures from v2 (accepted by the desk as architecture):**
+  1. **Capability-gated.** `ServerCapabilities.orderReopen?: number`; absent or 0 hides the action. WCPOS 1.10.x has
+     neither the reopen money gate nor `orders/{id}/close`; both first ship in WCPOS v2.0.0 (W 27218c53, tag
+     v2.0.0-beta.1).
+  2. **Online only, nothing optimistic.** The till sends, waits for the store's verdict, and only then builds the cart.
+     Offline the action is disabled. Online the cashier sees what v2 shows, since v2 also waits before opening the cart.
+  3. **Edits reach the store once, at checkout** (`order.update` on the order outbox), not edit by edit. Until then the
+     store shows the order at `pos-open` with its old lines. An abandoned reopen leaves it at `pos-open`, as in v2.
+  4. **Scope cut:** no invoice "Send again" trigger; Re-open is offered from the order detail only.
+
+  Everything else keeps v2's semantics: the server decides which statuses reopen, every payment still counts, the
+  only money refusal is a payment in motion, at most one reopen per order is in flight, degraded storage blocks the
+  reopen, and the till never writes a paid status.
+- **Decision:**
+  1. **`order.reopen` v1, an online command on ADR-080's pattern.** It rides `POST /tally/v1/commands` in the shared
+     envelope (`OrderReopenEnvelope`) as a one-command batch; neither outbox ever carries it. The command `id` is the
+     idempotency key: when the answer is unknown the till resends the same envelope; after a rejection a new attempt
+     has a new id.
+     - **Capability:** `/tally/v1/info` lists `"order.reopen": [1]` under `contracts`; `ServerCapabilities` gains
+       `orderReopen?: number`. The till's own is `SUPPORTED_ORDER_REOPEN_VERSIONS = [1]`. `precheckCommand`'s
+       `supported` gains an optional `orderReopen`; without it the answer is `unsupported_version`
+       (`data: { orderReopen: 0 }`).
+     - **Payload v1** (strict, ADR-070; `reopenPayloadErrors`): `orderId` (the platform's order id), `clientOrderId?`
+       (the till's id for the sale, when it has one), `baseRevision?` (the store's revision as last read, for platforms
+       that check it), `cashierRef` and `registerId` (the identity the store records), `storeId?`, each a non-empty
+       string of at most 64 characters with no NUL (`baseRevision` at most 128: a Woo `_rxdb_revision` is
+       `sha256:` plus 64 hex, 71 characters, and the revision is an opaque token, never stripped; desk Q3,
+       2026-11-17), and `createdAt` (a valid date). No lines and no totals. The `order.update` payload and the
+       till's rebuild use the same 128 bound for `baseRevision`; ids stay at 64.
+     - **Applied result:** `reopen: { orderId, status, revision? }`. The till then reads the order with the
+       connector's `getOrder` and builds the cart from that read, never from the list it opened the detail from. A
+       `duplicate` (already open with this identity) counts as applied.
+     - **Refusals (`OrderReopenRejectionCode`):**
+       - `payment_in_motion`, `data: { paymentId?, attemptId? }`. The store's message stays `error.message`, and the
+         app shows it first, as v2 does.
+       - `order_state`, `data: { state, storeCode? }`: the store will not reopen this status or currency.
+       - `revision_conflict`: `baseRevision` is stale; the app re-reads and asks again.
+       - `forbidden`: the credentials may not reopen.
+
+       The shared codes (`invalid_payload`, `unsupported_version`, `platform_error`, `internal_error`) still apply.
+  2. **When Re-open is offered:** `orderReopen >= 1`, the till is online, storage is not degraded (v2 #163 R5), and no
+     reopen of that order is in flight (a module-level in-flight set in `@tallyui/pos`, as in v2). No status filter on
+     the client: the store decides. Storefront orders included (desk, Q2: as v2).
+  3. **The reopened sale.** Lines keep the order's own unit prices and quantities, not re-priced from the catalogue.
+     Every payment already on the order enters as a captured leg that counts toward paid and cannot be removed or
+     voided at the till. The sale carries `storeOrderId` and `baseRevision`. Tax is the store's: the till shows the
+     store's totals and re-quotes after edits, as it does today (desk, Q3: as recommended); ADR-073's
+     `unsupported_tax_mode` still applies.
+  4. **`order.update` v1, the outbox command for a reopened sale's checkout.** A `pos_orders` row with `storeOrderId`
+     goes out as `order.update`, never `order.create`. Its payload is the `order.create` payload at the till's version
+     plus `orderId` and `baseRevision`; `lines`, `fees`, `shipping` and `payments` are the whole new state (absent
+     `fees` or `shipping` means the sale has none, so the store's are removed), and payments already on the
+     order carry their store `paymentId` and are not re-taken. The body names the `order.create` version it follows
+     in `createVersion` and is checked by that version's rules. Kept lines, fees and shipping carry the store's
+     `storeLineId`, one id space unique across the three (WooCommerce order items; v2 removes fees and shipping by
+     id, spike Q7); an item without one is new. Its result has `order.create`'s `serverRefs`. New
+     refusals: `payment_in_motion`; `reopen_required` (the store order is no longer open: the sale goes to Needs
+     attention and the cashier may reopen again); `revision_conflict`. Capability `orderUpdate`: a store that lists
+     `order.reopen` lists `order.update`. Its core types land with phase c, because the spike (phase b) settles the
+     line and payment shapes.
+  5. **`pos_orders` gains `storeOrderId?` and `baseRevision?`** in phase c: a schema bump, one-way (ADR-069).
+     Version 15 (W4-0, desk Q3 and Q4, 2026-11-17) is an identity migration: `baseRevision` goes to at most 128
+     characters, and an optional `refundDueMinor` (an integer of at least 0) is added for a reopened sale that ends
+     overpaid. Finalize writes it; readers use the stored value.
+  6. **WooCommerce mapping** (WCPOS >= 2.0.0; `orderReopen` is advertised only from that plugin version):
+     - `order.reopen` is a `wcpos/v2/push/orders` `operation: 'update'` with `recordId` = the order's
+       `_woocommerce_pos_uuid`, `baseRevision`, `If-Match`, and `Idempotency-Key` = the command id. The payload is
+       `status: 'pos-open'`, `_pos_user` and `_pos_store` only. **`_wcpos_register` and `_wcpos_till` are never
+       written** (desk, Q1): they feed WCPOS register and closure reports, and TallyUI on Woo has no register sync
+       (ADR-073). If the store refuses an update without them, the spike reports the refusal to the desk; no value is
+       invented.
+     - `order.update` is the same endpoint's update with the new lines and only this session's payments, then
+       `POST wcpos/v2/orders/{id}/close`. The till never writes `completed` or `set_paid`; the server derives paid.
+     - The `line_items` diff (existing ids, removed lines) and how a split payment is recorded on an update are proved
+       by a spike before the transport is written. **The spike runs on a local wp-env or Docker store with WCPOS 2.0.3
+       only, never dev-free, dev-pro or demo** (they share the production MariaDB).
+  7. **Medusa and Vendure:** not decided here. Their capability stays absent, so the action stays hidden.
+- **The phase b spike** (2026-11-17, local wp-env only: WooCommerce 10.4.3 with woocommerce-pos v2.0.3;
+  report and captures in `~/agent/research/tallyui-shared/spikes/2026-11-17-d7b-woo-reopen/REPORT.md`).
+  - **`order.reopen` v1 holds unchanged.** Every store answer maps to an existing v1 code. No core change is needed
+    before a release.
+  - **Q1 stands: no refusal to report.** A reopen with only `status`, `_pos_user` and `_pos_store` is accepted (200).
+    `_wcpos_register` and `_wcpos_till` are left as the order has them.
+  - **No status is refused.** Completed, processing, on-hold, pending, cancelled, refunded and storefront orders all
+    reopen.
+  - **What the Woo transport adds (phase d):**
+    - **`recordId`.** It is the order's `_woocommerce_pos_uuid`. The `wcpos/v2/orders?include=<id>` read stamps one
+      on a storefront order. The till carries the uuid and the revision from the detail read it built the cart from.
+      Reading again just before the push would replace `baseRevision` and defeat the conflict check, so that read
+      happens only when the uuid is missing.
+    - **`baseRevision`.** It is mandatory on Woo (428 without it). The connector's precheck refuses a reopen without
+      one as `invalid_payload`. The applied `revision` is the ack's `currentRevision`. A 409 conflict carries
+      `currentRevision` and the document.
+    - **`cashierRef`.** It goes to `_pos_user`, which the store honours only when it equals the credential's own WP
+      user and otherwise silently ignores. The connector's precheck therefore refuses (`invalid_payload`) a
+      `cashierRef` that is not the credential's user id, so nothing is dropped silently.
+    - **`registerId` and `storeId`.** `registerId` is never written. `_pos_store` comes from `storeId` and is omitted
+      when absent, as in v2.
+  - **Refusal mapping.**
+
+    | Tally code | Woo answer |
+    |---|---|
+    | `payment_in_motion` | 422 `wcpos_money_in_motion` (`data.payment_id` or `attempt_id`); on close, 409 `wcpos_payment_in_flight` |
+    | `revision_conflict` | 409 `woo_rxdb_sync_conflict`; money commands say 409 `wcpos_revision_stale` |
+    | `order_state` | 404 `woo_rxdb_sync_record_not_found` (`state: 'not_found'`); 422 `wcpos_status_not_pushable` |
+    | `forbidden` | 403 `woocommerce_pos_rest_forbidden` |
+    | `unsupported_version` | 426 `wcpos_update_required` |
+    | `internal_error` (a till bug, never shown as a store refusal) | 422 `woo_rxdb_sync_bad_mutation_id`; 422 `woo_rxdb_sync_header_body_mismatch`; 428 |
+
+  - **What `order.update` v1 adds in phase c (to decision 4):**
+    - **Store line identity.** Each line of a reopened sale carries the store's line id (`storeLineId?`). Woo's
+      `line_items` replaces the whole set: a kept line is sent by id, a removed line as `product_id: null`, and a new
+      line without an id. A kept line sent without its id would be a new line, and the old one removed. This is read
+      from the code, not run.
+    - **Version floor, base revision and pairing (W4a).** An update builds at `max(5, content)` order.create version,
+      capped at the store's cap, and is refused (`UnsupportedOrderVersionError(5, cap)`) only when that cap is below 5
+      (desk Q1, 2026-11-17); with no fees it is the version-4 payload except the number. The till never builds an
+      update without `baseRevision` or without figures. Store ids pair with items by client id, never by position
+      (gate 8).
+    - **An update the till cannot build (W4b).** The outbox does not send a reopened sale whose `order.update` it cannot build: no base revision, no figures, or a store whose `order.create` maximum is below the version the update needs (at least 5). The row stays pending, so it counts as unsent at register close. It carries `error.code` `update_unsendable` and shows in Needs attention: "The store can't accept this change yet. Ask the owner to update the POS plugin, then press Retry." The rest of the batch still goes. Later rows of the same store order wait behind it. Nothing retries it automatically; Retry (`requeue`) clears the mark and tries again. `requeue` no longer resends a reopened sale refused with `reopen_required` or `revision_conflict`: the cashier reopens the order again, a fresh read, and Needs attention says so with no Retry: "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again." (W4c). This follows the desk's Q2 ruling of 2026-11-17.
+    - **The way out of a held update (desk ruling, 2026-11-17).** A reopen needs a store that offers `order.reopen`, so the row is reached only when the store later drops below `order.create` 5 (a plugin rolled back). The way out is the store: the owner brings the POS plugin back up, then the cashier presses Retry. Until then the row stays in Needs attention and counts as unsent at every close; if the store can't take it, the owner settles the order in the store by hand. A cashier action "Settled in the store" (`pos_orders` v16 `settledManuallyAt`: hides the row, releases the held commands, keeps the new legs in takings) was considered and is held until a real case appears.
+    - **Explicit line money.** Every changed line carries its own `subtotal` and `total` (ex tax): the order's unit
+      price × the new quantity. wc/v3 does not reprice a quantity change (the spike's 3 × 4.00 billed 8.00).
+    - **Write order:**
+      1. one push with the lines;
+      2. one `orders/{id}/payments` record per new payment, chaining `revision`;
+      3. `orders/{id}/close`.
+
+      A record that settles the balance completes the sale by itself, and close then confirms idempotently.
+    - **Payments already on the order are never sent.** Resending one is 422 `wcpos_command_conflict`.
+    - **`reopen_required`** is 422 `reopen_required` (`data.order_status`).
+    - **Refund-due is shown, never as Change (W4e).**
+      - The receipt shows a "Refund due" row, live and on reprint, and the orders list shows a "Refund due" line, when a reopened sale's new total is below what the store already holds.
+      - Readers use the stored `refundDueMinor`. `refundDueOf` computes `sum(payments) − total` only for a row without it.
+      - On the live receipt, the figure is the locked legs beyond the new total, and it is taken out of `changeDueMinor`. So every reader of the receipt data (template, ESC/POS, customer display) stops showing it as change.
+      - Their own refund-due rows, and the tender pane, are a separate PR that gates phase e wiring (desk Q4, 2026-11-17).
+    - **The writer (W4f).** `finalizeOrder` completes a reopened sale; the backstop that refused one is gone.
+      - It writes `storeOrderId`, `baseRevision` and `refundDueMinor` on every reopened row, 0 included. It also writes `storeLineId` on each kept line, fee and shipping line, and `storePaymentId` on each payment the store already holds. W4 alone writes these (desk ruling); a till sale gets none of them, and its stored form is unchanged.
+      - Before any id is minted it refuses what core's `updatePayloadErrors` would refuse:
+        - gate 1: a store id over 64 characters, a revision over 128, an empty value, or a NUL (desk Q3);
+        - gate 3: a `storeLineId` used twice across lines, fees and shipping, or a `storePaymentId` used twice.
+        - A drift test pins the till's rule to core's.
+      - A payment the store holds must be locked, `external`, and carry its store id (desk Q7). Store ids or locked legs on a sale that reopened nothing are refused.
+      - When the locked legs cover the new total, the sale completes as refund due (`locked − total`), with no till leg and no change (desk Q6). Otherwise change comes only from unlocked cash, and the refund due is 0.
+      - The reconcile is `sum(payments) − refundDue = total`.
+  - **Read model.** A reopen fills an empty `_pos_user_created` with the reopening cashier. A storefront order
+    reopened at the till then reads as created by that cashier.
+- **The edited total below what is already paid (desk condition 4).**
+  - **WCPOS v2 completes the sale.** It neither refuses nor gives change. The balance is
+    `max(0, total − paid + refunded)` and overpaid is `max(0, paid − total)` (M `derive.ts:114,164-165`). Checkout
+    shows "Done" (M `checkout-body.ts:24-26`), and the zero-balance press closes the order
+    (M `use-tender-flow.ts:944-971`). Overpaid is only logged (`settlement.boundary-overpaid`,
+    M `boundary-commit.ts:207-209,228`); no screen reads it.
+  - **The store does the same** (spike Q9). A sale paid 12.10 and edited to 8.80 closes 200 `completed` with
+    `balance: 0.00, refund_due: 3.30`. The payment stays captured with nothing refunded.
+  - **TallyUI keeps v2's behaviour:** the close completes and no refusal is added.
+  - **The till never records a change leg for a negative remainder.** The money stays on the order as the store's
+    `refund_due`, so it is never settled silently as cash change.
+  - **After the close,** the completed sale shows "Refund due" with the amount (paid − total), and offers ADR-080's
+    `order.refund` for it. The cashier may leave it, and it stays on the store order as `refund_due`. A forced prompt
+    is not added, since v2 has none.
+- **Phases** (each its own spec and PR; one-way, blast:shared): (a) core: `order.reopen` types, payload check,
+  precheck, result parsing and capability parsing; (b) the Woo spike; (c) pos: `sendOrderReopen`, the reopened sale,
+  `pos_orders` vN, `order.update` types and the outbox; (d) the Woo transport; (e) the app's action (tally-woo).

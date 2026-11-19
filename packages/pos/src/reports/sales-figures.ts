@@ -16,6 +16,10 @@ export interface SalesTotals {
   grossMinor: number; netMinor: number; taxMinor: number; discountMinor: number;
   refundsMinor: number; embeddedRefundsMinor: number;
   orderCount: number; averageMinor: number; items: number;
+  /** v2 ordersSummary: the middle order total, the mean of the two middles for an even count (rounded half up to the minor unit); 0 with no orders. */
+  medianMinor?: number;
+  /** v2 ordersSummary: the largest order total; null with no orders. */
+  largestMinor?: number | null;
   margin: Margin;
 }
 export interface PaymentRow { method: string; label: string; amountMinor: number; orders: number }
@@ -101,6 +105,15 @@ export function marginOf(lines: readonly ReportLine[]): Margin {
   return margin;
 }
 
+/** Median and largest order total. Port of WCPOS v2 `ordersSummary` (`screens/main/reports/cards/aggregate.ts`). */
+function orderSpread(totals: number[]): { medianMinor: number; largestMinor: number | null } {
+  const values = [...totals].sort((a, b) => a - b);
+  const middle = Math.floor(values.length / 2);
+  if (!values.length) return { medianMinor: 0, largestMinor: null };
+  const medianMinor = values.length % 2 ? values[middle] : Math.round((values[middle - 1] + values[middle]) / 2);
+  return { medianMinor, largestMinor: values[values.length - 1] };
+}
+
 function periodFigures(input: SalesFiguresInput, range: DayRange) {
   const orders = input.orders.filter((order) => inRange(order.at, range, input.timezone));
   const refunds = (input.refunds ?? []).filter((refund) => inRange(refund.at, range, input.timezone));
@@ -128,6 +141,7 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
   }
   totals.netMinor = totals.grossMinor - totals.taxMinor;
   totals.averageMinor = orders.length ? Math.round(totals.grossMinor / orders.length) : 0;
+  Object.assign(totals, orderSpread(orders.map((order) => order.totalMinor)));
   return { orders, refunds, totals, series };
 }
 
@@ -139,7 +153,7 @@ export function salesFigures(input: SalesFiguresInput): SalesFigures {
   const taxes = new Map<string, TaxRow>();
   for (const order of orders) {
     const contributions = [...order.payments];
-    const remainder = order.totalMinor - order.payments.reduce((sum, payment) => sum + payment.amountMinor, 0);
+    const remainder = order.totalMinor - (order.paidEarlierMinor ?? 0) - order.payments.reduce((sum, payment) => sum + payment.amountMinor, 0);
     if (remainder > 0) contributions.push({ method: order.needsPayment ? 'unpaid' : 'unknown', amountMinor: remainder });
     const methods = new Set<string>();
     for (const payment of contributions) {

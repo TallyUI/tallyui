@@ -1,7 +1,9 @@
-import type { StoreOrder } from '@tallyui/core';
+import { legMethodId, type StoreOrder } from '@tallyui/core';
+import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
+import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
 import type { LineJoin, ReportLine, ReportOrder, ReportRefund } from './types';
 
 function joinedLine(line: { productId?: string; variantId?: string; quantity: number }, join?: LineJoin): Pick<ReportLine, 'costMinor' | 'category'> {
@@ -16,11 +18,11 @@ function joinedLine(line: { productId?: string; variantId?: string; quantity: nu
   };
 }
 
-export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): ReportOrder {
-  const taxedLines = [...order.lines.map((line) => ({ ...line, taxInclusive: order.taxRounding.granularity === 'woocommerce'
-    && line.netMicros !== undefined ? order.pricesIncludeTax : line.taxInclusive ?? order.pricesIncludeTax })),
-  ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({ ...charge, taxInclusive: order.pricesIncludeTax }))];
-  const taxes = order.taxByRate ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
+export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, methodTitle?: (methodId: string) => string | undefined): ReportOrder {
+  const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+  const taxes = recordedTaxByRate(order) ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
+  const till = tillPayments(order.payments);
+  const amountOf = (payments: readonly { amountMinor: number }[]) => payments.reduce((total, payment) => total + payment.amountMinor, 0);
   return {
     id: order.id, at: order.createdAt, totalMinor: order.totalMinor, taxMinor: order.taxMinor,
     discountMinor: order.discountMinor, needsPayment: false, refunds: [],
@@ -34,7 +36,13 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin): Repor
         taxMinor, ...joinedLine(line, join),
       };
     }),
-    payments: order.payments.map(({ method, amountMinor }) => ({ method, amountMinor })),
+    payments: till.map((payment) => {
+      const method = legMethodId(payment);
+      // The title is looked up by the platform's own id, never the kind+id key; an id the host cannot name labels itself.
+      const label = payment.methodId !== undefined && payment.methodId !== payment.method ? methodTitle?.(payment.methodId) ?? payment.methodId : undefined;
+      return { method, ...(label ? { label } : {}), amountMinor: payment.amountMinor };
+    }),
+    ...(order.storeOrderId !== undefined ? { paidEarlierMinor: amountOf(order.payments) - amountOf(till) } : {}),
     taxes: taxes.map((row) => ({
       ratePpm: row.ratePpm, ...(row.code !== undefined ? { code: row.code } : {}),
       label: row.label ?? `Tax ${row.ratePpm / 10000}%`, taxMinor: row.amountMinor, netMinor: row.netMinor,

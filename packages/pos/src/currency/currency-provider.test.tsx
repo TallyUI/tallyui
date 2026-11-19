@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, useFormatMoney } from '@tallyui/core';
 import { CurrencyProvider, useCurrencyFormatter, useCurrencyCode } from './currency-provider';
-import type { CurrencyFormat } from './format-money-with';
+import type { CurrencyFormat } from '.';
 
 function wrapper(currency: string, locale?: string) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -16,6 +16,17 @@ function wrapper(currency: string, locale?: string) {
 }
 
 describe('CurrencyProvider + useCurrencyFormatter', () => {
+  it('provides the store format to the core money hook', () => {
+    function Probe() {
+      const format = useFormatMoney();
+      return <span>{format({ amount: 1250, currency: 'CAD' })}</span>;
+    }
+    render(<CurrencyProvider currencyCode="CAD" locale="en" format={{ position: 'left', symbol: '$' }}>
+      <Probe />
+    </CurrencyProvider>);
+    expect(screen.getByText('$12.50')).toBeTruthy();
+  });
+
   it('formats Money using its currency and the provided locale', () => {
     const { result } = renderHook(() => useCurrencyFormatter(), {
       wrapper: wrapper('USD', 'en'),

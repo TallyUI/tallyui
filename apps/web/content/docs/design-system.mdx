@@ -46,6 +46,31 @@ Each colour token becomes Tailwind classes such as `bg-<name>`, `text-<name>` an
 | `--color-warning` | `#b45309` | `#d29922` | `#ffffff` / `#0d1117` |
 | `--color-info` | `#2563eb` | `#58a6ff` | `#ffffff` / `#0d1117` |
 
+### Tones
+
+WCPOS v2's tone tokens: a glyph's or word's ink and the wash behind it. `ok` is `success` and `bad` is `destructive`; a wash keeps its words in the foreground.
+
+| Token | Light | Dark | Use |
+|-------|-------|------|-----|
+| `--color-ok` | `#047857` | `#3fb950` | Done or paid glyph and amount |
+| `--color-ok-bg` | `#e3f8e9` | `#182f20` | Wash behind an ok disc or band |
+| `--color-warning-text` | `#915200` | `#d29922` | Warning glyph and words (darker than warning) |
+| `--color-warning-bg` | `#fff4d7` | `#3b2b0d` | Wash behind a warning disc or band |
+| `--color-bad` | `#dc2626` | `#f85149` | Error glyph and amount |
+| `--color-bad-bg` | `#fff0ee` | `#442321` | Wash behind a bad disc or band |
+
+### Charts
+
+WCPOS v2's shared categorical colours for chart series, independent of the theme's accents. `chart-N` is `cN`; each meets 3:1 on the card.
+
+| Token | Light | Dark |
+|-------|-------|------|
+| `--color-c1` / `--color-chart-1` | `#0031cc` | `#0069bd` |
+| `--color-c2` / `--color-chart-2` | `#00a166` | `#00a166` |
+| `--color-c3` / `--color-chart-3` | `#d08300` | `#df911a` |
+| `--color-c4` / `--color-chart-4` | `#a355b4` | `#a355b4` |
+| `--color-c5` / `--color-chart-5` | `#8d94a0` | `#95a0ab` |
+
 ### Borders
 
 | Token | Light | Dark | Use |
@@ -54,6 +79,17 @@ Each colour token becomes Tailwind classes such as `bg-<name>`, `text-<name>` an
 | `--color-input` | `#d1d5db` | `#636c76` | Borders of inputs and buttons |
 | `--color-scrim` | `#14161b47` | `#00000280` | Modal and drawer backdrops (WCPOS v2's scrim) |
 | `--color-ring` | `#5b5ef0` | `#818cf8` | Focus ring |
+
+### Rail
+
+| Token | Light | Dark | Use |
+|-------|-------|------|-----|
+| `--color-sidebar` | `#e4eaf5` | `#050e18` | Rail and nav drawer ground |
+| `--color-sidebar-foreground` | `#35383d` | `#9ba6b1` | Idle nav icons and labels |
+| `--color-sidebar-border` | `#d2d8e1` | `#1a222b` | Rail's right edge |
+| `--color-rail-accent` | `#c2ddff` | `#161b22` | Nav item hover and press |
+| `--color-rail-selected` | `#ffffff` | `#262a4b` | Active nav item's square |
+| `--color-rail-selected-foreground` | `#5b5ef0` | `#818cf8` | Active nav item's icon and label |
 
 ### Commerce
 

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptData } from '../receipt/types';
-import { parseXml, renderLogiclessTemplate, renderReceiptHtml, renderThermalPreview, sanitizeHtml } from './index';
+import {
+  parseXml, receiptTemplateData, renderLogiclessTemplate, renderReceiptHtml, renderThermalPreview, sanitizeHtml,
+} from './index';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -68,6 +70,21 @@ describe('receipt templates', () => {
     expect(html).toContain('width: 32ch');
     expect(rows(html)).toContain('Total | EUR 11.55');
     expect(html).toContain('height: 4.2em');
+  });
+
+  it('template data and both default templates show Refund due on a reopened sale paid beyond its new total, and no Change', () => {
+    const reopened: ReceiptData = {
+      ...fixture, payments: [{ method: 'external', amountMinor: 1955 }], changeDueMinor: 0, refundDueMinor: 800,
+    };
+    const data = receiptTemplateData(reopened, options);
+    expect(data.refundDue).toBe('EUR 8.00');
+    expect(data.change).toBe('');
+    for (const paper of ['58mm', '80mm'] as const) {
+      const renderedRows = rows(renderReceiptHtml(reopened, { ...options, paper }));
+      expect(renderedRows).toContain('Refund due | EUR 8.00');
+      expect(renderedRows.some((row) => row.startsWith('Change'))).toBe(false);
+    }
+    expect(receiptTemplateData(fixture, options)).not.toHaveProperty('refundDue');
   });
 
   it('prints a missing field as empty, never undefined', () => {

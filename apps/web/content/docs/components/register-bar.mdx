@@ -22,7 +22,7 @@ import { RegisterBar } from '@tallyui/components';
 />
 ```
 
-Renders the place (the store, and the register for stores with more than one), a status pill when applicable, the app's sync state, a Register button when a session or last closure exists, and the cashier. Supplying `onPressPill` makes the pill a button. Inside a phone `AppShell` the bar starts with a menu button that opens the drawer.
+Renders the place (the store, and the register for stores with more than one), a status pill when applicable (a warning dot and its word, as WCPOS v2), the app's sync state, a Register button when a session or last closure exists, and the cashier. Supplying `onPressPill` makes the pill a button. Inside a phone `AppShell` the bar starts with a menu button that opens the drawer.
 
 ## Props
 
@@ -31,6 +31,7 @@ Renders the place (the store, and the register for stores with more than one), a
 | `register` | `ReturnType<typeof useRegisterSession>` | required | Register session status, overdue and enabled state, closing state, and last closure |
 | `registerId` | `string \| null` | required | Bound register ID, or `null` when no register is chosen |
 | `online` | `boolean` | required | Whether the store and app can be reached; `false` is shown as offline |
+| `awaitingStore` | `number` | `0` | Sales the store has still to hear: offline the pill reads "Offline · N sales to send"; online, when no other pill shows, "N sales awaiting store" |
 | `registerName` | `string` | --- | Name shown when `multiRegister` is true and a register is bound |
 | `multiRegister` | `boolean` | required | Whether the store has multiple registers and needs the register name displayed |
 | `onOpenPanel` | `() => void` | required | Called when the Register panel button is pressed |

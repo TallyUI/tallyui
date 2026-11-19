@@ -2,20 +2,22 @@ import {
   DisplaySignallingError, type DisplayAdvertisement, type DisplayRecord, type DisplaySignalling, type SignalMessage,
   type SyncContext,
 } from '@tallyui/core';
-import type { ReceiptData } from '../receipt/types';
-import { createDisplayLink, type DisplayLink } from './display-link';
-import type { DisplayConfig, DisplayEnvelope, DisplayPayment } from './protocol';
-import { createSnapshotSender, quietly, type ServiceClock, type SnapshotSender } from './snapshot-fallback';
+import { createDisplayLink, callDisplay, type DisplayCall, type DisplayLink } from './display-link';
+import type { DisplayConfig, DisplayEnvelope } from './protocol';
+import { createSnapshotSender, quietly, systemClock, SALE_ACTIONS, type ServiceClock, type SnapshotSender } from './snapshot-fallback';
 import type { DisplayTransport } from './transport';
 import { createTillPeerLink, type PeerFactory, type PeerLink, type PeerLinkState, type SignalPort } from './webrtc';
 
 export type { ServiceClock } from './snapshot-fallback';
 
-/** How often the till drains its signal inbox while a link is connecting; TallyUI's choice. */
+/** How often the till drains its signal inbox while a link is connecting; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const SIGNAL_POLL_MS = 1000;
-/** How often the till lists its displays; TallyUI's choice. */
+/** How often the till lists its displays; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const LIST_POLL_MS = 10_000;
-/** How long a link may stay connecting before it counts as a drop; TallyUI's choice. */
+/** How long a link may stay connecting before it counts as a drop; TallyUI's choice.
+ * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const CONNECT_TIMEOUT_MS = 30_000;
 
 export interface TillDisplayServiceOptions {
@@ -44,18 +46,8 @@ export interface TillDisplayService extends DisplayLink {
   refresh(): Promise<void>;
 }
 
-const systemClock: ServiceClock = {
-  now: () => Date.now(),
-  setTimeout: (run, ms) => setTimeout(run, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
-
-/** The sale states a display shows: its current event, which the snapshot carries. */
-const SALE_ACTIONS: ReadonlySet<string> = new Set(['cart.updated', 'payment.state', 'display.idle']);
 /** Handed to a snapshot sender in place of a POST while the server is lost or paused; retried, never logged. */
 const NOT_SENT = new DisplaySignallingError('network', 'not sent: the display service is offline or paused');
-
-type Call = ['cart', ReceiptData | null] | ['payment', ReceiptData, DisplayPayment];
 
 interface Slot {
   id: string;
@@ -87,7 +79,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   // A `forbidden` pause stops every call until refresh(); a null context pauses without one, and the list timer
   // keeps reading context() so the till picks its displays up again when a cashier logs in (d5).
   let forbidden = false;
-  let latest: Call | null = null;
+  let latest: DisplayCall | null = null;
   let entries: readonly TillDisplayEntry[] = [];
   const timers: { list: unknown; signal: unknown } = { list: null, signal: null };
   let signalBusy = false;
@@ -211,8 +203,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       push(slot);
       emit();
     });
-    if (latest?.[0] === 'cart') slot.view.showCart(latest[1]);
-    else if (latest) slot.view.showPayment(latest[1], latest[2]);
+    if (latest) callDisplay(slot.view, latest);
     ensureSignalPoll();
   };
 
@@ -268,12 +259,11 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   }
   void listNow();
 
-  const fanOut = (next: Call) => {
+  const fanOut = (next: DisplayCall) => {
     if (status === 'closed') return;
     latest = next;
     for (const { view } of slots.values()) {
-      if (next[0] === 'cart') view?.showCart(next[1]);
-      else view?.showPayment(next[1], next[2]);
+      if (view) callDisplay(view, next);
     }
   };
 

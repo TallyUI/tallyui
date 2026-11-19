@@ -13,7 +13,9 @@
  * date-fns/`@date-fns/tz` become `Intl`, following a2's `businessDayOf`; a cashier id stays a2's
  * string id (not WCPOS's numeric one).
  */
-import { minorToDecimal } from './money';
+import { minorUnitDigits } from '@tallyui/core';
+import { ENGLISH_CLOSURE_LABELS } from './document-labels';
+import { minorToDecimal, formatDecimalMoney } from './money';
 import type { Closure, RegisterSession } from './schemas';
 
 type Values = Record<string, unknown>;
@@ -23,6 +25,8 @@ type Values = Record<string, unknown>;
  * desk, 2026-09-30). The closure template lives in the apps, so the document carries it ready to print.
  */
 export const TAX_ROUNDING_MIXED_NOTE = "This register's sales used more than one tax rounding method. Each sale's tax is as its receipt showed.";
+/** The Z report's line when the session holds a reopened sale: its tax rates are the whole order's (ADR-090 ruling 38). */
+export const TAX_STORE_PAID_NOTE = 'Tax rates include tax on amounts paid earlier in the store.';
 /** `writeClosure`'s own `breakdowns.movements` shape (session-store.ts): every entry carries at
  * least a string `id` and `reason`, so callers can read them without a cast. */
 type BreakdownMovement = Values & { id: string; reason: string };
@@ -46,6 +50,38 @@ export type ClosureContext = {
    */
   breakdowns?: Values;
 };
+
+export type CreateClosureContextOptions = {
+  currency: string;
+  store: Record<string, unknown>;
+  /** Defaults to minorUnitDigits(currency) from @tallyui/core. */
+  exponent?: number;
+  /** Defaults to the runtime's Intl locale. */
+  locale?: string;
+  /** Defaults to 'device' (formatClosureDate then uses the runtime's zone). */
+  timezone?: string;
+  /** Defaults to new Date().toISOString(). */
+  printedAt?: string;
+  /** Merged over ENGLISH_CLOSURE_LABELS; extra keys pass through to i18n. */
+  labels?: Record<string, string>;
+  expected?: Record<string, number>;
+  breakdowns?: Record<string, unknown>;
+};
+
+export function createClosureContext(options: CreateClosureContextOptions): ClosureContext {
+  const currency = options.currency.toUpperCase();
+  const exponent = options.exponent ?? minorUnitDigits(currency);
+  const locale = options.locale ?? new Intl.NumberFormat().resolvedOptions().locale;
+  return {
+    store: options.store, currency, exponent, locale,
+    timezone: options.timezone ?? 'device',
+    printedAt: options.printedAt ?? new Date().toISOString(),
+    formatMoney: (v) => formatDecimalMoney(v, { currency, exponent, locale }),
+    i18n: { ...ENGLISH_CLOSURE_LABELS, ...options.labels },
+    ...(options.expected !== undefined ? { expected: options.expected } : {}),
+    ...(options.breakdowns !== undefined ? { breakdowns: options.breakdowns } : {}),
+  };
+}
 
 const decimalMap = (minor: Record<string, number>, exponent: number): Record<string, string> =>
   Object.fromEntries(Object.entries(minor).map(([key, value]) => [key, minorToDecimal(value, exponent)]));
@@ -153,14 +189,15 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
   const counted = (row.counted ?? {}) as Record<string, string>;
   const expected = (row.expected ?? {}) as Record<string, string>;
   const variances = (row.variance ?? {}) as Record<string, string>;
+  const own = <V>(map: Record<string, V>, key: string): V | undefined => (Object.hasOwn(map, key) ? map[key] : undefined);
   const tenders = [...new Set([...Object.keys(counted), ...Object.keys(expected)])].map((name) => {
-    const variance = variances[name] ?? '';
-    const method = Object.values(methods).find((m) => m.method === name) ?? methods[name];
+    const variance = own(variances, name) ?? '';
+    const method = Object.values(methods).find((m) => m.method === name) ?? own(methods, name);
     return money(
       {
         name,
         label: method?.name || name.charAt(0).toUpperCase() + name.slice(1),
-        expected: expected[name] ?? '', counted: counted[name] ?? '', variance,
+        expected: own(expected, name) ?? '', counted: own(counted, name) ?? '', variance,
         has_variance: Number(variance || 0) !== 0,
         variance_label:
           variance === '' ? '' : context.i18n[Number(variance) > 0 ? 'over' : Number(variance) < 0 ? 'short' : 'exact'],
@@ -178,6 +215,7 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
         ['payment_methods', 'tax_rates', 'movements'].map((key) => [`has_${key}`, Object.keys((breakdowns[key] as Values) ?? {}).length > 0]),
       ),
       ...(breakdowns.tax_rounding_mixed === true ? { tax_rounding_note: TAX_ROUNDING_MIXED_NOTE } : {}),
+      ...(breakdowns.tax_includes_store_paid === true ? { tax_store_paid_note: TAX_STORE_PAID_NOTE } : {}),
       ...money(row, ['period_sales_total', 'period_refunds_total', 'perpetual_sales_total', 'perpetual_refunds_total', 'unsynced_total']),
       opened_at_gmt: row.opened_at,
       opened_by: breakdowns.opened_by ?? null,

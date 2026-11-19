@@ -1,20 +1,25 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
-import { formatMoney } from '@tallyui/core';
 import { buildReceiptData } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
+import type { PaymentMethodDescriptor } from '@tallyui/core';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
+import { CartChargeLine } from '../cart/cart-charge-line';
+import { CartLineStrip } from '../cart/cart-line-strip';
+import { MotionRows } from '../cart/cart-row-motion';
 import { cartShowsPrice } from '../cart/cart-columns';
 import type { CartColumnSettings } from '../cart/cart-columns';
 import { DiscountChips, DiscountForm } from './discount-form';
 import { PriceForm } from './price-form';
 import { ChargeForm } from './charge-form';
 import { LinePopover } from './line-popover';
+import { OrderNoteSheet } from './order-note-sheet';
+import { TenderLedger } from './tender-ledger';
 import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, lineEditor = 'inline',
-  columns,
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
+  lineCommit = 'apply', columns,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
@@ -36,13 +41,25 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * cart "+" menu). Applied discounts and charges still show and can be removed. */
     orderActions?: boolean;
     /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
-     * ⋮ menu lists `actions`. Absent: the Cash and Card terminal row. */
-    checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[] };
+     * ⋮ menu lists `actions`, with `note` above the buttons. Absent: the Cash and Card terminal row. */
+    checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[]; note?: { text: string; onPress: () => void } };
+    /** v2's note editing, owned by the Cart: the ⋮ menu gains "Order details" (first), which opens `OrderNoteSheet`
+     * on `sale.order.note`, and the note row above the buttons shows that note and opens the sheet too. `label`
+     * names the note (default "Customer note"; a platform whose note the customer never sees passes its own, e.g.
+     * "Order note"). Needs `checkout`; when given, it replaces `checkout.note`. */
+    noteSheet?: { label?: string };
+    /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. `confirmVoid` asks v2's "Cancel this payment?" before a leg is voided (default `false`). */
+    tenderLedger?: { methods?: PaymentMethodDescriptor[]; confirmVoid?: boolean };
     /** `popover`: tapping a line's quantity or price opens v2's keypad (WCPOS cart cells/quantity-keypad.tsx and
      * cells/price.tsx), the price one with the quick-discount keys and the struck regular price. Popover mode draws no
      * button row under the line: Discount, Price (narrow cart) and Remove are in the quantity popover, Discount in the
      * price popover. Default `inline`: the − / + buttons and Price form. */
     lineEditor?: 'inline' | 'popover';
+    /** With `lineEditor="popover"`, `close` gives both popovers v2's grow keypad (LinePopover's `commit="close"`): Done;
+     * Escape closes without writing, any other close writes what was typed, and a refused price on that close shows under
+     * the line. The quantity one adds − / + steppers that write at once, − turning into Remove at 1 (in place of the
+     * Remove action). Default `apply`. */
+    lineCommit?: 'apply' | 'close';
     /** v2's Cart Settings › Columns: which columns show, a Split link under a quantity above 1 (`quantity.split`) and the
      * SKU under the name (`name.sku`). The defaults are today's cart: Qty, Item, Price (folding as before) and Total. */
     columns?: CartColumnSettings;
@@ -53,11 +70,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     emptyText?: string;
   }) {
   const { order } = sale;
+  const [noteOpen, setNoteOpen] = useState(false);
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
-  const { totals } = buildReceiptData(order, { storeName: '' });
+  const { totals, fees, shipping } = buildReceiptData(order, { storeName: '' });
   const taxRows = totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm), amount: money(line.amountMinor) }));
   // Each line before its discounts, with its own discounts' amounts. The order discounts are one figure: a single
   // order discount's chip carries it; several keep their own labels, as no single one has a display amount.
@@ -70,8 +88,11 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     const refused = sale.splitLine(lineId);
     setSplitError(refused === null ? null : { lineId, message: refused });
   };
-  // One open form: a line's discount or price, the order's discount (lineId null), or a charge.
-  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' } | null>(null);
+  // A line's price refused on a popover close (lineCommit="close"), shown under it until that line's next price write.
+  const [priceError, setPriceError] = useState<{ lineId: string; message: string } | null>(null);
+  // One open form: a line's discount or price, the order's discount (lineId null), a new charge, or a charge's edit.
+  const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
+    | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
   const showOrderDiscount = order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
   const showCharge = orderActions && chargesOffered;
@@ -90,6 +111,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     const fromMinor = line.unitPriceMinor;
     const refused = sale.setUnitPrice(line.id, amount);
     if (refused === null) onPriceChange?.({ lineId: line.id, fromMinor, toMinor: amount, reason });
+    if (refused === null) setPriceError((now) => (now?.lineId === line.id ? null : now));
     return refused;
   };
   const renderItem = (line: typeof order.lineItems[number]) => <>
@@ -98,16 +120,20 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
       columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={() => split(line.id)}
       quantitySlot={lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
-        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} actions={[
+        value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} commit={lineCommit}
+        onRemove={lineCommit === 'close' ? () => sale.remove(line.id) : undefined} actions={[
           ...(!pricePopover ? [{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }] : []),
           ...(canEditPrice && !pricePopover ? [{ id: 'price', label: 'Price', onPress: () => setForm({ type: 'price', lineId: line.id }) }] : []),
-          { id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) },
+          ...(lineCommit === 'close' ? [] : [{ id: 'remove', label: 'Remove', destructive: true, onPress: () => sale.remove(line.id) }]),
         ]} /> : undefined}
       priceSlot={pricePopover ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
-        quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)} /> : undefined} />
+        quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)}
+        commit={lineCommit} onCloseRefused={(message) => setPriceError({ lineId: line.id, message })} /> : undefined} />
     {splitError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-split-error"
       className="px-3 text-sm text-destructive">{splitError.message}</Text> : null}
+    {priceError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-price-error"
+      className="px-3 text-sm text-destructive">{priceError.message}</Text> : null}
     <DiscountChips discounts={line.discounts} amounts={display(line.id).discounts} currency={order.currency} onRemove={sale.removeDiscount} />
     {lineEditor === 'inline' ? <CartLineActions actions={[
       { id: 'discount', label: 'Discount', color: 'text-primary', onPress: () => setForm({ type: 'discount', lineId: line.id }) },
@@ -129,7 +155,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
     {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} />}
-    <CartPanel items={order.lineItems} renderItem={renderItem}
+    <CartPanel items={order.lineItems} renderItem={renderItem} pulseKey={(line) => line.quantity} identity={order.id}
     footerClassName="px-2 py-2"
     emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
       {emptyIcon === null ? null : <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
@@ -139,15 +165,22 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
     </View> : undefined}
     afterItems={<>
-      {(['fees', 'shipping'] as const).map((kind) => order[kind]?.map((charge, index) =>
-        <View key={charge.id} testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`} className="flex-row items-center gap-3 px-3 py-2">
-          <Text className="flex-1 text-foreground">{charge.name}</Text>
-          <Text className="text-foreground">{formatMoney(money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor))}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${charge.name}`}
-            onPress={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}
-            className="rounded-md border border-border bg-card px-3 py-2 min-h-11 items-center justify-center">
-            <Text className="text-foreground">Remove</Text></Pressable>
-        </View>))}
+      {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
+        pulseKey={() => 0} identity={order.id} renderItem={(charge, index) =>
+        <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
+          <CartLineStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
+            onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
+            {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
+              total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
+              showPrice={showPrice} columns={columns} testID="cart-charge-line" wrapTotal={wrapTotal} />}
+          </CartLineStrip>
+          {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
+            kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
+            taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
+            onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass }) => kind === 'fees'
+              ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass })
+              : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass })} /> : null}
+        </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
       <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
@@ -168,13 +201,19 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <Text className="text-foreground">Add charge</Text></Pressable> : null}
     </View> : null}</>}
     footer={empty ? undefined : <View testID="cart-footer" className="gap-2">
-      {/* Exclusive: subtotal − discount + tax = total. Inclusive: subtotal − discount = total, the tax "incl.", not added. */}
+      {/* Exclusive: subtotal − discount + fees + shipping + tax = total. Inclusive: subtotal − discount + fees + shipping =
+        total, the tax "incl.", not added. */}
       <CartTotal className="px-0 py-0" subtotal={money(totals.subtotalMinor)} total={money(totals.totalMinor)}
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
+        fees={money(fees.reduce((sum, row) => sum + row.amountMinor, 0))}
+        shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
-      {checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout} actions={checkout.actions}
-        disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
+      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+        actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
+        note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
+        {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
+          label={noteSheet.label} onOpenChange={setNoteOpen} /> : null}</> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>

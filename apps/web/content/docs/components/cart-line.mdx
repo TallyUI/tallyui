@@ -37,6 +37,10 @@ The line sits in the same columns as [CartColumnHeads](/docs/components/cart-col
 | `showPrice` | `boolean` | `true` | Shows the Price column; pass the same value as CartColumnHeads |
 | `quantitySlot` | `ReactNode` | — | Replaces the quantity's text, e.g. a [LinePopover](/docs/components/line-popover) |
 | `priceSlot` | `ReactNode` | — | Replaces the unit price's text; the struck regular price stays above it |
+| `columns` | `CartColumnSettings` | — | Which columns show, as CartColumnHeads' `columns` (v2's Cart Settings › Columns); `price.onSale: false` hides the struck regular price |
+| `sku` | `string` | — | The SKU, in the SKU column and, with `columns.name.sku`, under the name |
+| `imageUrl` | `string` | — | The image in the Image column; without it the cell stays empty at its width |
+| `onSplit` | `() => void` | — | With `columns.quantity.split` and a quantity above 1, a Split link under the quantity calls this |
 | `locale` | `string` | — | Locale for money formatting |
 | `className` | `string` | — | Override row styles |
 

@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { Image } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { useT } from '../i18n';
 import { Text, HStack, type HStackProps } from '../ui';
 import { CART_COLUMNS, cartColumnSlots, type CartColumnSettings } from './cart-columns';
 
@@ -12,7 +13,8 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
   attributes?: Record<string, string>;
   quantity: number;
   unitPrice: Money;
-  /** The regular unit price; shown struck through above unitPrice only when it is above unitPrice. */
+  /** The regular unit price; shown struck through above unitPrice only when it is above unitPrice (and
+   * `columns.price.onSale` is not false), and in the Regular Price column. */
   regularUnitPrice?: Money;
   lineTotal: Money;
   /** Show the Price column (default true); the Cart passes false on a narrow cart or a phone, as CartColumnHeads does. */
@@ -45,15 +47,19 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
  */
 export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPrice, lineTotal, showPrice = true, quantitySlot, priceSlot,
   columns, sku, imageUrl, onSplit, locale, className, ...props }: CartLineProps) {
+  const formatMoney = useFormatMoney();
+  const t = useT();
   const options = Object.entries(attributes ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ');
-  const regular = regularUnitPrice && regularUnitPrice.currency === unitPrice.currency && regularUnitPrice.amount > unitPrice.amount
+  const sameCurrency = regularUnitPrice?.currency === unitPrice.currency;
+  const regular = (columns?.price?.onSale ?? true) && regularUnitPrice && sameCurrency && regularUnitPrice.amount > unitPrice.amount
     ? formatMoney(regularUnitPrice, locale) ?? '—' : null;
   const cells: Record<ReturnType<typeof cartColumnSlots>[number], ReactNode> = {
     fill: <View key="fill" className="flex-1" />,
     quantity: <View key="quantity" className={CART_COLUMNS.quantity.cell}>
       {quantitySlot ?? <Text className="text-sm tabular-nums">{quantity}</Text>}
-      {columns?.quantity?.split && quantity > 1 && onSplit ? <Pressable accessibilityRole="button" accessibilityLabel={`Split ${name}`}
-        testID="cart-line-split" onPress={onSplit} className="min-h-11 justify-center"><Text className="text-xs text-primary">Split</Text></Pressable> : null}
+      {columns?.quantity?.split && quantity > 1 && onSplit ? <Pressable accessibilityRole="button" accessibilityLabel={t('pos_cart.split_line', { name })}
+        testID="cart-line-split" onPress={onSplit} className="min-h-11 justify-center">
+        <Text className="text-xs text-primary">{t('pos_cart.split_qty')}</Text></Pressable> : null}
     </View>,
     image: <View key="image" className={CART_COLUMNS.image.cell}>
       {imageUrl ? <Image.Root testID="cart-line-image" source={{ uri: imageUrl }} alt="" contentFit="cover" className="rounded-md"
@@ -71,6 +77,10 @@ export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPri
       {regular ? <Text accessibilityLabel={`Regular price ${regular}`} style={{ textDecorationLine: 'line-through' }}
         className="text-right text-sm tabular-nums text-muted-foreground line-through">{regular}</Text> : null}
       {priceSlot ?? <Text className="text-right text-sm tabular-nums text-muted-foreground">{formatMoney(unitPrice, locale) ?? '—'}</Text>}
+    </View>,
+    regularPrice: <View key="regularPrice" className={CART_COLUMNS.regularPrice.cell}>
+      <Text testID="cart-line-regular-price" className="text-right text-sm tabular-nums text-muted-foreground">
+        {formatMoney(regularUnitPrice && sameCurrency ? regularUnitPrice : unitPrice, locale) ?? '—'}</Text>
     </View>,
     total: <View key="total" className={CART_COLUMNS.total.cell}>
       <Text className="text-right text-sm font-semibold tabular-nums">{formatMoney(lineTotal, locale) ?? '—'}</Text>

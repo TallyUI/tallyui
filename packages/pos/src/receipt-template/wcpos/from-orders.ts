@@ -146,7 +146,8 @@ export function wcposSourceFromSentOrder(order: SentOrder, config: ReceiptConfig
       methodId: p.method, methodTitle: methodTitle(p.method), amountMinor: p.amountMinor,
       ...(p.reference !== undefined ? { transactionId: p.reference } : {}),
     })),
-    changeMinor: order.changeDueMinor,
+    changeMinor: receipt.changeDueMinor,
+    ...(receipt.refundDueMinor ? { refundDueMinor: receipt.refundDueMinor } : {}),
   };
 }
 
@@ -172,6 +173,7 @@ export function wcposSourceFromPosOrder(order: PosOrder, config: ReceiptConfig):
       ...(p.changeMinor !== undefined ? { changeMinor: p.changeMinor } : {}),
     })),
     changeMinor: order.payments.reduce((total, p) => total + (p.changeMinor ?? 0), 0),
+    ...(receipt.refundDueMinor ? { refundDueMinor: receipt.refundDueMinor } : {}),
     ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
   };
 }

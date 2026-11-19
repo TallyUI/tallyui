@@ -1,7 +1,10 @@
 import * as React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Animated, Dimensions, Platform } from 'react-native';
 import { Dialog as DialogPrimitive, TextClassContext } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { useOverlayMotion, SHEET_MOTION, DIALOG_MOTION } from './motion';
+import { IconButton } from '../icon-button';
+import { XIcon } from '../icon/x-icon';
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -22,25 +25,73 @@ const DialogOverlay = React.forwardRef<
 });
 DialogOverlay.displayName = 'DialogOverlay';
 
-/** Where the content sits: centred (the default), or a full-height sheet on the right edge, full width on a phone. */
+/** Where the content sits: centred (the default), or a full-height sheet on the left or right edge, full width on a phone. */
 const SIDE_CLASS = {
   center: 'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg',
+  left: 'fixed left-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-r border-border bg-background p-6 shadow-lg',
   right: 'fixed right-0 top-0 bottom-0 z-50 h-full w-full max-w-lg gap-4 rounded-none border-l border-border bg-background p-6 shadow-lg',
 } as const;
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: keyof typeof SIDE_CLASS }
->(function DialogContent({ className, children, side = 'center', ...props }, ref) {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    side?: keyof typeof SIDE_CLASS;
+    /** v2's dialog chrome: a close X in the top-right corner; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+    showClose?: boolean;
+    /** v2's dialog chrome: the close X's accessible name; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+    closeLabel?: string;
+  }
+>(function DialogContent({ className, children, side = 'center', showClose = false, closeLabel = 'Close', ...props }, ref) {
+  const { open } = DialogPrimitive.useRootContext();
+  const { mounted, scrim, panel } = useOverlayMotion(open, true, side === 'center' ? DIALOG_MOTION : SHEET_MOTION);
+  const [width, setWidth] = React.useState(() => Dimensions.get('window').width);
+  const close = showClose ? (
+    <View className="absolute right-1 top-1">
+      <DialogClose asChild>
+        <IconButton variant="ghost" size="sm" testID={props.testID ? `${props.testID}-close` : 'dialog-close'} accessibilityLabel={closeLabel}><XIcon size={18} /></IconButton>
+      </DialogClose>
+    </View>
+  ) : null;
+
+  // WCPOS v2 panel-in-left / panel-out-left and panel-in-right / panel-out-right.
+  if (side === 'left' || side === 'right') {
+    if (!mounted) return null;
+    const { style, ...propsWithoutStyle } = props;
+    return (
+      <DialogPortal forceMount>
+        <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
+          <DialogOverlay forceMount className="absolute inset-0" />
+        </Animated.View>
+        <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS[side], className)} {...propsWithoutStyle}>
+          <Animated.View
+            style={[style, { transform: [{ translateX: panel.interpolate({ inputRange: [0, 1], outputRange: side === 'left' ? [-width, 0] : [width, 0] }) }] }]}
+            pointerEvents={open ? 'auto' : 'none'}
+            onLayout={(e) => { if (e.nativeEvent.layout.width) setWidth(e.nativeEvent.layout.width); }}
+          >
+            {children}
+            {close}
+          </Animated.View>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  }
+
+  if (!mounted) return null;
+  const { style, ...propsWithoutStyle } = props;
+  // WCPOS v2 dialog-in / dialog-out.
   return (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(SIDE_CLASS[side], className)}
-        {...props}
-      >
-        {children}
+    <DialogPortal forceMount>
+      <Animated.View className="fixed inset-0 z-50" style={{ opacity: scrim }} pointerEvents={open ? 'auto' : 'none'}>
+        <DialogOverlay forceMount className="absolute inset-0" />
+      </Animated.View>
+      <DialogPrimitive.Content forceMount asChild ref={ref} className={cn(SIDE_CLASS.center, className)} {...propsWithoutStyle}>
+        <Animated.View
+          style={[style, { opacity: panel, transform: Platform.OS === 'web' ? [{ scale: panel.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] : undefined }]}
+          pointerEvents={open ? 'auto' : 'none'}
+        >
+          {children}
+          {close}
+        </Animated.View>
       </DialogPrimitive.Content>
     </DialogPortal>
   );
@@ -53,9 +104,12 @@ function DialogHeader({ className, ...props }: React.ComponentPropsWithoutRef<ty
   );
 }
 
-function DialogFooter({ className, ...props }: React.ComponentPropsWithoutRef<typeof View>) {
+function DialogFooter({ className, bordered = false, ...props }: React.ComponentPropsWithoutRef<typeof View> & {
+  /** v2's dialog chrome: a top divider above the actions; opt-in so existing dialogs are unchanged (desk ruling 18 Nov). */
+  bordered?: boolean;
+}) {
   return (
-    <View className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', className)} {...props} />
+    <View className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2', bordered && 'border-t border-border pt-4', className)} {...props} />
   );
 }
 

@@ -1,10 +1,27 @@
 import {
-  ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPatch, type SyncContext,
+  ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerAddress, type CustomerInput, type CustomerPage, type CustomerPatch, type SyncContext,
 } from '@tallyui/core';
 import { gql, VendureApiError } from './replication/products';
 
 // The vendurepos plugin's walk-in customer is never a person to attach to a sale.
 const WALK_IN_EMAIL = 'walk-in@vendurepos.local';
+
+/** Vendure's `CustomerListOptions`, sent as given (Vendure applies its own defaults to what is left out). */
+export interface VendureCustomerListOptions {
+  skip?: number; take?: number;
+  sort?: Record<string, 'ASC' | 'DESC'>;
+  filter?: Record<string, unknown>;
+  filterOperator?: 'AND' | 'OR';
+}
+
+const LIST_QUERY = `query List($options: CustomerListOptions) {
+  customers(options: $options) {
+    totalItems
+    items { id firstName lastName emailAddress phoneNumber createdAt
+      addresses { fullName company streetLine1 streetLine2 city province postalCode country { code } phoneNumber defaultShippingAddress defaultBillingAddress }
+    }
+  }
+}`;
 
 const SEARCH_QUERY = `query Search($q: String!, $take: Int!) {
   customers(options: {
@@ -52,6 +69,38 @@ export function toVendureCustomer(raw: { id: string; firstName?: string | null; 
   }
   customer.name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email || customer.id;
   return customer;
+}
+
+function toCustomerAddress(raw: Record<string, unknown> & { country?: { code?: unknown } | null }): CustomerAddress {
+  // Vendure keeps one fullName with no reliable split: put it whole in firstName so first plus last reads as entered.
+  return Object.fromEntries([
+    ['firstName', raw.fullName], ['company', raw.company], ['address1', raw.streetLine1],
+    ['address2', raw.streetLine2], ['city', raw.city], ['state', raw.province],
+    ['postcode', raw.postalCode], ['country', raw.country?.code], ['phone', raw.phoneNumber],
+  ].filter(([, value]) => typeof value === 'string' && value.length > 0));
+}
+
+/**
+ * One page of the store's customers, Vendure's list options passed through (paging, sort, filter), with the
+ * store's count of every match. Unlike search, it keeps the vendurepos walk-in customer: filter it out with
+ * `options.filter` if the caller does not want it. Each customer carries `createdAt` and, from the address book,
+ * `billing` / `shipping` (the addresses flagged `defaultBillingAddress` / `defaultShippingAddress`).
+ * Credentials and missing permissions reject with `ConnectorUnauthorizedError` (401 / 403, via the session probe).
+ */
+export async function listVendureCustomers(context: SyncContext, options?: VendureCustomerListOptions): Promise<CustomerPage> {
+  const body = await customerGql(context, LIST_QUERY, { options: options ?? {} });
+  const { items, totalItems } = body?.data?.customers ?? {};
+  if (!Array.isArray(items) || typeof totalItems !== 'number') throw new CustomerServiceError('server', 'unexpected response');
+  const customers = items.map((raw) => {
+    const customer = toVendureCustomer(raw);
+    if (typeof raw.createdAt === 'string' && raw.createdAt.length > 0) customer.createdAt = raw.createdAt;
+    for (const [kind, flag] of [['billing', 'defaultBillingAddress'], ['shipping', 'defaultShippingAddress']] as const) {
+      const address = raw.addresses?.find((entry: VendureAddressRef) => entry[flag] === true);
+      if (address) customer[kind] = toCustomerAddress(address);
+    }
+    return customer;
+  });
+  return { customers, total: totalItems };
 }
 
 export async function searchVendureCustomers(context: SyncContext, query: string, options?: { limit?: number }): Promise<Customer[]> {

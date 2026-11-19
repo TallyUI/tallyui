@@ -3,7 +3,20 @@ import { Stack } from 'expo-router';
 import { OrderStatusBadge, Text } from '@tallyui/components';
 import type { OrderStatus } from '@tallyui/components';
 
-const statuses: OrderStatus[] = ['pending', 'processing', 'completed', 'refunded', 'cancelled'];
+const statuses: OrderStatus[] = [
+  'pending',
+  'processing',
+  'completed',
+  'refunded',
+  'cancelled',
+  'canceled',
+  'on-hold',
+  'failed',
+  'pos-open',
+  'pos-partial',
+  'trash',
+  'checkout-draft',
+];
 
 export default function OrderStatusBadgeScreen() {
   return (
@@ -19,6 +32,10 @@ export default function OrderStatusBadgeScreen() {
                 <Text className="text-sm text-muted-foreground">{status}</Text>
               </View>
             ))}
+            <View className="flex-row items-center gap-3">
+              <OrderStatusBadge status={'wc-custom-status' as OrderStatus} />
+              <Text className="text-sm text-muted-foreground">wc-custom-status (unknown)</Text>
+            </View>
           </View>
         </View>
 

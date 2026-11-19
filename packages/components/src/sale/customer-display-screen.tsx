@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { Image, ScrollView, Text, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useFormatMoney } from '@tallyui/core';
 import type { DisplayPayment, DisplayState, ReceiptData } from '@tallyui/pos';
+import { useT } from '../i18n';
 
 // English copy from WCPOS v2's display (Pro packages/display/src/sample-snapshot.json); config.i18n overrides it.
 const COPY = {
@@ -22,8 +23,12 @@ const CARD_TEXT = { started: 'text-primary-foreground', approved: 'text-success-
  * right with the totals, or the payment card.
  */
 export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
+  const formatMoney = useFormatMoney();
+  const tr = useT();
   const { config, view } = state;
   const t = (key: keyof typeof COPY) => config?.i18n[key] ?? COPY[key];
+  // What the store owes back on a reopened sale (ADR-090): its own label, never shown as change.
+  const refundDueLabel = config?.i18n.refund_due ?? tr('customer_display.refund_due');
   if (view.screen === 'idle') {
     const logo = config?.store.logo;
     return <View testID="customer-display-idle" className="flex-1 items-center justify-center gap-6 bg-primary p-8">
@@ -41,6 +46,8 @@ export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
     <Text className="text-base font-semibold uppercase text-foreground">{t('total')}</Text>
     <Text className="text-4xl font-bold text-foreground">{money(receipt.totals.totalMinor)}</Text>
   </View>;
+  const refundDue = receipt.refundDueMinor && receipt.refundDueMinor > 0
+    ? <View testID="customer-display-refund-due">{row(refundDueLabel, money(receipt.refundDueMinor))}</View> : null;
   return <View testID={`customer-display-${view.screen}`} className="flex-1 flex-col bg-card sm:flex-row">
     <ScrollView className="flex-1" contentContainerClassName="p-8 sm:p-12">
       <Text className="mb-5 text-sm font-semibold uppercase text-muted-foreground">{t('your_items')}</Text>
@@ -63,14 +70,17 @@ export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
         {receipt.totals.discountMinor > 0 ? row(t('discount'), `-${money(receipt.totals.discountMinor)}`) : null}
         {receipt.totals.taxMinor > 0 ? row(t(receipt.totals.taxInclusive ? 'included_tax' : 'total_tax'), money(receipt.totals.taxMinor)) : null}
         {total}
-      </View> : <PaymentCard receipt={receipt} payment={view.payment} money={money} t={t}>{total}</PaymentCard>}
+        {refundDue}
+      </View> : <PaymentCard receipt={receipt} payment={view.payment} money={money} t={t} refundDueLabel={refundDueLabel}>
+        {total}{refundDue}
+      </PaymentCard>}
     </View>
   </View>;
 }
 
-function PaymentCard({ receipt, payment, money, t, children }: {
+function PaymentCard({ receipt, payment, money, t, refundDueLabel, children }: {
   receipt: ReceiptData; payment: DisplayPayment; money: (amount: number) => string; t: (key: keyof typeof COPY) => string;
-  children: ReactNode;
+  refundDueLabel: string; children: ReactNode;
 }) {
   const paid = receipt.payments.reduce((sum, { amountMinor }) => sum + amountMinor, 0);
   const due = Math.max(0, receipt.totals.totalMinor - paid);
@@ -86,6 +96,8 @@ function PaymentCard({ receipt, payment, money, t, children }: {
       <Text className={`text-sm font-semibold uppercase ${text}`}>{title}</Text>
       <Text className={`text-4xl font-bold ${text}`}>{money(complete ? receipt.totals.totalMinor : payment.leg?.amountMinor ?? due)}</Text>
       {complete && receipt.changeDueMinor > 0 ? <Text className={`text-lg ${text}`}>{`${t('change')} ${money(receipt.changeDueMinor)}`}</Text> : null}
+      {complete && receipt.refundDueMinor && receipt.refundDueMinor > 0
+        ? <Text className={`text-lg ${text}`}>{`${refundDueLabel} ${money(receipt.refundDueMinor)}`}</Text> : null}
       {message ? <Text className={`text-lg ${text}`}>{message}</Text> : null}
     </View>
   </View>;

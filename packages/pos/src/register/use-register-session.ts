@@ -498,7 +498,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
        * One close per register runs at a time, in any hook instance: a call while one is in flight joins
        * it, getting its closure or error, and its own `counted`, `approvedBy` and `approvedByName` are ignored.
        */
-      closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> }) => {
+      closeSession: async (input: { counted: Record<string, number>; approvedBy?: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number>; note?: string }) => {
         refuseDuringTender();
         const key = registerId ?? '';
         if (closingByRegister.has(key)) return closingByRegister.get(key)!;
@@ -524,7 +524,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
         }
         // By id, not `open` (plain data): `store.closeSession`'s guard runs again inside
         // `incrementalModify` on the stored document, so a close that already landed keeps its count, time, actor and approver.
-        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, approval: input.approval, timezone });
+        const closed = await store.closeSession(sessions, open.id, { counted: input.counted, closedBy: actor.id, approvedBy: input.approvedBy, approval: input.approval, note: input.note, timezone });
         // The session stores no approver name, so a close resumed without this call's name (after
         // a restart, say) falls back to `nameOf`.
         const approvedByName = (input.approvedBy && closed.approved_by === input.approvedBy && input.approvedByName) || nameOf(closed.approved_by);

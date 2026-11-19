@@ -1,15 +1,14 @@
 import type { Discount, SentOrder } from '../order/types';
+import { lockedRefundDueMinor } from '../pos-order/refund-due';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
+import { taxedLinesFor } from '../tax/taxed-lines';
 import type { ReceiptConfig, ReceiptData } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 
 export function buildReceiptData(order: SentOrder, config: ReceiptConfig): ReceiptData {
   // Drops the shared helper's `netMinor` (the Z report's own use): the receipt's tax summary
   // never showed it, and an exact-shape test elsewhere in this package pins that.
-  const taxedLines = [...order.lineItems.map((line) => order.taxRounding?.granularity === 'woocommerce' && line.netMicros !== undefined
-    ? { ...line, taxInclusive: order.pricesIncludeTax } : line), ...[...(order.fees ?? []), ...(order.shipping ?? [])].map((charge) => ({
-    ...charge, taxInclusive: order.pricesIncludeTax,
-  }))];
+  const taxedLines = taxedLinesFor(order.lineItems, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
   const taxLines = taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding).map(
     ({ label, code, ratePpm, amountMinor }) => ({ label, code, ratePpm, amountMinor }),
   );
@@ -28,6 +27,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   });
   const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
   const customer = order.customer?.name || order.customer?.email;
+  const refundDueMinor = lockedRefundDueMinor(order);
 
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
@@ -79,7 +79,8 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
       amountMinor: p.amountMinor,
       reference: p.reference,
     })),
-    changeDueMinor: order.changeDueMinor,
+    changeDueMinor: order.changeDueMinor - refundDueMinor,
+    ...(refundDueMinor > 0 ? { refundDueMinor } : {}),
     footer: {
       note: order.note || undefined,
       barcode: order.id,

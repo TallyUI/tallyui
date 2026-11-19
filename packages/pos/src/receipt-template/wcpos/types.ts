@@ -68,6 +68,8 @@ export interface WcposReceiptSource {
     tenderedMinor?: number; changeMinor?: number;
   }>;
   changeMinor?: number;
+  /** What the store owes back on a reopened sale (ADR-090); present only when above 0. Never part of changeMinor. */
+  refundDueMinor?: number;
   /** The register the sale was rung up on. */
   registerId?: string;
   /** The fiscal sale stamp, its IANA zone and the sale counter. */
@@ -173,6 +175,8 @@ export interface WcposReceiptTotals extends
   tax_total: number;
   paid_total: number;
   change_total: number;
+  /** v2's `refund_due`: what the store owes back on a reopened sale (ADR-090); absent when none. Not `refund_total`. */
+  refund_due_total?: number;
   refund_total?: number;
   net_total?: number;
   total_qty?: number;
@@ -318,7 +322,7 @@ export type WcposAdjustmentView<T extends WcposReceiptAdjustment = WcposReceiptA
   & Displays<WcposTri<'total'>> & { taxes?: WcposItemTaxView[] };
 export type WcposTotalsView = WcposReceiptTotals
   & Displays<WcposTri<'subtotal' | 'discount_total' | 'total'> | 'tax_total' | 'paid_total' | 'change_total'>
-  & MaybeDisplays<WcposTri<'sale_savings_total' | 'total_saved'> | 'refund_total' | 'net_total'>;
+  & MaybeDisplays<WcposTri<'sale_savings_total' | 'total_saved'> | 'refund_due_total' | 'refund_total' | 'net_total'>;
 /** `taxable_amount_*_display` is '' when the amount is null. */
 export type WcposTaxSummaryView = WcposTaxSummaryRow
   & Displays<'tax_amount' | 'taxable_amount_excl' | 'taxable_amount_incl'>;

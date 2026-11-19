@@ -53,8 +53,10 @@ Default classes: `fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `className` | `string` | -- | Additional NativeWind classes merged via `cn()` |
+| `showClose` | `boolean` | `false` | Draw a close X in the top-right corner (testID `${testID}-close`, or `dialog-close`) |
+| `closeLabel` | `string` | `'Close'` | Accessible name of the close X |
 
-Plus all props from the Dialog primitive's `Content` component.
+Plus all props from the Dialog primitive's `Content` component. `showClose` here and `bordered` on DialogFooter draw WCPOS v2's corner close and footer divider, and are off by default.
 
 ### DialogHeader
 
@@ -67,6 +69,10 @@ Default classes: `flex flex-col gap-1.5 text-center sm:text-left`
 A layout wrapper for action buttons. Stacks vertically on mobile, rows horizontally on larger screens.
 
 Default classes: `flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2`
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `bordered` | `boolean` | `false` | Add a top divider: `border-t border-border pt-4` |
 
 ### DialogTitle
 

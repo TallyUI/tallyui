@@ -21,7 +21,19 @@ const [filters, setFilters] = useState(DEFAULT_PRODUCT_FILTERS);
 />
 ```
 
-A horizontal row of chips in WCPOS v2's order: In Stock, Featured, On Sale, Category, Tag and Brand. The first three toggle a field of `ProductFilters`; the term chips call `onTermPress` and render only when it is given. `DEFAULT_PRODUCT_FILTERS` starts with In Stock on, as v2 does. The bar only reports filters; the app or `Catalogue` (`showFilterBar`) applies them.
+A horizontal row of chips in WCPOS v2's order: In Stock, Featured, On Sale, Category, Tag and Brand. The first three toggle a field of `ProductFilters`. A term chip with an entry in `terms` is v2's searchable picker pill; one without calls `onTermPress`, and a term chip with neither is hidden. `DEFAULT_PRODUCT_FILTERS` starts with In Stock on, as v2 does. The bar only reports filters; the app or `Catalogue` (`showFilterBar`) applies them.
+
+### Term picker pills
+
+```tsx
+<ProductFilterBar
+  value={filters}
+  onChange={setFilters}
+  terms={{ tag: { options: tags, value: tagId, onChange: setTagId } }}
+/>
+```
+
+The Tag chip opens a searchable list of `tags` (`{ value, label }`). A picked tag shows its name and an x that clears it (`onChange(undefined)`). Pass `onSearch` to search the app's terms instead of filtering `options` by label.
 
 ## Props
 
@@ -30,7 +42,9 @@ A horizontal row of chips in WCPOS v2's order: In Stock, Featured, On Sale, Cate
 | `value` | `ProductFilters` | required | Current filters |
 | `onChange` | `(next: ProductFilters) => void` | required | Receives the filters with the tapped chip toggled |
 | `chips` | `readonly ProductFilterChip[]` | `PRODUCT_FILTER_CHIPS` | Chips to show, in this order |
-| `onTermPress` | `(chip: 'category' \| 'tag' \| 'brand') => void` | — | Opens the app's term picker; term chips are hidden without it |
+| `terms` | `Partial<Record<'category' \| 'tag' \| 'brand', ProductTermFilter>>` | — | Turns those term chips into searchable picker pills |
+| `termGroups` | `readonly (ProductTermFilter & { id: string; label: string; searchPlaceholder?: string })[]` | — | Extra searchable term pills after the built-in chips, one per group and in this order (e.g. one per Vendure facet) |
+| `onTermPress` | `(chip: 'category' \| 'tag' \| 'brand') => void` | — | Opens the app's term picker for a term chip without `terms`; such chips are hidden without it |
 | `className` | `string` | — | Override container styles |
 
 ### ProductFilters
@@ -40,5 +54,16 @@ interface ProductFilters {
   inStock: boolean;
   featured: boolean;
   onSale: boolean;
+}
+```
+
+### ProductTermFilter
+
+```ts
+interface ProductTermFilter {
+  options: readonly FilterOption[]; // { value: string; label: string }
+  value?: string; // the picked term; undefined when none is picked
+  onChange: (next: string | undefined) => void;
+  onSearch?: (text: string) => void; // search server-side; without it the pill filters options by label
 }
 ```

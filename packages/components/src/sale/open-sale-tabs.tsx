@@ -1,8 +1,28 @@
-import type { JSX } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
-import { formatMoney } from '@tallyui/core';
+import { useEffect, useRef, useState, type JSX } from 'react';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
+import { cn } from '@tallyui/theme';
 import { Text } from '../ui/text';
+
+const AGE_TICK_MS = 60_000; // Ages tick once a minute (v2).
+const STALE_AFTER_MS = 60 * 60_000; // A sale parked for an hour is one somebody forgot (v2).
+
+function useNowMs(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function staleAge(parkedAt: string | undefined, nowMs: number): string | null {
+  if (!parkedAt) return null;
+  const parsed = Date.parse(parkedAt);
+  if (Number.isNaN(parsed) || nowMs - parsed < STALE_AFTER_MS) return null;
+  return `${Math.round((nowMs - parsed) / 3_600_000)} h`;
+}
 
 /** Pass `openSales(sale.order, useParkedSales(drafts).parked)`; `onSelect` and `onNew` call `sale.switchSale(id)` and `sale.switchSale(null)`. */
 export interface OpenSaleTabsProps {
@@ -10,6 +30,8 @@ export interface OpenSaleTabsProps {
   currency: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Merged onto the bar's root, after its own classes, so an app can restyle it (for example `border-t-0 border-b` at the top). */
+  className?: string;
 }
 
 /** v2 cart/tab-who.ts: the customer, or what is in the cart when the customer is a guest. */
@@ -23,16 +45,42 @@ function who(sale: OpenSale): string {
  * The open sales as cart tabs (v2 cart/tabs.tsx): who, then the Partly paid chip or else the total. The open sale's
  * tab is underlined even when it is the only one; a blank cart has no tab, the + cell is its tab and reads "New".
  */
-export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsProps): JSX.Element {
+export function OpenSaleTabs({ sales, currency, onSelect, onNew, className }: OpenSaleTabsProps): JSX.Element {
+  const formatMoney = useFormatMoney();
+  const now = useNowMs(AGE_TICK_MS);
   const blank = !sales.some((sale) => sale.current);
+  // v2 cart/tabs.tsx: on a blank cart the active position is the + cell, just past the last sale; no wrap.
+  const activeIndex = blank ? sales.length : sales.findIndex((sale) => sale.current);
+  const focusPending = useRef(false);
+  const step = (delta: number) => {
+    const at = activeIndex + delta;
+    if (at < 0 || at > sales.length) return;
+    focusPending.current = true;
+    if (at === sales.length) onNew(); else onSelect(sales[at].id);
+  };
+  // Once a key step's tab renders active, it takes focus; a press leaves focus where it is (v2).
+  const follow = (active: boolean) => (node: View | null) => {
+    if (node && active && focusPending.current) { focusPending.current = false; node.focus?.(); }
+  };
+  // The arrow keys step from any tab, + included: the strip is their one ancestor (v2, web only).
+  const onKeyDown = Platform.OS === 'web' ? (event: { nativeEvent: { key: string }; target: unknown; defaultPrevented: boolean; preventDefault: () => void }) => {
+    const key = event.nativeEvent.key;
+    const from = (event.target as { getAttribute?: (n: string) => string | null })?.getAttribute?.('role');
+    if (from === 'tab' && (key === 'ArrowLeft' || key === 'ArrowRight') && !event.defaultPrevented) {
+      event.preventDefault();
+      step(key === 'ArrowLeft' ? -1 : 1);
+    }
+  } : undefined;
   return (
-    <View testID="open-sale-tabs" className="h-14 flex-row items-stretch border-t border-border bg-card">
+    <View testID="open-sale-tabs" className={cn('h-14 flex-row items-stretch border-t border-border bg-card', className)}
+      {...{ onKeyDown } /* RN's View types lack onKeyDown; react-native-web passes it to the div. */}>
       <ScrollView horizontal accessibilityRole="tablist" showsHorizontalScrollIndicator={false} className="min-w-0 flex-1">
         {sales.map((sale) => {
           const partly = isPartlyPaid(sale);
+          const age = staleAge(sale.parkedAt, now);
           const status = `Partly paid · ${formatMoney({ amount: sale.balanceDueMinor, currency })} due`;
           return (
-            <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} accessibilityRole="tab"
+            <Pressable key={sale.id} testID={`open-sale-tab-${sale.id}`} ref={follow(sale.current)} accessibilityRole="tab"
               accessibilityState={{ selected: sale.current }} aria-selected={sale.current} onPress={() => onSelect(sale.id)}
               className={`h-full justify-center border-b-2 px-3 ${sale.current ? 'border-primary' : 'border-transparent'}`}>
               <Text testID={`open-sale-tab-${sale.id}-who`} numberOfLines={1}
@@ -48,13 +96,14 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew }: OpenSaleTabsP
               ) : (
                 <Text testID={`open-sale-tab-${sale.id}-amount`} className="text-xs text-muted-foreground tabular-nums">
                   {formatMoney({ amount: sale.totalMinor, currency })}
+                  {age !== null && <> · <Text testID={`open-sale-tab-${sale.id}-age`} className="text-xs font-semibold text-warning-text">{age}</Text></>}
                 </Text>
               )}
             </Pressable>
           );
         })}
       </ScrollView>
-      <Pressable testID="new-sale-tab" accessibilityRole="tab" accessibilityLabel="New order" accessibilityState={{ selected: blank }} aria-selected={blank}
+      <Pressable testID="new-sale-tab" ref={follow(blank)} accessibilityRole="tab" accessibilityLabel="New order" accessibilityState={{ selected: blank }} aria-selected={blank}
         // Already on the blank cart: + is a place, not an action (v2).
         onPress={() => { if (!blank) onNew(); }}
         className={`h-full flex-row items-center justify-center gap-1.5 px-3 ${blank ? 'border-b-2 border-primary' : ''}`}>

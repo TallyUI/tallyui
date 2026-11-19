@@ -85,6 +85,14 @@ describe('formatWcposReceiptData', () => {
     expect(formatWcposReceiptData(data()).i18n).toEqual(WCPOS_DEFAULT_I18N);
   });
 
+  it('formats refund_due_total when present and labels it Refund due by default (ADR-090)', () => {
+    const view = formatWcposReceiptData(data({ refundDueMinor: 800 }));
+    expect(view.totals.refund_due_total_display).toBe('$8.00');
+    expect(formatWcposReceiptData(data()).totals).not.toHaveProperty('refund_due_total_display');
+    expect(view.i18n.refund_due).toBe('Refund due');
+    expect(WCPOS_DEFAULT_I18N.refund_due).toBe('Refund due');
+  });
+
   it('§3.7 gives optional money a twin only when the value exists', () => {
     const view = formatWcposReceiptData(data({
       payments: [{ methodId: 'card', methodTitle: 'Card', amountMinor: 1000 },

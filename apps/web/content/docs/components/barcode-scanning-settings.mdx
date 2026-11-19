@@ -1,0 +1,37 @@
+---
+title: BarcodeScanningSettings
+description: The Scanning section of WCPOS v2's Settings › Barcode scanning, the four values a barcode scanner is tuned by
+---
+
+## Import
+
+```tsx
+import { BarcodeScanningSettings } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+const [values, setValues] = useState({ threshold: 24, minChars: 8, prefix: '', suffix: '' });
+
+<BarcodeScanningSettings
+  values={values}
+  onChange={(patch) => setValues((current) => ({ ...current, ...patch }))}
+/>
+```
+
+Renders a "Scanning" group with four rows, in WCPOS v2's order and with its labels: Barcode Average Time Input Threshold (ms), Barcode Minimum Length, Barcode Scanner Prefix and Barcode Scanner Suffix. These are the `threshold`, `minChars`, `prefix` and `suffix` options of the `@tallyui/pos` barcode scanner. WCPOS v2's defaults are 24 ms, 8 characters and no prefix or suffix.
+
+The component is controlled and has no Save button: as in v2, every change is reported at once through `onChange`, with only the field that changed, and the app saves it.
+
+The two number fields take digits only and report a whole number of 0 or more; any other character is dropped as it is typed. While a number field is empty it reports nothing, and when it loses focus it shows the current value again. Prefix and suffix are reported exactly as typed, with no trimming, since a scanner's prefix may be a space.
+
+v2's Sound section, its input source chooser and its Barcode Scanning Test panel are not part of this component.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `values` | `BarcodeScanningValues` | required | `{ threshold: number; minChars: number; prefix: string; suffix: string }` |
+| `onChange` | `(patch: Partial<BarcodeScanningValues>) => void` | required | Called with the one field that changed, as soon as it holds a valid value |
+| `className` | `string` | --- | Override container styles |

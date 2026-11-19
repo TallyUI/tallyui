@@ -8,7 +8,7 @@ description: A searchable dropdown that combines a text input with a filterable 
 ```tsx
 import {
   Combobox, ComboboxTrigger, ComboboxInput,
-  ComboboxContent, ComboboxItem, ComboboxEmpty,
+  ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty,
 } from '@tallyui/components';
 ```
 
@@ -20,10 +20,12 @@ import {
     <ComboboxInput placeholder="Search frameworks..." />
   </ComboboxTrigger>
   <ComboboxContent>
-    <ComboboxItem value="react">React</ComboboxItem>
-    <ComboboxItem value="vue">Vue</ComboboxItem>
-    <ComboboxItem value="svelte">Svelte</ComboboxItem>
-    <ComboboxEmpty />
+    <ComboboxList>
+      <ComboboxItem value="react">React</ComboboxItem>
+      <ComboboxItem value="vue">Vue</ComboboxItem>
+      <ComboboxItem value="svelte">Svelte</ComboboxItem>
+      <ComboboxEmpty />
+    </ComboboxList>
   </ComboboxContent>
 </Combobox>
 ```
@@ -55,7 +57,11 @@ The floating panel that holds matching items. Wraps its children in a portal.
 
 | Classes |
 |---------|
-| `z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+| `z-50 max-h-75 w-80 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md` |
+
+### ComboboxList
+
+The `ScrollView` inside ComboboxContent that holds the items and scrolls past the panel's height; anything above it in ComboboxContent, such as a search input, stays in place.
 
 ### ComboboxItem
 
@@ -111,7 +117,7 @@ All styled sub-components accept a `className` prop merged via `cn()`, plus forw
 import { useState } from 'react';
 import {
   Combobox, ComboboxTrigger, ComboboxInput,
-  ComboboxContent, ComboboxItem, ComboboxEmpty,
+  ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty,
 } from '@tallyui/components';
 
 const countries = [
@@ -131,12 +137,14 @@ function CountryPicker() {
         <ComboboxInput placeholder="Search countries..." />
       </ComboboxTrigger>
       <ComboboxContent>
-        {countries.map((c) => (
-          <ComboboxItem key={c.value} value={c.value}>
-            {c.label}
-          </ComboboxItem>
-        ))}
-        <ComboboxEmpty />
+        <ComboboxList>
+          {countries.map((c) => (
+            <ComboboxItem key={c.value} value={c.value}>
+              {c.label}
+            </ComboboxItem>
+          ))}
+          <ComboboxEmpty />
+        </ComboboxList>
       </ComboboxContent>
     </Combobox>
   );
@@ -151,9 +159,11 @@ function CountryPicker() {
     <ComboboxInput placeholder="Search..." />
   </ComboboxTrigger>
   <ComboboxContent>
-    <ComboboxItem value="one">Option One</ComboboxItem>
-    <ComboboxItem value="two">Option Two</ComboboxItem>
-    <ComboboxEmpty />
+    <ComboboxList>
+      <ComboboxItem value="one">Option One</ComboboxItem>
+      <ComboboxItem value="two">Option Two</ComboboxItem>
+      <ComboboxEmpty />
+    </ComboboxList>
   </ComboboxContent>
 </Combobox>
 ```

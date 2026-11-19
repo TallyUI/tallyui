@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { Text } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
@@ -141,5 +141,101 @@ describe('ProductTable', () => {
       columns={[{ id: 'id', header: 'ID', render: (doc) => <Text>{doc.id}</Text> }]} />);
     expect(screen.queryAllByTestId(/^product-row-/).length).toBeLessThan(200);
     expect(screen.getByTestId('product-row-p0')).toBeDefined();
+  });
+});
+
+describe('ProductTable row extras', () => {
+  const heads = () => screen.getAllByRole('columnheader');
+  const hoodie = { id: 'hoodie', title: 'Hoodie', status: 'published', variants: ['S', 'M'].map((size) => (
+    { id: 'hoodie-' + size, title: size, sku: 'HOODIE-' + size, prices: [{ amount: 30, currency_code: 'eur' }], manage_inventory: false })) };
+
+  it('renders the existing table when neither flag is set', () => {
+    render(table({ onSelect: vi.fn() }));
+    expect(screen.queryAllByTestId(/^product-row-add-/)).toHaveLength(0);
+    expect(heads().map((head) => head.getAttribute('aria-label'))).toEqual(Array(6).fill(null));
+    expect(heads().map((head) => head.textContent)).toEqual(['Name', 'SKU', 'Barcode', 'Price', 'Stock', 'Category']);
+  });
+
+  it('leads each row with the product image or its initial tile under showThumbnail', () => {
+    render(table({ items: [items[0], { ...items[2], images: [] }], showThumbnail: true }));
+    expect(heads()).toHaveLength(7);
+    expect([heads()[0].getAttribute('aria-label'), heads()[0].textContent]).toEqual(['Image', '']);
+    const [image, tile] = ['product-row-1', 'product-row-3'].map((id) => within(screen.getByTestId(id)).getAllByRole('cell')[0]);
+    expect(image.querySelector('img')).not.toBeNull();
+    expect(within(tile).getByRole('img', { name: 'Apple' }).textContent).toBe('A');
+  });
+
+  it('ends each row with Add to cart, which calls onSelect once with its item', () => {
+    const onSelect = vi.fn();
+    render(table({ onSelect, showAddButton: true }));
+    expect(heads().at(-1)!.getAttribute('aria-label')).toBe('Actions');
+    expect(items.map((item) => screen.getByTestId('product-row-add-' + item.id).getAttribute('aria-label'))).toEqual(Array(3).fill('Add to cart'));
+    fireEvent.click(screen.getByTestId('product-row-add-2'));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(items[1]);
+  });
+
+  it('labels the button Variations for a product with two variants', () => {
+    const onSelect = vi.fn();
+    render(
+      <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+        <ProductTable items={[hoodie]} onSelect={onSelect} showAddButton />
+      </ConnectorProvider>,
+    );
+    const button = screen.getByTestId('product-row-add-hoodie');
+    expect(button.getAttribute('aria-label')).toBe('Variations');
+    fireEvent.click(button);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(hoodie);
+  });
+
+  it('draws no add button without onSelect', () => {
+    render(table({ showAddButton: true }));
+    expect(screen.queryAllByTestId(/^product-row-add-/)).toHaveLength(0);
+    expect(heads()).toHaveLength(6);
+  });
+
+  it('shows the cart count in place of the + and adds on press', () => {
+    const onSelect = vi.fn();
+    render(table({ onSelect, showAddButton: true, cartQuantity: (doc) => (doc.id === 2 ? 3 : 0) }));
+    expect(screen.getByTestId('product-row-in-cart-2').textContent).toBe('3');
+    expect(screen.getByTestId('product-row-add-2').getAttribute('aria-label')).toBe('In cart: 3');
+    expect(screen.getByTestId('product-row-add-1').getAttribute('aria-label')).toBe('Add to cart');
+    expect(screen.queryByTestId('product-row-in-cart-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('product-row-add-2'));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(items[1]);
+  });
+
+  it('keeps the > and no count for a product with variants', () => {
+    render(
+      <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+        <ProductTable items={[hoodie]} onSelect={vi.fn()} showAddButton cartQuantity={() => 2} />
+      </ConnectorProvider>,
+    );
+    expect(screen.getByTestId('product-row-add-hoodie').getAttribute('aria-label')).toBe('Variations');
+    expect(screen.queryByTestId('product-row-in-cart-hoodie')).toBeNull();
+  });
+
+  it('draws no count without the add column', () => {
+    render(table({ onSelect: vi.fn(), cartQuantity: () => 3 }));
+    expect(screen.queryAllByTestId(/^product-row-in-cart-/)).toHaveLength(0);
+  });
+});
+
+describe('ProductTable loading', () => {
+  it('loading with no items draws the header and one line placeholder per column per row', () => {
+    render(table({ items: [], loading: true, emptyState: <Text>Nothing here</Text> }));
+    expect(screen.getAllByRole('columnheader').map((head) => head.textContent))
+      .toEqual(['Name', 'SKU', 'Barcode', 'Price', 'Stock', 'Category']);
+    expect(screen.queryByText('Nothing here')).toBeNull();
+    const [first] = screen.getAllByTestId('product-table-skeleton-row');
+    const cells = within(first).getAllByRole('cell');
+    expect(cells).toHaveLength(6);
+    for (const cell of cells) expect(cell.querySelectorAll('[aria-busy="true"]')).toHaveLength(1);
+    expect(screen.getByLabelText('Loading').getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('loading with items draws the items', () => {
+    render(table({ loading: true }));
+    expect(rowIds()).toEqual(['product-row-1', 'product-row-2', 'product-row-3']);
+    expect(screen.queryAllByTestId('product-table-skeleton-row')).toHaveLength(0);
   });
 });

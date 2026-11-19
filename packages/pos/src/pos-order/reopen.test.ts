@@ -99,6 +99,18 @@ it.each([
   expect(await db.order_drafts.count().exec()).toBe(1);
 });
 
+it.each(['rejected', 'pending'] as const)('refuses a rejected row carrying a store order and writes no draft (gate 6)', async (syncStatus) => {
+  const order = { ...storedOrder(), storeOrderId: '41', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' };
+  order.syncStatus = syncStatus;
+  if (syncStatus === 'pending') delete order.error;
+  await db.pos_orders.insert(order);
+  const refused = reopenRefusedOrder(order.id, deps());
+  await expect(refused).rejects.toBeInstanceOf(ReopenRefusedOrderError);
+  await expect(refused).rejects.toMatchObject({ reason: 'store_order' });
+  expect(await db.order_drafts.count().exec()).toBe(0);
+  expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBeUndefined();
+});
+
 it('keeps line attributes on the reopened sale', async () => {
   const order = storedOrder();
   order.lines[0].attributes = { Size: 'M', Color: 'Black' };
@@ -106,6 +118,17 @@ it('keeps line attributes on the reopened sale', async () => {
   const saved = await draft(await reopenRefusedOrder(order.id, deps()));
   expect(saved.lineItems[0].attributes).toEqual({ Size: 'M', Color: 'Black' });
   expect(saved.lineItems[1]).not.toHaveProperty('attributes');
+});
+
+it("keeps each payment's methodId on the reopened sale and leaves it off a payment without one (condition 5)", async () => {
+  const order = storedOrder();
+  order.payments[1] = { ...order.payments[1], methodId: 'stripe' };
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+  expect(saved.payments[1]).toMatchObject({ method: 'external', methodId: 'stripe', reference: 'card-123' });
+  expect(saved.payments[0]).not.toHaveProperty('methodId');
+  expect(restoreOrderDraft(saved, { currency: order.currency, taxContext }).getSnapshot().payments.map((payment) => payment.methodId))
+    .toEqual([undefined, 'stripe']);
 });
 
 it('keeps Any picks on the reopened sale (#495)', async () => {
@@ -321,6 +344,15 @@ it.each([null, { name: 'No id' }, { id: '42' }, { id: 'bad\u0000id', name: 'Bad 
   const order = { ...storedOrder(), customer };
   await db.pos_orders.insert(order);
   expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toBeNull();
+});
+
+it('keeps the stored customer addresses on the reopened draft (vendurepos gap 5.2)', async () => {
+  const stored = storedOrder();
+  const customer = { ...stored.customer!, billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } };
+  const order: PosOrder = { ...stored, customer, taxAddress: 'shipping' };
+  await db.pos_orders.insert(order);
+  expect((await draft(await reopenRefusedOrder(order.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
 });
 
 it.each([

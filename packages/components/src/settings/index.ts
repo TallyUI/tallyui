@@ -4,3 +4,7 @@ export { ConnectorStatus, type ConnectorStatusProps, type ConnectionStatus } fro
 export { DisplaySettings, type DisplaySettingsProps } from './display-settings';
 export { TaxCalculationSettings, type TaxCalculationSettingsProps } from './tax-calculation-settings';
 export { CustomerDisplaySettings, type CustomerDisplaySettingsProps } from './customer-display-settings';
+export { PrintingSettings, type PrintingSettingsProps } from './printing-settings';
+export {
+  BarcodeScanningSettings, type BarcodeScanningSettingsProps, type BarcodeScanningValues,
+} from './barcode-scanning-settings';

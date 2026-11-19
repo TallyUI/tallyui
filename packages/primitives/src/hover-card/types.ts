@@ -9,7 +9,9 @@ interface RootProps {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Accepted and currently ignored: no hover delay is applied. */
   openDelay?: number;
+  /** Accepted and currently ignored: no hover delay is applied. */
   closeDelay?: number;
   children?: React.ReactNode;
 }

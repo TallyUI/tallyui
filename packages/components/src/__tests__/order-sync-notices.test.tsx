@@ -1,0 +1,138 @@
+// OrderSyncNotices: the per-sale sync notices OrdersList shows under each order, rendered on their own. Every
+// expected string is written out here, not imported from the component file (UPDATE_UNSENDABLE_MESSAGE aside, as in
+// orders-list.test.tsx).
+import { cleanup, render, screen } from '@testing-library/react';
+import { Text } from 'react-native';
+import { afterEach, describe, expect, it } from 'vitest';
+import { formatMoney } from '@tallyui/core';
+import { UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
+import { OrderSyncNotices } from '../sale/orders-list';
+
+afterEach(() => cleanup());
+
+function order(id: string, overrides: Partial<PosOrder> = {}): PosOrder {
+  const createdAt = '2026-09-25T10:00:00.000Z';
+  return {
+    id, commandId: `command-${id}`, createdAt, updatedAt: createdAt, currency: 'EUR', pricesIncludeTax: false,
+    lines: [{ id: `line-${id}`, productId: 'shirt', variantId: 'blue', name: 'Blue shirt', sku: 'BLUE', quantity: 2,
+      unitPriceMinor: 600, discountMinor: 0, netMinor: 1200, taxLines: [] }],
+    payments: [{ id: `payment-${id}`, method: 'cash', amountMinor: 1200 }], customer: null,
+    subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'pending',
+    taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' }, ...overrides,
+  };
+}
+const eur = (amount: number) => formatMoney({ amount, currency: 'EUR' });
+const PLATFORM_ERROR = "The online store refused this sale. Ask the store owner to look at the till's sync log.";
+const NOTE_NOT_SENT = "The customer note couldn't be sent to the store.";
+const noteNotSent = { note: 'Deliver after 5', sentVersion: 6, syncStatus: 'applied' } as const;
+
+describe('OrderSyncNotices refusals', () => {
+  it.each([
+    ['invalid_payload', "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log."],
+    ['unsupported_version', "The online store refused this sale: the store's software is older than this till's. Ask the store owner to update the POS plugin."],
+    ['idempotency_mismatch', "The online store has a different sale under this sale's number. Don't send it again; ask the store owner to compare the two."],
+    ['store_configuration', 'The online store refused this sale: a setting on the store needs changing. Once the store owner fixes it, press Retry.'],
+    ['platform_error', PLATFORM_ERROR],
+    ['internal_error', "The online store hit a fault in its POS plugin and refused this sale. Ask the store owner to look at the till's sync log."],
+    ['insufficient_stock', "The online store refused this sale: it doesn't have enough stock of one of the items."],
+    ['unsupported_tax_mode', "The online store refused this sale: its tax settings can't take a sale like this one. Ask the store owner to check them."],
+    ['unknown_variant', 'The online store refused this sale: that product variation no longer exists.'],
+    ['invalid_quantity', "The online store refused this sale: a quantity or a discount on it isn't allowed."],
+    ['underpaid', 'The online store refused this sale: the payments add up to less than the total.'],
+    ['unsupported_currency', "The online store refused this sale: the store doesn't take this currency."],
+  ])('shows the %s refusal in the cashier\'s words', (code, sentence) => {
+    render(<OrderSyncNotices order={order('r', { syncStatus: 'rejected', error: { code, message: 'store message' } })} />);
+    expect(screen.getByText(sentence)).toBeTruthy();
+  });
+
+  it.each<[string, Partial<PosOrder>]>([
+    ['an unknown code', { error: { code: 'no_such_code', message: 'store message' } }],
+    ['no error', {}],
+  ])('falls back to the platform_error sentence for %s', (_name, overrides) => {
+    render(<OrderSyncNotices order={order('r', { syncStatus: 'rejected', ...overrides })} />);
+    expect(screen.getByText(PLATFORM_ERROR)).toBeTruthy();
+  });
+
+  it('asks to reopen again when a reopened order was changed in the store', () => {
+    render(<OrderSyncNotices order={order('r', { syncStatus: 'rejected', storeOrderId: 's1',
+      error: { code: 'reopen_required', message: 'store message' } })} />);
+    expect(screen.getByText("This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.")).toBeTruthy();
+  });
+
+  it('shows the update-unsendable message on a pending order', () => {
+    render(<OrderSyncNotices order={order('p', { error: { code: UPDATE_UNSENDABLE, message: 'store message' } })} />);
+    expect(screen.getByText(UPDATE_UNSENDABLE_MESSAGE)).toBeTruthy();
+  });
+});
+
+describe('OrderSyncNotices notes', () => {
+  it('shows since when a pending order is stuck, and nothing once it is applied', () => {
+    const since = new Date(2026, 8, 29, 14, 2).getTime();
+    const stuck = { commandIds: ['command-s'], reason: 'status_503', since, orders: [{ commandId: 'command-s', since, reason: 'status_503' }] };
+    const time = new Date(since).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    render(<OrderSyncNotices order={order('s')} stuck={stuck} />);
+    expect(screen.getByText(`Hasn't reached the online store since about ${time}.`)).toBeTruthy();
+    cleanup();
+    const { container } = render(<OrderSyncNotices order={order('s', { syncStatus: 'applied' })} stuck={stuck} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('says a late sale is not in the register closure', () => {
+    render(<OrderSyncNotices order={order('l', { lateSessionId: 'sess-1' })} />);
+    expect(screen.getByText("Taken after the register closed. It is not in that register's closure.")).toBeTruthy();
+  });
+
+  it('says the customer was omitted', () => {
+    render(<OrderSyncNotices order={order('c', { localWarnings: [{ code: 'customer_omitted', field: 'email' }] })} />);
+    expect(screen.getByText("The customer's email couldn't be sent to the store, so the order isn't linked to them.")).toBeTruthy();
+  });
+
+  it('says the payment reference was dropped', () => {
+    render(<OrderSyncNotices order={order('c', { localWarnings: [{ code: 'payment_reference_dropped', paymentId: 'p1' }] })} />);
+    expect(screen.getByText("The terminal's payment reference couldn't be kept; the payment is recorded without it.")).toBeTruthy();
+  });
+
+  it('says the customer note was not sent', () => {
+    render(<OrderSyncNotices order={order('n', noteNotSent)} />);
+    expect(screen.getByTestId('order-note-not-sent-n').textContent).toBe(NOTE_NOT_SENT);
+  });
+
+  it('renders nothing for a clean applied order', () => {
+    const { container } = render(<OrderSyncNotices order={order('a', { syncStatus: 'applied' })} />);
+    expect(container.textContent).toBe('');
+  });
+});
+
+describe('OrderSyncNotices store warnings', () => {
+  it.each<[string, NonNullable<PosOrder['warnings']>, string]>([
+    ['insufficient_stock', [{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }], '1 sold without stock: Blue shirt'],
+    ['tax_rate_mismatch', [{ code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }],
+      `Tax at 5.5%: store ${eur(100)} vs POS ${eur(120)}`],
+    ['customer_ignored', [{ code: 'customer_ignored', customerId: 'cus_1' }],
+      "The online store didn't recognise the customer on this sale, so it was saved as a guest sale. Customer id: cus_1."],
+    ['figures_mismatch', [{ code: 'figures_mismatch', fields: [{ field: 'taxMinor', tillMinor: 210, serverMinor: 200 }] }],
+      `The online store worked out different figures for this sale. Tax: till ${eur(210)}, store ${eur(200)}.`],
+    ['total_mismatch with a rounding line', [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }],
+      `Store calculated ${eur(1195)}; a rounding line of +${eur(5)} brought it to ${eur(1200)}`],
+    ['total_mismatch', [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }], `Store total ${eur(1000)} vs POS ${eur(1200)}`],
+  ])('renders %s', (_name, warnings, expected) => {
+    render(<OrderSyncNotices order={order('w', { syncStatus: 'applied', warnings })} />);
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  it('renders nothing for register_session_unknown', () => {
+    const { container } = render(<OrderSyncNotices order={order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'register_session_unknown', sessionId: 's-1' }] })} />);
+    expect(container.textContent).toBe('');
+  });
+});
+
+describe('OrderSyncNotices children', () => {
+  it('renders children after the note-not-sent notice and before the store warnings', () => {
+    const warned = order('n', { ...noteNotSent, warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] });
+    render(<OrderSyncNotices order={warned}><Text testID="slot">Slot</Text></OrderSyncNotices>);
+    const slot = screen.getByTestId('slot');
+    expect(screen.getByTestId('order-note-not-sent-n').compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slot.compareDocumentPosition(screen.getByText(`Store total ${eur(1000)} vs POS ${eur(1200)}`)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

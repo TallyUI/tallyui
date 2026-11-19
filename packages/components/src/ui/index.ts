@@ -7,18 +7,39 @@ export { VStack, vstackVariants, type VStackProps } from './vstack';
 export { Icon, iconVariants, type IconProps } from './icon';
 export { createSvgIcon, type SvgIconProps } from './icon/svg-icon';
 export { SearchIcon } from './icon/search-icon';
+export { UserIcon } from './icon/user-icon';
 export { ShoppingCartIcon } from './icon/shopping-cart-icon';
 export { XIcon } from './icon/x-icon';
 export { ScanIcon } from './icon/scan-icon';
 export { GripIcon } from './icon/grip-icon';
 export { ChevronDownIcon } from './icon/chevron-down-icon';
+export { ChevronRightIcon } from './icon/chevron-right-icon';
+export { PlusIcon } from './icon/plus-icon';
+export { CashRegisterIcon } from './icon/cash-register-icon';
+export { GiftIcon } from './icon/gift-icon';
+export { ReceiptIcon } from './icon/receipt-icon';
+export { PrinterIcon } from './icon/printer-icon';
+export { DiscountIcon } from './icon/discount-icon';
+export { UsersIcon } from './icon/users-icon';
+export { ChartLineIcon } from './icon/chart-line-icon';
+export { ActivityHeartbeatIcon } from './icon/activity-heartbeat-icon';
+export { SettingsIcon } from './icon/settings-icon';
+export { MessageQuestionIcon } from './icon/message-question-icon';
+export { CheckIcon } from './icon/check-icon';
+export { AlertTriangleIcon } from './icon/alert-triangle-icon';
+export { AlertCircleIcon } from './icon/alert-circle-icon';
+export { InfoCircleIcon } from './icon/info-circle-icon';
 export { Loader, loaderVariants, type LoaderProps } from './loader';
+export { Skeleton, skeletonCount, SKELETON_MAX_ROWS, type SkeletonProps } from './skeleton';
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
+export { StatusBadge, statusDotVariants, type StatusBadgeProps } from './status-badge';
+export { ToneDisc, type ToneDiscProps, type ToneDiscTone } from './tone-disc';
 export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avatar';
 
 // Interactive
 export { Button, buttonVariants, buttonTextVariants, type ButtonProps } from './button';
 export { IconButton, iconButtonVariants, type IconButtonProps } from './icon-button';
+export { ListRow, type ListRowProps, type ListRowSize } from './list-row';
 
 // Containers & Form
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
@@ -42,6 +63,7 @@ export {
   AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle,
   AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from './alert-dialog';
+export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog';
 
 // Select
 export {
@@ -52,7 +74,7 @@ export {
 // Combobox
 export {
   Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent,
-  ComboboxItem, ComboboxEmpty,
+  ComboboxList, ComboboxItem, ComboboxEmpty,
 } from './combobox';
 
 // Dropdown Menu

@@ -86,8 +86,40 @@ describe('dark theme contrast', () => {
   });
 });
 
-it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price'])('%s matches in both light blocks', (name) => {
+it.each(['primary', 'ring', 'muted-foreground', 'input', 'success', 'warning', 'info', 'price', 'ok', 'ok-bg', 'warning-text', 'warning-bg', 'bad', 'bad-bg', 'c1', 'c2', 'c3', 'c4', 'c5', 'chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'])('%s matches in both light blocks', (name) => {
   expect(base[name]).toBe(light[name]);
+});
+
+describe.each([['light', light], ['dark', dark]] as const)('%s tone washes', (_, colors) => {
+  // WCAG 1.4.11 non-text contrast: a disc's glyph on its wash.
+  it.each([['ok', 'ok-bg'], ['warning-text', 'warning-bg'], ['bad', 'bad-bg']] as const)('%s glyph on %s meets 3:1', (ink, wash) => {
+    expect(contrast(colors[ink], colors[wash])).toBeGreaterThanOrEqual(3);
+  });
+
+  // A band's words keep the foreground.
+  it.each(['ok-bg', 'warning-bg', 'bad-bg'] as const)('foreground on %s meets AA', (wash) => {
+    expect(contrast(colors.foreground, colors[wash])).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('ok is success and bad is destructive, as in v2', () => {
+    expect(colors.ok).toBe(colors.success);
+    expect(colors.bad).toBe(colors.destructive);
+  });
+});
+
+it('dark warning-text is the dark warning, as in v2', () => {
+  expect(dark['warning-text']).toBe(dark.warning);
+});
+
+describe.each([['light', light], ['dark', dark]] as const)('%s chart colours', (_, colors) => {
+  // WCAG 1.4.11 non-text contrast: a chart mark against the card.
+  it.each(['c1', 'c2', 'c3', 'c4', 'c5'] as const)('%s on card meets 3:1', (c) => {
+    expect(contrast(colors[c], colors.card)).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each([1, 2, 3, 4, 5] as const)('chart-$0 is c$0, as in v2', (n) => {
+    expect(colors[`chart-${n}`]).toBe(colors[`c${n}`]);
+  });
 });
 
 function over(fg: string, bg: string, alpha: number): string {

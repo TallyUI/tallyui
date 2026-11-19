@@ -63,6 +63,9 @@ function receiptTemplate(columns: number, labelWidth: number, amountWidth: numbe
   {{#change}}
   <row><col width="*">Change</col><col width="${amountWidth}" align="right">{{change}}</col></row>
   {{/change}}
+  {{#refundDue}}
+  <row><col width="*">Refund due</col><col width="${amountWidth}" align="right">{{refundDue}}</col></row>
+  {{/refundDue}}
   {{#note}}
   <feed lines="1" />
   <text>{{note}}</text>

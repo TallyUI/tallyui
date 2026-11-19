@@ -48,8 +48,8 @@ describe('ChargeForm', () => {
   });
 
   it.each([
-    [' ', '1', 'Enter a name.'], ['Bag', '', 'Enter a price.'], ['Bag', 'abc', 'Enter a number.'],
-    ['Bag', '-1', 'Enter a price of 0 or more.'], ['Bag', '1.234', 'Use at most 2 decimal places.'],
+    ['Bag', '', 'Enter a price.'], ['Bag', 'abc', 'Enter a number.'],
+    ['Bag', '-1', 'A fee cannot be negative. Use Add Discount instead.'], ['Bag', '1.234', 'Use at most 2 decimal places.'],
   ])('rejects name %s and amount %s', (name, amount, message) => {
     const onApply = vi.fn();
     const onClose = vi.fn();
@@ -60,6 +60,47 @@ describe('ChargeForm', () => {
     expect(screen.getByRole('alert').textContent).toBe(message);
     expect(onApply).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a blank name applies the kind's v2 default", () => {
+    for (const [kind, name] of [['fee', 'Fee'], ['shipping', 'Shipping'], ['custom', 'Product']] as const) {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
+      input('Name', ' ');
+      input('Amount', '1');
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind, name }));
+      cleanup();
+    }
+  });
+
+  it("a fee refuses a negative amount with v2's message", () => {
+    for (const [kind, message] of [['fee', 'A fee cannot be negative. Use Add Discount instead.'],
+      ['shipping', 'Enter a price of 0 or more.']] as const) {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
+      input('Name', 'Bag');
+      input('Amount', '-2');
+      click('Apply');
+      expect(screen.getByRole('alert').textContent).toBe(message);
+      expect(onApply).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it('a zero fee is refused, zero shipping and a zero custom item apply', () => {
+    for (const kind of ['fee', 'shipping', 'custom'] as const) {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
+      input('Name', 'Bag');
+      input('Amount', '0');
+      click('Apply');
+      if (kind === 'fee') {
+        expect(screen.getByRole('alert').textContent).toBe('Enter an amount greater than zero');
+        expect(onApply).not.toHaveBeenCalled();
+      } else expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind, amountMinor: 0 }));
+      cleanup();
+    }
   });
 
   it.each([undefined, { none: false, classes: true }, { none: true, classes: false }])('gates No tax on lineTax.none (%s)', (lineTax) => {
@@ -82,19 +123,19 @@ describe('ChargeForm', () => {
     render(<ChargeForm currency="EUR" lineTax={{ none: true, classes: true }} taxClasses={taxClasses}
       onApply={onApply} onClose={() => {}} />);
     input('Name', 'Bag');
-    input('Amount', '0');
+    input('Amount', '1');
     fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
     click('Reduced');
     expect(screen.getByRole('switch', { name: 'No tax' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('button', { name: 'Reduced' }).getAttribute('aria-selected')).toBe('true');
     click('Apply');
-    expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 0, taxStatus: 'none', taxClass: 'reduced' });
+    expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 100, taxStatus: 'none', taxClass: 'reduced' });
     fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
     click('No class');
     expect(screen.getByRole('switch', { name: 'No tax' }).getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('button', { name: 'Reduced' }).getAttribute('aria-selected')).toBe('false');
     click('Apply');
-    expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 0, taxStatus: undefined, taxClass: undefined });
+    expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 100, taxStatus: undefined, taxClass: undefined });
   });
 
   it('hides and omits tax overrides for shipping taxed by the store', () => {

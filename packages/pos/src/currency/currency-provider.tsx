@@ -1,12 +1,11 @@
 import { createContext, useContext, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { formatMoney, type Money } from '@tallyui/core';
-import { formatMoneyWith, type CurrencyFormat } from './format-money-with';
+import { formatMoney, MoneyFormatProvider, type Money, type MoneyFormat } from '@tallyui/core';
 
 interface CurrencyContext {
   currencyCode: string;
   locale?: string;
-  format?: CurrencyFormat;
+  format?: MoneyFormat;
 }
 
 const CurrencyCtx = createContext<CurrencyContext | null>(null);
@@ -15,13 +14,13 @@ export interface CurrencyProviderProps {
   currencyCode: string;
   locale?: string;
   /** The store's own money format; without it, money reads as Intl formats it for `locale`. */
-  format?: CurrencyFormat;
+  format?: MoneyFormat;
   children: ReactNode;
 }
 
 export function CurrencyProvider({ currencyCode, locale, format, children }: CurrencyProviderProps) {
   const value = useMemo(() => ({ currencyCode, locale, format }), [currencyCode, locale, format]);
-  return <CurrencyCtx.Provider value={value}>{children}</CurrencyCtx.Provider>;
+  return <CurrencyCtx.Provider value={value}><MoneyFormatProvider locale={locale} format={format}>{children}</MoneyFormatProvider></CurrencyCtx.Provider>;
 }
 
 export function useCurrencyFormatter(): (money: Money) => string {
@@ -32,8 +31,7 @@ export function useCurrencyFormatter(): (money: Money) => string {
   const { locale, format } = ctx;
   return useCallback(
     (money: Money) =>
-      (format ? formatMoneyWith(money, format, locale) : formatMoney(money, locale)) ??
-      `${money.amount} ${money.currency}`,
+      formatMoney(money, locale, format) ?? `${money.amount} ${money.currency}`,
     [locale, format],
   );
 }

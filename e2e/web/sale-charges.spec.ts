@@ -44,28 +44,39 @@ test.describe('Cart charges (order.create 5)', () => {
       // Total = the product's line + 0.20 + 5.00 + 3.00 + the tax rows the footer shows (prices exclude tax).
       const footer = page.getByTestId('cart-footer');
       const shirt = await amountBeside(page.getByText('Shirt', { exact: true }).locator('xpath=..'));
-      const taxLabels = await footer.getByText(/^Tax \d/).all();
-      expect(taxLabels.length).toBeGreaterThan(0);
+      const taxRows = await footer.getByTestId(/^cart-total-tax-\d+$/).all();
+      expect(taxRows.length).toBeGreaterThan(0);
       let tax = 0;
-      for (const label of taxLabels) tax += await amountBeside(label);
+      for (const row of taxRows) tax += minor(await row.locator('xpath=*[last()]').innerText());
       // The fixture's one rate, 25%, on the shirt, the fee and the shipping; the "No tax" custom item adds none.
       expect(Math.abs(tax - 0.25 * (shirt + 20 + 500))).toBeLessThanOrEqual(1);
-      const total = await amountBeside(footer.getByText('Total', { exact: true }));
+      const checkout = footer.getByTestId('cart-checkout');
+      const total = minor((await checkout.innerText()).replace(/^Checkout\s*/, ''));
       expect(total).toBe(shirt + 20 + 500 + 300 + tax);
+      await expect(footer.getByText('Total', { exact: true })).toHaveCount(0);
+      await expect(footer.getByRole('button', { name: 'Cash', exact: true })).toHaveCount(0);
 
+      // Remove sits in v2's line strip, opened by pressing the row's Total.
+      await page.getByRole('button', { name: 'Edit total of Bag', exact: true }).click();
       await page.getByRole('button', { name: 'Remove Bag' }).click();
       await expect(page.getByTestId('cart-fee-0')).toHaveCount(0);
       await expect(page.getByTestId('cart-shipping-0')).toContainText('Delivery');
 
-      const due = await footer.getByText('Total', { exact: true }).locator('xpath=following-sibling::*[1]').innerText();
-      await footer.getByRole('button', { name: 'Cash', exact: true }).click();
+      const due = (await checkout.innerText()).replace(/^Checkout\s*/, '');
+      await checkout.click();
       // The tender pane opens on Cash. A quick-cash chip only sets the entry; Take records the leg, and
       // Complete sale is enabled once nothing is due. The first quick amount is the exact total.
       const pane = page.getByTestId('tender-pane');
       await pane.getByTestId('tender-method-cash').click();
       await pane.getByRole('button', { name: `Exact ${due}`, exact: true }).click();
       await pane.getByRole('button', { name: `Take ${due} in Cash`, exact: true }).click();
-      await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+      // Wide shows the ledger in the cart column; v2's phone checkout is the pane alone, ledger included.
+      if (size.width >= 768) {
+        await expect(page.getByTestId('sale-charges-cart').getByTestId('tender-ledger-lead')).toContainText('Paid in full');
+      } else {
+        await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+        await expect(page.getByTestId('sale-charges-cart')).toHaveCount(0);
+      }
       await pane.getByRole('button', { name: 'Complete sale' }).click();
 
       const receipt = page.getByTestId('sale-receipt');

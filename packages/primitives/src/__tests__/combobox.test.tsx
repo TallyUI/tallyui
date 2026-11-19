@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Pressable, View } from 'react-native';
 import { describe, it, expect, vi } from 'vitest';
 import * as Combobox from '../combobox';
@@ -11,7 +11,7 @@ const FRUITS = [
 ];
 
 describe('Combobox', () => {
-  const renderCombobox = (props: Record<string, any> = {}, items = FRUITS) =>
+  const renderCombobox = (props: Record<string, any> = {}, items = FRUITS, contentProps = {}) =>
     render(
       <div>
         <PortalHost />
@@ -19,7 +19,7 @@ describe('Combobox', () => {
           <Combobox.Input testID="input" placeholder="Search fruits..." />
           <Combobox.Trigger testID="trigger" />
           <Combobox.Portal>
-            <Combobox.Content testID="content">
+            <Combobox.Content testID="content" {...contentProps}>
               {items.map((fruit) => (
                 <Combobox.Item
                   key={fruit.value}
@@ -288,5 +288,157 @@ describe('Combobox', () => {
 
     fireEvent.click(trigger);
     expect(screen.getByTestId('content')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Input inside Trigger
+  // -------------------------------------------------------------------------
+
+  describe('Input inside Trigger', () => {
+    const renderNested = () =>
+      render(
+        <div>
+          <PortalHost />
+          <Combobox.Root>
+            <Combobox.Trigger testID="trigger">
+              <Combobox.Input testID="input" />
+            </Combobox.Trigger>
+            <Combobox.Portal>
+              <Combobox.Content testID="content">
+                <Combobox.Item value="apple" label="Apple">
+                  <Combobox.ItemText />
+                </Combobox.Item>
+              </Combobox.Content>
+            </Combobox.Portal>
+          </Combobox.Root>
+        </div>
+      );
+
+    it('a click on the input opens the list and leaves it open', () => {
+      renderNested();
+      const input = screen.getByTestId('input');
+
+      fireEvent.focus(input);
+      fireEvent.click(input);
+      expect(screen.getByTestId('content')).toBeTruthy();
+
+      fireEvent.click(input);
+      expect(screen.getByTestId('content')).toBeTruthy();
+    });
+
+    it('a click on a focused input reopens a closed list', () => {
+      renderNested();
+      expect(screen.queryByTestId('content')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('input'));
+      expect(screen.getByTestId('content')).toBeTruthy();
+    });
+
+    it('a press on the Trigger outside the input toggles the list', () => {
+      renderNested();
+      const trigger = screen.getByTestId('trigger');
+
+      fireEvent.click(trigger);
+      expect(screen.getByTestId('content')).toBeTruthy();
+
+      fireEvent.click(trigger);
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // positioning
+  // -------------------------------------------------------------------------
+
+  describe('positioning', () => {
+    it('on web measures the Trigger, not the Input, when it opens', () => {
+      renderCombobox();
+      const trigger = screen.getByTestId('trigger');
+      const input = screen.getByTestId('input');
+      const triggerStub = { measure: vi.fn(), measureInWindow: vi.fn() };
+      const inputStub = { measure: vi.fn(), measureInWindow: vi.fn() };
+      Object.assign(trigger, triggerStub);
+      Object.assign(input, inputStub);
+
+      fireEvent.click(trigger);
+
+      expect(triggerStub.measureInWindow).toHaveBeenCalled();
+      expect(inputStub.measureInWindow).not.toHaveBeenCalled();
+      expect(triggerStub.measure).not.toHaveBeenCalled();
+      expect(inputStub.measure).not.toHaveBeenCalled();
+    });
+
+    it('without a Trigger measures the Input', () => {
+      render(
+        <div>
+          <PortalHost />
+          <Combobox.Root>
+            <Combobox.Input testID="input" placeholder="Search..." />
+            <Combobox.Portal>
+              <Combobox.Content testID="content">
+                <Combobox.Item value="apple" label="Apple">
+                  <Combobox.ItemText />
+                </Combobox.Item>
+              </Combobox.Content>
+            </Combobox.Portal>
+          </Combobox.Root>
+        </div>
+      );
+      const input = screen.getByTestId('input');
+      const measureInWindow = vi.fn();
+      Object.assign(input, { measureInWindow });
+
+      fireEvent.focus(input);
+
+      expect(measureInWindow).toHaveBeenCalled();
+    });
+
+    it("content is at least the anchor's width", async () => {
+      renderCombobox();
+      const trigger = screen.getByTestId('trigger');
+      Object.assign(trigger, {
+        measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) =>
+          cb(10, 20, 200, 40),
+      });
+
+      fireEvent.click(trigger);
+
+      await waitFor(() => {
+        expect(getComputedStyle(screen.getByTestId('content')).minWidth).toBe('200px');
+      });
+    });
+  });
+
+  describe('Escape', () => {
+    it('C1: Escape closes the open list', () => {
+      renderCombobox({ defaultOpen: true });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+
+    it('C2: onEscapeKeyDown can keep it open', () => {
+      const onEscapeKeyDown = vi.fn((event: KeyboardEvent) => event.preventDefault());
+      renderCombobox({ defaultOpen: true }, FRUITS, { onEscapeKeyDown });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      expect(onEscapeKeyDown).toHaveBeenCalledTimes(1);
+    });
+
+    it('C3: Escape leaves the typed search in the input', () => {
+      renderCombobox();
+      const input = screen.getByTestId('input') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'ban' } });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+      expect(input.value).toBe('ban');
+    });
+
+    it('C4: Escape fired on the focused input itself closes the list', () => {
+      renderCombobox({ defaultOpen: true });
+      fireEvent.keyDown(screen.getByTestId('input'), { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
   });
 });

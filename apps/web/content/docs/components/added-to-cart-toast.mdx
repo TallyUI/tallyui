@@ -1,0 +1,31 @@
+---
+title: AddedToCartToast
+description: AddedToCartToast confirms each add to the cart with one toast that counts a burst of adds.
+---
+
+## Import
+
+```tsx
+import { AddedToCartToast } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<AddedToCartToast added={added} />
+```
+
+Mount it once, as the last child of the screen's root view. It shows WCPOS v2's success toast at the top centre for 4 seconds: the first add reads "Shirt added to cart", and later adds while it is open read "2 items added to cart", "3 items added to cart" and so on. The count starts again once the toast closes.
+
+It is one toast that updates in place and restarts its timer on each add; it never stacks, so a fast run of adds cannot cover the top product row.
+
+The app sets `added` where it adds a line, with a new `key` for each add, and leaves it alone when the add is silent.
+
+It shares the top-centre slot with [ConnectivityToast](/docs/components/connectivity-toast).
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `added` | `AddedToCartEvent \| null` | required | The latest add (`{ key, name? }`), or `null` before any; the same `key` twice is one add |
+| `testID` | `string` | `'added-to-cart-toast'` | Test identifier |

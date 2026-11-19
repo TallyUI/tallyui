@@ -25,11 +25,14 @@ Wrap your app with `TaxProvider` to make tax configuration available to the orde
 
 ```tsx
 import { TaxProvider } from '@tallyui/pos';
+import type { ComponentType } from 'react';
+
+declare const PosInterface: ComponentType;
 
 function App() {
   return (
     <TaxProvider
-      rates={{ default: 0.1, reduced: 0.05 }}
+      ratesPpm={{ default: 100000, reduced: 50000 }}
       pricesIncludeTax={true}
     >
       <PosInterface />
@@ -38,7 +41,7 @@ function App() {
 }
 ```
 
-The `rates` object maps tax class names to decimal rates. A `default` key is required -- it's the fallback when no tax class is specified.
+The `ratesPpm` object maps tax class names to integer parts per million (10% = 100000). The `default` key supplies the fallback when no tax class is specified.
 
 ### useTax Hook
 
@@ -48,10 +51,10 @@ Inside the provider, `useTax()` gives you the tax context:
 import { useTax } from '@tallyui/pos';
 
 function PriceDisplay({ price, taxClass }: { price: number; taxClass?: string }) {
-  const { getTaxRate, pricesIncludeTax } = useTax();
-  const rate = getTaxRate(taxClass);
+  const { getTaxRatePpm, pricesIncludeTax } = useTax();
+  const ratePpm = getTaxRatePpm(taxClass);
 
-  // rate is 0.1 for default, 0.05 for 'reduced', etc.
+  // ratePpm is 100000 for default, 50000 for 'reduced', etc.
 }
 ```
 
@@ -59,20 +62,23 @@ function PriceDisplay({ price, taxClass }: { price: number; taxClass?: string })
 
 For standalone tax math outside of React, use the calculation functions directly:
 
-```typescript
-import { calculateTax, extractTax, addTax } from '@tallyui/pos';
+```ts
+import { createTaxContext, ratePpmFromPercent, computeOrderTax, taxMicros, roundMicrosToMinor } from '@tallyui/pos';
 
-// Price is $10 exclusive of tax, rate is 10%
-const result = calculateTax(10, 0.1, false);
-// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+const taxContext = createTaxContext({
+  ratesPpm: { default: ratePpmFromPercent(10) },
+  pricesIncludeTax: false,
+});
+const ratePpm = taxContext.getTaxRatePpm();
 
-// Price is $11 inclusive of tax, rate is 10%
-const result2 = calculateTax(11, 0.1, true);
-// { priceExclTax: 10, priceInclTax: 11, taxAmount: 1 }
+// $10 exclusive of tax, expressed in integer cents
+const result = computeOrderTax(
+  [{ unitPriceMinor: 1000, quantity: 1, ratePpm }], taxContext.pricesIncludeTax,
+);
+// subtotalMinor: 1000, taxMinor: 100, totalMinor: 1100
 
-// Utility helpers
-addTax(10, 0.1);      // 11
-extractTax(11, 0.1);  // 1
+// Extract the tax from $11 inclusive of tax, then round to cents
+roundMicrosToMinor(taxMicros(1100, ratePpm, true)); // 100
 ```
 
 ## Currency Formatting
@@ -81,20 +87,26 @@ Currency formatting uses `Intl.NumberFormat` under the hood, with a caching laye
 
 ### Standalone Function
 
-```typescript
-import { formatCurrency } from '@tallyui/pos';
+Use `formatMoney` from `@tallyui/core` with integer minor units and a currency code:
 
-formatCurrency(29.99, 'USD');         // "$29.99"
-formatCurrency(29.99, 'EUR', 'de-DE'); // "29,99 €"
-formatCurrency(1500, 'JPY', 'ja-JP'); // "￥1,500"
+```ts
+import { formatMoney } from '@tallyui/core';
+
+formatMoney({ amount: 2999, currency: 'USD' }, 'en-US'); // "$29.99"
+formatMoney({ amount: 2999, currency: 'EUR' }, 'de-DE'); // "29,99 €"
+formatMoney({ amount: 1500, currency: 'JPY' }, 'ja-JP'); // "￥1,500"
 ```
 
 ### Currency Provider
 
-For components that format prices throughout the app, the provider avoids passing currency codes everywhere:
+For components that format prices throughout the app, the provider shares locale and formatting settings. The formatter takes a `Money` object with integer minor units and its currency code:
 
 ```tsx
 import { CurrencyProvider, useCurrencyFormatter } from '@tallyui/pos';
+import type { Money } from '@tallyui/core';
+import type { ComponentType } from 'react';
+
+declare const PosInterface: ComponentType;
 
 function App() {
   return (
@@ -104,9 +116,9 @@ function App() {
   );
 }
 
-function TotalDisplay({ amount }: { amount: number }) {
+function TotalDisplay({ money }: { money: Money }) {
   const format = useCurrencyFormatter();
-  return <Text>{format(amount)}</Text>; // "$29.99"
+  return <span>{format(money)}</span>; // "$29.99" for { amount: 2999, currency: 'USD' }
 }
 ```
 
@@ -118,19 +130,22 @@ The order system has two layers: `OrderBuilder` handles a single order's state, 
 
 `createOrderBuilder` returns a reactive order object. Every mutation emits the recalculated order through `order$`:
 
-```typescript
+```ts
 import { createOrderBuilder } from '@tallyui/pos';
+import type { ProductTraits } from '@tallyui/core';
+
+declare const productDoc: unknown, productTraits: ProductTraits;
 
 const builder = createOrderBuilder({
   currency: 'USD',
-  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+  taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false },
 });
 
 // Subscribe to order changes
 builder.order$.subscribe((order) => {
-  console.log('Total:', order.total);
-  console.log('Tax:', order.taxTotal);
-  console.log('Balance due:', order.balanceDue);
+  console.log('Total (cents):', order.totalMinor);
+  console.log('Tax (cents):', order.taxMinor);
+  console.log('Balance due (cents):', order.balanceDueMinor);
 });
 
 // Add products using connector traits
@@ -149,12 +164,12 @@ builder.applyLineDiscount(lineId, {
 // Apply a $5 order-level discount
 builder.applyOrderDiscount({
   type: 'fixed',
-  value: 5,
+  value: 500,
   label: 'Loyalty reward',
 });
 
-// Record payment
-builder.addPayment({ method: 'card', amount: 25.50 });
+// Record a $25.50 payment in cents
+builder.addPayment({ method: 'card', amountMinor: 2550 });
 
 // Attach a customer
 builder.setCustomer({ id: '42', name: 'Jane Doe', email: 'jane@example.com' });
@@ -168,12 +183,15 @@ When the same product is added twice, the builder increments the existing line i
 
 `createOrderManager` wraps the builder with persistence. It requires an RxDB collection to store parked order drafts:
 
-```typescript
+```ts
 import { createOrderManager } from '@tallyui/pos';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const db: TallyDatabase;
 
 const manager = createOrderManager({
   currency: 'USD',
-  taxContext: { getTaxRate: () => 0.1, pricesIncludeTax: false },
+  taxContext: { getTaxRatePpm: () => 100000, pricesIncludeTax: false },
   draftsCollection: db.order_drafts,
 });
 
@@ -187,7 +205,7 @@ const parkedId = await manager.parkCurrentOrder();
 
 // See all parked orders
 manager.parkedOrders$.subscribe((parked) => {
-  // [{ id, customerName, itemCount, total, parkedAt }]
+  // [{ id, customerName, itemCount, totalMinor, parkedAt, source }]
 });
 
 // Resume a parked order (restores all line items, discounts, payments)
@@ -200,12 +218,108 @@ await manager.deleteParkedOrder(parkedId);
 manager.newOrder();
 ```
 
+### Selling with useSale
+
+`useSale` is the React hook the platform apps sell with: one sale's cart, tender and completion on top of `createOrderBuilder`. Call it under a `TaxProvider`; [Cart](/docs/components/cart), [Tender](/docs/components/tender) and [ParkedSales](/docs/components/parked-sales) take its result as `sale`. The first argument is `settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>`; the second is the options below (`?` marks optional options).
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `registerId` | `string` | Register identifier passed to order finalization. |
+| `cashierRef` | `string` | Cashier reference passed to order finalization. |
+| `capabilities?` | `ServerCapabilities` | Server capabilities used by finalization and exposed to sale components. |
+| `discountCodes?` | `SaleDiscountCodes<any>` | Platform discount codes; without them, `applyCoupon` refuses with `COUPONS_UNSUPPORTED`. |
+| `tenderGate?` | `(attempt: { method: 'cash' \| 'external' }) => Promise<string \| null>` | Awaited after checkout checks: return a refusal or `null` to start tender; rejection gives `TENDER_GATE_FAILED`. |
+| `defaultCustomer?` | `CustomerSummary \| null` | Customer for each new sale, never a resumed one; changes apply to an idle cart or the next new sale, and a refused customer is skipped. |
+| `drafts?` | `RxCollection` | Collection created with `orderDraftSchema` where `park()` keeps carts. |
+| `currentPrice?` | `(variantId: string) => number \| undefined` | Current variant price in integer minor units, or unknown; `resume()` re-prices unless asked to keep parked prices. |
+| `session?` | `{ id: string; sessions: RegisterSessionCollection }` | Session pinned at tender start for completion; a refused stamp uses `lateSessionId` and records a `late-sale` fact without stopping the sale. |
+| `onSaleCompleted?` | `(posOrder: PosOrder) => Promise<void> \| void` | Receives the finalized order; must accept the same order again when completion is retried. |
+| `isStored?` | `(posOrder: PosOrder) => Promise<boolean>` | Confirms storage after a failed or hung save, including a refused mid-save `newSale()`; only `true` enables Continue, otherwise Retry is offered. |
+| `taxContextFor?` | `(customer: CustomerSummary \| null) => SaleTaxContext` | Memoized customer tax context, e.g. `saleTaxContexts(settings)`; customer changes re-tax the cart, while tender and receipt keep their rates. Defaults to `useTax()`. |
+
+| Group | Returned member | Description |
+|-------|-----------------|-------------|
+| State | `order` | Current order snapshot. |
+| State | `stage` | `SaleStage`: `cart`, `tender` with a `cash` or `external` method, or `receipt` with `order` and `posOrder`. |
+| State | `error` | Current error or refusal message, or `null`. |
+| State | `idle` | In the cart stage with no product lines, fees or shipping. |
+| State | `taxLocation` | Customer's matched tax address; undefined without `taxContextFor`. |
+| State | `capabilities` | Passed-through capabilities; components offer fees, shipping and custom lines at `orderCreate >= 5`, and tax controls as `lineTax` allows. |
+| State | `saving` | Completion is pending; the sale is locked and the UI offers Retry. |
+| State | `canContinue` | The pending order is confirmed stored, so the UI can offer Continue. |
+| State | `couponsRepricing` | Coupons are being priced again; tender refuses with `COUPONS_REPRICING`. |
+| Cart | `add(entry, traits)` | Adds a line or increments its quantity; returns `{ lineId }` or a refusal also shown in `error`. |
+| Cart | `setQuantity(lineId, quantity)` | Updates a line's quantity. |
+| Cart | `remove(lineId)` | Removes a line. |
+| Cart | `splitLine(lineId)` | Splits quantity N into N lines of one; returns a refusal or `null`. |
+| Cart | `setUnitPrice(lineId, amountMinor)` | Sets price in minor units of the line's tax mode and recalculates discounts and tax; returns a refusal or `null`. |
+| Cart | `applyDiscount(lineId, discount)` | Applies a line discount, or an order discount for `null`; returns a refusal (including `DISCOUNTS_UNSUPPORTED`) or `null`. |
+| Cart | `removeDiscount(id)` | Removes a discount. |
+| Cart | `applyCoupon(code)` | Looks up, checks and applies a platform discount code; resolves to a refusal or `null`. |
+| Cart | `removeCoupon(code)` | Removes an applied coupon; returns a refusal or `null`. |
+| Cart | `repriceCoupons()` | Retries coupon pricing; resolves to a refusal or error, or `null`. |
+| Cart | `setNote(note)` | Sets the note kept with parked carts and sent as the order note; a new sale clears it. |
+| Cart | `setCustomer(customer)` | Picks a customer or `null` for guest; refuses invalid customer data or a tax change once rates are fixed. |
+| Cart | `addFee(input)` | Adds a fee from `ChargeInput`; returns `{ id }` or a refusal. |
+| Cart | `updateFee(id, patch)` | Updates a fee; returns a refusal or `null`. |
+| Cart | `removeFee(id)` | Removes a fee; returns a refusal or `null`. |
+| Cart | `addShipping(input)` | Adds shipping from `ChargeInput` with optional `methodId`; returns `{ id }` or a refusal. |
+| Cart | `updateShipping(id, patch)` | Updates shipping; returns a refusal or `null`. |
+| Cart | `removeShipping(id)` | Removes shipping; returns a refusal or `null`. |
+| Cart | `addCustomLine(input)` | Adds a distinct custom line with `name`, `priceMinor` and optional `quantity`, `taxClass`, `taxStatus`, `sku`; returns `{ id }` or a refusal. |
+| Cart | `park()` | Stores the cart in `drafts` and starts a new sale; resolves to a refusal or `null`. |
+| Cart | `resume(draftId, options?)` | Restores a draft into an empty cart, rechecks coupons and optionally keeps parked prices with `keepParkedPrices`; resolves to a refusal or `null`. |
+| Cart | `switchSale(draftId)` | Parks the current cart and opens a draft, or a new sale for `null`; refuses while saving, partly paid, payment in motion or in tender. |
+| Cart | `closeSale()` | Discards the current sale and starts an empty one; refuses while saving, with money on an unfinished sale or in tender (`SALE_PARTLY_PAID`, `SALE_IN_TENDER`). |
+| Cart | `holdsStoreOrder(orderId)` | Resolves whether the live sale or a readable parked draft holds this store order. |
+| Cart | `openStoreOrder(order)` | Loads a reopened store order into an empty sale; returns a refusal or `null`. |
+| Tender | `startTender(method, options?)` | Starts `cash` or `external` tender and pins `options.session` or the hook's session; repeated calls keep the first pin. |
+| Tender | `setTender(tender)` | Replaces unlocked payments with one tender, or clears them for `null`. |
+| Tender | `addTender(tender)` | Adds a cash or external payment; external amounts are capped at the balance less payments in motion, and only cash gives change. |
+| Tender | `setTenderStatus(paymentId, status)` | Sets `authorized`, `captured` or `failed`; returns whether the status changed. |
+| Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. |
+| Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. |
+| Tender | `cancelTender()` | Clears unlocked payments and returns to the cart. |
+| Completion | `complete()` | Finalizes, saves and shows the receipt; refuses payments in motion with `PAYMENT_IN_MOTION`. Retry reuses the same pending order. |
+| Completion | `newSale()` | Starts an empty sale; a pending save must be confirmed stored before it can be abandoned, and its stored record is kept. |
+| Completion | `continueSale()` | Starts a new sale only for a confirmed stored pending completion, without redelivering it or showing its receipt. |
+
+`complete()` finalizes the order, stamps the `session` if given, and hands it to `onSaleCompleted`, where the app stores it for the outbox (for example, with `useOrderOutbox`'s `record`), then shows the receipt. While completion is pending, `saving` is true and every sale change refuses with `SALE_SAVING`; after a save failure, Retry calls `complete()` with the same pending order. `isStored` decides whether `canContinue` offers Continue: only confirmed storage enables it, and without `isStored` a failed save offers Retry only.
+
+```tsx
+import { useSale, type CatalogueEntry, type PosOrder, type RegisterSessionCollection } from '@tallyui/pos';
+import type { ProductTraits, ServerCapabilities, StoreSettings } from '@tallyui/core';
+import { VStack, Button, Text } from '@tallyui/components';
+
+declare const settings: Pick<StoreSettings, 'currency' | 'calcDiscountsSequentially'>;
+declare const registerId: string, cashierRef: string;
+declare const capabilities: ServerCapabilities;
+declare const session: { id: string; sessions: RegisterSessionCollection };
+declare const onSaleCompleted: (posOrder: PosOrder) => Promise<void>;
+declare const isStored: (posOrder: PosOrder) => Promise<boolean>;
+declare const entry: CatalogueEntry<unknown>, traits: ProductTraits<unknown>;
+
+// Render under a TaxProvider.
+function Sale() {
+  const sale = useSale(settings, { registerId, cashierRef, capabilities, session, onSaleCompleted, isStored });
+  return (
+    <VStack>
+      <Button onPress={() => sale.add(entry, traits)}><Text>Add item</Text></Button>
+      {sale.error ? <Text className="text-destructive">{sale.error}</Text> : null}
+    </VStack>
+  );
+}
+```
+
 ## Repositories
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
 
-```typescript
+```ts
 import { createRepository } from '@tallyui/pos';
+import type { TallyDatabase } from '@tallyui/database';
+
+declare const db: TallyDatabase;
 
 const productRepo = createRepository(db.products);
 
@@ -221,7 +335,11 @@ await productRepo.update('prod-new', { price: '5.00' });
 await productRepo.remove('prod-new');
 
 // Bulk operations
-await productRepo.bulkCreate([item1, item2, item3]);
+await productRepo.bulkCreate([
+  { id: 'prod-1', name: 'Espresso', price: '3.00' },
+  { id: 'prod-2', name: 'Latte', price: '4.50' },
+  { id: 'prod-3', name: 'Mocha', price: '5.00' },
+]);
 await productRepo.bulkRemove(['id-1', 'id-2']);
 ```
 
@@ -231,34 +349,36 @@ The reactive queries (`findAll$`, `search$`, etc.) stay live -- they re-emit whe
 
 `buildReceiptData` takes a completed order and a store config, and returns a structured receipt object ready for rendering or printing:
 
-```typescript
-import { buildReceiptData } from '@tallyui/pos';
+```ts
+import { buildReceiptData, type Order } from '@tallyui/pos';
+
+declare const order: Order;
 
 const receipt = buildReceiptData(order, {
   storeName: 'Blue Bottle Coffee',
   storeAddress: '123 Main St, San Francisco, CA',
   cashier: 'Alex',
   register: 'POS-1',
-  taxLabels: { 0.1: 'GST 10%', 0.05: 'Reduced GST 5%' },
+  taxLabels: { 100000: 'GST 10%', 50000: 'Reduced GST 5%' },
 });
 
 // receipt.header  — store name, address, order number, date, cashier, register
-// receipt.lineItems — name, sku, quantity, unitPrice, lineTotal
-// receipt.discounts — label, amount
+// receipt.lineItems — name, sku, quantity, unitPriceMinor, lineTotalMinor
+// receipt.discounts — label, amountMinor
 // receipt.totals — taxInclusive, subtotalMinor (before discounts), discountMinor, taxLines[], taxMinor, totalMinor: the display figures (ADR-063)
-// receipt.payments — method, amount, reference
-// receipt.changeDue — change owed to customer
+// receipt.payments — method, amountMinor, reference
+// receipt.changeDueMinor — change owed to customer in minor units
 // receipt.footer — note, barcode
 // receipt.currency — currency code
 ```
 
-The `taxLabels` config maps tax rates to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
+The `taxLabels` config maps tax rates in ppm (100000 = 10%) to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
 
 ## Logging
 
 `createLogger` provides structured logging with scopes and pluggable sinks. Each sink controls which log levels and scopes it listens to.
 
-```typescript
+```ts
 import { createLogger, consoleSink, callbackSink } from '@tallyui/pos';
 
 const logger = createLogger('pos');
@@ -292,7 +412,11 @@ replicationLogger.info('Sync started');
 
 Scoped loggers inherit all sinks from the parent. You can filter sinks by scope if you only want certain loggers to write to certain destinations:
 
-```typescript
+```ts
+import { consoleSink, type Logger } from '@tallyui/pos';
+
+declare const logger: Logger;
+
 logger.addSink(consoleSink({
   levels: ['debug', 'info', 'warn', 'error'],
   scopes: ['replication'], // only logs from the 'replication' scope

@@ -6,10 +6,19 @@
 // Not ported: 'opens the user sheet from the bar avatar', 'reopens the Add user consumer after
 // this site returns from OAuth' — the user avatar, user sheet and OAuth-return rehosting are all
 // dropped from this neutral port (design item 3).
+import * as React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { useRegisterSession } from '@tallyui/pos';
 import { RegisterBar } from '../register/register-bar';
+
+// react-native-web atomizes className into hashed classes, so copy it to a data attribute.
+vi.mock('react-native', async (importOriginal) => {
+  const rn = await importOriginal<typeof import('react-native')>();
+  const withClass = (Base: React.ElementType) =>
+    React.forwardRef((props: { className?: string }, ref) => <Base ref={ref} {...props} dataSet={{ class: props.className }} />);
+  return { ...rn, View: withClass(rn.View), Text: withClass(rn.Text) };
+});
 
 afterEach(() => cleanup());
 
@@ -61,6 +70,23 @@ it('shows the drawer only with a session or a last closure, and opens its panel'
 it('shows the offline pill', () => {
   render(<RegisterBar register={stub()} registerId="r" online={false} multiRegister={false} onOpenPanel={vi.fn()} />);
   expect(screen.getByTestId('register-bar-pill').textContent).toBe('Offline');
+});
+
+it('counts the sales to send in the offline pill', () => {
+  render(
+    <RegisterBar register={stub()} registerId="r" online={false} awaitingStore={2} multiRegister={false} onOpenPanel={vi.fn()} />,
+  );
+  expect(screen.getByTestId('register-bar-pill').textContent).toBe('Offline · 2 sales to send');
+});
+
+it('draws the pill as a warning dot and its word, not a filled badge', () => {
+  render(<RegisterBar register={stub()} registerId="r" online={false} multiRegister={false} onOpenPanel={vi.fn()} />);
+  const pill = screen.getByTestId('register-bar-pill');
+  const dot = pill.querySelector('[aria-hidden]');
+  expect(dot).not.toBeNull();
+  expect(dot?.getAttribute('data-class')).toContain('bg-warning');
+  expect(pill.getAttribute('data-class') ?? '').not.toContain('bg-warning');
+  expect(pill.textContent).toBe('Offline');
 });
 
 it('shows the choose-a-register pill ahead of offline', () => {

@@ -749,6 +749,34 @@ The order is: what all three apps need and nothing blocks; then what
 unlocks the most UI; then per-backend connector units. Units within a wave
 are independent and run in parallel.
 
+### Unit status at 2026-11-17 (origin/main 7bf9270e)
+
+[PARITY.md](PARITY.md) (refreshed the same day against the live demos) says
+which of these the medusapos and vendurepos demos already show. Merged is not
+the same as adopted: several merged units have not reached a demo yet.
+
+- **Merged:** 1–17, 19–23, 25, 29–31, 33–38, and the line split (#726).
+- **Partly done:**
+  - 28: #609 has no refund, Z or report defaults;
+  - 34a: #636.
+- **Not started:** 18, 24, 26, 27, 32, 34b, 34c, 39 and 40+, and tax exempt.
+- **Connector units:**
+  - Medusa `listOrders` and `emailReceipt` are not started.
+  - Vendure orders are done (#595).
+  - `updateCustomer` is done for Woo (#611), Medusa (#613) and Vendure
+    (#614).
+  - Woo `paymentMethods` is partly done (#688).
+  - The Woo tax table is partly done (#675, #750, #821).
+  - Not started for Woo: v2 money endpoints, stock reconcile, term feeds, the
+    customers collection and barcode lookup.
+  - `cashier()` and `listRegisters()` are not started in any connector.
+- **Shared asks:**
+  - not started: decimal quantity, the stock guard and `MovementSheet`
+    chips;
+  - partly done: `updateLine`;
+  - merged: tax by address (#731, #738, #739, #755, #761) and
+    `CustomerServiceError.status` (#607).
+
 ### Wave 1: unblocked foundations (start now)
 
 | # | Unit | Package(s) | Area | Size | Deps | Apps | Door | Asked |

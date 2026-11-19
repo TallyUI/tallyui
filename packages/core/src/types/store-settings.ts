@@ -1,3 +1,4 @@
+import type { MoneyFormat } from '../money';
 import type { TaxRounding } from './connector';
 import type { TaxAddress, TaxBasedOn } from '../tax/woocommerce/tax-location';
 import type { WooTaxRate } from '../tax/woocommerce/types';
@@ -27,6 +28,10 @@ export interface StoreSettings {
   taxRoundAtSubtotal?: boolean;
   /** WooCommerce's calculate coupon discounts sequentially setting. */
   calcDiscountsSequentially?: boolean;
+  /** WCPOS's "prevent overselling" store setting: WCPOS v2's stock guard runs only when it is on. Absent: the connector did not read it; treat it as off. */
+  preventOverselling?: boolean;
+  /** The store's own money format, for `@tallyui/pos`'s `CurrencyProvider` `format`. Display only: amounts, rounding and orders never read it. Absent: the connector did not read one; money reads through Intl as before. */
+  moneyFormat?: MoneyFormat;
   shippingTaxClass?: string;
   taxClassSlugs?: string[];
   /** The tax classes with their display names, in the store's order. Display only. Absent when the connector did not read them. */

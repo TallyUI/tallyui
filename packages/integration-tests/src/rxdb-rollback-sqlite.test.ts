@@ -72,14 +72,14 @@ it('the fixture and its snapshots are present', () => {
           // Two older stores (v2 and v4, a main build rolled back): an open migrates one, so the first rejects DM4
           // with the v4 store left, and the reopen recovers the rest (ADR-069). A 2.0.0 till's v2 store takes one open.
           await expect(addPosOrderCollection(db)).rejects.toMatchObject({ code: 'DM4' });
-          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-13', 'pos_orders-4']);
+          expect(storedCollections(copyPath).tables).toEqual(['pos_orders-16', 'pos_orders-4']);
           const collection = await addPosOrderCollection(db);
-          expect(collection.schema.version).toBe(13);
+          expect(collection.schema.version).toBe(16);
           expect(await readFresh(collection, { selector: {}, sort: [{ id: 'asc' }] })).toStrictEqual(expected);
 
           const pending = expected.filter((order) => order.syncStatus === 'pending').map((order) => order.commandId).sort();
           expect(pending).toHaveLength(10);
-          const outbox = createOrderOutbox({ collection, deviceId: 'rollback-device', random: () => 0.5, transport: { send: async (batch) => {
+          const outbox = createOrderOutbox({ collection, deviceId: 'rollback-device', random: () => 0.5, transport: { send: async (batch: OrderCreateEnvelope[]) => {
             sent.push(...structuredClone(batch));
             return { kind: 'results', results: batch.map((command) => ({ id: command.id, status: 'applied' as const,
               serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) };
@@ -99,7 +99,7 @@ it('the fixture and its snapshots are present', () => {
         handle.raw.close();
       }
       // Only the v6 collection record and store are left.
-      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-13'], tables: ['pos_orders-13'] });
+      expect(storedCollections(copyPath)).toEqual({ records: ['collection|pos_orders-16'], tables: ['pos_orders-16'] });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

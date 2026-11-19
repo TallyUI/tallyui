@@ -10,7 +10,7 @@ import { payloadBoundErrors, payloadShapeErrors, precheckCommand } from '@tallyu
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
 import { createOrderOutbox } from '../outbox/order-outbox';
 import type { CommandTransport } from '../outbox/types';
-import { ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope } from './command';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
@@ -89,6 +89,26 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
     expect(JSON.stringify(envelope(taxed, 8))).toBe(JSON.stringify(envelope(withoutLines(taxed), 8)));
   });
 
+  it("never sends kept lines', fees', shipping's or payments' store ids in order.create", () => {
+    const withoutIds: PosOrder = { ...sale(),
+      fees: [{ id: 'fee-1', name: 'Bag', amountMinor: 20, taxStatus: 'none', netMinor: 20, taxMicros: '0', taxLines: [] }],
+      shipping: [{ id: 'shipping-1', name: 'Delivery', amountMinor: 30, taxStatus: 'none', netMinor: 30, taxMicros: '0', taxLines: [] }] };
+    const withIds: PosOrder = { ...withoutIds,
+      baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298',
+      lines: [{ ...withoutIds.lines[0], storeLineId: '11' }], fees: [{ ...withoutIds.fees![0], storeLineId: '12' }],
+      shipping: [{ ...withoutIds.shipping![0], storeLineId: '13' }], payments: [{ ...withoutIds.payments[0], storePaymentId: '21' }] };
+    for (const maxVersion of [6, 8, 9]) {
+      const sent = JSON.stringify(envelope(withIds, maxVersion));
+      expect(sent).toBe(JSON.stringify(envelope(withoutIds, maxVersion)));
+      for (const field of ['storeOrderId', 'baseRevision', 'storeLineId', 'storePaymentId']) expect(sent).not.toContain(field);
+    }
+  });
+
+  it('refuses to build order.create for a reopened sale', () => {
+    const withoutIds = sale();
+    expect(() => toOrderCreateEnvelope({ ...withoutIds, storeOrderId: '4711' }, 'device_golden')).toThrow('order.update');
+  });
+
   it('keeps a WooCommerce replay coupon at today’s version and bytes', () => {
     const order = sale({ woo: true });
     expect(order.coupons![0]).not.toHaveProperty('lines');
@@ -117,11 +137,7 @@ describe('order.create v9 store-priced coupon lines (#790)', () => {
     } finally { await db.remove(); }
   });
 
-  it('pins the stored maxima and golden version to the till maximum of 9', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(ORDER_CREATE_MAX_VERSION).toBe(9);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it('keeps its golden at version 9 (the till maximum is pinned in command-v10.test.ts)', () => {
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(9);
   });
 });

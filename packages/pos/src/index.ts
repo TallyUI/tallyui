@@ -102,12 +102,12 @@ export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } f
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
 
 // Product
-export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory } from './product';
+export { searchProducts, sortProducts, productSortValue, PRODUCT_SORT_FIELDS, type ProductSort, type ProductSortValue, catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE, type CatalogueView, type CatalogueGridColumns, type CatalogueViewState, type CatalogueViewAction, withStockOverlay, getProductStock, stockOverlay$, stockOverlayAsOf$, productCategories, listCategories, inCategory, productTerms, listTermGroups, hasTerm, type ProductTermGroup } from './product';
 
 // Scanner
-export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner, SCANNER_DEVICE_KEY_MAX_LENGTH, normalizeUuid, isCanonicalUuid, scannerDeviceKey, scannerTransport, createSerialLineDecoder, decodeHidPosReport, isWebSerialSupported, isWebHidSupported, isChooserCancel, SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile, createScanHub, createScanBus, inertScanHub, dedupeScans, SCAN_DEDUP_WINDOW_MS } from './scanner';
+export { DEFAULT_WEDGE_SETTINGS, DEFAULT_MIN_SCAN_CHARS, WEDGE_END_OF_SCAN_MS, createWedgeState, foldWedgeKey, stripBoundary, replayWedgeDetector, createWedgeDetector, DEFAULT_COOLDOWN_MS, normalizeRetailCode, hasValidRetailCheckDigit, retailCodeTwin, createScanSession, useBarcodeScanner, SCANNER_DEVICE_KEY_MAX_LENGTH, normalizeUuid, isCanonicalUuid, scannerDeviceKey, scannerTransport, createSerialLineDecoder, decodeHidPosReport, isWebSerialSupported, isWebHidSupported, isChooserCancel, SCANNER_PROFILES_COLLECTION, scannerProfileSchema, scannerProfileCollection, addScannerProfileCollection, scannerProfiles$, readScannerProfiles, saveScannerProfile, removeScannerProfile, createScanHub, createScanBus, inertScanHub, dedupeScans, SCAN_DEDUP_WINDOW_MS, analyzeScanTrace } from './scanner';
 export { scannerProfileStore, createDeviceScannerStateCell, createSerialScanner, serialPortIdentity, DEFAULT_SERIAL_BAUD_RATE, STANDARD_SPP_SERVICE_CLASS_ID } from './scanner';
-export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions, ScannerConnectionType, ScannerIdentity, ScannerTransport, SerialLineDecoderOptions, SerialLineDecoder, HidPosDecodeOptions, HidPosResult, ScannerProfile, ScannerProfileCollection, ScanSourceKind, ScanSource, ScanEvent, ScanBus, ScanHub, WedgeScanMeta } from './scanner';
+export type { WedgeSettings, WedgeState, TraceKey, WedgeReplayResult, WedgeDetectorOptions, WedgeDetector, ScanRejectReason, ScanOfferResult, ScanSessionOptions, ScanSession, UseBarcodeScannerOptions, ScannerConnectionType, ScannerIdentity, ScannerTransport, SerialLineDecoderOptions, SerialLineDecoder, HidPosDecodeOptions, HidPosResult, ScannerProfile, ScannerProfileCollection, ScanSourceKind, ScanSource, ScanEvent, ScanBus, ScanHub, WedgeScanMeta, ScanTraceSettings, TraceSuggestion, TraceAnalysis } from './scanner';
 export type { ScannerProfileStore, DeviceScannerSettings, DeviceScannerState, DeviceScannerErrorPhase, DeviceScannerErrorHandler, DeviceScannerStateCell, DeviceScanner, SerialPortInfoLike, SerialPortLike, SerialLike, SerialScannerOptions } from './scanner';
 export { createHidScanner, HID_POS_USAGE_PAGE } from './scanner';
 export type { HidInputReportEventLike, HidDeviceLike, HidLike, HidScannerOptions } from './scanner';
@@ -140,14 +140,16 @@ export type {
 export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { refundDueOf } from './pos-order';
+export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
 export { TAX_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
-export { CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
-export { createHttpCommandTransport, createOrderOutbox, isRequeueable, useOrderOutbox, outboxLogger } from './outbox';
+export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';
 export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
 export type { OutboxCounts, OutboxHealth, UseOutboxHealthOptions, UseOutboxHealthResult } from './outbox';
@@ -155,12 +157,13 @@ export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
+export { sendOrderReopen, isOrderReopenInFlight, isReopenOffered, type OrderReopenOutcome, storeOrderForReopen, ReopenEntryError, REOPEN_REFUSED_STATUSES, type ReopenEntryReason, reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE, type ReopenStoreOrderOutcome } from './reopen';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures } from './tender';
 
 // Register
-export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, deriveDrawerTerms, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
+export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, deriveDrawerTerms, takingsByMethod, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';
 export type { MovementType, LedgerRow, Movement, DrawerTerm, DrawerTerms } from './register';
 export { registerSessionSchema, registerSessionCollection, cashMovementSchema, closureSchema } from './register';
 export { addRegisterSessionCollection, RegisterSessionOpenClosedError, registerSessionsLogger, REGISTER_SESSION_MIGRATION_CLOSE_WAIT_MS } from './register';
@@ -171,9 +174,12 @@ export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegis
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
 export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, RegisterSessionConflictError, RegisterTakeOverError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
-export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows } from './register';
+export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
 export type { Correction, RecordedFigures, ClosureScope } from './register';
-export { minorToDecimal, formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact } from './register';
+export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, TAX_STORE_PAID_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
+import { minorToDecimal as registerMinorToDecimal } from './register';
+/** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
+export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';

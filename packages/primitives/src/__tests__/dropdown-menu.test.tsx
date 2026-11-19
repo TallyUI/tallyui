@@ -4,14 +4,14 @@ import * as DropdownMenu from '../dropdown-menu';
 import { PortalHost } from '../portal';
 
 describe('DropdownMenu', () => {
-  const renderMenu = (props = {}) =>
+  const renderMenu = (props = {}, contentProps = {}) =>
     render(
       <div>
         <PortalHost />
         <DropdownMenu.Root {...props}>
           <DropdownMenu.Trigger testID="trigger">Menu</DropdownMenu.Trigger>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content testID="content">
+            <DropdownMenu.Content testID="content" {...contentProps}>
               <DropdownMenu.Item testID="item-1">Item 1</DropdownMenu.Item>
               <DropdownMenu.Separator testID="sep" />
               <DropdownMenu.Item testID="item-2">Item 2</DropdownMenu.Item>
@@ -115,5 +115,61 @@ describe('DropdownMenu', () => {
     );
     fireEvent.click(screen.getByTestId('radio-b'));
     expect(onValueChange).toHaveBeenCalledWith('b');
+  });
+
+  it('on web measures the trigger with measureInWindow, not measure', () => {
+    renderMenu();
+    const trigger = screen.getByTestId('trigger');
+    const measure = vi.fn();
+    const measureInWindow = vi.fn();
+    Object.assign(trigger, { measure, measureInWindow });
+    fireEvent.click(trigger);
+    expect(measureInWindow).toHaveBeenCalled();
+    expect(measure).not.toHaveBeenCalled();
+  });
+
+  describe('Escape', () => {
+    it('D1: Escape closes an open menu', () => {
+      renderMenu({ defaultOpen: true });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+
+    it('D2: Escape closes an open Sub first, then the menu', () => {
+      render(
+        <div>
+          <PortalHost />
+          <DropdownMenu.Root defaultOpen>
+            <DropdownMenu.Trigger>M</DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content testID="content">
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger testID="sub-trigger">More</DropdownMenu.SubTrigger>
+                  <DropdownMenu.SubContent testID="sub-content">
+                    <DropdownMenu.Item>Nested</DropdownMenu.Item>
+                  </DropdownMenu.SubContent>
+                </DropdownMenu.Sub>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
+        </div>
+      );
+      fireEvent.click(screen.getByTestId('sub-trigger'));
+      expect(screen.getByTestId('sub-content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('sub-content')).toBeNull();
+      expect(screen.getByTestId('content')).toBeTruthy();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('content')).toBeNull();
+    });
+
+    it('D3: onEscapeKeyDown can keep it open', () => {
+      const onEscapeKeyDown = vi.fn((event: KeyboardEvent) => event.preventDefault());
+      renderMenu({ defaultOpen: true }, { onEscapeKeyDown });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('content')).toBeTruthy();
+      expect(onEscapeKeyDown).toHaveBeenCalledTimes(1);
+    });
   });
 });

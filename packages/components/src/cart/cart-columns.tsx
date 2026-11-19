@@ -4,6 +4,7 @@
 import type { JSX } from 'react';
 import { View, type ViewProps } from 'react-native';
 import { cn } from '@tallyui/theme';
+import { useT } from '../i18n';
 import { Text } from '../ui';
 
 /**
@@ -11,11 +12,12 @@ import { Text } from '../ui';
  * left, so a total never wraps. The total cell has a floor, so a long total widens its own cell rather than wrapping.
  */
 export const CART_COLUMNS = {
-  quantity: { head: 'w-12 flex-none items-center pr-2 pl-3', cell: 'w-12 flex-none items-center pr-2 pl-3' },
+  quantity: { head: 'w-12 flex-none items-center pr-1 pl-2', cell: 'w-12 flex-none items-center pr-2 pl-3' },
   image: { head: 'w-14 flex-none items-center justify-center pl-3', cell: 'w-14 flex-none items-center justify-center pl-3' },
   name: { head: 'min-w-0 flex-1 px-3', cell: 'min-w-0 flex-1 px-3' },
   sku: { head: 'w-24 flex-none px-2', cell: 'w-24 flex-none px-2' },
   price: { head: 'w-18 flex-none items-end px-2', cell: 'w-18 flex-none items-end px-2' },
+  regularPrice: { head: 'w-18 flex-none items-end px-2', cell: 'w-18 flex-none items-end px-2' },
   total: { head: 'w-20 flex-none items-end pr-3 pl-2', cell: 'min-w-20 flex-none items-end pr-3 pl-2' },
 };
 
@@ -32,8 +34,9 @@ export function cartShowsPrice({ cartWidth, windowWidth, windowHeight }:
 }
 
 /**
- * v2's Cart Settings › Columns: each column's `show` switch and display options. Every field is optional; the
- * defaults are today's look and v2's: Qty, Item, Price and Total show; Image, SKU, `quantity.split` and `name.sku` are off.
+ * v2's Cart Settings › Columns: each column's `show` switch, display options and order. Every field is optional; the
+ * defaults are today's look and v2's: Qty, Item, Price and Total show, in v2's order (Qty, Image, Item, SKU, Price,
+ * Regular Price, Total), with `price.onSale` on; Image, SKU, Regular Price, `quantity.split` and `name.sku` are off.
  */
 export interface CartColumnSettings {
   /** `split`: a Split link under a quantity above 1. */
@@ -43,29 +46,51 @@ export interface CartColumnSettings {
   /** `sku`: the SKU on a line under the name. */
   name?: { show?: boolean; sku?: boolean };
   sku?: { show?: boolean };
-  /** Still folds on a narrow cart or a phone (`showPrice`). */
-  price?: { show?: boolean };
+  /** Still folds on a narrow cart or a phone (`showPrice`). `onSale` (default true): the regular price struck through
+   * above a lower price (v2's `on_sale`). */
+  price?: { show?: boolean; onSale?: boolean };
+  /** The regular unit price, read-only (v2's Regular Price column); off by default. */
+  regularPrice?: { show?: boolean };
   total?: { show?: boolean };
+  /** The column order (v2's drag order). Listed ids come first, in this order; ids not listed follow in the default
+   * order; unknown and repeated ids are ignored. */
+  order?: readonly CartColumnId[];
 }
 
-export type CartColumnId = 'quantity' | 'image' | 'name' | 'sku' | 'price' | 'total';
-const DEFAULT_SHOWN: Record<CartColumnId, boolean> = { quantity: true, image: false, name: true, sku: false, price: true, total: true };
+export type CartColumnId = 'quantity' | 'image' | 'name' | 'sku' | 'price' | 'regularPrice' | 'total';
+const DEFAULT_SHOWN: Record<CartColumnId, boolean> = {
+  quantity: true, image: false, name: true, sku: false, price: true, regularPrice: false, total: true,
+};
 
-/** The visible columns, in their fixed order; the heads and every line use it, so they cannot disagree. */
+/** Every column in `columns.order`, then the default order. */
+function orderedIds(columns: CartColumnSettings): CartColumnId[] {
+  const all = Object.keys(DEFAULT_SHOWN) as CartColumnId[];
+  return [...new Set([...(columns.order ?? []).filter((id) => all.includes(id)), ...all])];
+}
+
+const shown = (columns: CartColumnSettings, showPrice: boolean) => (id: CartColumnId) =>
+  (columns[id]?.show ?? DEFAULT_SHOWN[id]) && (id !== 'price' || showPrice);
+
+/** The visible columns, in order; the heads and every line use it, so they cannot disagree. */
 export function cartColumnIds(columns: CartColumnSettings = {}, { showPrice = true }: { showPrice?: boolean } = {}): CartColumnId[] {
-  return (Object.keys(DEFAULT_SHOWN) as CartColumnId[])
-    .filter((id) => (columns[id]?.show ?? DEFAULT_SHOWN[id]) && (id !== 'price' || showPrice));
+  return orderedIds(columns).filter(shown(columns, showPrice));
 }
 
 /** cartColumnIds with a `fill` in Item's place when it is hidden, so the amount columns stay right-aligned. */
-export function cartColumnSlots(...args: Parameters<typeof cartColumnIds>): (CartColumnId | 'fill')[] {
-  const ids = cartColumnIds(...args);
+export function cartColumnSlots(columns: CartColumnSettings = {}, { showPrice = true }: { showPrice?: boolean } = {}): (CartColumnId | 'fill')[] {
+  const ordered = orderedIds(columns);
+  const ids = ordered.filter(shown(columns, showPrice));
   if (ids.includes('name')) return ids;
-  const at = ids.filter((id) => id === 'quantity' || id === 'image').length;
-  return [...ids.slice(0, at), 'fill', ...ids.slice(at)];
+  const after = ordered.slice(ordered.indexOf('name') + 1);
+  const at = ids.findIndex((id) => after.includes(id));
+  return at < 0 ? [...ids, 'fill'] : [...ids.slice(0, at), 'fill', ...ids.slice(at)];
 }
 
-const HEADS: Record<CartColumnId, string> = { quantity: 'Qty', image: '', name: 'Item', sku: 'SKU', price: 'Price', total: 'Total' };
+/** Each head's catalogue key, v2's `pos_cart.col_*` and `common.*`; Image has no label. */
+const HEADS: Partial<Record<CartColumnId, string>> = {
+  quantity: 'pos_cart.col_qty', name: 'pos_cart.col_item', sku: 'common.sku', price: 'pos_cart.col_price',
+  regularPrice: 'common.regular_price', total: 'pos_cart.col_total',
+};
 
 export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
   /** Show the Price head (default true); pass the same value as each CartLine's `showPrice`. */
@@ -83,11 +108,13 @@ export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
  * ```
  */
 export function CartColumnHeads({ showPrice = true, columns, className, ...props }: CartColumnHeadsProps): JSX.Element {
+  const t = useT();
+  const label = (id: CartColumnId) => HEADS[id] && t(HEADS[id]);
   return (
     <View role="row" className={cn('flex-row border-b border-border', className)} {...props}>
       {cartColumnSlots(columns, { showPrice }).map((id) => id === 'fill' ? <View key={id} className="flex-1" /> : (
         <View key={id} role="columnheader" className={cn('h-9 justify-center', CART_COLUMNS[id].head)}>
-          {HEADS[id] ? <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground" numberOfLines={1}>{HEADS[id]}</Text> : null}
+          {label(id) ? <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground" numberOfLines={1}>{label(id)}</Text> : null}
         </View>
       ))}
     </View>

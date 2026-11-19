@@ -2,8 +2,9 @@
 // (the ⋮ beside a full-width "Checkout {order_total}"), MIT, WCPOS.
 import * as React from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
-import { formatMoney, type Money } from '@tallyui/core';
+import { useFormatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { CartNoteRow } from './cart-note-row';
 
 export interface CartFootAction {
   label: string;
@@ -17,6 +18,8 @@ export interface CartFootProps {
   onCheckout: () => void;
   /** The ⋮ menu's items; the ⋮ is left out when there are none. */
   actions?: readonly CartFootAction[];
+  /** v2's note row above the buttons: hidden when the text is empty; pressing it calls onPress (the app opens its note editor). */
+  note?: { text: string; onPress: () => void };
   /** Disables Checkout only; the menu stays usable. */
   disabled?: boolean;
   locale?: string;
@@ -33,7 +36,8 @@ const MENU_LABEL = 'More actions';
  * <CartFoot total={total} onCheckout={startCheckout} actions={[{ label: 'Void', onPress: voidSale, destructive: true }]} />
  * ```
  */
-export function CartFoot({ total, onCheckout, actions = [], disabled = false, locale, className }: CartFootProps) {
+export function CartFoot({ total, onCheckout, actions = [], note, disabled = false, locale, className }: CartFootProps) {
+  const formatMoney = useFormatMoney();
   const [open, setOpen] = React.useState(false);
   const trigger = React.useRef<View>(null);
   const menu = React.useRef<View>(null);
@@ -53,6 +57,7 @@ export function CartFoot({ total, onCheckout, actions = [], disabled = false, lo
 
   return (
     <View className={cn('gap-2', className)}>
+      {note ? <CartNoteRow text={note.text} onPress={note.onPress} /> : null}
       {open && actions.length > 0 ? (
         <View ref={menu} role="menu" aria-label={MENU_LABEL} testID="cart-foot-menu"
           className="rounded-md border border-border bg-card p-1">

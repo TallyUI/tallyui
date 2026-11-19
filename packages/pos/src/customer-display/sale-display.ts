@@ -5,10 +5,10 @@
  */
 import type { Order, Payment, SentOrder } from '../order';
 import { buildReceiptData } from '../receipt/build-receipt-data';
-import type { ReceiptConfig, ReceiptData } from '../receipt/types';
+import type { ReceiptConfig } from '../receipt/types';
 import type { SaleStage } from '../sale/use-sale';
 import { legStatus } from '../tender/payment-legs';
-import type { DisplayLink } from './display-link';
+import { callDisplay, type DisplayCall, type DisplayLink } from './display-link';
 import type { DisplayPayment } from './protocol';
 
 export interface SaleDisplayOptions {
@@ -60,8 +60,6 @@ export function derivePaymentEvent(
   return null;
 }
 
-type DisplayCall = ['cart', ReceiptData | null] | ['payment', ReceiptData, DisplayPayment];
-
 /** v2's CustomerDisplaySnapshotSource without React: each `update` shows the sale's cart, payment or idle. */
 export function createSaleDisplayPublisher(link: DisplayLink, options: SaleDisplayOptions = {}): SaleDisplayPublisher {
   let prior: { orderId: string; payments: readonly Payment[]; completed: boolean } | null = null;
@@ -73,8 +71,7 @@ export function createSaleDisplayPublisher(link: DisplayLink, options: SaleDispl
     const key = JSON.stringify(call);
     if (key === lastKey) return;
     lastKey = key;
-    if (call[0] === 'cart') link.showCart(call[1]);
-    else link.showPayment(call[1], call[2]);
+    callDisplay(link, call);
   };
   return {
     update({ order, stage }) {

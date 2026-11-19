@@ -23,7 +23,7 @@ import { Catalogue } from '@tallyui/components';
 />
 ```
 
-Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order. With `showFilterBar`, In Stock is on by default and hides out-of-stock and backorder products (a stock the backend did not report stays) unless `items` is supplied; Featured and On Sale are only passed out through `onFiltersChange`, for an app whose connector knows them.
+Renders a searchable product grid or table with barcode or SKU lookup, variant choices, and stock sync times. Optional category navigation and a view toggle update controlled or internal view state; supplied `items` are displayed in their given order. With `showFilterBar`, In Stock is on by default and hides out-of-stock and backorder products (a stock the backend did not report stays) unless `items` is supplied; Featured and On Sale are only passed out through `onFiltersChange`, for an app whose connector knows them. With `variationsStyle="popover"`, a grid tile opens its VariationPicker; with `variationsStyle="drill"`, it swaps the grid for the product's variant tiles, with the product's tile first as Back; the table view keeps the list chooser. The `cameraScan` button shows only when `cameraScanner` is passed too.
 
 ## Props
 
@@ -35,6 +35,7 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `onSelect` | `(entry: CatalogueEntry<Doc>) => void` | required | Receives the selected product and variant with the nearest ConnectorProvider's stock overlay applied to a copy |
 | `statusText` | `string` | --- | Status line text; a search appends the number of matching results |
 | `statusAccessory` | `ReactNode` | --- | Content at the end of the status line; renders the row even without `statusText` |
+| `searchAccessory` | `ReactNode` | --- | Content at the end of the search row, after the camera scan button and the view toggle |
 | `lastSyncedAt` | `Date \| null` | required | Last catalogue sync time, used for the stock-as-of time and initial loading state |
 | `loading` | `boolean` | --- | Whether the first pull is running; when omitted, uses `lastSyncedAt === null` with no `pullError` |
 | `pullError` | `unknown` | --- | Last product pull error; when set, a never-synced empty catalogue is not treated as loading |
@@ -49,11 +50,19 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `onStateChange` | `(state: CatalogueViewState) => void` | --- | Receives loaded state or the cashier's next state, including requested state in controlled mode |
 | `showViewToggle` | `boolean` | `false` | Shows the grid and table toggle in the header |
 | `showCategoryNav` | `boolean` | `false` | Shows category navigation in the header |
+| `categoryBrowse` | `'chips' \| 'tiles'` | `'chips'` | With `showCategoryNav`, shows categories as the chip row or as poster tiles with product counts that open under a breadcrumb; the breadcrumb wraps a long category name, collapses to "‹ Categories" on a phone, and on web Escape goes back to the tiles |
 | `categories` | `ProductCategory[]` | --- | Replaces categories derived from the listed products |
 | `items` | `Doc[]` | --- | App-filtered and sorted list shown as given; `products` still drives scanning and variant choices |
 | `onQueryChange` | `(query: string) => void` | --- | Receives search text on each input change for app-owned filtering |
+| `pickAnyOptions` | `boolean` | `false` | Asks for a value for each of a variant's local "Any" option groups before `onSelect`; set it only when the store accepts order.create version 6 |
 | `cartLines` | `readonly CartQuantityLine[]` | --- | The open sale's lines; each grid tile shows an `InCartBadge` with its product's summed quantity, all variants together |
 | `showFilterBar` | `boolean` | `false` | Shows a `ProductFilterBar` under the search box |
 | `filterChips` | `readonly ProductFilterChip[]` | `['inStock']` | Chips the bar shows; Catalogue applies only In Stock itself |
+| `inStockKeepsBackorder` | `boolean` | `false` | With the In Stock filter on, keeps backorder products in the grid and drops only out-of-stock ones |
 | `filters` | `ProductFilters` | --- | Controlled filters; uncontrolled state starts at `DEFAULT_PRODUCT_FILTERS` (In Stock on) |
 | `onFiltersChange` | `(filters: ProductFilters) => void` | --- | Receives the cashier's next filters, including requested filters in controlled mode |
+| `variationsStyle` | `'list' \| 'popover' \| 'drill'` | `'list'` | `'popover'` opens a grid tile's VariationPicker in a popover for a product with option groups; `'drill'` swaps the grid for the product's variant tiles, with its tile first as Back; `'list'` opens the variant list chooser |
+| `cameraScan` | `boolean` | `false` | Shows the camera scan button beside the search box, opening an inline camera scanner panel |
+| `cameraScanner` | `Omit<CameraScannerPanelProps, 'onClose'>` | --- | Passed to the camera scanner panel; the app wires its `useCameraScan` result here |
+| `tableRow` | `{ thumbnail?: boolean; addButton?: boolean }` | --- | In table view, `thumbnail` leads each row and `addButton` ends it with a button that does what a row press does |
+| `rowsSlot` | `ReactNode` | --- | Rows such as notices rendered under the header and above the grid, table, or category tiles |

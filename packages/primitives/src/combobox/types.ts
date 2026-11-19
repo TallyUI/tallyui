@@ -55,7 +55,10 @@ interface PortalProps extends ForceMountable {
   children?: React.ReactNode;
 }
 
-interface ContentProps extends SlottableViewProps, ForceMountable {}
+interface ContentProps extends SlottableViewProps, ForceMountable {
+  /** Platform: WEB ONLY. Called on Escape before the list closes; call event.preventDefault() to keep it open. */
+  onEscapeKeyDown?: (event: KeyboardEvent) => void;
+}
 
 interface ItemProps extends SlottablePressableProps {
   value: string;

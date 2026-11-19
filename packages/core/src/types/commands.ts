@@ -12,7 +12,7 @@ export interface CommandEnvelope<P = unknown> {
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
    *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -26,7 +26,7 @@ export type RegisterCommandType = 'register.session.open' | 'register.session.tr
 export type RegisterCommandEnvelope<P = Record<string, unknown>> =
   Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: RegisterCommandType; version: number };
 /** Any command a transport can carry. */
-export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown> | OrderRefundEnvelope<unknown>;
+export type AnyCommandEnvelope = CommandEnvelope<unknown> | RegisterCommandEnvelope<unknown> | OrderRefundEnvelope<unknown> | OrderReopenEnvelope<unknown> | OrderUpdateEnvelope<unknown>;
 
 /** A line's refunded quantity and restock choice (ADR-080). */
 export interface OrderRefundLine { orderLineId: string; quantity: number; restock: boolean }
@@ -58,11 +58,50 @@ export interface OrderRefundOrderStateData { state: string }
 /** The session that is not open on the refunding register (ADR-080). */
 export interface OrderRefundNoOpenSessionData { sessionId: string }
 
+/** An online reopen against a store order, attributed to the cashier and register (ADR-090). */
+export interface OrderReopenPayload {
+  orderId: string; clientOrderId?: string; baseRevision?: string;
+  cashierRef: string; registerId: string; storeId?: string; createdAt: string;
+}
+/** An order.reopen v1 command with the shared idempotency envelope (ADR-090). */
+export type OrderReopenEnvelope<P = OrderReopenPayload> =
+  Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: 'order.reopen'; version: 1 };
+/** The reopened order's server identity, status and revision (ADR-090). */
+export interface OrderReopenResult { orderId: string; status: string; revision?: string }
+/** Per-command reopen refusals (ADR-090). */
+export type OrderReopenRejectionCode = 'payment_in_motion' | 'order_state' | 'revision_conflict' | 'forbidden';
+/** The payment or attempt preventing a reopen (ADR-090). */
+export interface OrderReopenPaymentInMotionData { paymentId?: string; attemptId?: string }
+/** The order state preventing a reopen and the store's refusal code (ADR-090). */
+export interface OrderReopenOrderStateData { state: string; storeCode?: string }
+
+/** A kept line's store order-item id, absent on a new line (ADR-090). */
+export type OrderUpdateLine = OrderCreateLine & { storeLineId?: string };
+/** A kept fee's store order-item id, absent on a new fee (ADR-090). */
+export type OrderUpdateFee = OrderCreateFee & { storeLineId?: string };
+/** A kept shipping charge's store order-item id, absent on a new charge (ADR-090). */
+export type OrderUpdateShipping = OrderCreateShipping & { storeLineId?: string };
+/** A payment already on the order carries its store id and is never re-taken (ADR-090). */
+export type OrderUpdatePayment = OrderCreatePayment & { paymentId?: string };
+/** The reopened sale's whole new state, checked by its named order.create version (ADR-090). */
+export interface OrderUpdatePayload extends Omit<OrderCreatePayload, 'lines' | 'payments' | 'fees' | 'shipping'> {
+  orderId: string; baseRevision?: string; createVersion: OrderCreateEnvelope['version'];
+  lines: OrderUpdateLine[]; payments: OrderUpdatePayment[];
+  fees?: OrderUpdateFee[]; shipping?: OrderUpdateShipping[];
+}
+/** An order.update v1 command with the shared idempotency envelope (ADR-090). */
+export type OrderUpdateEnvelope<P = OrderUpdatePayload> =
+  Omit<CommandEnvelope<P>, 'type' | 'version'> & { type: 'order.update'; version: 1 };
+/** Per-command update refusals; payment_in_motion reuses OrderReopenPaymentInMotionData (ADR-090). */
+export type OrderUpdateRejectionCode = 'payment_in_motion' | 'reopen_required' | 'revision_conflict';
+/** The order status preventing an update until it is reopened (ADR-090). */
+export interface OrderUpdateReopenRequiredData { orderStatus: string }
+
 /** An order.create envelope: 5 is 4 plus fees, shipping and custom lines (ADR-075), sent only for an order that has one.
  * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
  * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`. */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 };
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -159,6 +198,7 @@ export interface CommandResult {
   error?: CommandError;
   register?: RegisterCommandResult;
   refund?: OrderRefundResult;
+  reopen?: OrderReopenResult;
 }
 
 /** A register command's server figures (registers c2b applies them). */
@@ -328,6 +368,8 @@ export interface OrderCreatePayment {
   tenderedMinor?: number;
   changeMinor?: number;
   reference?: string;
+  /** Version 10: the payment method's own id on the platform (a Woo gateway id, a Medusa provider id, a Vendure PaymentMethod code), 1–64 characters, no NUL. Informational: `method` still decides cash; core refuses no value by meaning. */
+  methodId?: string;
 }
 
 /** Version 3 (ADR-065): the receipt's display figures, integer minor units of `currency` at `exponent`. */

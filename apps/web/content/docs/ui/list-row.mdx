@@ -1,0 +1,40 @@
+---
+title: ListRow
+description: One flush row of a list, as in WCPOS v2, with a hairline under it and leading, body and trailing slots.
+---
+
+## Import
+
+```tsx
+import { ListRow } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<ListRow leading={<Avatar fallback="AL" size="md" />} trailing={<ChevronRightIcon className="text-muted-foreground" />} bodyClassName="gap-1" onPress={open}>
+  <Text numberOfLines={1}>Ada Lovelace</Text>
+  <Text numberOfLines={1} className="text-sm text-muted-foreground">ada@example.com</Text>
+</ListRow>
+```
+
+`size="sm"` gives a one-line row the row height token (44 at Regular): `<ListRow size="sm" onPress={open}><Text>Last closure</Text></ListRow>`.
+
+`selected` marks the current row of a list (open orders): `true` paints it `bg-muted` with a primary bar on its left edge, `false` keeps the bar's room.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `leading` | `ReactNode` | - | Before the body: an avatar, a thumb, a check |
+| `trailing` | `ReactNode` | - | After the body: an amount, a badge, a chevron |
+| `bodyClassName` | `string` | - | The body column's own layout (a `gap-1` between its lines) |
+| `size` | `'default' \| 'sm'` | `'default'` | `default` (56) for a two-line data row; `sm` (44) for a one-line row or a dense list |
+| `selected` | `boolean` | - | The current-row mark, announced as selected (checked on a radio or checkbox); unset, no bar |
+| `role` | `Role` | `button` with `onPress` | Unset, a row without an action has no role and no tab stop |
+| `disabled` | `boolean` | `false` | Dims the row (`opacity-45`) and blocks presses |
+| `className` | `string` | - | Additional classes merged via `cn()` |
+
+Plus all React Native `PressableProps` (`onPress`, `onLongPress`, `testID`, etc.).
+
+The shared pressable surface follows in a later release.

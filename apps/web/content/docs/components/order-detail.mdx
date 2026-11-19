@@ -15,14 +15,22 @@ import { OrderDetail } from '@tallyui/components';
 <OrderDetail
   orderNumber="#1042"
   status="completed"
+  meta={['Today · 14:30', 'Main Street', 'Jane Smith']}
   lineItems={[{ name: 'Espresso', quantity: 2, total: '$9.00' }]}
   subtotal="$9.00"
+  discount="-$0.90" couponCodes="SAVE10"
+  shipping="$2.00" shippingMethod="Flat rate" fees="$0.50"
   tax="$0.72"
-  total="$9.72"
+  taxLines={[{ label: 'US 8%', amount: '$0.72' }]}
+  total="$11.32"
 />
 ```
 
+Rows follow WCPOS v2's order view: Subtotal, Discount, Shipping, Fees, Tax and its rates, Total.
+
 Renders a scrollable detail view for a single order, including a status badge, itemised line items, and totals breakdown. Use the slot props to inject customer info, payment details, or action buttons.
+
+The actions row (Sync on the left, Receipt and Re-open on the right, as in WCPOS v2) is pinned below the scroll and is drawn only when at least one of `onSync`, `onReceipt` or `onReopen` is passed.
 
 ## Props
 
@@ -34,9 +42,20 @@ Renders a scrollable detail view for a single order, including a status badge, i
 | `subtotal` | `string` | required | Formatted subtotal |
 | `tax` | `string` | required | Formatted tax amount |
 | `total` | `string` | required | Formatted order total |
+| `meta` | `string[]` | — | Line under the header ("when · store · cashier"); empty parts are dropped |
+| `discount` | `string` | — | Formatted discount, shown as given (e.g. `-$2.00`); omit to hide the row |
+| `couponCodes` | `string` | — | Coupon codes, already joined, in a chip beside "Discount" |
+| `shipping` | `string` | — | Formatted shipping total; omit to hide the row |
+| `shippingMethod` | `string` | — | Shipping method title, shown beside "Shipping" |
+| `fees` | `string` | — | Formatted fees total; omit to hide the row |
+| `taxLines` | `OrderDetailTaxLine[]` | — | Per-rate tax breakdown, indented under the Tax row |
 | `customerSlot` | `ReactNode` | — | Content shown below the header |
 | `paymentSlot` | `ReactNode` | — | Payment info below the totals |
 | `footerSlot` | `ReactNode` | — | Actions or notes at the bottom |
+| `onReopen` | `() => void` | — | Draws Re-open in the actions row and calls this on press |
+| `onSync` | `() => void` | — | Draws Sync in the actions row and calls this on press |
+| `onReceipt` | `() => void` | — | Draws Receipt in the actions row and calls this on press |
+| `reopenDisabled` | `boolean` | `false` | Disables Re-open, e.g. while it runs or while storage is degraded |
 | `className` | `string` | — | Override container styles |
 
 ### OrderDetailLineItem
@@ -46,6 +65,15 @@ interface OrderDetailLineItem {
   name: string;
   quantity: number;
   total: string;
+}
+```
+
+### OrderDetailTaxLine
+
+```ts
+interface OrderDetailTaxLine {
+  label: string;
+  amount: string;
 }
 ```
 

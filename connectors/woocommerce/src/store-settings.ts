@@ -1,5 +1,7 @@
 import { ConnectorUnauthorizedError, StoreSettingsError, minorUnitDigits, woocommerceTax } from '@tallyui/core';
-import type { ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
+import type { MoneyFormat, ServerCapabilities, StoreSettings, SyncContext } from '@tallyui/core';
+import { WOO_CURRENCY_SYMBOLS } from './currency-symbols';
+import { throwIfUnauthorized } from './unauthorized';
 
 /** The highest order.create version the WooCommerce transport maps without coupons: v4's net discounts, and v5's fees, shipping and custom lines (WCPOS push/orders; orders #146, #161). A store with coupons gets 8 (`WOO_TAX_ADDRESS_ORDER_CREATE_VERSION`): 6 adds coupons (ADR-077 d4a-woo), 7 the note, 8 the tax address. */
 export const WOO_ORDER_CREATE_VERSION = 5;
@@ -29,23 +31,26 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
   try {
     const init = { method: 'GET', headers: context.headers, signal: context.signal };
     const storesResponse = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, init);
-    if (storesResponse.status === 401 || storesResponse.status === 403) {
-      throw new ConnectorUnauthorizedError(`WooCommerce stores: HTTP ${storesResponse.status}`, storesResponse.status);
-    }
+    throwIfUnauthorized(storesResponse, 'stores');
     if (!storesResponse.ok) throw new Error(`WooCommerce stores: HTTP ${storesResponse.status}`);
     const stores = await storesResponse.json();
     if (!Array.isArray(stores) || stores.length === 0) throw new Error('WooCommerce stores: expected a non-empty array');
     const store = stores[0];
     const currency = store.currency.toUpperCase();
+    const moneyFormat: MoneyFormat = {
+      ...(['left', 'right', 'left_space', 'right_space'].includes(store.currency_pos) ? { position: store.currency_pos } : {}),
+      ...(typeof store.price_thousand_sep === 'string' ? { thousandSeparator: store.price_thousand_sep } : {}),
+      ...(typeof store.price_decimal_sep === 'string' ? { decimalSeparator: store.price_decimal_sep } : {}),
+      ...(Number.isInteger(store.price_num_decimals) && store.price_num_decimals >= 0 ? { decimals: store.price_num_decimals } : {}),
+      ...(WOO_CURRENCY_SYMBOLS[currency] !== undefined ? { symbol: WOO_CURRENCY_SYMBOLS[currency] } : {}),
+    };
     const digits = minorUnitDigits(currency);
     if (typeof store.price_num_decimals === 'number' && store.price_num_decimals !== digits) {
       console.warn(`WooCommerce price_num_decimals is ${store.price_num_decimals}; the till rounds ${currency} to ${digits} digits`);
     }
 
     const classesResponse = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/taxes/classes`, init);
-    if (classesResponse.status === 401 || classesResponse.status === 403) {
-      throw new ConnectorUnauthorizedError(`WooCommerce tax classes: HTTP ${classesResponse.status}`, classesResponse.status);
-    }
+    throwIfUnauthorized(classesResponse, 'tax classes');
     if (!classesResponse.ok) throw new Error(`WooCommerce tax classes: HTTP ${classesResponse.status}`);
     const classes = await classesResponse.json();
     if (!Array.isArray(classes)) throw new Error('WooCommerce tax classes: expected an array');
@@ -58,6 +63,8 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
       pricesIncludeTax: store.prices_include_tax === 'yes',
       taxRoundAtSubtotal: store.tax_round_at_subtotal === 'yes',
       calcDiscountsSequentially: (store.woocommerce_calc_discounts_sequentially ?? store.calc_discounts_sequentially) === 'yes',
+      preventOverselling: store.prevent_overselling === true,
+      ...(Object.keys(moneyFormat).length > 0 ? { moneyFormat } : {}),
       ...(typeof store.shipping_tax_class === 'string' ? { shippingTaxClass: store.shipping_tax_class } : {}),
       taxClassSlugs: classes.map((row) => row.slug),
       taxClasses: classes.map((row) => ({ slug: row.slug, name: typeof row.name === 'string' && row.name !== '' ? row.name : row.slug })),
@@ -71,9 +78,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
     const rates: woocommerceTax.WooTaxRate[] = [];
     for (let page = 1; page <= 100; page++) {
       const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/taxes?per_page=100&page=${page}&orderby=order&order=asc`, init);
-      if (response.status === 401 || response.status === 403) {
-        throw new ConnectorUnauthorizedError(`WooCommerce taxes: HTTP ${response.status}`, response.status);
-      }
+      throwIfUnauthorized(response, 'taxes');
       if (!response.ok) throw new Error(`WooCommerce taxes: HTTP ${response.status}`);
       const rows = await response.json();
       if (!Array.isArray(rows)) throw new Error('WooCommerce taxes: expected an array');
@@ -139,9 +144,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, {
       method: 'GET', headers: context.headers, signal: context.signal,
     });
-    if (response.status === 401 || response.status === 403) {
-      throw new ConnectorUnauthorizedError(`WooCommerce stores: HTTP ${response.status}`, response.status);
-    }
+    throwIfUnauthorized(response, 'stores');
     if (!response.ok) return undefined;
     const stores = await response.json();
     if (!Array.isArray(stores) || !stores[0] || typeof stores[0] !== 'object' || Array.isArray(stores[0])) return undefined;
@@ -151,9 +154,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       const status = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/status`, {
         method: 'GET', headers: context.headers, signal: context.signal,
       });
-      if (status.status === 401 || status.status === 403) {
-        throw new ConnectorUnauthorizedError(`WooCommerce status: HTTP ${status.status}`, status.status);
-      }
+      throwIfUnauthorized(status, 'status');
       if (status.ok) {
         const body = await status.json();
         capabilities = Array.isArray(body?.capabilities) ? body.capabilities : [];

@@ -16,9 +16,9 @@ declare const connector: TallyConnector, baseUrl: string;
 
 const { auth } = connector;
 if (!auth.signIn) throw new Error(`${auth.type} has no email/password sign-in`);
-const { token } = await auth.signIn(baseUrl, { email: 'demo@example.com', password: 'demo-password' });
+const { token, capabilities } = await auth.signIn(baseUrl, { email: 'demo@example.com', password: 'demo-password' });
 const headers = auth.getHeaders({ token });
-const context: SyncContext = { connectorId: connector.id, baseUrl, headers };
+const context: SyncContext = { connectorId: connector.id, baseUrl, headers, capabilities };
 ```
 
 ## The database
@@ -32,14 +32,16 @@ If an order fails the new schema's validation, `addPosOrderCollection` rejects w
 Rolling a till back to a build with an older `pos_orders` schema version, then upgrading it again, is unsupported. For example, a till that goes from version 1 back to version 0 and then on to version 2 holds two older versions at once. Its first `addPosOrderCollection` then rejects with DM4, and the next call migrates the rest. No order is lost.
 
 ```ts
-import { createTallyDatabase, connectorCollection, getStorage } from '@tallyui/database';
+import { createTallyDatabase, connectorCollection } from '@tallyui/database';
+import { getRxStorageSQLiteWasm } from '@tallyui/storage-sqlite/web';
 import { addPosOrderCollection } from '@tallyui/pos';
 import type { TallyConnector } from '@tallyui/core';
 import type { RxJsonSchema } from 'rxdb';
 
 declare const connector: TallyConnector, deviceSettingsSchema: RxJsonSchema<unknown>;
 
-const db = await createTallyDatabase({ connector, storage: getStorage() });
+const workerInput = new URL('@tallyui/storage-sqlite/web-worker', import.meta.url);
+const db = await createTallyDatabase({ connector, storage: getRxStorageSQLiteWasm({ workerInput }) });
 await db.addCollections({ device_settings: connectorCollection(deviceSettingsSchema) });
 const posOrders = await addPosOrderCollection(db);
 ```
@@ -194,18 +196,19 @@ const liveTab = startLiveTab({
 
 ## Selling
 
-`createOrderBuilder({ currency, taxContext })` builds up an order's lines, discounts and payments behind `order$` and `getSnapshot()`. Record a cash payment's `amountMinor` as the full amount tendered, not a capped amount -- `finalizeOrder` caps it at the balance due and writes out `tenderedMinor` and `changeMinor` itself. `finalizeOrder(order, { capabilities: context.capabilities })` turns a snapshot into a `PosOrder` ready for the outbox, and throws when the order carries a discount and the store's `order.create` capability is below 2 -- an old plugin can't take a discounted sale yet (ADR-062) -- or when a reference it passes through unchanged is over 255 characters or contains a NUL: `registerId`, `cashierRef`, a line's variant or product id, a payment's reference, and at capability 3 a line discount's id or a tax code. The server would refuse those, so the sale is refused before it's recorded; long product and discount names are shortened in the stored order instead, which is sent unchanged. `stampSession(order, sessionId, sessions)` is the only sanctioned way to put a sale in a register session: it checks the session is still `open` or `counting` and returns the order stamped with its id, closing the gap a stale, unchecked `sessionId` would leave. `createOrderOutbox({ collection, transport, deviceId })`, fed by `createHttpCommandTransport`, sends finalized orders and retries with backoff until the backend accepts them.
+`createOrderBuilder({ currency, taxContext })` builds up an order's lines, discounts and payments behind `order$` and `getSnapshot()`. Record a cash payment's `amountMinor` as the full amount tendered, not a capped amount -- `finalizeOrder` caps it at the balance due and writes out `tenderedMinor` and `changeMinor` itself. `finalizeOrder(order, { capabilities: context.capabilities })` turns a snapshot into a `PosOrder` ready for the outbox, and throws when the order carries a discount and the store's `order.create` capability is below 2 -- an old plugin can't take a discounted sale yet (ADR-062) -- or when a reference it passes through unchanged is over 255 characters or contains a NUL: `registerId`, `cashierRef`, a line's variant or product id, a payment's reference, and at capability 3 a line discount's id or a tax code. The server would refuse those, so the sale is refused before it's recorded; long product and discount names are shortened in the stored order instead, which is sent unchanged. `stampSession(order, sessionId, sessions)` is the only sanctioned way to put a sale in a register session: it checks the session is still `open` or `counting` and returns the order stamped with its id, closing the gap a stale, unchecked `sessionId` would leave. `createOrderOutbox({ collection, transport, deviceId })`, fed by `createHttpCommandTransport`, sends finalized orders and retries with backoff until the backend accepts them. Open `register_sessions` with `addRegisterSessionCollection(db)`, which migrates older sessions; never use `addCollections`. Insert the finalized order into `pos_orders` so the outbox picks it up.
 
 ```ts
-import { createOrderBuilder, finalizeOrder, stampSession, createOrderOutbox, createHttpCommandTransport } from '@tallyui/pos';
-import type { TaxContext, PosOrder, RegisterSessionCollection } from '@tallyui/pos';
+import { createOrderBuilder, finalizeOrder, stampSession, createOrderOutbox, createHttpCommandTransport, addRegisterSessionCollection } from '@tallyui/pos';
+import type { TaxContext, PosOrder } from '@tallyui/pos';
 import type { SyncContext } from '@tallyui/core';
-import type { RxCollection } from 'rxdb';
+import type { RxCollection, RxDatabase } from 'rxdb';
 
 declare const taxContext: TaxContext, posOrders: RxCollection<PosOrder>, context: SyncContext;
 declare const deviceId: string, getHeaders: () => Record<string, string>;
-declare const sessions: RegisterSessionCollection, sessionId: string;
+declare const db: RxDatabase, sessionId: string;
 
+const sessions = await addRegisterSessionCollection(db);
 const order = createOrderBuilder({ currency: 'USD', taxContext });
 order.addLine({ productId: 'prod_1', name: 'Espresso', unitPrice: { amount: 350, currency: 'USD' } });
 order.addPayment({ method: 'cash', amountMinor: 350 });
@@ -213,6 +216,7 @@ order.addPayment({ method: 'cash', amountMinor: 350 });
 // throws only when the order carries a discount and the store's capability is below 2 (ADR-062)
 const draft = finalizeOrder(order.getSnapshot(), { capabilities: context.capabilities });
 const posOrder = await stampSession(draft, sessionId, sessions); // checks the session is still live
+await posOrders.insert(posOrder); // the outbox sends only stored orders
 
 const outbox = createOrderOutbox({
   collection: posOrders,

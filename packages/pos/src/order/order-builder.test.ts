@@ -84,6 +84,17 @@ describe('OrderBuilder', () => {
     ]);
   });
 
+  it("keeps each payment's methodId through parking and draft restoration (condition 5)", () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' } });
+    builder.addPayment({ method: 'cash', methodId: 'cod', amountMinor: 300 });
+    builder.addPayment({ method: 'external', amountMinor: 200 });
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot()));
+    const payments = restoreOrderDraft(saved, { currency: 'USD', taxContext }).getSnapshot().payments;
+    expect(payments[0]).toMatchObject({ method: 'cash', methodId: 'cod', amountMinor: 300 });
+    expect(payments[1]).not.toHaveProperty('methodId');
+  });
+
   it('keeps each regular price through a price edit and draft restoration', () => {
     const builder = createOrderBuilder({ currency: 'USD', taxContext });
     const input = { productId: 'p1', name: 'Item', unitPrice: { amount: 800, currency: 'USD' } };

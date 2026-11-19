@@ -1,6 +1,6 @@
 ---
 title: RegisterCount
-description: Drawer counting controls with denomination tiles, tender amounts, and closing actions
+description: Keypad-first drawer counting with notes and coins, tender amounts, and closing actions
 ---
 
 ## Import
@@ -16,10 +16,15 @@ import { RegisterCount } from '@tallyui/components';
   register={register}
   currency="EUR"
   approve={({ counted }) => requestApproval(counted)}
+  onPrint={printZReport}
 />
 ```
 
-Renders denomination tiles or a typed cash count, other tender inputs, and Back to selling and Close register buttons. Non-blind counts show expected cash and variance; closing above the variance threshold requires approval, and no session renders nothing.
+Renders the cash amount with its keypad, which folds away once a valid amount loses focus (tap the amount to edit it again), a closed "Count by notes and coins" section of denomination tiles, other tender inputs, and Back to selling and Close register buttons. With `onPrint`, Close reads "Close & print" and prints the Z report once the close lands. Non-blind counts show expected cash and variance; closing above the variance threshold requires approval, and no session renders nothing.
+
+A Note field, shown blind or not, sends the cashier's explanation of any difference with the close.
+
+The non-cash tender inputs sit under an "Other tenders" toggle, which is closed by default and shown only when the session expects a non-cash tender.
 
 `approve` receives the count Close would use. For a store-verified approval (ADR-082), return the store's opaque `approval` and the `approvedVariance` your approval route was given (read it with `register.actions.closureVariance(counted)`); both go to `closeSession`, whose gate refuses a close whose variance has moved since. If the count is edited while `approve` is pending, or the gate refuses, Close shows `APPROVAL_REQUIRED_TEXT` and asks again on the next press. A zero-argument `approve` still works.
 
@@ -30,4 +35,5 @@ Renders denomination tiles or a typed cash count, other tender inputs, and Back 
 | `register` | `ReturnType<typeof useRegisterSession>` | required | Session, expected amounts, blind state, variance threshold, and back-to-selling and close actions |
 | `currency` | `string` | required | ISO 4217 code used for denomination faces, parsing, and display |
 | `approve` | `(input: { counted: Record<string, number> }) => Promise<{ approvedBy: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> } \| null>` | --- | Requested above `register.varianceThreshold` with the count; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and the approval fields are passed to `closeSession` |
+| `onPrint` | `() => void \| Promise<void>` | --- | The host's Z-report print, as `ClosureSheet`'s; awaited after a successful close; a print failure is the host's to show |
 | `className` | `string` | --- | Override container styles |

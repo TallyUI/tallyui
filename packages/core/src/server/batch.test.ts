@@ -12,6 +12,16 @@ const command = {
 }
 
 describe('validateBatch', () => {
+  it('accepts an order.update envelope (ADR-090)', () => {
+    const commands = [{ ...command, type: 'order.update' }]
+    expect(validateBatch({ commands })).toEqual({ ok: true, commands })
+  })
+
+  it('accepts an order.reopen envelope (ADR-090)', () => {
+    const commands = [{ ...command, type: 'order.reopen' }]
+    expect(validateBatch({ commands })).toEqual({ ok: true, commands })
+  })
+
   it('accepts an order.refund envelope (ADR-080)', () => {
     const commands = [{ ...command, type: 'order.refund' }]
     expect(validateBatch({ commands })).toEqual({ ok: true, commands })
@@ -81,8 +91,85 @@ describe('validateBatch', () => {
 })
 
 describe('precheckCommand', () => {
+  const update = { ...command, type: 'order.update' as const, version: 1 as const,
+    payload: { ...fixture.payload, orderId: 'order-1', baseRevision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298', createVersion: 9,
+      lines: fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i], storeLineId: `line-${i}` })),
+      discountMinor: 206, payments: fixture.payload.payments.map(payment => ({ ...payment, paymentId: 'payment-1' })) } }
+  const updateServer = { orderCreate: [1, 6, 9], register: [1], orderUpdate: [1] }
+
+  it.each([{}, { orderUpdate: [] }])('takes no updates without a listed version (%j)', capability => {
+    expect(precheckCommand(update, { orderCreate: [9], register: [1], ...capability })).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'unsupported_version',
+        message: 'order.update version 1 is not supported; this server takes no updates', data: { orderUpdate: 0 } },
+    })
+  })
+
+  it('refuses an unsupported update version with data.orderUpdate', () => {
+    expect(precheckCommand({ ...update, version: 2 }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'unsupported_version',
+        message: 'order.update version 2 is not supported; this server supports 1', data: { orderUpdate: 1 } },
+    })
+  })
+
+  it('refuses update-only errors before create-version errors', () => {
+    expect(precheckCommand({ ...update, payload: { ...update.payload, orderId: '', createVersion: 8 } }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload',
+        message: 'orderId: expected a non-empty string of at most 64 characters' },
+    })
+  })
+
+  it('refuses an unsupported createVersion with data.orderCreate', () => {
+    expect(precheckCommand({ ...update, payload: { ...update.payload, createVersion: 8 } }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'unsupported_version',
+        message: 'order.create version 8 is not supported; this server supports 1, 6, 9', data: { orderCreate: 9 } },
+    })
+  })
+
+  it('applies order.create version rules at createVersion', () => {
+    expect(precheckCommand({ ...update, payload: { ...update.payload, createVersion: 6, note: 'Keep this note' } }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'note requires version 7' },
+    })
+    // As order.create v1: below version 5 the body's shape is the plugin's pre-lookup updatePayloadErrors check.
+    expect(precheckCommand({ ...update, payload: { orderId: 'order-1', createVersion: 1 } }, updateServer)).toBeUndefined()
+    expect(precheckCommand({ ...update, payload: { ...update.payload, lines: undefined } }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'lines: expected a non-empty array' },
+    })
+  })
+
+  it('accepts a valid update', () => {
+    expect(precheckCommand(update, updateServer)).toBeUndefined()
+  })
+
   // A server's own lists (#297); core's SUPPORTED_* constants are the till's capability.
   const server = { orderCreate: [1, 2, 3, 4], register: [1] }
+
+  it('leaves a supported order.reopen to the plugin payload check (ADR-090)', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen' }, { ...server, orderReopen: [1] })).toBeUndefined()
+  })
+
+  it('refuses an unsupported order.reopen version with the server capability', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen', version: 2 }, { ...server, orderReopen: [1] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 2 is not supported; this server supports 1',
+        data: { orderReopen: 1 },
+      } })
+  })
+
+  it('names the highest reopen version a server lists', () => {
+    expect(precheckCommand({ ...command, type: 'order.reopen', version: 3 }, { ...server, orderReopen: [1, 2] }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 3 is not supported; this server supports 1, 2',
+        data: { orderReopen: 2 },
+      } })
+  })
+
+  it.each([{}, { orderReopen: [] }])('takes no reopens when the reopen list is absent or empty (%j)', capability => {
+    expect(precheckCommand({ ...command, type: 'order.reopen' }, { ...server, ...capability }))
+      .toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'unsupported_version', message: 'order.reopen version 1 is not supported; this server takes no reopens',
+        data: { orderReopen: 0 },
+      } })
+  })
 
   it('leaves a supported order.refund to the plugin payload check (ADR-080)', () => {
     expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, orderRefund: [1] })).toBeUndefined()
