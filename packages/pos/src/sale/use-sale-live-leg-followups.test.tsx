@@ -189,10 +189,11 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     await act(async () => { await result.current.complete(); });
     expect(result.current.error).toBeNull();
     expect(result.current.stage.kind).toBe('receipt');
-    const [row] = (await db.pos_orders.find().exec()).map((doc: { toJSON(): any }) => doc.toJSON());
+    type Stored = { lines: { id: string }[]; coupons: NonNullable<Order['coupons']> };
+    const [row] = (await db.pos_orders.find().exec()).map((doc) => doc.toJSON() as unknown as Stored);
     // finalize gives stored lines new ids; map each back to the parked line at its index.
-    const lineIds = new Map<string, string>(row.lines.map((line: { id: string }, i: number) => [line.id, parked.lineItems[i].id]));
-    const stored = row.coupons.map((coupon: any) => ({ ...coupon, lines: coupon.lines.map((line: any) => ({ ...line, lineId: lineIds.get(line.lineId) })) }));
+    const lineIds = new Map(row.lines.map((line, i) => [line.id, parked.lineItems[i].id]));
+    const stored = row.coupons.map((coupon) => ({ ...coupon, lines: coupon.lines?.map((line) => ({ ...line, lineId: lineIds.get(line.lineId) })) }));
     expect(stored).toEqual(parked.coupons);
   });
 

@@ -58,7 +58,7 @@ describe('order builder kept coupons (ADR-077 d3, amended 2026-11-19)', () => {
     expect(() => builder.setCoupons(['a'], unknown)).toThrow(RangeError);
     expect(builder.getSnapshot()).toEqual(parked);
     const [first] = parked.coupons!;
-    const unknownCouponLine = kept(parked, { coupons: [{ ...first, lines: [{ lineId: 'no-such-line', amountMinor: 100 }] }] });
+    const unknownCouponLine = kept(parked, { coupons: [{ ...first, lines: [{ lineId: 'no-such-line', discountMinor: 100, discountTaxMinor: 20 }] }] });
     expect(() => builder.setCoupons(['a'], unknownCouponLine)).toThrow(RangeError);
     expect(builder.getSnapshot()).toEqual(parked);
   });

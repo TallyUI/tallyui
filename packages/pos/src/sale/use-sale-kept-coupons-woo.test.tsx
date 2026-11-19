@@ -11,7 +11,7 @@ import { TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import type { SaleCoupon, SaleCouponSource } from './woocommerce/coupons';
 import { createDiscountCodes } from './woocommerce/discount-codes';
-import type { DiscountCodes } from './discount-codes';
+import type { SaleDiscountCodes as DiscountCodes } from './discount-codes';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
 import { useSale } from './use-sale';
 
@@ -26,7 +26,6 @@ const perOrder: TaxRounding = { granularity: 'per_order', mode: 'half_away_from_
 const taxProps = { pricesIncludeTax: true, ratesPpm: { default: 200000 }, taxRates: { standard: [
   { id: 1, code: 'rate-1', label: 'VAT', rate: '20.0000', priority: 1, compound: false, shipping: true },
 ] } };
-type SaleOptions = Parameters<typeof useSale>[1];
 type Sale = { current: ReturnType<typeof useSale> };
 type Price = StorePricedDiscountCodesOptions['price'];
 

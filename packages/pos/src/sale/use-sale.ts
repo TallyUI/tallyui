@@ -306,15 +306,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   // the leg is voided, removed or fails; that changes the order, and this effect prices them again.
   useEffect(() => {
     if (order.couponPricesStale && applied.current.size > 0 && !repricing.current
-      && stageNow.current.kind !== 'receipt' && !busy() && !liveLeg() && stopped.current?.order !== order) {
-      if (appliedWith.current) void reprice();
-      else { // kept coupons resumed with no discount codes: nothing can price them again
-        builderNow.current.setCoupons([], { kind: 'store-priced', priced: new Map(), basis: '' });
-        applied.current.clear();
-        setError(COUPONS_UNSUPPORTED);
-      }
-    }
+      && stageNow.current.kind !== 'receipt' && !busy() && !liveLeg() && stopped.current?.order !== order) void (appliedWith.current ? reprice() : dropKept());
   });
+  function dropKept() { // kept coupons resumed with no discount codes: nothing can price them again
+    builderNow.current.setCoupons([], { kind: 'store-priced', priced: new Map(), basis: '' });
+    applied.current.clear();
+    setError(COUPONS_UNSUPPORTED);
+  }
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
   const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
