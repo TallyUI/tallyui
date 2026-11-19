@@ -3,11 +3,13 @@ import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 11 as const;
+export const ORDER_CREATE_MAX_VERSION = 12 as const;
 /** order.create 10 (ruling A, 2026-11-18) is 9 plus each payment's `methodId`, the payment method's own id on the platform. */
 export const PAYMENT_METHOD_ID_ORDER_CREATE_VERSION = 10 as const;
 /** order.create 11 (ADR-086 d2, amended 2026-11-19) is 10 plus the customer's addresses on a sale not taxed by address, as informational fields. */
 export const UNTAXED_ADDRESS_ORDER_CREATE_VERSION = 11 as const;
+/** order.create 12 (ADR-092) is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields. */
+export const INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION = 12 as const;
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
@@ -110,6 +112,7 @@ function wireNote(note: string | undefined): string | undefined {
  * Version 9 sends every coupon's stored line shares when the cap allows it, keeping notes and any tax address.
  * Version 10 is 9 plus each payment's `methodId`: only at a cap of 10 or more, for an order with figures (4+) whose coupons all have lines and a leg with an id.
  * Version 11 is 10 plus the customer's addresses on a sale with no `taxAddress`: only at a cap of 11 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
+ * Version 12 is 11 plus the customer's tax ids (without `label`), order meta and a catalogue line's edited `sku` (ADR-092): only at a cap of 12 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  * A reopened sale (`storeOrderId`) throws: it goes as `order.update` (`toOrderUpdateEnvelope`).
  */
@@ -147,10 +150,16 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   // only when the cap allows 11 and the payload meets 10's own requirements; otherwise the addresses are dropped and the bytes are today's.
   const untaxedAddresses = !taxAddress && !!(order.customer?.billing || order.customer?.shipping)
     && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
-  const version = (untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+  // Version 12 is 11 plus tax ids, meta and a catalogue line's edited SKU (ADR-092), on the same terms; otherwise none of them is sent.
+  const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueSku !== undefined && line.sku !== '' && line.sku !== line.catalogueSku;
+  const extras = !!(order.customer?.taxIds?.length || order.meta?.length || order.lines.some(editedSku))
+    && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
+  const version = (extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
-  const withAddresses = withTaxAddress || version === UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
+  const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
+  const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && order.customer?.taxIds?.length
+    ? { taxIds: order.customer.taxIds.map(({ type, value, country }) => ({ type, value, ...(country !== undefined ? { country } : {}) })) } : undefined;
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -168,6 +177,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
       lines: order.lines.map((line, i) => ({
         clientLineId: line.id, ...(line.custom ? { custom: { ...line.custom } } : { variantId: line.variantId ?? line.productId }), title: line.name,
+        ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && editedSku(line) ? { sku: line.sku } : {}),
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
@@ -212,13 +222,14 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
         })),
       } : {}),
       customer: base >= 3
-        ? (email || customerId || withAddresses ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses } : null)
+        ? (email || customerId || withAddresses || taxIds ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses, ...taxIds } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
       ...(version >= 7 && note ? { note } : {}),
       ...(withTaxAddress ? { taxAddress } : {}),
+      ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && order.meta?.length ? { meta: order.meta.map(({ key, value }) => ({ key, value })) } : {}),
     },
   };
 }

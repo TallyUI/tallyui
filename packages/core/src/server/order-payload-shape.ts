@@ -1,4 +1,4 @@
-import { ORDER_NOTE_MAX } from '../commands'
+import { ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '../commands'
 
 /** Shape errors of an order.create payload, e.g. ['lines: expected a non-empty array',
  * 'payments[0].method: expected a string']; [] when the shape is valid, at most ten. Checks
@@ -201,7 +201,37 @@ export function payloadShapeErrors(payload: unknown): string[] {
       check(object(attributes) && Object.hasOwn(attributes, name) && typeof attributes[name] === 'string' && attributes[name].length > 0,
         at, `a key of ${path}.attributes with a non-empty value`)
     })
+    if (line.sku !== undefined) {
+      check(typeof line.sku === 'string' && line.sku.length > 0, `${path}.sku`, 'a non-empty string')
+      check(line.custom === undefined, `${path}.sku`, 'absent on a custom line (custom.sku)')
+    }
   })
+  // Version 12 (ADR-092): the customer's tax ids and the order's meta, closed objects in arrays.
+  const lists: Array<[string, unknown, string[]]> = [['customer.taxIds', object(payload.customer) ? payload.customer.taxIds : undefined, ['type', 'value', 'country']],
+    ['meta', payload.meta, ['key', 'value']]]
+  for (const [field, items, keys] of lists) {
+    if (items === undefined) continue
+    check(Array.isArray(items), field, 'an array')
+    if (!Array.isArray(items)) continue
+    const seen = new Set<unknown>()
+    items.forEach((item, index) => {
+      const path = `${field}[${index}]`
+      check(object(item), path, 'an object')
+      if (!object(item)) return
+      for (const key of Object.keys(item)) check(keys.includes(key), `${path}.${key}`, 'no unknown key')
+      if (field === 'meta') {
+        const key = item.key
+        check(typeof key === 'string' && key.length > 0, `${path}.key`, 'a non-empty string')
+        if (typeof key === 'string' && key.length > 0) check(!key.startsWith('_'), `${path}.key`, 'a key not starting with _')
+        check(typeof item.value === 'string', `${path}.value`, 'a string')
+        if (typeof key === 'string') check(!seen.has(key), `${path}.key`, 'no duplicate key')
+        seen.add(key)
+        return
+      }
+      for (const key of ['type', 'value']) check(typeof item[key] === 'string' && item[key].length > 0, `${path}.${key}`, 'a non-empty string')
+      if (item.country !== undefined) check(typeof item.country === 'string' && /^[A-Z]{2}$/.test(item.country), `${path}.country`, 'an ISO 3166-1 alpha-2 code')
+    })
+  }
   // NUL, only on strings (the checks above name any other type): Postgres text can't hold it, and the lookup keys must be clean.
   for (const [value, path] of payloadStrings(payload)) check(!value.includes('\u0000'), path, 'no NUL character')
   return errors
@@ -213,7 +243,8 @@ const ORDER_ADDRESS_KEYS = ['firstName', 'lastName', 'company', 'address1', 'add
 /** Length-bound errors of an order.create payload, e.g. ['lines[0].title: expected at most 255
  * characters']; [] when every bound holds, at most ten. Bounds in UTF-16 code units:
  * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v8 address fields 255, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
- * payloadShapeErrors); each coupon's lines array is also capped at payload.lines.length. A plugin calls it through precheckCommand, after
+ * payloadShapeErrors); v12 (ADR-092) tax id type 32, value 64 and country 2, a line's `sku` 100, meta key 255 and value ORDER_NOTE_MAX.
+ * Each coupon's lines array is also capped at payload.lines.length, `customer.taxIds` at 10 entries and `meta` at 50. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
 export function payloadBoundErrors(payload: unknown): string[] {
@@ -227,6 +258,10 @@ export function payloadBoundErrors(payload: unknown): string[] {
     if (errors.length < 10 && typeof coupon === 'object' && coupon !== null && !Array.isArray(coupon)
       && Array.isArray(coupon.lines) && coupon.lines.length > max) errors.push(`coupons[${index}].lines: expected at most ${max} entries`)
   })
+  const customer = typeof record.customer === 'object' && record.customer !== null ? record.customer as Record<string, unknown> : {}
+  for (const [path, items, most] of [['customer.taxIds', customer.taxIds, ORDER_TAX_IDS_MAX], ['meta', record.meta, ORDER_META_MAX]] as const) {
+    if (errors.length < 10 && Array.isArray(items) && items.length > most) errors.push(`${path}: expected at most ${most} entries`)
+  }
   return errors
 }
 
@@ -277,6 +312,13 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
       found.push([key, `lines[${index}].attributes`, 255], [value, `lines[${index}].attributes.${key}`, 255])
     }
     if (object(line) && Array.isArray(line.anyAttributes)) line.anyAttributes.forEach((name, i) => found.push([name, `lines[${index}].anyAttributes[${i}]`, 255]))
+    if (object(line)) found.push([line.sku, `lines[${index}].sku`, ORDER_LINE_SKU_MAX])
+  })
+  if (object(payload.customer) && Array.isArray(payload.customer.taxIds)) payload.customer.taxIds.forEach((taxId, index) => {
+    if (object(taxId)) for (const [key, max] of [['type', ORDER_TAX_ID_TYPE_MAX], ['value', ORDER_TAX_ID_VALUE_MAX], ['country', 2]] as const) found.push([taxId[key], `customer.taxIds[${index}].${key}`, max])
+  })
+  if (Array.isArray(payload.meta)) payload.meta.forEach((entry, index) => {
+    if (object(entry)) found.push([entry.key, `meta[${index}].key`, ORDER_META_KEY_MAX], [entry.value, `meta[${index}].value`, ORDER_NOTE_MAX])
   })
   if (object(payload.customer)) found.push([payload.customer.email, 'customer.email', 254], [payload.customer.customerId, 'customer.customerId', undefined])
   if (object(payload.customer)) for (const kind of ['billing', 'shipping']) {

@@ -185,6 +185,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.lines[].clientLineId` | informational | 1 |
 | `payload.lines[].variantId` | instruction | 1 |
 | `payload.lines[].title` | informational | 1 |
+| `payload.lines[].sku` | informational (ADR-092): a catalogue line's edited SKU, 1–100 characters; never on a custom line | 12 |
 | `payload.lines[].quantity` | instruction | 1 |
 | `payload.lines[].unitPriceMinor` | instruction | 1 |
 | `payload.lines[].taxInclusive` | instruction | 1 (ADR-038 amendment 2, without a version bump) |
@@ -246,11 +247,18 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.customer.billing.*` | informational (#722) | 8, and 11 without `taxAddress` |
 | `payload.customer.shipping` | informational (#722) | 8, and 11 without `taxAddress` |
 | `payload.customer.shipping.*` | informational (#722) | 8, and 11 without `taxAddress` |
+| `payload.customer.taxIds` | informational (ADR-092), at most 10 entries | 12 |
+| `payload.customer.taxIds[].type` | informational (ADR-092), 1–32 characters | 12 |
+| `payload.customer.taxIds[].value` | informational (ADR-092), 1–64 characters | 12 |
+| `payload.customer.taxIds[].country` | informational (ADR-092), optional ISO 3166-1 alpha-2 code | 12 |
 | `payload.registerId` | informational | 1 |
 | `payload.cashierRef` | informational | 1 |
 | `payload.locationId` | instruction | 1 |
 | `payload.sessionId` | instruction (honoured by recording) | 3 |
 | `payload.note` | informational (ADR-083) | 7 |
+| `payload.meta` | informational (ADR-092), at most 50 entries, keys unique | 12 |
+| `payload.meta[].key` | informational (ADR-092), 1–255 characters, not starting with `_` | 12 |
+| `payload.meta[].value` | informational (ADR-092), 0–1000 characters | 12 |
 | `payload.taxAddress` | instruction, amount-bearing (#722): the address the sale was taxed on | 8 |
 | `payload.coupons[].lines` | informational, amount-bearing (#790) | 9 |
 | `payload.coupons[].lines[].clientLineId` | informational (#790) | 9 |
@@ -280,6 +288,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 - `payload.customer.billing` / `.shipping` without `taxAddress` (version 11) are the customer's addresses on a sale not taxed by address: informational, stored on the order, never used to tax it (`docs/contract/order-create-v11.md`). Below 11 they are dropped, and at 9 and 10 an address without `taxAddress` is `invalid_payload`.
 - `payload.coupons[].lines` (version 9) is each coupon's share of each line it reduced, apportioned so the shares sum exactly to the coupon's figures (`docs/contract/order-create-v9.md`). A server may ignore it and allocate the coupon itself, as at version 6. A server that writes per-line adjustments uses it as sent. At 9 every coupon carries it; below 9 none does.
 - `payload.payments[].methodId` (version 10) is the payment method's own id on the platform, 1–64 characters, no NUL; `method` still decides cash. At 10 a leg may carry it; below 10 none does.
+- `payload.customer.taxIds`, a catalogue line's `payload.lines[].sku` and `payload.meta` (version 12, ADR-092) are the sale's tax ids, an edited SKU and the order's custom fields: informational, stored on the order (`docs/contract/order-create-v12.md`). Below 12 they are dropped, and a payload below 12 that carries one is `invalid_payload` (`<field> requires version 12`).
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

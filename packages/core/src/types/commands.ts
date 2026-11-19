@@ -12,8 +12,9 @@ export interface CommandEnvelope<P = unknown> {
    *  7 is 6 plus the sale's `note` (ADR-083), sent only for an order that has one.
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
    *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
-   *  11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended). */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+   *  11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended).
+   *  12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092). */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -102,8 +103,9 @@ export interface OrderUpdateReopenRequiredData { orderStatus: string }
  * 6 is 5 plus coupons, regular prices, line attributes and Any picks (ADR-077, #495).
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
  * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
- * 11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 };
+ * 11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended).
+ * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092). */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -298,6 +300,8 @@ export interface OrderCreateLine {
     taxStatus: 'taxable' | 'none';
   };
   title?: string;
+  /** Version 12 (ADR-092): a catalogue line's SKU as the cashier edited it, 1–100 characters; a custom line uses `custom.sku`. */
+  sku?: string;
   quantity: number;
   unitPriceMinor: number;
   /** Version 6 recorded figure: the product's regular (not sale) unit price, in the line's tax mode and integer minor units, when the till knew it. */
@@ -463,6 +467,8 @@ export interface OrderCreatePayload {
     billing?: OrderAddress;
     /** Version 8 (#722): the customer's shipping address, sent at 8+ with `taxAddress` and at 11 without it. */
     shipping?: OrderAddress;
+    /** Version 12 (ADR-092): the customer's tax ids on this sale, at most ORDER_TAX_IDS_MAX (10). */
+    taxIds?: OrderCreateTaxId[];
   } | null;
   /** Version 8 (#722): the customer address the till taxed the sale on; always present at 8; optional at 9, and that address has a
    *  non-empty `country`. Absent: the store's base address. */
@@ -474,7 +480,16 @@ export interface OrderCreatePayload {
   sessionId?: string;
   /** Version 7 (ADR-083): the sale's note, 1 to ORDER_NOTE_MAX UTF-16 units; omitted when the sale has none. */
   note?: string;
+  /** Version 12 (ADR-092): the order's custom fields, at most ORDER_META_MAX (50), keys unique; omitted when none. */
+  meta?: OrderCreateMeta[];
 }
+
+/** A customer tax id on order.create 12 (ADR-092): `type` 1–32 UTF-16 units (the connector's scheme id), `value` 1–64,
+ *  `country` an ISO 3166-1 alpha-2 code. */
+export interface OrderCreateTaxId { type: string; value: string; country?: string }
+
+/** An order custom field on order.create 12 (ADR-092): `key` 1–255 UTF-16 units, not starting with `_`; `value` 0–ORDER_NOTE_MAX. */
+export interface OrderCreateMeta { key: string; value: string }
 
 /** A customer's address on order.create v8 (#722): each field a string of at most 255 UTF-16 units; no email, which
  *  `customer.email` carries. */

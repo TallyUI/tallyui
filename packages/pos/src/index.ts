@@ -153,7 +153,7 @@ export { noteDelivery, type NoteDelivery } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
 export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
-export { TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
+export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';

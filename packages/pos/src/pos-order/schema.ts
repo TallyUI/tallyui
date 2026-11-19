@@ -36,6 +36,7 @@ import type { PosOrder } from './types';
  * Version 15 lets `baseRevision` be 128 characters (a store revision is an opaque token; WooCommerce's is 71) and adds `refundDueMinor`, what the store owes back on a reopened sale paid beyond its new total (ADR-090), and changes nothing else. Its migration is the identity. It is one-way like version 14.
  * Version 16 adds a payment's optional methodId (ruling A, 2026-11-18) and lets sentVersion and downgradedFrom be 10 (order.create version 10), and changes nothing else. Its migration is the identity. It is one-way like version 15.
  * Version 17 lets sentVersion and downgradedFrom be 11 (order.create version 11, ADR-086 d2 amended 2026-11-19), and changes nothing else. Its migration is the identity. It is one-way like version 16.
+ * Version 18 adds the customer's `taxIds`, the order's `meta`, a line's `catalogueSku` and `attentionHandledFor` (ADR-092), and lets sentVersion and downgradedFrom be 12 (order.create version 12), and changes nothing else. Its migration is the identity. It is one-way like version 17.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -45,7 +46,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 17, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 18, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -55,12 +56,15 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     createdAt: { type: 'string', maxLength: 40 },
     updatedAt: { type: 'string' },
     reopenedAt: { type: 'string', maxLength: 40 },
+    attentionHandledFor: { type: 'string', maxLength: 36 },
     currency: { type: 'string' },
     pricesIncludeTax: { type: 'boolean' },
     subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' },
     taxMinor: { type: 'integer' }, totalMinor: { type: 'integer' }, refundDueMinor: { type: 'integer', minimum: 0 },
     syncStatus: { type: 'string', enum: ['pending', 'applied', 'rejected'], maxLength: 10 },
-    note: { type: 'string' }, registerId: { type: 'string' }, sessionId: { type: 'string', maxLength: 36 }, cashierRef: { type: 'string' },
+    note: { type: 'string' }, meta: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] } },
+    registerId: { type: 'string' }, sessionId: { type: 'string', maxLength: 36 }, cashierRef: { type: 'string' },
     coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       code: { type: 'string', minLength: 1, maxLength: 255 }, couponId: { type: 'string', minLength: 1, maxLength: 64 },
       discountMinor: { type: 'integer', minimum: 0 }, discountTaxMinor: { type: 'integer', minimum: 0 },
@@ -73,7 +77,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       type: 'object', properties: {
         id: { type: 'string', maxLength: 36 }, productId: { type: 'string' }, variantId: { type: 'string' },
         storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
-        name: { type: 'string' }, sku: { type: 'string' }, quantity: { type: 'integer' },
+        name: { type: 'string' }, sku: { type: 'string' }, catalogueSku: { type: 'string' }, quantity: { type: 'integer' },
         taxStatus: { type: 'string', enum: ['taxable', 'none'] },
         custom: { type: 'object', additionalProperties: false, properties: {
           name: { type: 'string', minLength: 1, maxLength: 255 }, sku: { type: 'string', maxLength: 64 },
@@ -122,7 +126,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       }, required: ['id', 'method', 'amountMinor'],
     } },
     customer: { type: ['object', 'null'], properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string' },
-      billing: orderAddressSchema, shipping: orderAddressSchema } },
+      billing: orderAddressSchema, shipping: orderAddressSchema, taxIds: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        type: { type: 'string' }, value: { type: 'string' }, country: { type: 'string' }, label: { type: 'string' } }, required: ['type', 'value'] } } } },
     taxAddress: { type: 'string', enum: ['billing', 'shipping'] },
     serverRefs: { type: 'object', properties: {
       orderId: { type: 'string' }, displayId: { type: 'string' }, totalMinor: { type: 'integer' },
@@ -144,8 +149,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 11 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 11 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 12 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 12 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -209,5 +214,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity } };
 }
