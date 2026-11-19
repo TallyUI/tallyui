@@ -28,6 +28,9 @@ const base: DisplayConfig = {
 const configFor = (r: { displayId: string; name: string }): DisplayConfig => ({ ...base, display: { id: r.displayId, name: r.name } });
 const receipt = receiptWith([line('Tea')]);
 const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+/** Real timers, captured before any test installs fake ones. */
+const realSetTimeout = globalThis.setTimeout;
+const realDelay = (ms: number) => new Promise<void>((resolve) => void realSetTimeout(resolve, ms));
 /**
  * Advances the fake clock in `stepMs` steps, at most 10, until `holds()`. D4's memory server hashes with
  * crypto.subtle.digest, which settles off the fake clock, so one fixed advance can end before a poll's answer lands.
@@ -239,6 +242,11 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
   });
 
   it('D4: display side: what the display client receives (signals, snapshot bodies, its own state) never contains the device id', async () => {
+    // The CI flake 'display paired still false after 10 steps': digest settles in real time, so D4 always runs it slow.
+    const realDigest = globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle);
+    const digest = vi.spyOn(globalThis.crypto.subtle, 'digest')
+      .mockImplementation(async (algorithm, data) => { await realDelay(25); return realDigest(algorithm, data); });
+    closers.push(() => digest.mockRestore());
     const { signalling, harness } = createMemoryDisplaySignalling();
     const w = watch(signalling);
     const tillCtx = await harness.till({ cashierId: 'c1', canPair: true });
