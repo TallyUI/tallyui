@@ -17,6 +17,7 @@ export type {
   VariantSummary,
   VariantOptionGroup,
   ProductCategory,
+  ProductTerm,
   CustomerTraits,
   Money,
   ProductPrice,

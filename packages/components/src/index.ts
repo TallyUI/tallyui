@@ -78,6 +78,7 @@ export {
   CartColumnHeads,
   type CartColumnHeadsProps,
   cartColumnIds,
+  type CartColumnId,
   type CartColumnSettings,
   CartFoot,
   type CartFootProps,

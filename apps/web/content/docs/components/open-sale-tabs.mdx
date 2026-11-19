@@ -53,3 +53,4 @@ A parked draft whose legs took money keeps the prices it was paid against when i
 | `currency` | `string` | required | Currency used to format totals and the balance due |
 | `onSelect` | `(id: string) => void` | required | Called with a tab's sale id when it is pressed; call `sale.switchSale(id)` |
 | `onNew` | `() => void` | required | Called when + is pressed while the till is not on a blank cart; call `sale.switchSale(null)` |
+| `className` | `string` | — | Classes merged onto the bar's root, so an app can restyle it; at the top of the cart, for example `border-t-0 border-b` |

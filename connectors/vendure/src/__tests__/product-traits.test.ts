@@ -602,10 +602,76 @@ describe('vendureProductSchema v1 (backlog 28) and v2 (#288)', () => {
         useGlobalOutOfStockThreshold: false, enabled: true, taxCategory: { id: '2' },
       }],
     });
-    expect(vendureProductSchema.version).toBe(2); // v2 declares taxCategory (#288)
+    expect(vendureProductSchema.version).toBe(3); // v2 declares taxCategory (#288), v3 optionGroups (gap 2.5)
     expect(doc.toJSON().variants[0]).toMatchObject({
       trackInventory: 'FALSE', outOfStockThreshold: -5, useGlobalOutOfStockThreshold: false, enabled: true, taxCategory: { id: '2' },
     });
+    await db.close();
+  });
+});
+
+describe('variant option groups (vendurepos gap 2.5)', () => {
+  // Two groups in the API's order (Size: 30, 32; Colour: Blue) and two variants.
+  const product = {
+    id: '1', name: 'Jeans',
+    optionGroups: [
+      { id: '10', code: 'size', name: 'Size', options: [{ id: '100', code: 'size-30', name: '30' }, { id: '101', code: 'size-32', name: '32' }] },
+      { id: '20', code: 'colour', name: 'Colour', options: [{ id: '200', code: 'blue', name: 'Blue' }] },
+    ],
+    variants: [
+      { id: '1', name: 'Jeans 32 Blue', price: 5000, currencyCode: 'EUR', options: [
+        { id: '101', code: 'size-32', name: '32', groupId: '10' }, { id: '200', code: 'blue', name: 'Blue', groupId: '20' },
+      ] },
+      { id: '2', name: 'Jeans 30 Blue', price: 5000, currencyCode: 'EUR', options: [
+        { id: '100', code: 'size-30', name: '30', groupId: '10' }, { id: '200', code: 'blue', name: 'Blue', groupId: '20' },
+      ] },
+    ],
+  };
+
+  it('V1: getVariants keys each variant\'s options by group name', () => {
+    const variants = vendureProductTraits.getVariants!(product);
+    expect(variants[0].options).toEqual({ Size: '32', Colour: 'Blue' });
+    expect(variants[1].options).toEqual({ Size: '30', Colour: 'Blue' });
+  });
+
+  it('V2: an option whose groupId is not among optionGroups leaves its key out', () => {
+    const doc = { ...product, variants: [{ ...product.variants[0], options: [
+      { id: '101', code: 'size-32', name: '32', groupId: '10' }, { id: '900', code: 'x', name: 'Stray', groupId: '99' },
+    ] }] };
+    expect(vendureProductTraits.getVariants!(doc)[0].options).toEqual({ Size: '32' });
+  });
+
+  it('V3: a v2-shaped product (no optionGroups) gives options undefined and getVariantOptions []', () => {
+    const { optionGroups: _, ...v2 } = product;
+    const doc = { ...v2, variants: v2.variants.map((v) => ({ ...v, options: v.options.map(({ groupId: __, ...o }) => o) })) };
+    for (const variant of vendureProductTraits.getVariants!(doc)) expect(variant.options).toBeUndefined();
+    expect(vendureProductTraits.getVariantOptions!(doc)).toEqual([]);
+    expect(vendureProductTraits.getVariants!({ ...product, variants: [{ id: '3', price: 1 }] })[0].options).toBeUndefined();
+  });
+
+  it('V4: getVariantOptions lists the groups and their values in the API\'s order', () => {
+    expect(vendureProductTraits.getVariantOptions!(product)).toEqual([
+      { id: '10', name: 'Size', values: ['30', '32'] },
+      { id: '20', name: 'Colour', values: ['Blue'] },
+    ]);
+  });
+
+  it('V5: schema v3 declares optionGroups and the variant options\' groupId', async () => {
+    expect(vendureProductSchema.version).toBe(3);
+    expect(vendureProductSchema.properties).toMatchObject({
+      optionGroups: { type: 'array', items: { properties: {
+        id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' },
+        options: { type: 'array', items: { properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' } } } },
+      } } },
+      variants: { items: { properties: { options: { items: { properties: { groupId: { type: 'string' } } } } } } },
+    });
+    const db = await createRxDatabase({
+      name: `vendureschemav3${Date.now()}`, multiInstance: false,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }),
+    });
+    const { products } = await db.addCollections({ products: connectorCollection(vendureProductSchema) });
+    const doc = await products.insert(product);
+    expect(vendureProductTraits.getVariants!(doc.toJSON())[0].options).toEqual({ Size: '32', Colour: 'Blue' });
     await db.close();
   });
 });

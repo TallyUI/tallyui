@@ -74,3 +74,50 @@ describe('ProductFilterBar', () => {
     expect(onTermPress).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('termGroups', () => {
+  type Group = ProductTermFilter & { id: string; label: string; searchPlaceholder?: string };
+  function groups(colour: Partial<Group> = {}) {
+    const COLOUR: Group = { id: '3', label: 'Colour', options: [{ value: 'r', label: 'Red' }, { value: 'b', label: 'Blue' }], onChange: vi.fn(), ...colour };
+    const SIZE: Group = { id: '7', label: 'Size', options: [{ value: 's', label: 'Small' }], onChange: vi.fn() };
+    render(<><ProductFilterBar value={DEFAULT_PRODUCT_FILTERS} onChange={vi.fn()} termGroups={[SIZE, COLOUR]} /><PortalHost /></>);
+    return { COLOUR, SIZE };
+  }
+
+  it('G1: renders the groups after the built-in chips, in the given order', () => {
+    groups();
+    expect(chipIds()).toEqual(['filter-chip-inStock', 'filter-chip-featured', 'filter-chip-onSale',
+      'filter-chip-group-7', 'filter-chip-group-3']);
+    expect(screen.getByTestId('filter-chip-group-3').textContent).toBe('Colour');
+  });
+
+  it("G2: picking a term calls only that group's onChange", () => {
+    const { COLOUR, SIZE } = groups();
+    press('filter-chip-group-3');
+    press('filter-chip-group-3-b');
+    expect(COLOUR.onChange).toHaveBeenCalledExactlyOnceWith('b');
+    expect(SIZE.onChange).not.toHaveBeenCalled();
+  });
+
+  it('G3: a picked term shows its name and an x that clears it', () => {
+    const { COLOUR } = groups({ value: 'r' });
+    expect(screen.getByTestId('filter-chip-group-3').textContent).toBe('Red');
+    press('filter-chip-group-3-remove');
+    expect(COLOUR.onChange).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it('G4: the search placeholder defaults to Search <label>, and searchPlaceholder overrides it', () => {
+    groups();
+    press('filter-chip-group-3');
+    expect(screen.getByTestId('filter-chip-group-3-search').getAttribute('placeholder')).toBe('Search Colour');
+    cleanup();
+    groups({ searchPlaceholder: 'Find a colour' });
+    press('filter-chip-group-3');
+    expect(screen.getByTestId('filter-chip-group-3-search').getAttribute('placeholder')).toBe('Find a colour');
+  });
+
+  it('G5: an empty termGroups renders the built-in chips only', () => {
+    render(<ProductFilterBar value={DEFAULT_PRODUCT_FILTERS} onChange={vi.fn()} termGroups={[]} />);
+    expect(chipIds()).toEqual(['filter-chip-inStock', 'filter-chip-featured', 'filter-chip-onSale']);
+  });
+});

@@ -20,7 +20,7 @@ export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAda
 
 export type { StoreSettings, StoreSettingsChoice, StoreTaxClass, StoreTaxRate, StoreTaxRateLocation } from './store-settings';
 
-export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory } from './traits/product';
+export type { ProductTraits, TraitContext, VariantSummary, VariantOptionGroup, ProductCategory, ProductTerm } from './traits/product';
 
 export type { Money, ProductPrice, ResolvedPrice } from './money';
 
