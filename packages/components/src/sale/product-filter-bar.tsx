@@ -40,6 +40,9 @@ export interface ProductFilterBarProps {
   /** Picker pills for Category, Tag and Brand (v2 filter-bar/*-pill.tsx). A chip with an entry here opens its own
    *  picker. A chip without one falls back to `onTermPress`, and is hidden when neither is given. */
   terms?: Partial<Record<TermChip, ProductTermFilter>>;
+  /** Extra term pills after the built-in chips, one per group, in this order (e.g. one per Vendure facet). Each is a
+   *  single-select searchable picker like a `terms` entry; `searchPlaceholder` defaults to `Search <label>`. */
+  termGroups?: readonly (ProductTermFilter & { id: string; label: string; searchPlaceholder?: string })[];
   /** Opens the app's term picker for a term chip that has no entry in `terms`. */
   onTermPress?: (chip: TermChip) => void;
   className?: string;
@@ -53,8 +56,9 @@ function isToggle(chip: ProductFilterChip): chip is ToggleChip {
  * v2's always-on filter chips above the product grid: In Stock, Featured and On Sale toggle; Category, Tag
  * and Brand open a term picker, the bar's own (`terms`) or the app's (`onTermPress`). Ported from WCPOS v2
  * `FilterBar`, packages/core/src/screens/main/pos/products/filter-bar/filter-bar.tsx (MIT, WCPOS).
+ * `termGroups` adds a pill per extra term group (TallyUI's extension; v2's set is fixed).
  */
-export function ProductFilterBar({ value, onChange, chips = PRODUCT_FILTER_CHIPS, terms, onTermPress, className }: ProductFilterBarProps) {
+export function ProductFilterBar({ value, onChange, chips = PRODUCT_FILTER_CHIPS, terms, termGroups, onTermPress, className }: ProductFilterBarProps) {
   const shown = chips.filter((chip) => isToggle(chip) || terms?.[chip] || onTermPress);
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} className={className} contentContainerClassName="flex-row gap-2">
@@ -77,6 +81,11 @@ export function ProductFilterBar({ value, onChange, chips = PRODUCT_FILTER_CHIPS
           </Pressable>
         );
       })}
+      {termGroups?.map((group) => (
+        <ComboboxPill key={`filter-chip-group-${group.id}`} id={`filter-chip-group-${group.id}`} offLabel={group.label}
+          placeholder={group.searchPlaceholder ?? `Search ${group.label}`} value={group.value} options={[...group.options]}
+          onSearch={group.onSearch} onPick={group.onChange} onClear={() => group.onChange(undefined)} />
+      ))}
     </ScrollView>
   );
 }
