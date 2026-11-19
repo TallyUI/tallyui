@@ -31,6 +31,7 @@ const PRODUCT_DETAIL_QUERY = (barcodeField?: string) => `
       assets { id preview }
       collections { id name slug }
       facetValues { id name code facet { id name } }
+      optionGroups { id code name options { id code name } }
       variants {
         id
         name
@@ -41,7 +42,7 @@ const PRODUCT_DETAIL_QUERY = (barcodeField?: string) => `
         stockLevels { stockLocationId stockOnHand stockAllocated }
         trackInventory
         featuredAsset { id preview }
-        options { id name code }
+        options { id name code groupId }
         ${barcodeField ? `customFields { ${barcodeField} }` : ''}
       }
     }
