@@ -349,3 +349,72 @@ describe('email sent line', () => {
     await waitFor(() => expect(line()?.textContent).toBe('E-mail envoyé'));
   });
 });
+
+describe('printer switcher', () => {
+  const PRINTERS = [{ id: 'front', name: 'Front counter' }, { id: 'kitchen', name: 'Kitchen' }];
+  const trigger = () => screen.getByTestId('receipt-printer-select');
+
+  it('RP1: without printers, or with none, the row shows the label and no switcher', () => {
+    setup();
+    expect(screen.getByTestId('print-sheet-printer').textContent).toBe('PrinterBrowser print dialog');
+    expect(screen.queryByTestId('receipt-printer-select')).toBeNull();
+    cleanup();
+    setup({ printers: [] });
+    expect(screen.getByTestId('print-sheet-printer').textContent).toBe('PrinterBrowser print dialog');
+    expect(screen.queryByTestId('receipt-printer-select')).toBeNull();
+  });
+
+  it('RP2: on Auto the trigger reads Auto — the resolved name, or Auto alone', () => {
+    setup({ printers: PRINTERS, autoPrinterName: 'Front counter' });
+    expect(trigger().textContent).toBe('Auto — Front counter');
+    expect(trigger().getAttribute('aria-label')).toBe('Printer');
+    cleanup();
+    setup({ printers: PRINTERS });
+    expect(trigger().textContent).toBe('Auto');
+  });
+
+  it('RP3: the list is Auto first, then each printer by name, or its id without one', () => {
+    setup({ printers: PRINTERS });
+    fireEvent.click(trigger());
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Auto', 'Front counter', 'Kitchen']);
+    expect(screen.getByTestId('receipt-printer-auto').textContent).toBe('Auto');
+    cleanup();
+    setup({ printers: [{ id: 'bar' }, { id: 'back', name: '  ' }] });
+    fireEvent.click(trigger());
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Auto', 'bar', 'back']);
+  });
+
+  it('RP4: choosing a printer calls onPrinterChange with its id, and Auto with null', () => {
+    const onPrinterChange = vi.fn();
+    setup({ printers: PRINTERS, onPrinterChange });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId('receipt-printer-kitchen'));
+    expect(onPrinterChange).toHaveBeenCalledExactlyOnceWith('kitchen');
+    cleanup();
+    const back = vi.fn();
+    setup({ printers: PRINTERS, printerId: 'kitchen', onPrinterChange: back });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId('receipt-printer-auto'));
+    expect(back).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('RP5: the trigger shows the picked printer, and an unknown pick as Auto', () => {
+    setup({ printers: PRINTERS, printerId: 'kitchen', autoPrinterName: 'Front counter' });
+    expect(trigger().textContent).toBe('Kitchen');
+    cleanup();
+    setup({ printers: PRINTERS, printerId: 'gone', autoPrinterName: 'Front counter' });
+    expect(trigger().textContent).toBe('Auto — Front counter');
+  });
+
+  it('RP6: choosing the current value calls nothing', () => {
+    const onPrinterChange = vi.fn();
+    setup({ printers: PRINTERS, printerId: 'kitchen', onPrinterChange });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId('receipt-printer-kitchen'));
+    cleanup();
+    setup({ printers: PRINTERS, onPrinterChange });
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByTestId('receipt-printer-auto'));
+    expect(onPrinterChange).not.toHaveBeenCalled();
+  });
+});

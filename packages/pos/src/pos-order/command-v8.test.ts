@@ -100,7 +100,9 @@ describe('order.create v8, a sale taxed on the customer\'s address (#722)', () =
   it.each([[false, 5], [true, 6]] as const)('keeps a base-taxed order (coupons: %s) byte-identical at cap 8 and at its own version', (coupons, own) => {
     const order = sale({ coupons, taxLocation: baseLocation }), noLocation = sale({ coupons, taxLocation: null });
     expect(order).not.toHaveProperty('taxAddress');
-    expect(order.customer).toStrictEqual({ id: '42', name: 'Ann Lee', email: 'ann@example.com' });
+    expect(order.customer).toStrictEqual({ id: '42', name: 'Ann Lee', email: 'ann@example.com',
+      billing: { firstName: 'Ann', lastName: 'Lee', address1: '1 Main St', city: 'Albany', state: 'NY', postcode: '12207', country: 'US', phone: '555-0100' },
+      shipping: { firstName: 'Ann', city: 'Portland', state: 'OR', postcode: '97201', country: 'US' } });
     // saleId is the builder's own, so it differs between two sales.
     expect(JSON.stringify({ ...order, saleId: '' })).toBe(JSON.stringify({ ...noLocation, saleId: '' }));
     const at8 = JSON.stringify(envelope(order, 8));

@@ -6166,8 +6166,9 @@ interface OrderCreatePayload {
 ## ADR-086 order.create v8: a sale taxed on the customer's address
 
 - **Date:** 2026-11-11 · **Status:** Proposed (front desk ruling on #722 step 2, 2026-11-11; one-way, merges on
-  Paul's word) · **Amends:** ADR-076 decision 4 ("A POS sale is taxed at the store's base location") · **Relates
-  to:** ADR-038 (commands), ADR-083 (how version 7 was added), ADR-070 (strict payloads and field kinds)
+  Paul's word) · **Amends:** ADR-076 decision 4 ("A POS sale is taxed at the store's base location") · **Amended:**
+  2026-11-19 (decision 2, front desk ruling Q7.1) · **Relates to:** ADR-038 (commands), ADR-083 (how version 7 was
+  added), ADR-070 (strict payloads and field kinds)
 - **Context:**
   - A WooCommerce store can tax on the customer's billing or shipping address (`tax_based_on`). The till has the
     pieces (#722 step 1: `taxBasedOn`, `baseTaxAddress`; `saleTaxContexts` re-matches the rate table per customer)
@@ -6186,6 +6187,23 @@ interface OrderCreatePayload {
      units, no email). A v8 payload always has `taxAddress`, and that address has a non-empty `country`.
   2. **Sent only for a sale taxed on the customer's address.** A sale taxed on the base goes out byte for byte as
      before (the v1–v7 golden fixtures are unchanged). A v8 sale with a note carries it.
+     **Amended 2026-11-19 (front desk ruling, Q7.1):** a sale with a non-empty billing or shipping address and no
+     taxAddress goes out at order.create 11 (10 plus those addresses, informational) when the store's cap is 11 or more
+     and the sale meets 10's own requirements; otherwise the addresses are dropped silently and the sale goes exactly
+     as before. Versions 8, 9 and 10 are unchanged ("a live version's meaning never changes"). finalizeOrder stores the
+     customer's non-empty addresses on every order. Contract: docs/contract/order-create-v11.md. The ruling, verbatim:
+     "Q7.1 wording, desk reading to use in the ADR: (3), narrowed. A sale that carries a non-empty billing or shipping
+     address and no taxAddress goes out at 9 when the store's cap is 9 or more, with the addresses as informational
+     fields; a sale with no address keeps the version it has today, byte-identical (test it). Below cap 9 the
+     addresses are dropped silently, never an UnsupportedOrderVersionError, and version and bytes are as today (the
+     v8-only backend test, plus a cap-4 one). v8 and the taxAddress path unchanged. Reason: v2 writes billing and
+     shipping on every order, and under (2) the editor is cosmetic on a plain sale. Storage per your point 5.
+     Must-be-right terms stand: Opus re-derive, new golden fixtures for the lifted case, READY to the desk before
+     merge; connector lanes map the fields after." and then "11. Good catch: a live version's meaning never changes.
+     Reading (3) stands under version 11 (10 plus untaxed addresses): lifted only when the cap is 11 or more and the
+     sale meets 10's own requirements (figures, coupons carrying lines); otherwise addresses dropped silently and the
+     sale goes exactly as today. v8, v9, v10 byte-identical, with a test at each cap (4, 8, 9, 10).
+     ORDER_CREATE_MAX_VERSION to 11, contract doc order-create-v11.md. Must-be-right terms unchanged."
   3. **Never downgraded.** Below 8 a server taxes on the base, so a `taxAddress` order capped below 8 throws
      `UnsupportedOrderVersionError(8, cap)` and the outbox sends it at 8, as coupons (ADR-077) are never dropped.
   4. **The till re-taxes by address only when the server takes 8.** `saleTaxContexts(settings, { orderCreateVersion })`
@@ -6204,7 +6222,7 @@ interface OrderCreatePayload {
      informational (`docs/contract/field-kinds.md`).
   7. **`pos_orders` goes to schema version 12**: `taxAddress`, the customer's `billing` and `shipping`, and
      `sentVersion` / `downgradedFrom` up to 8. The migration is the identity, through `addPosOrderCollection`.
-     `ORDER_CREATE_MAX_VERSION` is 8.
+     `ORDER_CREATE_MAX_VERSION` is 8. pos_orders 17 lets sentVersion and downgradedFrom be 11.
   8. **WooCommerce.** The connector advertises 8 wherever it advertised 7 (`order_create_v5` and the coupons gate),
      fills `taxRateTable` with the whole fetched table when it has a base address, and sends a v8 sale's
      `taxAddress` as `_woocommerce_pos_tax_based_on` meta with the full wc/v3 `billing` (with the email) and
@@ -6224,7 +6242,10 @@ interface OrderCreatePayload {
   `packages/core/src/server/order-create-v8.test.ts`, `packages/pos/src/sale/use-sale-tax-location.test.tsx`,
   `packages/pos/src/tax/sale-tax-contexts.test.ts`, `packages/pos/src/pos-order/migration.test.ts`,
   `packages/integration-tests/src/pos-orders-open-sqlite.test.ts`,
-  `packages/integration-tests/src/woo-tax-address-parity.test.ts`.
+  `packages/integration-tests/src/woo-tax-address-parity.test.ts`;
+  for the 2026-11-19 amendment, `packages/pos/src/pos-order/command-v11.test.ts` (golden
+  `__fixtures__/order-create-v11.json`), `packages/core/src/server/order-create-v11.test.ts`,
+  `packages/pos/src/pos-order/finalize.test.ts`, `packages/pos/src/outbox/order-outbox-downgrade-bound.test.ts`.
 
 ## ADR-087 Appearance: themes, icon sets and font sets (deferred)
 

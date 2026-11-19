@@ -35,8 +35,9 @@ import type { PosOrder } from './types';
  * Version 14 adds a reopened sale's store ids (ADR-090 decision 5): the order's `storeOrderId` and `baseRevision`, a line's, fee's and shipping line's `storeLineId`, and a payment's `storePaymentId`, and changes nothing else. Its migration is the identity. It is one-way like version 13.
  * Version 15 lets `baseRevision` be 128 characters (a store revision is an opaque token; WooCommerce's is 71) and adds `refundDueMinor`, what the store owes back on a reopened sale paid beyond its new total (ADR-090), and changes nothing else. Its migration is the identity. It is one-way like version 14.
  * Version 16 adds a payment's optional methodId (ruling A, 2026-11-18) and lets sentVersion and downgradedFrom be 10 (order.create version 10), and changes nothing else. Its migration is the identity. It is one-way like version 15.
+ * Version 17 lets sentVersion and downgradedFrom be 11 (order.create version 11, ADR-086 d2 amended 2026-11-19), and changes nothing else. Its migration is the identity. It is one-way like version 16.
  */
-/** A customer's address on an order taxed by it (#722, OrderAddress): ten optional strings. */
+/** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
   firstName: { type: 'string' }, lastName: { type: 'string' }, company: { type: 'string' }, address1: { type: 'string' },
   address2: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, postcode: { type: 'string' },
@@ -44,7 +45,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 16, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 17, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -143,8 +144,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 10 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 10 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 11 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 11 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -208,5 +209,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity } };
 }

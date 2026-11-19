@@ -337,7 +337,7 @@ describe('useSale taxContextFor (#722)', () => {
   it('completes a sale started at order.create 7 on the base, with no tax address, when a function at 8 arrives mid-sale', async () => {
     const [atBase, across, reMatched] = [await finishAcross(7, 7), await finishAcross(7, 8), await finishAcross(8, 8)];
     expect(across).not.toHaveProperty('taxAddress');
-    expect(across.customer).toStrictEqual({ id: '7', name: 'Kiri' });
+    expect(across.customer).toStrictEqual({ id: '7', name: 'Kiri', shipping: { city: 'Auckland', postcode: '1010', country: 'NZ' } });
     expect(across.taxMinor).toBe(atBase.taxMinor);
     expect(across.taxMinor).not.toBe(reMatched.taxMinor);
   });

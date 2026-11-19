@@ -1,0 +1,90 @@
+{
+  "id": "019f8f66-7800-7000-8000-000000000004",
+  "type": "order.create",
+  "version": 11,
+  "createdAt": "2026-11-19T10:00:00.000Z",
+  "deviceId": "device_golden",
+  "attempt": 1,
+  "payload": {
+    "clientOrderId": "019f8f66-7800-7000-8000-000000000001",
+    "createdAt": "2026-11-19T10:00:00.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": true,
+    "lines": [
+      {
+        "clientLineId": "019f8f66-7800-7000-8000-000000000002",
+        "variantId": "p",
+        "title": "p",
+        "quantity": 1,
+        "unitPriceMinor": 1190,
+        "discountMinor": 100
+      }
+    ],
+    "payments": [
+      {
+        "clientPaymentId": "019f8f66-7800-7000-8000-000000000003",
+        "method": "cash",
+        "amountMinor": 1071,
+        "tenderedMinor": 1071,
+        "changeMinor": 0
+      }
+    ],
+    "subtotalMinor": 900,
+    "discountMinor": 100,
+    "taxMinor": 171,
+    "totalMinor": 1071,
+    "display": {
+      "currency": "EUR",
+      "exponent": 2,
+      "taxInclusive": true,
+      "subtotalMinor": 1190,
+      "discountMinor": 119,
+      "taxMinor": 171,
+      "totalMinor": 1071,
+      "lines": [
+        {
+          "clientLineId": "019f8f66-7800-7000-8000-000000000002",
+          "amountMinor": 1190,
+          "discounts": [
+            {
+              "discountId": "discount_line",
+              "amountMinor": 119
+            }
+          ]
+        }
+      ],
+      "orderDiscountMinor": 0
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 190000,
+        "netMinor": 900,
+        "taxMinor": 171,
+        "grossMinor": 1071
+      }
+    ],
+    "customer": {
+      "email": "ann@example.com",
+      "customerId": "42",
+      "billing": {
+        "firstName": "Ann",
+        "lastName": "Lee",
+        "address1": "1 State St",
+        "city": "Albany",
+        "state": "NY",
+        "postcode": "12207",
+        "country": "US",
+        "phone": "+1 518 555 0100"
+      },
+      "shipping": {
+        "firstName": "Ann",
+        "lastName": "Lee",
+        "address1": "9 River Rd",
+        "city": "Troy",
+        "state": "NY",
+        "postcode": "12180",
+        "country": "US"
+      }
+    }
+  }
+}

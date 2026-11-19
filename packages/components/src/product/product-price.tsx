@@ -32,6 +32,8 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
    * `` (price) => `from ${price}` ``. Wins over `fromLabel` when both are given.
    */
   formatFrom?: (price: string) => string;
+  /** Show the price a sale replaces, struck through. Default true. False renders an on-sale price like a regular one. */
+  showWas?: boolean;
   className?: string;
 }
 
@@ -46,7 +48,7 @@ export interface ProductPriceProps extends Omit<TextProps, 'children'> {
  * <ProductPrice doc={productDocument} currency="EUR" />
  * ```
  */
-export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel, formatFrom, ...textProps }: ProductPriceProps) {
+export function ProductPrice({ doc, currency, locale, currencySymbol = '$', className, showFromPrice = true, fromLabel, formatFrom, showWas = true, ...textProps }: ProductPriceProps) {
   const formatMoney = useFormatMoney();
   const { getPrices, getVariants } = useProductTraits();
   const traitContext = useTraitContext();
@@ -84,7 +86,7 @@ export function ProductPrice({ doc, currency, locale, currencySymbol = '$', clas
     );
   }
 
-  if (resolved.was) {
+  if (resolved.was && showWas) {
     return (
       <Text
         className={cn('text-sm font-semibold text-sale', className)}

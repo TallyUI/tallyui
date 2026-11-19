@@ -119,6 +119,8 @@ export {
   type CustomerOrderHistoryProps,
   CustomerDropdown,
   type CustomerDropdownProps,
+  CustomersList,
+  type CustomersListProps,
   AddressFields,
   ShippingAddressFields,
   type AddressFieldsProps,
