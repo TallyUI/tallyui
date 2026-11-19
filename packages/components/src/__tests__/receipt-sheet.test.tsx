@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'react-native';
 import { PortalHost } from '@tallyui/primitives';
 import { ReceiptSheet, type ReceiptSheetProps } from '../sale';
+import { I18nProvider } from '../i18n';
 
 afterEach(cleanup);
 
@@ -264,5 +265,87 @@ describe('ReceiptSheet', () => {
     const { onOpenChange } = setup();
     fireEvent.click(screen.getByTestId('receipt-close-button'));
     expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(false);
+  });
+});
+
+describe('email sent line', () => {
+  const line = () => screen.queryByTestId('receipt-email-sent');
+
+  it('S1: a null from a promise closes the form and says Email sent', async () => {
+    setup({ email: { onSend: vi.fn(() => Promise.resolve(null)) } });
+    openForm();
+    expect(line()).toBeNull();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await waitFor(() => expect(screen.queryByTestId('receipt-email-form')).toBeNull());
+    expect(line()?.textContent).toBe('Email sent');
+    expect(screen.queryByTestId('receipt-email-error')).toBeNull();
+  });
+
+  it('S2: offline, a synchronous null says Receipt email queued', async () => {
+    setup({ email: { offline: true, onSend: vi.fn(() => null) } });
+    openForm();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await waitFor(() => expect(screen.queryByTestId('receipt-email-form')).toBeNull());
+    expect(line()?.textContent).toBe('Receipt email queued');
+  });
+
+  it('S3: a refusal or a rejection shows the alert and no sent line', async () => {
+    setup({ email: { defaultAddress: 'a@b.co', onSend: vi.fn(() => 'Store email is off') } });
+    openForm();
+    fireEvent.click(send());
+    await act(async () => {});
+    expect(screen.getByRole('alert').textContent).toBe('Store email is off');
+    expect(line()).toBeNull();
+    cleanup();
+    setup({ email: { defaultAddress: 'a@b.co', onSend: vi.fn().mockRejectedValueOnce(new Error('Network down')) } });
+    openForm();
+    fireEvent.click(send());
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Network down'));
+    expect(line()).toBeNull();
+  });
+
+  it('S4: opening the form again clears the line, and closing it unsent shows none', async () => {
+    setup({ email: { defaultAddress: 'jo@shop.co', onSend: vi.fn(() => Promise.resolve(null)) } });
+    openForm();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await waitFor(() => expect(line()?.textContent).toBe('Email sent'));
+    openForm();
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(address().value).toBe('jo@shop.co');
+    expect(line()).toBeNull();
+    openForm();
+    expect(screen.queryByTestId('receipt-email-form')).toBeNull();
+    expect(line()).toBeNull();
+  });
+
+  it('S5: closing the sheet clears the line', async () => {
+    const props = { templates: TEMPLATES, onPrint: vi.fn(), onOpenChange: vi.fn(), email: { onSend: vi.fn(() => Promise.resolve(null)) } };
+    const { rerender } = render(<><ReceiptSheet open {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    openForm();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await waitFor(() => expect(line()?.textContent).toBe('Email sent'));
+    rerender(<><ReceiptSheet open={false} {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    rerender(<><ReceiptSheet open {...props}><Text>Preview</Text></ReceiptSheet><PortalHost /></>);
+    expect(screen.getByTestId('receipt-email-button')).toBeTruthy();
+    expect(line()).toBeNull();
+  });
+
+  it('S6: the line reads the catalogue of the nearest I18nProvider', async () => {
+    render(
+      <I18nProvider locale="fr" resources={{ fr: { 'receipt.email_sent': 'E-mail envoyé' } }}>
+        <ReceiptSheet open onOpenChange={vi.fn()} templates={TEMPLATES} onPrint={vi.fn()} email={{ onSend: vi.fn(() => null) }}>
+          <Text>Preview</Text>
+        </ReceiptSheet>
+        <PortalHost />
+      </I18nProvider>,
+    );
+    openForm();
+    typeAddress('a@b.co');
+    fireEvent.click(send());
+    await waitFor(() => expect(line()?.textContent).toBe('E-mail envoyé'));
   });
 });

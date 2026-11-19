@@ -50,6 +50,8 @@
 	"pos_checkout.tendered": "Tendered",
 	"pos_checkout.to_pay": "To pay",
 	"pos_checkout.void_on_method": "Void {amount} on {title}",
+	"receipt.email_queued": "Receipt email queued",
+	"receipt.email_sent": "Email sent",
 	"tender.complete_sale": "Complete sale",
 	"tender.continue": "Continue",
 	"tender.not_taken": "That payment wasn't taken: nothing is due, or the amount isn't valid.",
