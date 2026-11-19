@@ -9,6 +9,17 @@ export interface ProductCategory {
   imageUrl?: string;
 }
 
+/** A label a product carries, grouped (a Vendure facet value, a WooCommerce tag or brand). Ids are the backend's, as strings. */
+export interface ProductTerm {
+  /** The group's id, unique per backend (e.g. the facet's id, or 'tag'). */
+  group: string;
+  /** The group's label, e.g. "Brand". */
+  groupName: string;
+  /** The term's id, unique within its group. */
+  id: string;
+  name: string;
+}
+
 /** One purchasable variant of a product, in backend-neutral terms. */
 export interface VariantSummary {
   /** Backend variant id; the id sent in order lines. */
@@ -149,6 +160,12 @@ export interface ProductTraits<Doc = any> {
    * Optional: without it, the pos category helpers use `getCategoryNames` with each name as its id.
    */
   getCategories?: (doc: Doc) => ProductCategory[];
+
+  /**
+   * The product's terms (facet values, tags, brands), each in its group.
+   * Optional: without it a product has no terms, and Catalogue shows no term pills.
+   */
+  getTerms?: (doc: Doc) => ProductTerm[];
 
   /** The connector-specific unique ID (as string for consistency) */
   getId: (doc: Doc) => string;
