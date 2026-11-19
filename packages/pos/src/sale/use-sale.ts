@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { paymentMethodOf } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
+import { ORDER_TAX_IDS_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
@@ -43,6 +43,10 @@ export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ra
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
+/** ADR-092 6a: setTaxIds' refusal once the sale left the cart or money is live; the tax ids change only in the cart. */
+export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
+/** ADR-092 6a: setTaxIds' refusal of a list order.create 12 could not carry. */
+export const TAX_IDS_INVALID = 'Each tax id needs a type and a number, a country is a two-letter code, and a sale takes at most 10.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -641,6 +645,24 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         builderNow.current.setCustomer(next);
       }
       setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
+      return true;
+    },
+    /** Replaces the picked customer's tax ids on this sale (`[]` removes them). Returns false for a guest sale, as `setAddresses`
+     *  does; refuses once the sale left the cart, and refuses an invalid list (ADR-092 6a). It does not re-tax, and it does
+     *  not save them to the customer (the customer editor does). */
+    setTaxIds(taxIds: CustomerTaxId[]): boolean {
+      if (locked()) return false;
+      const { customer, payments } = builderNow.current.getSnapshot();
+      if (customer === null) return false;
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) { setError(TAX_IDS_CHANGE_REFUSED); return false; }
+      const trimmed = taxIds.map(({ type, value, country, label }) => ({ type: type.trim(), value: value.trim(),
+        ...(country?.trim() ? { country: country.trim() } : {}), ...(label?.trim() ? { label: label.trim() } : {}) }));
+      if (trimmed.length > ORDER_TAX_IDS_MAX || trimmed.some((t) => !t.type || !t.value || (t.country !== undefined && !/^[A-Z]{2}$/.test(t.country)))) {
+        setError(TAX_IDS_INVALID); return false;
+      }
+      const { taxIds: _taxIds, ...rest } = customer;
+      builderNow.current.setCustomer(trimmed.length ? { ...rest, taxIds: trimmed } : rest);
+      setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
       return true;
     },
     /**
