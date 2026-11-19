@@ -158,3 +158,36 @@ describe('useSale on the cart stage is unchanged', () => {
     expect(result.current.order.payments).toEqual([]);
   });
 });
+
+describe('useSale on the receipt stage refuses tender, note and customer changes (#1062 follow-up)', () => {
+  type Sale = ReturnType<typeof useSale>;
+  const jane = { id: 'customer-1', name: 'Jane Smith', email: 'jane@test.com' };
+  it.each([
+    ['FS1', 'setTender', (sale: Sale) => sale.setTender(null), undefined],
+    ['FS2', 'addTender', (sale: Sale) => sale.addTender({ method: 'cash', amountMinor: 100 }), null],
+    ['FS3', 'voidTender', (sale: Sale, leg: string) => sale.voidTender(leg), false],
+    ['FS4', 'removeTender', (sale: Sale, leg: string) => sale.removeTender(leg), undefined],
+    ['FS5', 'setTenderStatus', (sale: Sale, leg: string) => sale.setTenderStatus(leg, 'failed'), false],
+    ['FS6', 'setNote', (sale: Sale) => sale.setNote('Gift wrap'), undefined],
+    ['FS7', 'setCustomer', (sale: Sale) => sale.setCustomer(jane), undefined],
+  ] as const)('%s: %s is refused with SALE_FINISHED and changes nothing', async (_id, _name, call, expected) => {
+    const { result, receipt } = await saleOnReceipt();
+    const { payments, note, customer } = result.current.order;
+    let returned: unknown = 'unset';
+    act(() => { returned = call(result.current, payments[0].id); });
+    expect(returned).toBe(expected);
+    expect(result.current.error).toBe(SALE_FINISHED);
+    expect(result.current.stage).toBe(receipt);
+    expect(result.current.order.payments).toEqual(payments);
+    expect(result.current.order.note).toEqual(note);
+    expect(result.current.order.customer).toEqual(customer);
+  });
+
+  it('FS9: add starts the next sale on the default customer, not a guest', async () => {
+    const regular = { id: 'customer-7', name: 'Sam Regular', email: 'sam@test.com' };
+    const { result } = await saleOnReceipt({ defaultCustomer: regular });
+    act(() => { result.current.add(entries[1], traits); });
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.order.customer).toEqual(regular);
+  });
+});

@@ -534,6 +534,21 @@ describe('adoptRegisterResults', () => {
       expect(await read()).toStrictEqual(before);
     });
 
+    it('K3: a closure the store accepted after the refused one is never renumbered', async () => {
+      const [a, b, c] = [await closeWith(3000, '2026-11-10T17:00:00.000Z'), await closeWith(2000, '2026-11-11T17:00:00.000Z'),
+        await closeWith(1000, '2026-11-12T17:00:00.000Z')];
+      await reconcile();
+      await (await submit(a)).incrementalPatch({ syncStatus: 'applied' });
+      expect((await submit(c)).payload.number).toBe((await closure(c)).number);
+      await (await submit(c)).incrementalPatch({ syncStatus: 'applied' });
+      await refuse(b, counters(41, 500000, 2000));
+      const before = [await closure(c), (await submit(c)).toJSON()];
+      await renumber();
+      expect(await closure(b)).toMatchObject({ number: 42, perpetual_sales_total_minor: 502000, number_retried: true });
+      expect([await closure(c), (await submit(c)).toJSON()]).toStrictEqual(before);
+      expect(before[1]).toMatchObject({ syncStatus: 'applied', payload: { number: 3 } });
+    });
+
     /** Rewrites a stored closure as one written before `store_key` existed: absent, or `null` when `key` is null. */
     const unkey = async (id: string, key?: null) => (await db.closures.findOne(id).exec(true))
       .incrementalModify(({ store_key: _key, ...rest }) => (key === null ? { ...rest, store_key: null } : rest));
