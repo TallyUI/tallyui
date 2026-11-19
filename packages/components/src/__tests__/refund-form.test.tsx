@@ -181,3 +181,17 @@ it('RF1: reads a typed amount in the provider format (#672)', async () => {
   await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
   expect(onConfirm.mock.calls[0][0]).toMatchObject({ adjustmentMinor: 123450, totalMinor: 123450 });
 });
+
+it.each([
+  ['1..50', 'DOT'], ['9.99.', 'DOT'], ['12..5', 'DOT'], ['0.5.0', 'DOT'], ['1,234,56', 'DOT'], ['1.234.56', 'DOT'],
+  ['1.234.56', 'COMMA'], ['1,23.45', 'DOT'],
+] as const)('C1: refuses the ambiguous adjustment %j in %s like any non-number (#1073)', (text, name) => {
+  const format = name === 'DOT' ? { decimalSeparator: '.', thousandSeparator: ',' } : { decimalSeparator: ',', thousandSeparator: '.' };
+  render(<MoneyFormatProvider format={format}>
+    <RefundForm {...fixture} onConfirm={vi.fn()} onCancel={vi.fn()} />
+  </MoneyFormatProvider>);
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Goodwill' } });
+  fireEvent.change(screen.getByTestId('refund-adjustment'), { target: { value: text } });
+  expect((screen.getByTestId('refund-submit') as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByTestId('refund-invalid').textContent).toBe('Enter a number.');
+});

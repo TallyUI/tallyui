@@ -30,7 +30,7 @@ export interface StoreSettings {
   calcDiscountsSequentially?: boolean;
   /** WCPOS's "prevent overselling" store setting: WCPOS v2's stock guard runs only when it is on. Absent: the connector did not read it; treat it as off. */
   preventOverselling?: boolean;
-  /** The store's own money format, for `@tallyui/pos`'s `CurrencyProvider` `format`. Display only: amounts, rounding and orders never read it. Absent: the connector did not read one; money reads through Intl as before. */
+  /** The store's own money format, for `@tallyui/pos`'s `CurrencyProvider` `format`, and how typed amounts are read (#672); rounding and orders never read it. Absent: the connector did not read one; money reads through Intl as before. */
   moneyFormat?: MoneyFormat;
   shippingTaxClass?: string;
   taxClassSlugs?: string[];

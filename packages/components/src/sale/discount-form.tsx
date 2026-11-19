@@ -14,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 export function parseDiscount(type: Discount['type'], text: string, currency: string, format?: MoneyFormat): Discount | string {
   // A comma-locale keypad (inputMode="decimal") types "1,50": a single comma is the decimal separator.
   const raw = normalizeMoneyText(text, format).trim();
-  const trimmed = raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
+  const trimmed = !format?.decimalSeparator && !format?.thousandSeparator && raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
   if (!trimmed) return 'Enter a discount.';
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return 'Enter a number.';
   const value = Number(trimmed);

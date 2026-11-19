@@ -157,15 +157,21 @@ function formatMoneyWith(money: Money, format: MoneyFormat, locale?: string): st
 export function normalizeMoneyText(text: string, format?: MoneyFormat): string {
   if (format === undefined || (!format.decimalSeparator && !format.thousandSeparator)) return text;
   const decimal = format.decimalSeparator || '.';
-  const thousands = format.thousandSeparator || '';
-  let t = text.trim();
-  if (thousands && thousands !== decimal && t.includes(thousands) && t.includes(decimal)) {
-    t = t.split(thousands).join('').replace(decimal, '.');
-  } else {
-    if (thousands && thousands !== '.' && thousands !== ',') t = t.split(thousands).join('');
-    for (const sep of ['.', ',']) if (t.split(sep).length > 2) t = t.split(sep).join('');
-    t = t.replace(',', '.');
+  const thousands = format.thousandSeparator === decimal ? '' : format.thousandSeparator || '';
+  const trimmed = text.trim();
+  // An ambiguous amount is refused, never guessed up: the text comes back unchanged for the caller to refuse.
+  if (['.', ','].some((sep) => sep !== decimal && sep !== thousands && trimmed.includes(sep))) return text;
+  const [whole = '', fraction, ...more] = trimmed.split(decimal);
+  if (more.length > 0 || (fraction !== undefined && /\D/.test(fraction))) return text;
+  let integer = whole;
+  if (thousands && whole.includes(thousands)) {
+    const groups = whole.split(thousands);
+    if (/^-?\d{1,3}$/.test(groups[0] ?? '') && groups.slice(1).every((g) => /^\d{3}$/.test(g))) integer = groups.join('');
+    // A lone '.' or ',' separator not followed by exactly 3 digits cannot be grouping, so it is the decimal point ('1,5').
+    else if (fraction === undefined && groups.length === 2 && (thousands === '.' || thousands === ',') && !/^\d{3}$/.test(groups[1] ?? '')) integer = groups.join('.');
+    else return text;
   }
+  const t = fraction === undefined ? integer : `${integer}.${fraction}`;
   if (!/^-?(\d+(?:\.\d*)?|\.\d+)$/.test(t)) return text;
   return t.replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.$/, '');
 }

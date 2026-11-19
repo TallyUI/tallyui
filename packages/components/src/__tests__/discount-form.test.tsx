@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MoneyFormatProvider } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
 import type { AppliedDiscount } from '@tallyui/pos';
 import { DiscountChips, DiscountForm, discountLabel, parseDiscount, type DiscountCoupon } from '../sale/discount-form';
@@ -332,5 +333,31 @@ describe('parseDiscount with the store separators (#672)', () => {
     expect(parseDiscount('fixed', '1.234,50', 'EUR', COMMA)).toEqual({ type: 'fixed', value: 123450 });
     expect(parseDiscount('percentage', '12,75', 'EUR', COMMA)).toEqual({ type: 'percentage', value: 12.75 });
     expect(parseDiscount('fixed', '1,234.50', 'EUR')).toBe('Enter a number.');
+  });
+});
+
+describe('parseDiscount refuses an ambiguous amount (#1073)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const APOS = { decimalSeparator: '.', thousandSeparator: "'" };
+
+  it.each([
+    ['1..50', DOT], ['9.99.', DOT], ['12..5', DOT], ['0.5.0', DOT], ['1,234,56', DOT], ['1.234.56', DOT],
+    ['1.234.56', COMMA], ['1,23.45', DOT], ['1234,567', DOT], ['1,5', APOS],
+  ] as const)('C1: refuses %j in %j like any non-number', (text, format) => {
+    expect(parseDiscount('fixed', text, 'KWD', format)).toBe('Enter a number.');
+    expect(parseDiscount('fixed', text, 'USD', format)).toBe('Enter a number.');
+    expect(parseDiscount('percentage', text, 'USD', format)).toBe('Enter a number.');
+  });
+
+  it('C2: DiscountForm reads the provider format', () => {
+    const onApply = vi.fn().mockReturnValue(null);
+    render(<MoneyFormatProvider format={COMMA}>
+      <DiscountForm title="Order discount" currency="EUR" onApply={onApply} onClose={vi.fn()} />
+    </MoneyFormatProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Amount' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Discount value' }), { target: { value: '1.234,50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(onApply).toHaveBeenCalledWith({ type: 'fixed', value: 123450 });
   });
 });

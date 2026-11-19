@@ -134,3 +134,21 @@ describe('CashTendered with the store separators (#672)', () => {
     expect(bare).not.toHaveBeenCalled();
   });
 });
+
+describe('CashTendered refuses an ambiguous amount (#1073)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+
+  it.each([
+    ['1..50', DOT], ['9.99.', DOT], ['12..5', DOT], ['0.5.0', DOT], ['1,234,56', DOT], ['1.234.56', DOT],
+    ['1.234.56', COMMA], ['1,23.45', DOT],
+  ] as const)('C1: emits no amount for %j in %j, so no change due shows', (text, format) => {
+    const onChange = vi.fn();
+    render(<MoneyFormatProvider format={format}>
+      <CashTendered total={total} locale="en" onChangeAmount={onChange} />
+    </MoneyFormatProvider>);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: text } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('34.51');
+  });
+});

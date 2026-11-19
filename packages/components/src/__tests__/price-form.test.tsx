@@ -119,10 +119,46 @@ describe('parsePrice with the store separators (#672)', () => {
   it('PF1: reads grouped amounts and still refuses extra places', () => {
     expect(parsePrice('1.234,50', 'EUR', COMMA)).toBe(123450);
     expect(parsePrice('1,234.50', 'USD', DOT)).toBe(123450);
-    expect(parsePrice('1,000', 'USD', DOT)).toBe('Use at most 2 decimal places.');
-    expect(parsePrice('1,000', 'JPY', DOT)).toBe('Use a whole amount.');
+    // A lone separator before exactly 3 digits is grouping in every currency (#1073).
+    expect(parsePrice('1,000', 'USD', DOT)).toBe(100000);
+    expect(parsePrice('1,000', 'JPY', DOT)).toBe(1000);
     expect(parsePrice('12.345', 'USD', DOT)).toBe('Use at most 2 decimal places.');
-    expect(parsePrice('1,000', 'KWD', DOT)).toBe(1000);
+    expect(parsePrice('1,000', 'KWD', DOT)).toBe(1000000);
+  });
+
+  const APOS = { decimalSeparator: '.', thousandSeparator: "'" };
+  const REFUSED = [
+    ['1..50', DOT], ['9.99.', DOT], ['12..5', DOT], ['0.5.0', DOT], ['1,234,56', DOT], ['1.234.56', DOT],
+    ['1.234.56', COMMA], ['1,23.45', DOT],
+  ] as const;
+
+  it.each(REFUSED)('C1: refuses the ambiguous %j in %j like any non-number (#1073)', (text, format) => {
+    for (const currency of ['USD', 'JPY', 'KWD']) expect(parsePrice(text, currency, format)).toBe('Enter a number.');
+  });
+
+  it.each([['1234,567', DOT], ['1,5', APOS]] as const)('C1: the comma fallback does not read the refused %j in %j', (text, format) => {
+    expect(parsePrice(text, 'KWD', format)).toBe('Enter a number.');
+  });
+
+  // KWD is left out on purpose: rule 3(a) reads a DOT store's '1,234' in a 3-decimal currency as 1234.000, where
+  // main read 1.234 (#1073). Every other input main accepted must read the same with the default separators.
+  it('N4: with the default separators, every input main accepted reads the same in USD, EUR and JPY', () => {
+    const NNBSP = ' ';
+    const inputs = ['1,234.56', '1.234,56', '1,5', '1.5', '1.234', '1,234', '1,234,567', '1.234.567', '-12,5', '-1.234,56',
+      '.5', ',5', '1.', '1,', '', ' ', '-', '1 234,56', `1${NNBSP}234,56`, "1'234.56", "1'234", '€12,50', '12,50 €', '$ 12.50', ' 12.50 ',
+      '12..5', '1..50', '9.99.', '1,,5', '1,2,3', '1.2.3', '12.3.4', '0.5.0', '1.234.56', '1,234,56', '1e3', '0x10', '+5', '١٢٣', '１２',
+      '1,234.50', '12,75', 'abc', '-1',
+      '12', '1000']; // Two whole amounts, so JPY is not vacuous.
+    let accepted = 0;
+    for (const text of inputs) {
+      for (const currency of ['USD', 'EUR', 'JPY']) {
+        const main = parsePrice(text, currency);
+        if (typeof main !== 'number') continue;
+        accepted += 1;
+        expect([text, currency, parsePrice(text, currency, DOT)]).toEqual([text, currency, main]);
+      }
+    }
+    expect(accepted).toBeGreaterThan(5);
   });
 
   it.each([

@@ -5,7 +5,7 @@ import { useFormatMoney, useMoneyFormat, minorUnitDigits, moneyFromDecimalString
 /** The cashier's entry as integer minor units of `currency` (0 allowed), or the inline error to show. */
 export function parsePrice(text: string, currency: string, format?: MoneyFormat): number | string {
   const raw = normalizeMoneyText(text, format).trim();
-  const trimmed = raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
+  const trimmed = !format?.decimalSeparator && !format?.thousandSeparator && raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
   if (!trimmed) return 'Enter a price.';
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return 'Enter a number.';
   if (Number(trimmed) < 0) return 'Enter a price of 0 or more.';
