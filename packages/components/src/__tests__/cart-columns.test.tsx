@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { CartColumnHeads, cartColumnIds, cartShowsPrice } from '../cart/cart-columns';
+import { I18nProvider } from '../i18n';
 
 const heads = () => screen.getAllByRole('columnheader').map((head) => head.textContent);
 
@@ -13,6 +14,12 @@ describe('CartColumnHeads', () => {
   it('drops the Price head when showPrice is false', () => {
     render(<CartColumnHeads showPrice={false} />);
     expect(heads()).toEqual(['Qty', 'Item', 'Total']);
+  });
+
+  it('reads the heads from the catalogue (Q1)', () => {
+    const fr = { 'pos_cart.col_qty': 'Qté', 'pos_cart.col_item': 'Article', 'pos_cart.col_price': 'Prix', 'pos_cart.col_total': 'Total' };
+    render(<I18nProvider locale="fr" resources={{ fr }}><CartColumnHeads /></I18nProvider>);
+    expect(heads()).toEqual(['Qté', 'Article', 'Prix', 'Total']);
   });
 });
 

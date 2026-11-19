@@ -1,6 +1,6 @@
 // The phone sale screen (N3): v2's Products / Cart bottom tabs, both panes mounted, the cart's count on its tab.
-import { Stack } from 'expo-router';
-import { Cart, Catalogue, POSLayout } from '@tallyui/components';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { Cart, Catalogue, POSLayout, ScaleProvider } from '@tallyui/components';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { ConnectorProvider, type StoreSettings } from '@tallyui/core';
 import { TaxProvider, taxProviderProps, useSale } from '@tallyui/pos';
@@ -26,10 +26,12 @@ function Sale() {
 }
 
 export default function PhoneSaleScreen() {
+  const { scale: param } = useLocalSearchParams<{ scale?: string }>();
+  const scale = (['compact', 'regular', 'spacious'] as const).find((step) => step === param);
   return (
     <ConnectorProvider connector={medusaConnector}>
       <TaxProvider {...taxProviderProps(settings)}>
-        <Sale />
+        {scale ? <ScaleProvider scale={scale}><Sale /></ScaleProvider> : <Sale />}
       </TaxProvider>
     </ConnectorProvider>
   );

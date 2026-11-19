@@ -4,6 +4,7 @@
 import type { JSX } from 'react';
 import { View, type ViewProps } from 'react-native';
 import { cn } from '@tallyui/theme';
+import { useT } from '../i18n';
 import { Text } from '../ui';
 
 /**
@@ -11,7 +12,7 @@ import { Text } from '../ui';
  * left, so a total never wraps. The total cell has a floor, so a long total widens its own cell rather than wrapping.
  */
 export const CART_COLUMNS = {
-  quantity: { head: 'w-12 flex-none items-center pr-2 pl-3', cell: 'w-12 flex-none items-center pr-2 pl-3' },
+  quantity: { head: 'w-12 flex-none items-center pr-1 pl-2', cell: 'w-12 flex-none items-center pr-2 pl-3' },
   image: { head: 'w-14 flex-none items-center justify-center pl-3', cell: 'w-14 flex-none items-center justify-center pl-3' },
   name: { head: 'min-w-0 flex-1 px-3', cell: 'min-w-0 flex-1 px-3' },
   sku: { head: 'w-24 flex-none px-2', cell: 'w-24 flex-none px-2' },
@@ -65,7 +66,8 @@ export function cartColumnSlots(...args: Parameters<typeof cartColumnIds>): (Car
   return [...ids.slice(0, at), 'fill', ...ids.slice(at)];
 }
 
-const HEADS: Record<CartColumnId, string> = { quantity: 'Qty', image: '', name: 'Item', sku: 'SKU', price: 'Price', total: 'Total' };
+/** Each head's catalogue key, v2's `pos_cart.col_*`; Image has no label and SKU reads the same in every language. */
+const HEADS: Partial<Record<CartColumnId, string>> = { quantity: 'pos_cart.col_qty', name: 'pos_cart.col_item', price: 'pos_cart.col_price', total: 'pos_cart.col_total' };
 
 export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
   /** Show the Price head (default true); pass the same value as each CartLine's `showPrice`. */
@@ -83,11 +85,13 @@ export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
  * ```
  */
 export function CartColumnHeads({ showPrice = true, columns, className, ...props }: CartColumnHeadsProps): JSX.Element {
+  const t = useT();
+  const label = (id: CartColumnId) => (id === 'sku' ? 'SKU' : HEADS[id] && t(HEADS[id]));
   return (
     <View role="row" className={cn('flex-row border-b border-border', className)} {...props}>
       {cartColumnSlots(columns, { showPrice }).map((id) => id === 'fill' ? <View key={id} className="flex-1" /> : (
         <View key={id} role="columnheader" className={cn('h-9 justify-center', CART_COLUMNS[id].head)}>
-          {HEADS[id] ? <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground" numberOfLines={1}>{HEADS[id]}</Text> : null}
+          {label(id) ? <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground" numberOfLines={1}>{label(id)}</Text> : null}
         </View>
       ))}
     </View>
