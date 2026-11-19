@@ -5837,6 +5837,18 @@ interface OrderCreatePayload {
   - **Changes to ADR-078:** the non-blocking rule gains two codes, and the walk holds the next closure behind them.
   - **A till whose capabilities are unknown when it closes** queues a version 1 closure. The store records it as
     unverified. A store that wants every close verified sets `minRegisterContract: 3` (ADR 0023, line 114).
+  - **A renumbered closure keeps its approval (#661, 2026-11-19).** A #657 renumber gives a closure a new number and
+    a new command id. No store binds the approval to either, so the proof stays valid and the contract is unchanged.
+    The store lanes answered:
+    - **medusapos** binds the approval to the register session and the exact variance per tender. The approval is
+      single-use and expires. It records the closure id and the command id only when the approval is used
+      (`service.ts:255-260`, `:283-284`).
+    - **vendurepos** has no server check yet. Its lane is adding one on the medusapos shape.
+    - **WooCommerce.** TallyUI's fork has no register commands. Core woocommerce-pos 2.0.2 checks a recount approval
+      on each request, by manager credentials and a capability for the `closure_id` in the URL
+      (`Closures_Controller.php:134-147`), not by number or command id.
+    - So a store that later binds the approval to the closure number or the command id breaks the renumber. That is a
+      contract change and comes back here first.
   - **Units 2, 3 and 4 below ship in one TallyUI release.** The plugin already advertises contract 3. A release with
     unit 2 alone would send version 3 closures whose refusals block the register.
   - **Door: one-way.**

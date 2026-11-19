@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import * as Select from '../select';
 import * as Dialog from '../dialog';
@@ -84,6 +84,29 @@ describe('Select', () => {
     fireEvent.click(trigger);
     expect(measureInWindow).toHaveBeenCalled();
     expect(measure).not.toHaveBeenCalled();
+  });
+
+  describe('S-W1: content width', () => {
+    it("content is at least the trigger's width", async () => {
+      renderSelect();
+      const trigger = screen.getByTestId('trigger');
+      Object.assign(trigger, {
+        measureInWindow: (cb: (x: number, y: number, width: number, height: number) => void) =>
+          cb(10, 20, 192, 40),
+      });
+
+      fireEvent.click(trigger);
+
+      await waitFor(() => {
+        expect(getComputedStyle(screen.getByTestId('content')).minWidth).toBe('192px');
+      });
+    });
+
+    it('sets no minWidth before the trigger is measured', () => {
+      renderSelect({ defaultOpen: true });
+      // RN-web's View class sets min-width 0; the inline style carries none.
+      expect(screen.getByTestId('content').style.minWidth).toBe('');
+    });
   });
 
   describe('Escape', () => {

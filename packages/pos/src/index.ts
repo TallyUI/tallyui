@@ -140,11 +140,11 @@ export {
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
+  EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
@@ -152,7 +152,7 @@ export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type Reo
 export { noteDelivery, type NoteDelivery } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, META_CHANGE_REFUSED, META_INVALID, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID } from './sale/use-sale';
 export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
@@ -166,8 +166,8 @@ export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOu
 export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
 export { sendOrderReopen, isOrderReopenInFlight, isReopenOffered, type OrderReopenOutcome, storeOrderForReopen, ReopenEntryError, REOPEN_REFUSED_STATUSES, type ReopenEntryReason, reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE, type ReopenStoreOrderOutcome } from './reopen';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
-export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './tender';
-export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures } from './tender';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg, unitsMinor, paidUnitsByLine, unpaidUnitsByLine, pickedUnitsMinor } from './tender';
+export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures, SplitUnitLine, UnitAllocations } from './tender';
 
 // Register
 export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, deriveDrawerTerms, takingsByMethod, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';

@@ -12,6 +12,16 @@ const CARD = 'absolute rounded-lg border border-border bg-card';
 const FAR = { top: 6, left: 6, right: -6, bottom: -6, opacity: 0.6 };
 const NEAR = { top: 3, left: 3, right: -3, bottom: -3 };
 
+/** The two cards behind a stacked tile; drawn first inside the tile's Pressable. */
+export function TileStack({ id }: { id: string }) {
+  return (
+    <View testID={`${id}-stack`} pointerEvents="none" className="absolute inset-0">
+      <View testID={`${id}-stack-far`} className={CARD} style={FAR} />
+      <View testID={`${id}-stack-near`} className={CARD} style={NEAR} />
+    </View>
+  );
+}
+
 export interface CategoryTileProps {
   name: string;
   /**
@@ -49,12 +59,7 @@ export function CategoryTile({ name, imageUrl, count, stacked = false, mark, bac
   const photo = imageUrl && imageUrl !== failed ? imageUrl : undefined;
   return (
     <Pressable testID={testID} role="button" accessibilityLabel={accessibilityLabel ?? name} onPress={onPress} className={className}>
-      {stacked ? (
-        <View testID={`${id}-stack`} pointerEvents="none" className="absolute inset-0">
-          <View testID={`${id}-stack-far`} className={CARD} style={FAR} />
-          <View testID={`${id}-stack-near`} className={CARD} style={NEAR} />
-        </View>
-      ) : null}
+      {stacked ? <TileStack id={id} /> : null}
       <View className={cn('aspect-square overflow-hidden rounded-lg border border-border', photo ? 'bg-card' : 'bg-primary/10')}>
         {photo ? (
           <Image.Root key={photo} testID={`${id}-image`} source={{ uri: photo }} alt="" contentFit="cover"

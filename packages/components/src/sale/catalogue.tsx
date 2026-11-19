@@ -19,7 +19,7 @@ import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/cam
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
 import { CategoryBrowseGrid } from './category-browse';
 import { Breadcrumb } from './breadcrumb';
-import { CategoryTile } from '../product/category-tile';
+import { CategoryTile, TileStack } from '../product/category-tile';
 import { useT } from '../i18n';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
@@ -133,8 +133,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   onQueryChange?: (query: string) => void;
   /** Ask for a value for each of a variant's local "Any" option groups before onSelect (#495); set it only when the store accepts order.create version 6. */
   pickAnyOptions?: boolean;
-  /** The open sale's lines (e.g. useSale's order.lineItems); each grid tile shows its product's summed quantity. */
-  cartLines?: readonly CartQuantityLine[];
+  /** The open sale's lines (e.g. useSale's order.lineItems); each grid tile shows its product's summed quantity.
+   * A line's optional `variantId`, which a sale line has, lets the drill count each variant. */
+  cartLines?: readonly (CartQuantityLine & { variantId?: string })[];
   /** Show v2's filter chips under the search box. Default false. */
   showFilterBar?: boolean;
   /** Which chips the bar shows. Default ['inStock'], the one Catalogue applies itself. */
@@ -223,6 +224,12 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     onFiltersChange?.(next);
   }
   const quantities = useMemo(() => cartQuantities(cartLines ?? []), [cartLines]);
+  // The drill's per-variant count, by cartQuantities' rule: a custom line counts for no variant.
+  const variantQuantities = useMemo(() => {
+    const byVariant = new Map<string, number>();
+    for (const line of cartLines ?? []) if (!line.custom && line.variantId) byVariant.set(line.variantId, (byVariant.get(line.variantId) ?? 0) + line.quantity);
+    return byVariant;
+  }, [cartLines]);
 
   const isLoading = loading ?? (lastSyncedAt === null && pullError == null);
   // Idempotent (the adapter's overlay returns just the fields the stock map sets), so an app that already
@@ -267,6 +274,12 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [loadingHeight, setLoadingHeight] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
   const entries = useMemo(() => catalogueEntries(shown, traits, { currency }), [shown, traits, currency]);
+  // Entries per product id: the drill stacks a tile that selectProduct would drill into (v2 product-tile.tsx:54,76).
+  const entryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of entries) counts.set(traits.getId(entry.product), (counts.get(traits.getId(entry.product)) ?? 0) + 1);
+    return counts;
+  }, [entries, traits]);
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
   // The term pills: local picks (group id to term id), never saved or reported. A pick whose term no drawn group still
@@ -500,7 +513,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         renderItem={({ entry }: { entry?: CatalogueEntry<Doc> }) => entry
           ? <VariantTile testID={`variation-tile-${entry.variant.id}`} name={traits.getName(entry.product)} chips={chipsOf(entry)}
             price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)}
-            fields={fields} sku={entry.variant.sku} barcode={entry.variant.barcode} />
+            fields={fields} sku={entry.variant.sku} barcode={entry.variant.barcode}
+            inCart={variantQuantities.get(entry.variant.id) ?? 0} />
           : <VariantParentTile doc={drillEntries[0].product} onPress={() => setDrillId(null)} />} />
       </LevelWrap>
       : <ProductGrid items={level && results.length > 0 ? [LEVEL_PARENT, ...results] : results} numColumns={columns}
@@ -510,15 +524,18 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             mark={activeCategory ? 'folder' : 'all'} count={results.length} onPress={back} />;
           const id = traits.getId(product);
           const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
+          const tileTestID = `product-tile-${traits.getName(product)}`;
+          const stacked = variationsStyle === 'drill' && (entryCounts.get(id) ?? 0) > 1;
           // TallyUI's ProductCard has no children slot, so the tile is composed directly here
           // (same structure/classes as ProductCard) to add the stock badge as a fourth child,
           // inside the card and centred with the rest, rather than adding a slot to ProductCard (out of scope for TV6b).
           const tile = (
-            <Pressable accessibilityRole="button" testID={`product-tile-${traits.getName(product)}`}
+            <Pressable accessibilityRole="button" testID={tileTestID}
               // v2 product-tile.tsx:81: with the name off, the name stays the tile's label.
               {...(fields.name ? {} : { accessibilityLabel: traits.getName(product) })}
               onPress={groups.length > 0 ? () => { closePicker(); setChooserId(null); } : () => selectProduct(product)}>
               {({ pressed }) => <>
+              {stacked ? <TileStack id={tileTestID} /> : null}
               <VStack space="sm" className="items-center rounded-lg border border-border bg-card p-3">
                 <ProductImage doc={product} size={80} className="rounded-md" />
                 <TileWords doc={product} traits={traits} fields={fields} />
