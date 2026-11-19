@@ -7,6 +7,7 @@ import type { ReceiptData } from '../../receipt/types';
 import {
   createEscPosTransport, createPrintQueue, encodeEscPos, escpos, ESCPOS_CODE_PAGES, PrintError, type PrinterProfile,
 } from '../index';
+import { escpos as entryEscpos, type EscPosBarcodeOptions, type EscPosQrOptions } from '../../index';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -174,5 +175,79 @@ describe('createEscPosTransport', () => {
     await expect(star.print({ id: 'a', kind: 'test', bytes: Uint8Array.from([1]) })).rejects.toMatchObject({ code: 'unsupported' });
     const empty = createEscPosTransport({ sink: { write }, profile });
     await expect(empty.print({ id: 'b', kind: 'test', html: '<p/>' })).rejects.toBeInstanceOf(PrintError);
+  });
+});
+
+describe('escpos builder codes', () => {
+  const tail = (data: Uint8Array, expected: number[]) => expect(Array.from(data).slice(-expected.length)).toEqual(expected);
+  const qr = (value: string, options?: EscPosQrOptions) => Array.from(escpos().qrcode(value, options).bytes());
+  const refuses = (call: (b: ReturnType<typeof escpos>) => unknown) => {
+    const b = escpos().init();
+    expect(() => call(b)).toThrow(RangeError);
+    expect(b.bytes()).toEqual(escpos().init().bytes());
+  };
+
+  it('B1 underline', () => {
+    expect(Array.from(escpos().underline(true).underline(false).bytes())).toEqual(seq(ESC, '-', 1, ESC, '-', 0));
+  });
+
+  it('B2 invert', () => {
+    expect(Array.from(escpos().invert(true).invert(false).bytes())).toEqual(seq(GS, 'B', 1, GS, 'B', 0));
+  });
+
+  it('B3 code128 with the default options and a {B prefix', () => {
+    expect(Array.from(escpos().barcode('AB12', 'code128').bytes()))
+      .toEqual(seq(GS, 'h', 60, GS, 'w', 3, GS, 'H', 0, GS, 'k', 0x49, 6, '{BAB12'));
+  });
+
+  it('B4 code128 options, clamps and a caller code set', () => {
+    expect(Array.from(escpos().barcode('{C1234', 'code128', { height: 80, width: 3, hri: 'below' }).bytes()))
+      .toEqual(seq(GS, 'h', 80, GS, 'w', 4, GS, 'H', 2, GS, 'k', 0x49, 6, '{C1234'));
+    expect(Array.from(escpos().barcode('A', 'code128', { height: 999, width: 0 }).bytes()).slice(0, 6))
+      .toEqual(seq(GS, 'h', 255, GS, 'w', 2));
+    expect(Array.from(escpos().barcode('A', 'code128', { hri: 'both' }).bytes()).slice(6, 9)).toEqual(seq(GS, 'H', 3));
+  });
+
+  it('B5 ean13 computes a missing check digit and accepts a right one', () => {
+    const twelve = escpos().barcode('400638133393', 'ean13').bytes();
+    tail(twelve, seq(GS, 'k', 2, '4006381333931', 0));
+    expect(escpos().barcode('4006381333931', 'ean13').bytes()).toEqual(twelve);
+    tail(escpos().barcode('000000000000', 'ean13').bytes(), seq('0000000000000', 0));
+  });
+
+  it.each(['4006381333932', '12345', '40063813339a', '40063813339311'])('B6 ean13 refuses %s and writes nothing', (value) => {
+    refuses((b) => b.barcode(value, 'ean13'));
+  });
+
+  it.each(['', 'é', '{X12', 'a{b', 'A'.repeat(254)])('B6 code128 refuses %s and writes nothing', (value) => {
+    refuses((b) => b.barcode(value, 'code128'));
+  });
+
+  it('B7 qrcode with the default options', () => {
+    expect(qr('https://x.test')).toEqual(seq(
+      GS, '(', 'k', 4, 0, 0x31, 0x41, 0x32, 0,
+      GS, '(', 'k', 3, 0, 0x31, 0x43, 6,
+      GS, '(', 'k', 3, 0, 0x31, 0x45, 0x31,
+      GS, '(', 'k', 17, 0, 0x31, 0x50, 0x30, 'https://x.test',
+      GS, '(', 'k', 3, 0, 0x31, 0x51, 0x30,
+    ));
+  });
+
+  it('B8 qrcode options, a two-byte length and refusals', () => {
+    expect(qr('x', { model: 1, size: 12, errorLevel: 'h' }).slice(0, 25)).toEqual(seq(
+      GS, '(', 'k', 4, 0, 0x31, 0x41, 0x31, 0,
+      GS, '(', 'k', 3, 0, 0x31, 0x43, 8,
+      GS, '(', 'k', 3, 0, 0x31, 0x45, 0x33,
+    ));
+    expect(qr('a'.repeat(300)).slice(25, 33)).toEqual(seq(GS, '(', 'k', 0x2f, 1, 0x31, 0x50, 0x30));
+    for (const value of ['', '€', '1'.repeat(7090)]) refuses((b) => b.qrcode(value));
+  });
+
+  it('B9 the option types and the new methods come from the package entry', () => {
+    const barcodeOptions = { height: 80, width: 2, hri: 'below' } satisfies EscPosBarcodeOptions;
+    const qrOptions = { model: 2, size: 4, errorLevel: 'q' } satisfies EscPosQrOptions;
+    expect(entryEscpos().barcode('A', 'code128', barcodeOptions).bytes()[2]).toBe(80);
+    expect(entryEscpos().qrcode('A', qrOptions).bytes()[16]).toBe(4);
+    expect(typeof entryEscpos().qrcode).toBe('function');
   });
 });

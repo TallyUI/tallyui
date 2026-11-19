@@ -140,7 +140,7 @@ export {
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
+  EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
 } from './print';
 
 // Sale
