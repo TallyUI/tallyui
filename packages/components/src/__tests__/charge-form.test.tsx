@@ -195,4 +195,98 @@ describe('ChargeForm', () => {
     click('Apply');
     expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Bag', amountMinor: 1234 }));
   });
+
+  describe('percent and Amount Includes Tax (vendurepos gap 2.10)', () => {
+    const includesTax = () => screen.queryByRole('switch', { name: 'Amount Includes Tax' });
+    const unit = (which: 'amount' | 'percent') => fireEvent.click(screen.getByTestId(`charge-form-unit-${which}`));
+    const NEGATIVE = 'A fee cannot be negative. Use Add Discount instead.';
+
+    it('F1: without the new props, no % button and no Amount Includes Tax switch', () => {
+      render(<ChargeForm currency="EUR" onApply={() => null} onClose={() => {}} />);
+      for (const kind of ['Fee', 'Shipping']) {
+        click(kind);
+        expect(screen.queryByRole('button', { name: '%' })).toBeNull();
+        expect(includesTax()).toBeNull();
+      }
+    });
+
+    it('F2: a fee at % applies amountMinor 0 and the percent, without amountIncludesTax', () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" allowPercent onApply={onApply} onClose={() => {}} />);
+      expect(screen.getByTestId('charge-form-unit-amount').textContent).toBe('€');
+      unit('percent');
+      expect(screen.getByTestId('charge-form-unit-percent').getAttribute('aria-selected')).toBe('true');
+      expect(screen.getByTestId('charge-form-currency').textContent).toBe('%');
+      input('Amount', '12,5');
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'fee', name: 'Fee', amountMinor: 0, percent: 12.5,
+        taxStatus: undefined, taxClass: undefined });
+      expect(Object.keys(onApply.mock.calls[0][0])).not.toContain('amountIncludesTax');
+    });
+
+    it('F3: leaving Fee hides the toggle and parses the amount as money', () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" allowPercent onApply={onApply} onClose={() => {}} />);
+      unit('percent');
+      click('Shipping');
+      expect(screen.queryByRole('button', { name: '%' })).toBeNull();
+      input('Amount', '3');
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'shipping', amountMinor: 300 }));
+      expect(Object.keys(onApply.mock.calls[0][0])).not.toContain('percent');
+    });
+
+    it.each([['', 'Enter an amount greater than zero'], ['0', 'Enter an amount greater than zero'], ['-5', NEGATIVE]])(
+      'F4: a percent of %j is refused', (amount, message) => {
+        const onApply = vi.fn().mockReturnValue(null);
+        render(<ChargeForm currency="EUR" allowPercent onApply={onApply} onClose={() => {}} />);
+        unit('percent');
+        input('Amount', amount);
+        click('Apply');
+        expect(screen.getByRole('alert').textContent).toBe(message);
+        expect(onApply).not.toHaveBeenCalled();
+      });
+
+    it.each([true, false])('F5: with pricesIncludeTax %s, fee and shipping show the switch at the store mode', (store) => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" pricesIncludeTax={store} onApply={onApply} onClose={() => {}} />);
+      for (const kind of ['Fee', 'Shipping']) {
+        click(kind);
+        expect(includesTax()!.getAttribute('aria-checked')).toBe(String(store));
+        input('Amount', '1');
+        click('Apply');
+        expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
+        fireEvent.click(includesTax()!);
+        click('Apply');
+        expect(onApply.mock.lastCall![0]).toMatchObject({ amountIncludesTax: !store });
+        fireEvent.click(includesTax()!);
+      }
+      click('Custom item');
+      expect(includesTax()).toBeNull();
+    });
+
+    it("F6: editing a percent fee starts on % with the charge's own mode", () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="fee" allowPercent pricesIncludeTax
+        initial={{ name: 'Service', amountMinor: 500, percent: 10, amountIncludesTax: false }} onApply={onApply} onClose={() => {}} />);
+      expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('10');
+      expect(screen.getByTestId('charge-form-unit-percent').getAttribute('aria-selected')).toBe('true');
+      expect(includesTax()!.getAttribute('aria-checked')).toBe('false');
+      click('Apply');
+      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10, amountIncludesTax: false });
+      unit('amount');
+      input('Amount', '2');
+      click('Apply');
+      expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 200 });
+      expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('percent');
+    });
+
+    it("F7: without the new props, an edit keeps the charge's percent and mode", () => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="fee"
+        initial={{ name: 'Service', amountMinor: 500, percent: 10, amountIncludesTax: false }} onApply={onApply} onClose={() => {}} />);
+      click('Apply');
+      expect(onApply.mock.lastCall![0]).toMatchObject({ percent: 10, amountIncludesTax: false });
+    });
+  });
 });

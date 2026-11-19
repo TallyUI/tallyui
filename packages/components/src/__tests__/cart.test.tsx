@@ -795,4 +795,73 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
     expect(screen.getByTestId('cart-line-sku').textContent).toBe('BLUE');
     expect(columnHeads()).toEqual(['Qty', '', 'Item', 'Price', 'Total']);
   });
+
+  describe('percent fees and Amount Includes Tax (vendurepos gap 2.10)', () => {
+    const chargeForm = (name: string) => within(screen.getByRole('group', { name }));
+    const fees = () => sale.order.fees ?? [];
+    function addFee(name: string, amount: string, { percent = false, toggleTax = false } = {}) {
+      click('Add charge');
+      const form = chargeForm('Add charge');
+      fireEvent.change(form.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      if (percent) fireEvent.click(form.getByTestId('charge-form-unit-percent'));
+      if (toggleTax) fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    const price = (index: number) => within(screen.getByTestId(`cart-fee-${index}`)).getByTestId('cart-charge-price').textContent;
+
+    it('C1: adds a fee at %, shows the percent in the Price cell, and follows the cart', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '10', { percent: true });
+      expect(sale.order.fees).toMatchObject([{ name: 'Service', percent: 10 }]);
+      expect(price(0)).toBe('10%');
+      const before = fees()[0].amountMinor;
+      expect(before).toBeGreaterThan(0);
+      act(() => sale.add(blue, traits));
+      expect(fees()[0].amountMinor).not.toBe(before);
+      expect(price(0)).toBe('10%');
+    });
+
+    it('C2: editing a percent fee back to an amount clears its percent', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '10', { percent: true });
+      click('Edit total of Service');
+      click('Edit Service');
+      const form = chargeForm('Edit Service');
+      fireEvent.click(form.getByTestId('charge-form-unit-amount'));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+      click('Apply');
+      expect(sale.order.fees).toHaveLength(1);
+      expect(fees()[0].percent).toBeUndefined();
+      expect(fees()[0].amountMinor).toBe(200);
+      expect(price(0)).toBe(money(200));
+    });
+
+    it("C3: a fee's own tax mode is set only when it differs from the store's, and clears", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const store = sale.order.pricesIncludeTax;
+      addFee('Bag', '1.00');
+      expect(Object.keys(fees()[0])).not.toContain('amountIncludesTax');
+      addFee('Wrap', '1.00', { toggleTax: true });
+      expect(fees()[1].amountIncludesTax).toBe(!store);
+      click('Edit total of Wrap');
+      click('Edit Wrap');
+      const form = chargeForm('Edit Wrap');
+      expect(form.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
+      fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      click('Apply');
+      expect(fees()[1].amountIncludesTax).toBeUndefined();
+    });
+
+    it("C4: a percent over 100 shows the builder's refusal inline and adds no fee", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '150', { percent: true });
+      expect(chargeForm('Add charge').getByRole('alert').textContent).toMatch(/Percent must be > 0 and <= 100/);
+      expect(fees()).toHaveLength(0);
+    });
+  });
 });
