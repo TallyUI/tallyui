@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { cn } from '@tallyui/theme';
 import { useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
@@ -16,7 +16,8 @@ import { Popover } from '@tallyui/primitives';
 import { CameraScanButton } from '../product/camera-scan-button';
 import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
 import { ProductFilterBar, DEFAULT_PRODUCT_FILTERS, type ProductFilterChip, type ProductFilters } from './product-filter-bar';
-import { CategoryBrowseGrid, CategoryCrumb } from './category-browse';
+import { CategoryBrowseGrid } from './category-browse';
+import { Breadcrumb } from './breadcrumb';
 import { SearchInput } from '../input';
 import { VStack } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
@@ -224,7 +225,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const stockAsOf = laterOf(laterOf(lastStockCheckAt, validOverlayAsOf), lastSyncedAt);
   const [query, setQuery] = useState('');
   const [allOpen, setAllOpen] = useState(false);
+  // Opening a category by its tile focuses the crumb (v2 focuses on mount); a stored category does not.
+  const [crumbFocus, setCrumbFocus] = useState(false);
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
+  const level = browsing && (activeCategory || allOpen);
+  const back = () => { setCrumbFocus(false); setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); };
   const atRoot = browsing && !activeCategory && !allOpen && !query.trim() && categoryList.length > 0;
   const [scannerOpen, setScannerOpen] = useState(false);
   // The search row is shorter than a control's band at Compact: under a coarse pointer it is the band's height.
@@ -409,9 +414,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       </View>
       {draws(rowsSlot) ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       {atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
-        onOpen={(id) => { if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <>
-      {browsing && (activeCategory || allOpen) ? <CategoryCrumb here={activeCategory?.name ?? 'All products'}
-        onRoot={() => { setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); }} /> : null}
+        onOpen={(id) => { setCrumbFocus(true); if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }} /> : <LevelWrap level={!!level} onBack={back}>
+      {level ? <Breadcrumb testID="category-crumb" phone={phone} autoFocus={crumbFocus}
+        parents={[{ label: 'Categories', testID: 'category-crumb-root', onPress: back }]} here={activeCategory?.name ?? 'All products'} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
@@ -458,7 +463,21 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           );
         }}
         emptyState={emptyState} />}
-      </>}
+      </LevelWrap>}
     </View>
+  );
+}
+
+// An open category is a level: on web, Escape inside it goes back (v2 packages/core/src/screens/main/pos/products/
+// level-back.tsx:37-49, the web part only). Outside a level the children render as before, with no wrapper.
+function LevelWrap({ level, onBack, children }: { level: boolean; onBack: () => void; children: ReactNode }) {
+  if (!level) return <>{children}</>;
+  return (
+    // RN's View types lack onKeyDown; react-native-web passes it to the div (as open-sale-tabs.tsx does).
+    <View className="flex-1" {...(Platform.OS === 'web' ? {
+      onKeyDown: (event: { nativeEvent: { key: string }; stopPropagation: () => void }) => {
+        if (event.nativeEvent.key === 'Escape') { event.stopPropagation(); onBack(); }
+      },
+    } : {})}>{children}</View>
   );
 }
