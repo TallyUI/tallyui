@@ -121,6 +121,9 @@ export {
   ShippingAddressFields,
   type AddressFieldsProps,
   type ShippingAddressFieldsProps,
+  AddressEditor,
+  type AddressEditorProps,
+  type AddressEditorValue,
 } from './customer';
 
 // Checkout components

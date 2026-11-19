@@ -5,3 +5,4 @@ export { CustomerOrderHistory, type CustomerOrderHistoryProps } from './customer
 export { CustomerPicker, type CustomerPickerProps } from './customer-picker';
 export { CustomerDropdown, type CustomerDropdownProps } from './customer-dropdown';
 export { AddressFields, ShippingAddressFields, type AddressFieldsProps, type ShippingAddressFieldsProps } from './address-fields';
+export { AddressEditor, type AddressEditorProps, type AddressEditorValue } from './address-editor';

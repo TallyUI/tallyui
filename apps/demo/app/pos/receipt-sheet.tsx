@@ -15,6 +15,9 @@ const ITEMS = [
   { name: 'Orange juice', quantity: 1, total: '€4.50' },
 ];
 
+// The demo's fake send refuses this one address, so the e2e sees a refusal.
+const REFUSED = 'refused@example.com';
+
 /** `?open=1` opens the sheet on load and `?one=1` passes only the first template, for the screenshots. */
 export default function ReceiptSheetScreen() {
   const params = useLocalSearchParams<{ open?: string; one?: string }>();
@@ -36,7 +39,7 @@ export default function ReceiptSheetScreen() {
       <Button testID="receipt-sheet-open" onPress={() => setOpen(true)}><Text>Show receipt</Text></Button>
       <ReceiptSheet open={open} onOpenChange={setOpen} templates={params.one === '1' ? TEMPLATES.slice(0, 1) : TEMPLATES}
         templateId={templateId} onTemplateChange={setTemplateId} onPrint={onPrint} printing={printing} printed={printed}
-        onEmail={() => {}}>
+        email={{ defaultAddress: 'jo@example.com', onSend: async ({ address }) => (address === REFUSED ? 'The store refused this address.' : null) }}>
         <ReceiptPreview items={ITEMS} subtotal="€12.70" tax="€3.18" total="€15.88"
           headerSlot={<Text className="text-sm font-semibold text-foreground">Demo Café</Text>} />
       </ReceiptSheet>

@@ -47,8 +47,6 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the catalogue (slice c): the pure category list and membership test Catalogue filters with, and the pure
   // per-product category list its browse tiles count with (G-CATEGORY), never a hook or the store.
   'listCategories', 'inCategory', 'productCategories',
-  // Needs attention's Retry (ADR-077 d4b): the one definition of which refusal codes the outbox resends, never a hook or the store.
-  'isRequeueable',
   // Needs attention for reopened sales (ADR-090 W4c): the pure row-aware Retry predicate and unsendable-update message, never a hook or the store.
   'isRequeueableOrder', 'UPDATE_UNSENDABLE', 'UPDATE_UNSENDABLE_MESSAGE',
   // the refund form (plan unit 20, ADR-080 amendment 2): the pure refundable-quantity and refund pricing the form shows and sends, never a hook or the store.
@@ -76,6 +74,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'isPartlyPaid',
   // the Sales room panels (v2 panels/export-csv.ts): the pure CSV the Export CSV button hands over, never a hook or the store.
   'csvFromCells',
+  // the catalogue term pills (vendurepos gap 1.6): the pure term-group list and membership test Catalogue filters with, never a hook or the store.
+  'listTermGroups', 'hasTerm',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
