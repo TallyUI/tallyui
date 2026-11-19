@@ -22,7 +22,7 @@ import { MovementSheet } from '@tallyui/components';
 />
 ```
 
-Renders an open dialog for the chosen paid-in, paid-out, or no-sale movement with a reason input and Record button. No-sale movements hide the amount input, record zero, and call `onOpenDrawer` after recording when supplied.
+Renders an open dialog for the chosen paid-in, paid-out, or no-sale movement with a reason input and a confirm button that names the amount, 'Put €5.00 in' or 'Take €5.00 out' ('Put cash in' / 'Take cash out' until an amount is valid; 'Record' for a no sale). No-sale movements hide the amount input, record zero, and call `onOpenDrawer` after recording when supplied.
 
 The sheet offers v2's common reasons as chips that fill the reason field, and "Other…" clears the field and focuses it.
 

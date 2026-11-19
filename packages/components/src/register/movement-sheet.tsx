@@ -3,8 +3,9 @@ import { Pressable, View, type TextInput } from 'react-native';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
-import { useCurrencySymbol, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
+import { useT } from '../i18n';
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
@@ -53,7 +54,9 @@ export interface MovementSheetProps {
  * hides the amount field, always records zero, and opens the drawer once the row is written.
  */
 export function MovementSheet({ register, type, currency, onDone, onOpenChange, onOpenDrawer, reasons }: MovementSheetProps) {
+  const t = useT();
   const currencySymbol = useCurrencySymbol();
+  const formatMoney = useFormatMoney();
   const digits = minorUnitDigits(currency);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -67,6 +70,14 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
     ? reasons.map((label) => ({ key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
     : REASONS[type];
   const invalid = movementFieldError({ type, amount, reason });
+  // v2's confirm label (`movement-sheet.tsx:126`): it names the minor amount `confirm` records, in the store's format;
+  // an amount `movementFieldError` refuses (blank, zero, invalid) reads the bare verb. A no sale keeps "Record".
+  const typed = normalizeAmount(amount);
+  const minor = type !== 'no_sale' && invalid !== 'amount' ? parseMinor(typed, digits) : NaN;
+  const figure = Number.isSafeInteger(minor) ? formatMoney({ amount: minor, currency }) : undefined;
+  const verb = type === 'paid_in' ? (figure ? t('register.put_in', { amount: figure }) : t('register.put_cash_in'))
+    : type === 'paid_out' ? (figure ? t('register.take_out', { amount: figure }) : t('register.take_cash_out'))
+    : 'Record';
   const confirm = async () => {
     if (invalid || busyRef.current) return;
     busyRef.current = true;
@@ -148,7 +159,7 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
           </Text>
         )}
         <Button testID="movement-confirm" disabled={!!invalid || busy} onPress={confirm}>
-          <Text>{busy ? 'Recording…' : 'Record'}</Text>
+          <Text>{busy ? 'Recording…' : verb}</Text>
         </Button>
       </DialogContent>
     </Dialog>

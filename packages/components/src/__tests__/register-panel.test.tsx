@@ -563,3 +563,30 @@ it('the default presentation renders no side-sheet hero', async () => {
   expect(screen.queryByTestId('register-panel-hero')).toBeNull();
   expect(screen.queryByTestId('register-panel-ledger')).toBeNull();
 });
+
+it("movementReasons replaces the chips for that type, and the chip's label records as the reason", async () => {
+  const chipIds = () =>
+    Array.from(screen.getByTestId('movement-reason-chips').querySelectorAll('[data-testid^="movement-reason-"]')).map((el) =>
+      el.getAttribute('data-testid'),
+    );
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <RegisterPanel register={register} currency="EUR" registerName="Front" open onOpenChange={() => {}}
+          movementReasons={{ paid_in: ['Till top-up'] }} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-panel-paid-in')).toBeTruthy());
+  fireEvent.click(screen.getByTestId('register-panel-paid-in'));
+  expect(chipIds()).toEqual(['movement-reason-till-top-up', 'movement-reason-other']);
+  fireEvent.change(screen.getByTestId('movement-amount'), { target: { value: '5' } });
+  fireEvent.click(screen.getByTestId('movement-reason-till-top-up'));
+  fireEvent.click(confirmButton());
+  await waitFor(async () =>
+    expect((await db.cash_movements.find({ selector: { type: 'paid_in' } }).exec()).map((r) => r.reason)).toContain('Till top-up'),
+  );
+  await waitFor(() => expect(screen.queryByTestId('movement-sheet')).toBeNull());
+  fireEvent.click(screen.getByTestId('register-panel-paid-out'));
+  expect(chipIds()[0]).toBe('movement-reason-supplier');
+});
