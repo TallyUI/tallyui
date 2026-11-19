@@ -491,7 +491,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : drillEntries.length > 0 ? <LevelWrap level onBack={() => setDrillId(null)}>
-        {/* v2 drill-in.tsx:44-68: "Products › name" above the variant tiles; at phone width only "‹ Products". */}
+        {/* v2 drill-in.tsx:44-68: "Products › name" above the variant tiles; at phone width the Breadcrumb drops the separator. */}
         <Breadcrumb testID="products-breadcrumb" phone={phone} autoFocus
           parents={[{ label: 'Products', testID: 'products-breadcrumb-back', onPress: () => setDrillId(null) }]}
           here={traits.getName(drillEntries[0].product)} />
