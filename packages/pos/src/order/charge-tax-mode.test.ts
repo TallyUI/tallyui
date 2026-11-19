@@ -114,6 +114,17 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, WooCommerce', () =>
     displayIdentity(order);
   });
 
+  it('W7 (B): an inclusive store rounds an exclusive fee\'s half-cent tax as WooCommerce does', () => {
+    const builder = make([rate(1, '10.0000')], true, false);
+    add(builder, 100);
+    builder.addFee({ name: 'Fee', amountMinor: 5, amountIncludesTax: false });
+    const order = builder.getSnapshot();
+    const fee = order.fees![0];
+    expect(fee.totalMinor).toBe(5);
+    expect(fee.totalMinor! - fee.netMinor).toBe(0); // the fee's taxMinor
+    expect(order.totalMinor).toBe(105);
+  });
+
   it('D1: a parked draft keeps the fee\'s mode', () => {
     const { builder } = w1();
     const saved = JSON.parse(JSON.stringify(builder.getSnapshot()));
@@ -155,7 +166,7 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     displayIdentity(order);
   });
 
-  it('G3 (f\'\'): the last converted charge takes the display residue', () => {
+  it('G3 (f\'\'): the last converted charge takes the display residue, one cent', () => {
     const builder = makeGeneric(false);
     builder.addLine(product(1000));
     builder.addFee({ name: 'Fee 1', amountMinor: 5, amountIncludesTax: true });
@@ -182,6 +193,32 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([1000, 1000]);
     expect(order.display.subtotalMinor).toBe(2000);
     expect(order.display.subtotalMinor + 1000 + 1000 + order.taxMinor).toBe(order.totalMinor);
+    displayIdentity(order);
+  });
+
+  it('G5 (A): an unconverted shipping row takes no residue; the converted fee takes it', () => {
+    const builder = makeGeneric(false);
+    builder.addLine(product(1000));
+    builder.addShipping({ name: 'Post', amountMinor: 500 });
+    builder.addFee({ name: 'Fee 1', amountMinor: 5, amountIncludesTax: true });
+    builder.addFee({ name: 'Fee 2', amountMinor: 5, amountIncludesTax: true });
+    const order = builder.getSnapshot();
+    expect(order.display.shipping!.map((s) => s.amountMinor)).toEqual([500]);
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([5, 4]);
+    expect(order.display.subtotalMinor).toBe(1000);
+    displayIdentity(order);
+  });
+
+  it('G6 (A): thirteen converted fees take the residue a cent each, within the bound', () => {
+    const builder = makeGeneric(false);
+    builder.addLine(product(1000));
+    for (let i = 0; i < 13; i++) builder.addFee({ name: `Fee ${i}`, amountMinor: 5, amountIncludesTax: true });
+    let order!: Order;
+    expect(() => { order = builder.getSnapshot(); }).not.toThrow();
+    expect(order.taxMinor).toBe(106);
+    expect(order.totalMinor).toBe(1165);
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([...Array(7).fill(5), ...Array(6).fill(4)]);
+    expect(order.display.subtotalMinor).toBe(1000);
     displayIdentity(order);
   });
 

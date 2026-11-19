@@ -351,8 +351,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     let displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
       - [...displayFees, ...displayShipping].reduce((sum, charge) => sum + charge.amountMinor, 0);
     let residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
-    // A generic charge in the other mode is converted too, so it can take the residue like a woo charge.
-    if (woo || [...fees, ...shipping].some((charge) => (charge.amountIncludesTax ?? taxInclusive) !== taxInclusive)) {
+    if (woo) {
       // ADR-076: the last shipping row, else fee, else product takes either sign of residue.
       const charge = displayShipping.at(-1) ?? displayFees.at(-1);
       const last = charge ?? displayLines.at(-1);
@@ -363,7 +362,19 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const converted = displaySourceLines.flatMap((li, index) => li.taxInclusive === taxInclusive ? [] : [index]);
     const conversions = converted.reduce((count, index) => count + [displaySourceLines[index].netMinor, displaySourceLines[index].orderDiscountMinor,
       ...displaySourceLines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
-    assertDisplayResidue(residue, converted.length, conversions);
+    if (woo) assertDisplayResidue(residue, converted.length, conversions);
+    else {
+      // The generic display charge row must equal what is stored and sent (core fiscal-figures.ts), so only a converted charge takes residue, one cent each.
+      const rows = [...fees.map((charge, i) => [charge, displayFees[i]] as const), ...shipping.map((charge, i) => [charge, displayShipping[i]] as const)]
+        .flatMap(([charge, row]) => (charge.amountIncludesTax ?? taxInclusive) !== taxInclusive && row.amountMinor !== 0 ? [row] : []);
+      assertDisplayResidue(residue, converted.length + rows.length, conversions + rows.length);
+      for (let k = rows.length - 1; k >= 0 && residue !== 0; k--) {
+        const t = Math.sign(residue);
+        rows[k].amountMinor += t;
+        displaySubtotal -= t;
+        residue -= t;
+      }
+    }
     // Largest converted remaining first (ties to the earlier line). A negative residue takes a line down to its rows
     // and share at most, then moves on: six 2-cent inclusive lines can owe −3 with no line above 2. The spill is a
     // crash guard; it never fired in a 200k-cart fuzz. Negative-priced (return) lines convert as they are and never
