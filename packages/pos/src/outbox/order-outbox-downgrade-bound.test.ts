@@ -68,3 +68,32 @@ describe('order outbox downgrade bound (#790)', () => {
     } finally { await db.remove(); }
   }, 10_000);
 });
+
+describe('order outbox downgrade from order.create 11 (ADR-086 d2, amended 2026-11-19)', () => {
+  it("O1 resends a sale lifted to 11 at today's version for a store capped at 10, without the addresses, and nothing throws", async () => {
+    pick.above = 0;
+    const db = await createRxDatabase({ name: `downgradebound${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }) });
+    try {
+      const { pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() });
+      // The same sale, its customer's billing kept but not taxed on it: 11 with the address, 9 (its coupon lines) below.
+      const { taxAddress: _taxAddress, ...order } = sale();
+      expect(order.customer?.billing).toBeDefined();
+      await collection.insert(order);
+      const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>(async (batch) => ({ kind: 'results',
+        results: batch.map((command): CommandResult => command.version > 10
+          ? { id: command.id, status: 'rejected', error: { code: 'unsupported_version', message: 'Maximum 10', data: { orderCreate: 10 } } }
+          : { id: command.id, status: 'applied', serverRefs: { orderId: 'server-1', totalMinor: command.payload.totalMinor } }) }));
+      const outbox = createOrderOutbox({ collection, transport: { send }, deviceId: 'device', random: () => 0.5,
+        getMaxOrderCreateVersion: () => 11 });
+      try { await outbox.flush(); } finally { outbox.stop(); }
+      const sent = send.mock.calls.map(([batch]) => batch[0]);
+      expect(sent.map((command) => command.version)).toEqual([11, 9]);
+      expect(sent[0].payload.customer).toHaveProperty('billing.city', 'Albany');
+      expect(sent[1].payload.customer).toStrictEqual({ email: 'ann@example.com', customerId: '42' });
+      expect(sent[1].payload).not.toHaveProperty('taxAddress');
+      expect((await collection.findOne(order.id).exec())!.toJSON())
+        .toMatchObject({ syncStatus: 'applied', sentVersion: 9, downgradedFrom: 11 });
+    } finally { await db.remove(); }
+  }, 10_000);
+});

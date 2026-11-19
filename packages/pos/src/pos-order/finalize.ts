@@ -20,8 +20,9 @@ export interface FinalizeOptions {
   newId?: () => string;
   /** The store's `order.create` capability (ADR-062); `undefined` is treated as 1. */
   capabilities?: ServerCapabilities;
-  /** The address the sale's tax context matched (#722, `saleTaxContexts`). A customer's billing or shipping address
-   *  stores `taxAddress` and the customer's addresses, sent at order.create 8; the base, or absent, stores neither. */
+  /** The address the sale's tax context matched (#722, `saleTaxContexts`). A customer's billing or shipping address stores
+   *  `taxAddress`; the base, or absent, stores none. The customer's non-empty addresses are stored on every order, sent at
+   *  order.create 8 with `taxAddress` and at 11 without it (ADR-086 d2, amended 2026-11-19). */
   taxLocation?: woocommerceTax.ResolvedTaxLocation;
 }
 
@@ -324,8 +325,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(display && taxByRate ? { display, taxByRate } : {}),
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
-      ...(taxAddress && addresses.billing ? { billing: addresses.billing } : {}),
-      ...(taxAddress && addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
+      ...(addresses.billing ? { billing: addresses.billing } : {}),
+      ...(addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
     ...(taxAddress ? { taxAddress } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
