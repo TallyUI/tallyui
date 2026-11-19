@@ -58,7 +58,12 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
   return snapshot.id;
 }
 
-export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext }): OrderBuilder {
+/**
+ * Rebuilds a saved order on `taxContext`. Fees and shipping re-derive their rates; under woo granularity lines re-derive
+ * from their class too. Outside woo, a line marked taxFromClass re-derives from its class unless `keepTaxRates` is set;
+ * every other line (given rates, a draft from before the marker) keeps its stored rates.
+ */
+export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean }): OrderBuilder {
   const { currency, taxContext } = options;
   const builder = createOrderBuilder({
     currency,
@@ -78,12 +83,13 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
 
   // Restore line items and their discounts
   for (const line of saved.lineItems) {
+    const rederive = line.taxFromClass === true && !options.keepTaxRates;
     const lineId = builder.addLine({
       productId: line.productId,
       ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
       custom: line.custom,
       taxStatus: line.taxStatus,
-      ...(taxContext.rounding?.granularity === 'woocommerce' ? { taxClass: line.taxClass } : {}),
+      ...(rederive || taxContext.rounding?.granularity === 'woocommerce' ? { taxClass: line.taxClass } : {}),
       variantId: line.variantId,
       name: line.name,
       ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
@@ -93,7 +99,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
       ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
       quantity: line.quantity,
-      taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
+      ...(rederive ? {} : { taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })) }),
     });
     for (const discount of line.discounts) {
       builder.applyLineDiscount(lineId, {

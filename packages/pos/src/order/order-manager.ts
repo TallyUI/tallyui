@@ -3,6 +3,7 @@ import type { RxCollection } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { createOrderBuilder, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
+import { capturedMinor } from '../tender/payment-legs';
 import { writeOrderDraft, restoreOrderDraft, parkedOrderSummaries$, type ParkedOrderSummary } from './order-drafts';
 
 export type { ParkedOrderSummary } from './order-drafts';
@@ -57,7 +58,7 @@ export function createOrderManager(options: OrderManagerOptions): OrderManager {
       const json = doc.toJSON() as any;
       const savedOrder: Order = JSON.parse(json.data);
 
-      const builder = restoreOrderDraft(savedOrder, { currency, taxContext });
+      const builder = restoreOrderDraft(savedOrder, { currency, taxContext, keepTaxRates: capturedMinor(savedOrder.payments ?? []) !== 0 });
 
       await doc.remove();
 

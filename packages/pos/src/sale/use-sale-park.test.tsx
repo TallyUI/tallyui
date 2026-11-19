@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreOrder, StoreSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
-import { orderDraftSchema, writeOrderDraft } from '../order';
+import { createOrderBuilder, orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { orderBuilderFromStoreOrder } from '../order/from-store-order';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
@@ -264,5 +264,107 @@ describe('useSale park and resume', () => {
     await act(async () => { await result.current.complete(); });
     expect(completed.mock.calls[1][0]).toBe(completed.mock.calls[0][0]);
     expect(result.current.stage.kind).toBe('receipt');
+  });
+});
+
+// 5.2 F3: a resumed or re-taxed sale re-derives each class-taxed line from the current context; a paid draft keeps its rates.
+describe('useSale re-derives class-taxed line rates (5.2 F3)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `salerederive${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  const reducedTraits = { ...traits, getTaxClass: () => 'reduced' };
+  const red = entries[1]; // 10.00
+  const at = (ratePpm: number): StoreSettings => ({ currency: 'EUR', pricesIncludeTax: false, taxRatesPpm: { default: 0, reduced: ratePpm } });
+  const figures = (order: Order) => ({ taxMinor: order.taxMinor, totalMinor: order.totalMinor, ratePpm: order.lineItems[0].taxLines[0].ratePpm });
+
+  function renderSale(settings: StoreSettings, overrides: Partial<Parameters<typeof useSale>[1]> = {}) {
+    const state = { settings };
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(state.settings)}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale(state.settings, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, drafts: db.pos_drafts, ...overrides,
+    }), { wrapper: Wrapper });
+    return { ...hook, state };
+  }
+  function addTwo(result: { current: ReturnType<typeof useSale> }) {
+    act(() => { result.current.add(red, reducedTraits); result.current.add(red, reducedTraits); });
+    expect(result.current.order.lineItems.map((line) => line.quantity)).toEqual([2]);
+  }
+
+  it('US1: a cart parked at 10% resumes at the store\'s new 20%', async () => {
+    const { result, rerender, state } = renderSale(at(100000));
+    addTwo(result);
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    state.settings = at(200000);
+    rerender();
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
+  });
+
+  it('US2: a parked draft with a captured leg keeps the rate it was paid against', async () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: (c) => c === 'reduced' ? 100000 : 0 } });
+    builder.addLine({ productId: 'shirt', variantId: 'red', name: 'Shirt', taxClass: 'reduced', unitPrice: { amount: 1000, currency: 'EUR' }, quantity: 2 });
+    builder.addPayment({ method: 'cash', amountMinor: 500 });
+    const draft = builder.getSnapshot();
+    expect(draft.lineItems[0]).toHaveProperty('taxFromClass', true);
+    await writeOrderDraft(db.pos_drafts, draft);
+    const { result } = renderSale(at(200000));
+    await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+    expect(result.current.order.paidMinor).toBe(500);
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+  });
+
+  it('US3: setCustomer re-taxes a class-taxed cart to the customer\'s 20%', () => {
+    const settings = at(100000);
+    const base = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 100000 : 0 };
+    const picked = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 200000 : 0 };
+    const location = { taxBasedOn: 'base', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    const taxContextFor = (customer: unknown) => ({ taxContext: customer ? picked : base, location });
+    const { result } = renderSale(settings, { taxContextFor });
+    addTwo(result);
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    act(() => result.current.setCustomer({ id: 'c1', name: 'Alice' }));
+    expect(result.current.order.customer).toMatchObject({ id: 'c1' });
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
+  });
+
+  it('US4: setAddresses re-taxes a class-taxed cart to the new billing address\'s 20%', () => {
+    const base = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 100000 : 0 };
+    const billed = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 200000 : 0 };
+    const location = { taxBasedOn: 'billing', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    const taxContextFor = (customer: { billing?: unknown } | null) => ({ taxContext: customer?.billing ? billed : base, location });
+    const { result } = renderSale(at(100000), { taxContextFor });
+    addTwo(result);
+    act(() => result.current.setCustomer({ id: 'c1', name: 'Alice' }));
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    let done = false;
+    act(() => { done = result.current.setAddresses({ country: 'NZ' }, undefined); });
+    expect(done).toBe(true);
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
+  });
+
+  it('US5: cancelTender re-taxes to rates that changed during tender (#722 + F3)', () => {
+    const base = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 100000 : 0 };
+    const raised = { pricesIncludeTax: false, getTaxRatePpm: (c?: string) => c === 'reduced' ? 200000 : 0 };
+    const location = { taxBasedOn: 'billing', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    let rates: typeof base | typeof raised = base;
+    const taxContextFor = () => ({ taxContext: rates, location });
+    const { result } = renderSale(at(100000), { taxContextFor });
+    addTwo(result);
+    act(() => result.current.setCustomer({ id: 'c1', name: 'Alice' }));
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    act(() => result.current.startTender('cash'));
+    rates = raised;
+    expect(figures(result.current.order)).toEqual({ taxMinor: 200, totalMinor: 2200, ratePpm: 100000 });
+    act(() => result.current.cancelTender());
+    expect(figures(result.current.order)).toEqual({ taxMinor: 400, totalMinor: 2400, ratePpm: 200000 });
   });
 });

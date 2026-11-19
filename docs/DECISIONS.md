@@ -6579,3 +6579,65 @@ interface OrderCreatePayload {
 - **Phases** (each its own spec and PR; one-way, blast:shared): (a) core: `order.reopen` types, payload check,
   precheck, result parsing and capability parsing; (b) the Woo spike; (c) pos: `sendOrderReopen`, the reopened sale,
   `pos_orders` vN, `order.update` types and the outbox; (d) the Woo transport; (e) the app's action (tally-woo).
+
+## ADR-091 Decimal (fractional) line quantities (parity "Decimal quantities", #486)
+
+- **Date:** 2026-11-19 · **Status:** Accepted, build deferred (front desk ruling on the tally-woo gap vet,
+  2026-11-19: "P = 6 (a v2 store order with six places must rebuild, not be refused)", "Option 3 (number in storage,
+  BigInt units at the edge, no float multiplication, the mutation named) is accepted", "no decimal PRs until a
+  connector can set decimalQuantity") · **Relates to:** ADR-038 (the command contract), ADR-070 (strict payloads),
+  ADR-073 (the WooCommerce order transport), ADR-080 (`order.refund` v1), ADR-086 (order.create versions). WCPOS
+  v2's quantity keypad is the reference for features and taste.
+- **Context (M = wcpos monorepo origin/main):**
+  - **v2:** the cashier types any positive quantity with up to six places (`QUANTITY_PLACES`,
+    M `packages/components/src/quantity-keypad/index.tsx:15,85`), shown with the store's separators
+    (M `packages/core/src/screens/main/hooks/use-number-format.ts:19-21`). There is no client gate: the store
+    refuses a fraction unless WooCommerce POS `decimal_qty` is on. The stock cell passes `decimals = 0`.
+  - **The server (WCPOS 1.10.20):** integers are relaxed only on the `wcpos/v1` orders route; the v2 push lane stays
+    integer-only, and the store object exposes no `decimal_qty` to a cashier.
+  - **TallyUI today is integer-only end to end:** the builder (`packages/pos/src/order/order-builder.ts`),
+    `LineItem.quantity`, exact tax (`tax/exact.ts`), the pos_orders line `quantity: {type: 'integer'}`, the
+    store-order rebuild (`order/from-store-order.ts`), `insufficient_stock` (`core/src/known-warnings.ts`,
+    `core/src/server/command-result.ts`), refunds (`core/src/server/refund-payload-shape.ts`,
+    `pos/src/refund/refundable-lines.ts`), `splitLine` and the keypad (`components/src/sale/line-popover.tsx`).
+  - Medusa and Vendure quantities are integers.
+- **Options for the stored quantity:**
+  1. An integer in units of 10^-P, as money is stored in minor units. Exact, but every stored line migrates.
+  2. A decimal string. Exact, but every arithmetic site parses it, and RxDB indexes and queries see a string.
+  3. A number with a places rule. Today's integer rows stay valid; arithmetic converts to scaled integers at the edge.
+- **Decision:**
+  1. **Representation: option 3.** `quantity` stays a JS number in storage, on the wire and in the API. Every money
+     computation converts it once to integer units of 10^-P and uses `BigInt` arithmetic; no float multiplication
+     anywhere. A quantity is valid when it is finite, > 0 and `q × 10^P` is an integer within tolerance
+     (`isValidQuantity`). Existing rows need no rewrite.
+  2. **Places: P = 6**, v2's `QUANTITY_PLACES`, exported as `QUANTITY_PLACES` from `@tallyui/pos`. A v2 store order
+     with six places rebuilds; it is not refused.
+  3. **Line maths:** the line gross is `round(unitPriceMinor × units / 10^P)`, half away from zero, with the existing
+     rounding helper; exact tax takes the same units. An integer quantity gives byte-identical results to today.
+  4. **Storage:** the next free pos_orders version changes the line `quantity` to `number` (exclusive minimum 0), an
+     identity migration through `addPosOrderCollection`. `order_drafts` (JSON) needs no bump; `restoreOrderDraft`
+     accepts the fraction.
+  5. **Wire:** the next free `order.create` version may carry a fractional `quantity`. Every older version refuses a
+     fraction client-side with `invalid_quantity`, before it reaches the outbox; the `sentVersion`/`downgradedFrom`
+     maxima move with it. `parseCommandResult` and `knownWarnings` accept a fractional `insufficient_stock.quantity`
+     only on results from that version.
+  6. **Capability:** `ServerCapabilities.decimalQuantity?: 1`. When it is absent, the keypad stays integer-only and
+     the connector refuses a fraction locally. Medusa and Vendure never set it.
+  7. **Keypad:** `allowDecimal?: boolean` on the quantity keypad, default false, with the store's decimal separator.
+     Stock entry stays integer, as in v2.
+  8. **Refunds:** a refund line quantity stays an integer ≥ 1. A fractional line refunds whole, or by amount.
+     Cashier copy where a unit refund is refused: "This line has a part quantity. Refund the whole line, or refund an
+     amount."
+  9. **Split by units** is refused on a fractional line (`splitLine` keeps refusing). Cashier copy: "This line has a
+     part quantity, so it can't be split by units."
+  10. **Out of scope:** weight-embedded barcodes and fractional stock.
+- **Build deferred:** no decimal PRs until a connector can set `decimalQuantity`, since a keypad nothing can accept is
+  a dead setting. Whether the released WooCommerce POS 2.0.x plugin serves it is being checked; a yes reopens the
+  build.
+- **Consequences:** one pos_orders bump and one order.create bump; integer-only sales are unchanged on both. Older
+  tills never send a fractional order of their own; a fractional store order read by an older till is refused at
+  rebuild, which is safe. The build is about three PRs: pos maths and `isValidQuantity`, storage and wire, and the
+  keypad.
+- **Evidence to come with the PRs:** `1.5 × 333` minor → `500`, `0.125 × 1000` → `125`; tax per rate equals the
+  integer path at q = 2; `0`, `-1`, `NaN`, `Infinity` and `1.0000001` are refused; an older order.create version
+  refuses 1.5; mutation: float multiplication fails the `1.5 × 333` test.

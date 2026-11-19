@@ -848,7 +848,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
       // Taxed for the customer the draft restores (a refused one isn't).
       const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
-      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext });
+      // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
+      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
+        keepTaxRates: capturedMinor(saved.payments ?? []) !== 0 });
       let n = 0;
       // A draft whose legs took money keeps the prices it was paid against (u19).
       // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).

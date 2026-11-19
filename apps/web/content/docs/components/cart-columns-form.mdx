@@ -1,0 +1,36 @@
+---
+title: CartColumnsForm
+description: WCPOS v2's Cart Settings › Columns, with a Show switch per column and Move up and Move down buttons.
+---
+
+## Import
+
+```tsx
+import { CartColumnsForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useAppSettings } from '@tallyui/pos';
+import { Cart, CartColumnsForm } from '@tallyui/components';
+
+const { settings, setSetting } = useAppSettings(collection);
+const columns = settings['cart.columns'];
+
+<CartColumnsForm value={columns} onChange={(next) => setSetting('cart.columns', next)} showReset />
+<Cart sale={sale} columns={columns} />
+```
+
+The form is WCPOS v2's Cart Settings › Columns. It lists every cart column in the saved order, each with a Show switch. Split sits under Qty, SKU under Name and On Sale under Price, and each shows only while its column is on. Move up and Move down buttons change the order; they replace v2's drag handle. `setSetting` saves through `writeAppSetting`, per device, and the same value goes to the [Cart](/docs/components/cart)'s `columns`.
+
+The form is controlled: each change emits a fresh `CartColumnSettings` and the form stores nothing. With `showReset`, a Restore Default Settings button at the end emits an empty value. Leave it off when a dialog footer holds the app's own reset, as in v2.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` | `CartColumnSettings` | `{}` | The saved columns |
+| `onChange` | `(next: CartColumnSettings) => void` | — | Called with a fresh value on every change |
+| `showReset` | `boolean` | `false` | Draws the Restore Default Settings button |
+| `className` | `string` | — | Override container styles |
