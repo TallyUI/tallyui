@@ -39,6 +39,7 @@
     "customer-select",
     "customer-dropdown",
     "customer-form",
+    "address-fields",
     "customer-order-history",
     "---Checkout---",
     "payment-method-card",
