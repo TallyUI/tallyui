@@ -1,0 +1,33 @@
+---
+title: AddressEditor
+description: AddressEditor edits an order's billing and shipping addresses as rows, with shipping Same as billing until the cashier uses a different address.
+---
+## Import
+```tsx
+import { AddressEditor, type AddressEditorValue } from '@tallyui/components';
+```
+## Usage
+```tsx
+const [addresses, setAddresses] = useState<AddressEditorValue>({});
+
+<Dialog open={open} onOpenChange={setOpen}>
+  <DialogContent>
+    <ScrollView>
+      <AddressEditor value={addresses} onChange={setAddresses} countries={countries} statesFor={statesFor} defaultCountry="GB" />
+    </ScrollView>
+  </DialogContent>
+</Dialog>
+```
+
+Billing is an "Add Billing Address" button until the order has one; a new address starts in `defaultCountry`. Then it is a row: a one-line summary of the set parts (Address 1 to Country, joined with commas; with none, the name or company), Edit to open and close the parts beneath it, and Remove. The billing parts are [AddressFields](/docs/components/address-fields) with Email.
+
+With billing present, shipping is [ShippingAddressFields](/docs/components/address-fields#shippingaddressfields), which reads its link to billing once at mount: key the editor by order or customer to read it again. With neither address, shipping has its own add button; with shipping but no billing, it is a row like billing's, with its own Remove and no Email.
+
+The editor has no dialog of its own: the app places it in one, with a scrolling body.
+## Props
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `value` / `onChange` | `AddressEditorValue` / `(next: AddressEditorValue) => void` | required | `{ billing?, shipping? }`, and every edit as the whole next value |
+| `countries` / `statesFor` | as AddressFields | --- | Passed to the parts |
+| `defaultCountry` | `string` | --- | The store's country; a new address starts with it |
+| `testID` | `string` | `'address-editor'` | Prefix for every testID |
