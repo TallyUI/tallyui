@@ -532,6 +532,55 @@ describe('createWooCommandTransport', () => {
     }
   });
 
+  describe('exclusive store, a charge entered including tax (2.10 PR4)', () => {
+    function charged() {
+      const envelope = order();
+      envelope.version = 5;
+      envelope.payload.fees = [{ clientFeeId: 'bag', name: 'Bag', amountMinor: 955, taxStatus: 'taxable', taxMinor: 95 }];
+      envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 909, taxStatus: 'taxable', taxMinor: 91 }];
+      return envelope;
+    }
+    const totals = (local?: WooLocalOrder) => {
+      const result = toWooOrderPayload(charged(), local);
+      if ('error' in result) throw new Error(result.error.message);
+      const payload = result.payload as { fee_lines: { total: string }[]; shipping_lines: { total: string }[] };
+      return { fee: payload.fee_lines[0].total, shipping: payload.shipping_lines[0].total, bytes: JSON.stringify(payload) };
+    };
+
+    it('T2: sends major(amountMinor), byte for byte, when the stored net is a whole cent', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }],
+        shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+      const sent = totals(local);
+      expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
+      expect(sent.bytes).toBe(totals().bytes);
+    });
+
+    it.each([
+      ['no local order', undefined],
+      ['no charge arrays', { lines: [] }],
+      ['other charge ids', { lines: [], fees: [{ id: 'other', netMicros: '1' }], shipping: [{ id: 'other', netMicros: '1' }] }],
+      ['no stored nets', { lines: [], fees: [{ id: 'bag' }], shipping: [{ id: 'delivery' }] }],
+    ] as const)('T3: sends major(amountMinor) with %s', (_name, local) => {
+      expect(totals(local as WooLocalOrder | undefined)).toMatchObject({ fee: '9.55', shipping: '9.09' });
+    });
+
+    it('T4: sends the 6-dp net when the stored net is not a whole cent', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '954545500' }],
+        shipping: [{ id: 'delivery', netMicros: '909090900' }] };
+      expect(totals(local)).toMatchObject({ fee: '9.545455', shipping: '9.090909' });
+    });
+
+    it.each(['fees', 'shipping'] as const)('T4: refuses a negative or too-fine stored %s net like the inclusive branch', (kind) => {
+      const id = kind === 'fees' ? 'bag' : 'delivery';
+      for (const [netMicros, message] of [['-100', `Line ${id} has a negative net.`], ['101', `Line ${id} has a net finer than 6 decimals.`]]) {
+        const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }],
+          shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+        local[kind] = [{ id, netMicros }];
+        expect(toWooOrderPayload(charged(), local)).toEqual({ error: { code: 'invalid_payload', message } });
+      }
+    });
+  });
+
   it('maps custom SKU, tax class and exclusive discounts like a product line', () => {
     const envelope = order();
     envelope.version = 5;
