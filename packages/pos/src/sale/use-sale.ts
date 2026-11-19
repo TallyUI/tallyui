@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { paymentMethodOf } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
@@ -43,6 +43,10 @@ export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ra
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
+/** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
+export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
+/** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
+export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -641,6 +645,30 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         builderNow.current.setCustomer(next);
       }
       setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
+      return true;
+    },
+    /**
+     * Sets one custom field on this sale (ADR-092 4 and 6d). It replaces the value when the key is there, and removes the
+     * field when `value` is null. It refuses once the sale has left the cart, and it refuses an invalid key. The value is
+     * cut to its bound when the order is frozen, as the note is.
+     */
+    setMeta(key: string, value: string | null): boolean {
+      if (locked()) return false;
+      const { meta = [], payments } = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+        setError(META_CHANGE_REFUSED);
+        return false;
+      }
+      const name = key.trim();
+      const known = meta.some((m) => m.key === name);
+      if (!name || name.length > ORDER_META_KEY_MAX || name.startsWith('_') || (value !== null && !known && meta.length >= ORDER_META_MAX)) {
+        setError(META_INVALID);
+        return false;
+      }
+      const next = value === null ? meta.filter((m) => m.key !== name)
+        : known ? meta.map((m) => m.key === name ? { key: name, value } : m) : [...meta, { key: name, value }];
+      builderNow.current.setMeta(next);
+      setError((current) => current === META_CHANGE_REFUSED || current === META_INVALID ? null : current); // any other error stays
       return true;
     },
     /**
