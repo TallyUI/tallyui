@@ -19,12 +19,14 @@ export function addEntryToCart<Doc>(builder: OrderBuilder, entry: CatalogueEntry
   }
   const anyAttributes = Object.keys(picks).sort((a, b) => position(a) - position(b));
   const attributes = { ...variant.options, ...Object.fromEntries(anyAttributes.map((name) => [name, picks[name]])) };
-  const existing = builder.getSnapshot().lineItems.find((line) => line.variantId === variant.id && samePicks(line, { anyAttributes, attributes }));
+  const name = traits.getName(product) + (traits.getVariantCount(product) > 1 ? ` · ${variant.title}` : '');
+  const existing = builder.getSnapshot().lineItems.find((line) => line.variantId === variant.id && samePicks(line, { anyAttributes, attributes })
+    // An edited name or SKU never merges (ADR-092 6b), so a later scan adds a new line.
+    && line.name === name && line.sku === (variant.sku ?? ''));
   if (existing) {
     builder.updateQuantity(existing.id, existing.quantity + 1);
     return existing.id;
   }
-  const name = traits.getName(product) + (traits.getVariantCount(product) > 1 ? ` · ${variant.title}` : '');
   const resolved = resolvePrice(variant.prices, currency);
   if (!resolved) throw new CartError(`No ${currency} price for ${name}`);
   const unitPrice = resolved.current, regularPrice = regularUnitPriceMinor(resolved);
