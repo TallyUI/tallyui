@@ -364,13 +364,19 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       ...displaySourceLines[index].discounts.map((d) => d.amountMinor)].filter((x) => x !== 0).length, 0);
     if (woo) assertDisplayResidue(residue, converted.length, conversions);
     else {
-      // The generic display charge row must equal what is stored and sent (core fiscal-figures.ts), so only a converted charge takes residue, one cent each.
+      // The generic display charge row must equal what is stored and sent (core fiscal-figures.ts), so only a taxed converted charge takes residue, a cent each, the one whose own rounding moved against the residue first.
       const rows = [...fees.map((charge, i) => [charge, displayFees[i]] as const), ...shipping.map((charge, i) => [charge, displayShipping[i]] as const)]
-        .flatMap(([charge, row]) => (charge.amountIncludesTax ?? taxInclusive) !== taxInclusive && row.amountMinor !== 0 ? [row] : []);
+        .flatMap(([charge, row]) => (charge.amountIncludesTax ?? taxInclusive) !== taxInclusive && row.amountMinor !== 0
+          && BigInt(charge.taxMicros) !== 0n ? [[charge, row] as const] : []);
       assertDisplayResidue(residue, converted.length + rows.length, conversions + rows.length);
-      for (let k = rows.length - 1; k >= 0 && residue !== 0; k--) {
-        const t = Math.sign(residue);
-        rows[k].amountMinor += t;
+      const t = Math.sign(residue);
+      // error × t: the row's rounding error against the residue, before it takes any (exact = the charge in the order's mode).
+      const takers = rows.map(([charge, row], k) => ({ row, k, e: (BigInt(row.amountMinor) * MICROS_PER_MINOR - BigInt(charge.netMinor) * MICROS_PER_MINOR
+        - (taxInclusive ? 1n : -1n) * BigInt(charge.taxMicros)) * BigInt(t) }));
+      if (residue !== 0) takers.sort((a, b) => a.e < b.e ? -1 : a.e > b.e ? 1 : b.k - a.k);
+      for (const { row } of takers) {
+        if (residue === 0) break;
+        row.amountMinor += t;
         displaySubtotal -= t;
         residue -= t;
       }

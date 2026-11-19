@@ -222,6 +222,31 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     displayIdentity(order);
   });
 
+  it('G7 (N1): an untaxed converted fee takes no residue', () => {
+    const builder = makeGeneric(false);
+    builder.addLine(product(1000));
+    builder.addFee({ name: 'Fee 1', amountMinor: 5, amountIncludesTax: true });
+    builder.addFee({ name: 'Fee 2', amountMinor: 5, amountIncludesTax: true });
+    builder.addFee({ name: 'Untaxed', amountMinor: 500, amountIncludesTax: true, taxStatus: 'none' });
+    let order!: Order;
+    expect(() => { order = builder.getSnapshot(); }).not.toThrow();
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([5, 4, 500]);
+    expect(order.display.subtotalMinor).toBe(1000);
+    displayIdentity(order);
+  });
+
+  it('G8 (N2): the fee whose rounding moved against the residue takes it, not the last one', () => {
+    const builder = makeGeneric(false);
+    builder.addLine(product(1000));
+    for (const amountMinor of [5, 5, 5, 6]) builder.addFee({ name: `Fee ${amountMinor}`, amountMinor, amountIncludesTax: true });
+    let order!: Order;
+    expect(() => { order = builder.getSnapshot(); }).not.toThrow();
+    expect(order.taxMinor).toBe(102);
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([5, 5, 4, 5]);
+    expect(order.display.subtotalMinor).toBe(1000);
+    displayIdentity(order);
+  });
+
   it('V1: a mode that is not a boolean is refused', () => {
     expect(() => makeGeneric(false).addFee({ name: 'Fee', amountMinor: 1, amountIncludesTax: 'yes' as never })).toThrow(RangeError);
   });
