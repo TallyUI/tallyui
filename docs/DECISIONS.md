@@ -6641,3 +6641,78 @@ interface OrderCreatePayload {
 - **Evidence to come with the PRs:** `1.5 × 333` minor → `500`, `0.125 × 1000` → `125`; tax per rate equals the
   integer path at q = 2; `0`, `-1`, `NaN`, `Infinity` and `1.0000001` are refused; an older order.create version
   refuses 1.5; mutation: float multiplication fails the `1.5 × 333` test.
+
+## ADR-092 order.create v12: tax ids, a catalogue line's SKU and order meta (tally-woo 02, 07, 08a)
+
+- **Date:** 2026-11-19 · **Status:** Accepted (front desk, 2026-11-19: the 02/07/08a group takes pos_orders 18 /
+  order.create 12; 03 rides it) · **Relates to:** ADR-038 (the command contract), ADR-070 (strict payloads and field
+  kinds), ADR-083 and ADR-086 (how order.create versions are added), ADR-090 (`order.update` carries the create
+  payload), ADR-091 (decimal quantities take the next free versions after these). The tally-woo gap vet (§02, §03,
+  §07, §08), which the front desk accepted on 2026-11-19, is the source. WCPOS v2 is the reference for features and
+  taste.
+- **Context (M = wcpos monorepo origin/main):**
+  - **Tax ids:** a customer can carry tax ids (`CustomerTaxId {type, value, country?, label?}`,
+    `packages/core/src/types/customers.ts`), but a sale cannot. The wire `customer` is
+    `{email?, customerId?, billing?, shipping?}` (`packages/core/src/types/commands.ts`). v2's cart edits an order's
+    tax ids for B2B invoices.
+  - **A catalogue line's SKU:** a catalogue line goes out as `variantId`, `title`, `quantity` and its figures. Only a
+    custom line carries a SKU, inside `custom`. v2's line dialog edits a line's name and SKU
+    (M `packages/core/src/screens/main/pos/cart/cells/edit-line-item/form.tsx`), and nothing on the wire carries an
+    edited SKU.
+  - **Order meta:** v2 lets the cashier add custom fields (`meta_data`) to an order. No order.create version carries
+    meta, and servers refuse unknown fields, so meta cannot be added to version 11 in place.
+  - **Attention "handled" (tally-woo 03):** this needs one field on the stored order. It rides the same storage
+    version, so the till takes one migration, not two.
+- **Decision:**
+  1. **Version 12 is version 11 plus three optional fields.** Each is informational
+     (`docs/contract/field-kinds.md`):
+     - **a.** `customer.taxIds?: {type, value, country?}[]`, at most 10 entries. `type` is 1–32 UTF-16 units (the
+       connector's scheme id), `value` is 1–64 units, and `country` is an ISO 3166-1 alpha-2 code. `label` stays on
+       the till and is not sent.
+     - **b.** A catalogue line's `sku?: string`, 1–100 units (front desk: WooCommerce's product lookup table holds
+       100, and a real store SKU must never fail a sale on our bound). A custom line keeps `custom.sku`, unchanged.
+     - **c.** A top-level `meta?: {key, value}[]`, at most 50 entries, with keys unique in the list. `key` is 1–255
+       units and does not start with `_` (WooCommerce treats an underscore key as private). `value` is 0–1000 units
+       (`ORDER_NOTE_MAX`).
+  2. **Sent only when needed.** The till sends 12 only for a sale that carries one of 1a–1c, when the cap allows 12
+     (the server's advertised maximum, and any stored `sentVersion`). Every other field follows the version the sale
+     would have gone at without them, and a sale without any of the three is sent byte for byte as today (the
+     v3–v11 golden fixtures are unchanged). A catalogue line's `sku` goes out only when it differs from the SKU the
+     line was added with.
+  3. **Downgrade.** A server that does not list 12 gets 11 or lower without the three fields. An
+     `unsupported_version` answer to a 12 downgrades the same way. The stored fields are kept. Dropped tax ids, meta
+     and an edited SKU are shown as not sent (condition 1).
+  4. **Frozen like other text.** `freezeSentForm` cuts each string to its bound with `cutText`, with NUL stripped. A
+     meta key that starts with `_` is refused when it is set, so it is never sent. Setting a key that is already
+     there replaces its value.
+  5. **Server checks.** `precheckCommand` refuses each field below 12 (`<field> requires version 12`).
+     `payloadShapeErrors` and `payloadBoundErrors` enforce 1a–1c, and the NUL check covers every new string.
+  6. **The till's sale model** (one setter PR per row):
+     - **a. Tax ids (02):** `useSale` sets the sale's tax ids, on the cart only. A guest sale refuses them, as
+       `setAddresses` refuses addresses; when guest sales get addresses, tax ids follow them. Drafts park and
+       resume them. Saving tax ids to the customer belongs to the customer editor (parity 10.1), not to this setter.
+     - **b. Line name and SKU (07):** `updateLine` edits them, on the cart only. A line whose name or SKU was edited
+       never merges in `addLine`, so a later scan of the same product adds a new line. That holds when a parked sale
+       is resumed through `addLine` too.
+     - **c. Regular price (07):** editing it re-runs line pricing. It is not money-neutral: it has been on the wire
+       since version 6, and receipts print it as "was".
+     - **d. Meta (08a):** `useSale` sets order meta, on the cart only. Drafts park and resume it.
+     - **e. Requested status (08b)** is held, and is not part of this version.
+     - **f. Attention "handled" (03):** a stamp `attentionHandledFor: commandId` on the stored order. `needsAttention`
+       leaves an order out while its `commandId` equals the stamp. A requeued order gets a new `commandId`, so a
+       fresh refusal brings it back. A pending order refuses the stamp. `pos_orders` is till-local, so the write
+       breaks no replication rule.
+  7. **Storage:** `pos_orders` goes to schema version 18. It adds `customer.taxIds`, `meta`, a line's edited `sku`
+     and `attentionHandledFor`, and lets `sentVersion` and `downgradedFrom` be 12. The migration is the identity,
+     through `addPosOrderCollection`. `ORDER_CREATE_MAX_VERSION` becomes 12.
+- **Conditions:**
+  1. Before any connector advertises 12, the till's order view says which of a sale's tax ids, meta and edited SKU
+     a downgrade did not send to the store.
+- **Consequences:** one-way. An older build opening a schema-18 store must be measured again for 17→18 in
+  `pos-orders-open-sqlite.test.ts`, as earlier bumps were. An older server refuses a 12 it does not list, and the
+  till downgrades. No connector advertises 12 until its plugin maps all three fields and condition 1 holds. The
+  build is one schema-and-wire PR (with 03's stamp and `needsAttention`), then one PR per setter (02, 07, 08a),
+  then condition 1. Each is one-way.
+- **Evidence to come with the PRs:** a v12 golden fixture, and the v3–v11 fixtures unchanged; server prechecks that
+  refuse each field below 12; the bounds at their limits and one past them; an identity migration test 17→18; a
+  requeued order that comes back into `needsAttention` after it was stamped.
