@@ -16,7 +16,7 @@ export interface TillPairingOptions {
   signalling: DisplaySignalling;
   /** The cashier session; null while nobody is logged in, which refuses every call as `forbidden` (d5). */
   context: () => SyncContext | null;
-  /** The till's own device id (d5). */
+  /** The till's own device id (d5): a secret, see `DisplaySignalling`; never logged or reported. */
   deviceId: string;
   /** U4's service, refreshed after a confirm or a forget. */
   service?: Pick<TillDisplayService, 'refresh'>;

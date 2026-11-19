@@ -80,6 +80,9 @@ export interface SignalMessage { type: 'offer' | 'answer' | 'ice'; payload: stri
  * gets `forbidden`, and an id this device does not own gets `not_found`. Display side: no login; calls are gated by the
  * display's token (`token_refused`), and each successful token call updates `lastSeenAt`. Every refusal is a
  * `DisplaySignallingError`.
+ * The till's `deviceId` is a bearer secret on some backends (ADR-085, TallyUI#753; until #754's server-issued key):
+ * whoever holds it can act as that till. An implementation never logs it, never puts it in an error message, a
+ * response body or a display's view, and never returns it to another device.
  */
 export interface DisplaySignalling {
   /** A pairing code: 6+ digits from `crypto.getRandomValues`, single use, live at most 10 minutes; a 6th unspent code per device gives `limit`. */
