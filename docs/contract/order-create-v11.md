@@ -47,6 +47,8 @@ units each, no email. Empty parts are left out, and an address with no non-empty
 It stores them on the order as the customer's billing and shipping, informational fields. It never re-taxes the
 order from them: a sale without `taxAddress` is taxed on the store's base, as before.
 
+An `order.update` at createVersion 11 carries them on the same terms as an `order.create` at 11: informational, never a tax input.
+
 ## The till's storage
 
 - `finalizeOrder` stores the customer's non-empty addresses on every order, not only on a sale taxed by address.

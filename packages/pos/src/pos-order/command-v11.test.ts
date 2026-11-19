@@ -155,4 +155,14 @@ describe('order.create v11: the customer\'s addresses on a sale not taxed by add
     expect(at11.payload).not.toHaveProperty('taxAddress');
     expect(precheckCommand(at11, supported)).toBeUndefined();
   });
+
+  it('V10 sends the addresses of a customer with no email and no sendable id at 11', () => {
+    const order = sale();
+    const bare: PosOrder = { ...order, customer: { id: '', name: 'Walk-in', billing: order.customer!.billing! } };
+    const sent = envelope(bare, 11);
+    expect(sent.version).toBe(11);
+    expect(sent.payload.customer).toStrictEqual({ billing: order.customer!.billing });
+    expect(precheckCommand(sent, supported)).toBeUndefined();
+    expect(envelope(bare, 10).payload.customer).toBeNull();
+  });
 });
