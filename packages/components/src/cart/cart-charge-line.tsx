@@ -37,6 +37,7 @@ export function CartChargeLine({ name, price, total, showPrice = true, columns, 
       {wrap('name', <Text className="text-sm" numberOfLines={2}>{name}</Text>)}
     </View>,
     sku: <View key="sku" className={CART_COLUMNS.sku.cell}>{wrap('sku', null)}</View>,
+    regularPrice: <View key="regularPrice" className={CART_COLUMNS.regularPrice.cell}>{wrap('regularPrice', null)}</View>,
     price: <View key="price" className={CART_COLUMNS.price.cell}>
       {wrap('price', <Text testID="cart-charge-price" className="text-right text-sm tabular-nums text-muted-foreground">{formatMoney(price, locale) ?? '—'}</Text>)}
     </View>,
