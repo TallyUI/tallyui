@@ -262,6 +262,22 @@ describe('vendurepos gap 2.10: a charge in its own tax mode, generic', () => {
     displayIdentity(order);
   });
 
+  it('G10 (R1): a taxed fee whose rounding already went the residue\'s way leaves it to the product lines', () => {
+    const builder = makeGeneric(false);
+    // Three inclusive 5s (4.5454 each) and a fee of 6 inclusive (5.4545): tax 1.909 → 2, total 15 + 6 = 21. Rows show
+    // [5, 5, 5] and fee 5, but the subtotal is 21 − 2 − 5 = 14: residue −1. The fee already rounded down (5 < 5.4545),
+    // so a line takes it (ties to the earlier line): 14 + 5 + 2 = 21. Sending the fee as 4 would re-tax to 4, 2 off 6.
+    for (const productId of ['a', 'b', 'c']) builder.addLine({ ...product(5), productId, unitPrice: { amount: 5, currency: 'EUR', taxInclusive: true } });
+    builder.addFee({ name: 'Fee', amountMinor: 6, amountIncludesTax: true });
+    let order!: Order;
+    expect(() => { order = builder.getSnapshot(); }).not.toThrow();
+    expect(order.display.fees!.map((f) => f.amountMinor)).toEqual([5]);
+    expect(order).toMatchObject({ taxMinor: 2, totalMinor: 21 });
+    expect(order.display.lines.map((line) => line.amountMinor)).toEqual([4, 5, 5]);
+    expect(order.display.subtotalMinor).toBe(14);
+    displayIdentity(order);
+  });
+
   it('V1: a mode that is not a boolean is refused', () => {
     expect(() => makeGeneric(false).addFee({ name: 'Fee', amountMinor: 1, amountIncludesTax: 'yes' as never })).toThrow(RangeError);
   });

@@ -374,8 +374,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       const takers = rows.map(([charge, row], k) => ({ row, k, e: (BigInt(row.amountMinor) * MICROS_PER_MINOR - BigInt(charge.netMinor) * MICROS_PER_MINOR
         - (taxInclusive ? 1n : -1n) * BigInt(charge.taxMicros)) * BigInt(t) }));
       if (residue !== 0) takers.sort((a, b) => a.e < b.e ? -1 : a.e > b.e ? 1 : b.k - a.k);
-      for (const { row } of takers) {
-        if (residue === 0) break;
+      // Only a row whose rounding moved against the residue (e × t < 0) takes; the rest is left to the converted lines.
+      for (const { row, e } of takers) {
+        if (residue === 0 || e >= 0n) break;
         row.amountMinor += t;
         displaySubtotal -= t;
         residue -= t;
