@@ -141,7 +141,7 @@ export interface ChargeLine {
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
+export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
 
 export interface LineTaxLine {
   code?: string;
@@ -152,6 +152,7 @@ export interface LineTaxLine {
 }
 
 export interface Discount {
+  id?: string; // as an input, a restored discount's own (#742); a taken id throws
   type: 'percentage' | 'fixed';
   value: number;              // percentage: percent (e.g. 10); fixed: integer minor units
   label?: string;
@@ -203,6 +204,7 @@ export interface PaymentMethod {
 }
 
 export interface AddLineInput {
+  id?: string; // a restored line's own (#742), used when the line does not merge; a taken id throws
   productId: string;
   /** A kept store line: never merged */
   storeLineId?: string;

@@ -69,6 +69,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     currency,
     taxContext,
     id: saved.id,
+    ...(saved.createdAt ? { createdAt: saved.createdAt } : {}), // #742: with every id below (fees and shipping replay whole)
     ...(saved.storeOrder !== undefined ? { storeOrder: saved.storeOrder } : {}),
   });
 
@@ -86,6 +87,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   for (const line of saved.lineItems) {
     const rederive = line.taxFromClass === true && !options.keepTaxRates;
     const lineId = builder.addLine({
+      id: line.id,
       productId: line.productId,
       separate: true,
       ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
@@ -105,6 +107,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
     for (const discount of line.discounts) {
       builder.applyLineDiscount(lineId, {
+        id: discount.id,
         type: discount.type,
         value: discount.value,
         label: discount.label,
@@ -119,6 +122,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   // Restore order-level discounts
   for (const discount of saved.discounts) {
     builder.applyOrderDiscount({
+      id: discount.id,
       type: discount.type,
       value: discount.value,
       label: discount.label,
@@ -130,6 +134,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   // Restore payments
   for (const payment of saved.payments) {
     builder.addPayment({
+      id: payment.id,
       method: payment.method,
       amountMinor: payment.amountMinor,
       tenderedMinor: payment.tenderedMinor,
