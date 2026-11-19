@@ -900,5 +900,46 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       expect(fees()[0].percent).toBe(10);
       expect(fees()[0].amountIncludesTax).toBeUndefined();
     });
+
+    it('H1: chargeTaxSwitch={false} hides the switch and a new fee takes the store\'s tax mode', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      click('Cancel');
+      addFee('Service', '5');
+      expect(fees()).toHaveLength(1);
+      expect('amountIncludesTax' in fees()[0]).toBe(false);
+    });
+
+    it('H2: chargeTaxSwitch={false} keeps an existing fee\'s own tax mode through an edit', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const own = !sale.order.pricesIncludeTax;
+      act(() => { sale.addFee({ name: 'Service', amountMinor: 500, amountIncludesTax: own }); });
+      click('Edit total of Service');
+      click('Edit Service');
+      const form = chargeForm('Edit Service');
+      expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '7.00' } });
+      click('Apply');
+      expect(fees()[0].amountMinor).toBe(700);
+      expect(fees()[0].amountIncludesTax).toBe(own);
+    });
+
+    it('H3: without chargeTaxSwitch the Add charge form shows the switch', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').getByRole('switch', { name: 'Amount Includes Tax' })).toBeTruthy();
+    });
+
+    it('P1: a fractional percent shows unrounded in the Price cell', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '12.5', { percent: true });
+      expect(fees()[0].percent).toBe(12.5);
+      expect(price(0)).toBe('12.5%');
+    });
   });
 });
