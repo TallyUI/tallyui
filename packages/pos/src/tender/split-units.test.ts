@@ -32,6 +32,12 @@ describe('unitsMinor', () => {
     expect(sum(shares(100, 3))).toBe(100);
   });
 
+  it('U10: prices 0..3 units of 1001 over 3 cumulatively, spreading the stray cents', () => {
+    // v2's last-unit form gives 0, 333, 666, 1001: the cumulative floor spreads the 2 stray cents (spec 11a, unit share).
+    expect([0, 1, 2, 3].map((u) => unitsMinor(1001, 3, u))).toEqual([0, 333, 667, 1001]);
+    expect(shares(1001, 3)).toEqual([333, 334, 334]);
+  });
+
   it.each([
     ['quantity 2.5', 1000, 2.5, 1],
     ['quantity 0', 1000, 0, 0],
@@ -84,7 +90,12 @@ describe('pickedUnitsMinor', () => {
     expect(() => pickedUnitsMinor(lines, { z: 1 }, {})).toThrow(RangeError);
   });
 
-  it('U9: throws RangeError on a pick of 3 when 2 are unpaid', () => {
+  it('U9b: throws RangeError on a pick of 3 when 2 are unpaid', () => {
     expect(() => pickedUnitsMinor(lines, { a: 3 }, { a: 1 })).toThrow(RangeError);
+  });
+
+  it('U11: prices the second unit of 3 for 1001 as 334, not v2 last-unit 333', () => {
+    const line: SplitUnitLine = { id: 'a', quantity: 3, totalMinor: 1001 };
+    expect(pickedUnitsMinor([line], { a: 1 }, { a: 1 })).toBe(334);
   });
 });
