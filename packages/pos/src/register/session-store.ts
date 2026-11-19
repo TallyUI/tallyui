@@ -247,6 +247,9 @@ export function businessDayOf(atGmt: string, timezone: string) {
   return `${part.year}-${part.month}-${part.day}`;
 }
 
+/** Set once `openSession` has warned about a missing `storeKey`, so it warns once per module instance. */
+let warnedNoStoreKey = false;
+
 export function openSession(
   sessions: RegisterSessionCollection,
   input: {
@@ -256,9 +259,26 @@ export function openSession(
     openedBy: string;
     /** The store's day, not the device's UTC day. */
     businessDay: { year: number; month: number; day: number };
+    /**
+     * @deprecated when omitted. Omitting storeKey is deprecated: a session without one writes closures that count as
+     * any store's. It becomes required at the next major.
+     */
     storeKey?: string | null;
   },
 ) {
+  if ((input.storeKey ?? null) === null && !warnedNoStoreKey) {
+    let production = false;
+    try {
+      production = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === 'production';
+    } catch {
+      // A host whose `process` getter throws is treated as not production.
+    }
+    if (!production) {
+      warnedNoStoreKey = true;
+      console.warn("[@tallyui/pos] openSession without storeKey is deprecated: its closures count as any store's. " +
+        'Pass storeKey; it becomes required at the next major.');
+    }
+  }
   const { year, month, day } = input.businessDay;
   return sessions.insert({
     id: uuid(),

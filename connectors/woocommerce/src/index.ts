@@ -107,8 +107,8 @@ const wooConnectorParts = {
       return {
         Authorization: `Bearer ${credentials.token}`,
         'X-WCPOS': '1',
-        // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
-        'X-WCPOS-Protocol': '2',
+        // WCPOS 2.0.4 refuses a POS request below protocol 3 with HTTP 426 (Services/Protocol_Gate.php:15-17).
+        'X-WCPOS-Protocol': '3',
         // For WCPOS's consent-gated telemetry only.
         'X-WCPOS-Client': `tallyui/${wcposClientPart(version)}`,
       };

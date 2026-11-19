@@ -19,7 +19,7 @@ import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
 export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
-  lineCommit = 'apply', columns,
+  lineCommit = 'apply', columns, chargeTaxSwitch = true,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
@@ -63,6 +63,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** v2's Cart Settings › Columns: which columns show, a Split link under a quantity above 1 (`quantity.split`) and the
      * SKU under the name (`name.sku`). The defaults are today's cart: Qty, Item, Price (folding as before) and Total. */
     columns?: CartColumnSettings;
+    /** Shows ChargeForm's "Amount Includes Tax" switch on fees and shipping. Pass `false` to hide it, so a new charge takes
+     * the store's tax mode; an existing charge keeps the flag it already has. Default `true`. */
+    chargeTaxSwitch?: boolean;
     /** The empty cart's icon, centred above `emptyText` and hidden from screen readers. Default: v2's cart icon in the
      * muted colour. Pass `null` for no icon. */
     emptyIcon?: ReactNode;
@@ -176,7 +179,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
           </CartLineStrip>
           {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
-            allowPercent pricesIncludeTax={order.pricesIncludeTax}
+            allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
             taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
             onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => kind === 'fees'
               ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
@@ -191,7 +194,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <Text className="text-foreground">Order discount</Text></Pressable>}
       </> : null}
       {showCharge ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
-        allowPercent pricesIncludeTax={order.pricesIncludeTax}
+        allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
         taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
         onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => {
           const result = kind === 'custom' ? sale.addCustomLine({ name, priceMinor: amountMinor, taxStatus, taxClass })

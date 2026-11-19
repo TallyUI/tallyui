@@ -8,7 +8,7 @@ import { useDemoRegister, type DemoRegisterDb } from '../../../lib/use-demo-regi
 async function seed(db: DemoRegisterDb) {
   const session = await openSession(db.register_sessions, {
     registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
-    openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
+    openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 }, storeKey: 'store',
   });
   await recordMovement(db.register_sessions, db.cash_movements, db.closures, {
     sessionId: session.id, type: 'paid_out', amountMinor: 700, reason: 'Milk', actor: 'demo-cashier',
