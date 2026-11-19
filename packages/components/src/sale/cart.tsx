@@ -170,16 +170,17 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
           <CartLineStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
             onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
-            {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)}
+            {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)} percent={charge.percent}
               total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
               showPrice={showPrice} columns={columns} testID="cart-charge-line" wrapTotal={wrapTotal} />}
           </CartLineStrip>
           {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
+            allowPercent pricesIncludeTax={order.pricesIncludeTax}
             taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
-            onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass }) => kind === 'fees'
-              ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass })
-              : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass })} /> : null}
+            onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => kind === 'fees'
+              ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
+              : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax })} /> : null}
         </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
@@ -190,11 +191,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         <Text className="text-foreground">Order discount</Text></Pressable>}
       </> : null}
       {showCharge ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
+        allowPercent pricesIncludeTax={order.pricesIncludeTax}
         taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
-        onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass }) => {
+        onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => {
           const result = kind === 'custom' ? sale.addCustomLine({ name, priceMinor: amountMinor, taxStatus, taxClass })
-            : kind === 'fee' ? sale.addFee({ name, amountMinor, taxStatus, taxClass })
-              : sale.addShipping({ name, amountMinor, taxStatus, taxClass });
+            : kind === 'fee' ? sale.addFee({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
+              : sale.addShipping({ name, amountMinor, taxStatus, taxClass, amountIncludesTax });
           return typeof result === 'string' ? result : null;
         }} /> : <Pressable accessibilityRole="button" onPress={() => setForm({ type: 'charge' })}
         className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">

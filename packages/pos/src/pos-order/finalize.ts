@@ -77,10 +77,11 @@ export function freezeSentForm(order: PosOrder): PosOrder {
   const lines = order.lines.map((line) => {
     const name = cutText(line.name, PAYLOAD_STRING_MAX);
     const sku = cutText(line.sku, ORDER_LINE_SKU_MAX);
-    changed ||= name !== line.name || sku !== line.sku;
+    const catalogueSku = line.catalogueSku === undefined ? undefined : cutText(line.catalogueSku, ORDER_LINE_SKU_MAX);
+    changed ||= name !== line.name || sku !== line.sku || catalogueSku !== line.catalogueSku;
     const custom = line.custom && { ...line.custom, name: cutText(line.custom.name, PAYLOAD_STRING_MAX) };
     changed ||= custom !== undefined && custom.name !== line.custom!.name;
-    return { ...line, name, sku, ...(custom ? { custom } : {}) };
+    return { ...line, name, sku, ...(catalogueSku !== undefined ? { catalogueSku } : {}), ...(custom ? { custom } : {}) };
   });
   const charges = { fees: order.fees, shipping: order.shipping };
   for (const field of ['fees', 'shipping'] as const) if (charges[field]) charges[field] = charges[field]!.map((charge) => {

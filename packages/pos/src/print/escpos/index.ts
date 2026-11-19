@@ -8,3 +8,5 @@ export type { EscPosSink, EscPosTransportOptions } from './transport';
 export { createEpsonEposSink, createStarWebPrntSink, networkSinkFor } from './network-sinks';
 export type { NetworkSinkOptions } from './network-sinks';
 export { canOpenDrawer, openDrawerJob } from './drawer';
+export { renderEscpos, encodeThermalTemplate } from './render-escpos';
+export type { RenderEscposOptions } from './render-escpos';
