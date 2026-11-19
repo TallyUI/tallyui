@@ -140,4 +140,28 @@ describe('order.create v12: tax ids, a catalogue line\'s edited SKU and order me
       expect(freezeSentForm(one)).not.toBe(one);
     }
   });
+
+  it('W8 freezeSentForm cuts a long catalogue SKU as it cuts the sku, so an unedited one sends as at cap 11', () => {
+    const plain = sale({ extras: false }), long = 'c'.repeat(150), cut = `${'c'.repeat(99)}…`;
+    const order: PosOrder = { ...plain, lines: plain.lines.map((line) => ({ ...line, sku: long, catalogueSku: long })) };
+    const frozen = freezeSentForm(order);
+    expect(frozen).not.toBe(order);
+    expect(frozen.lines[0]).toMatchObject({ sku: cut, catalogueSku: cut });
+    expect(envelope(frozen, 12)).toStrictEqual(envelope(frozen, 11));
+    expect(envelope(frozen, 12).version).toBe(11);
+    expect(envelope(frozen, 12).payload.lines[0]).not.toHaveProperty('sku');
+    const onlyCatalogue: PosOrder = { ...plain, lines: plain.lines.map((line) => ({ ...line, sku: 'COF-1', catalogueSku: long })) };
+    const frozenCatalogue = freezeSentForm(onlyCatalogue);
+    expect(frozenCatalogue).not.toBe(onlyCatalogue);
+    expect(frozenCatalogue.lines[0].catalogueSku).toBe(cut);
+    expect(freezeSentForm(plain).lines[0]).not.toHaveProperty('catalogueSku');
+  });
+
+  it('W8 a long catalogue SKU with an sku edited within the first 100 units still makes 12 and sends the cut edited sku', () => {
+    const plain = sale({ extras: false }), long = 'c'.repeat(150);
+    const order: PosOrder = { ...plain, lines: plain.lines.map((line) => ({ ...line, sku: `d${long.slice(1)}`, catalogueSku: long })) };
+    const sent = envelope(freezeSentForm(order), 12);
+    expect(sent.version).toBe(12);
+    expect(sent.payload.lines[0].sku).toBe(`d${'c'.repeat(98)}…`);
+  });
 });
