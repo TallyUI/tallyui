@@ -52,6 +52,8 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         ref={ref}
+        // v2's `min-w-32` floor (monorepo select/index.tsx:171-174); the primitive's
+        // Content raises it to the trigger's width with an inline minWidth.
         className={cn(
           'relative z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
           className,
