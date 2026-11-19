@@ -173,6 +173,8 @@ describe('the till device id stays a secret (TallyUI#753)', () => {
     look();
     await wait(SIGNAL_POLL_MS * 2);
     look();
+    // d1's link is open now, so this new sale state goes to it over the channel; d2 still gets snapshots.
+    service.showCart(receiptWith([line('Coffee')]));
     await wait(SNAPSHOT_MIN_INTERVAL_MS);
     await wait(LIST_POLL_MS);
     look();
