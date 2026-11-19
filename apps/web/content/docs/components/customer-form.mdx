@@ -19,7 +19,7 @@ import { CustomerForm } from '@tallyui/components';
 />
 ```
 
-A structured form with labeled inputs for first name, last name, email, phone, and address. First and last name render side by side; email and phone use the appropriate keyboard types. An optional submit button appears when `onSubmit` is provided.
+A structured form with labeled inputs for first name, last name, email, phone, and address. First and last name render side by side; email and phone use the appropriate keyboard types. An optional submit button appears when `onSubmit` is provided. When `addresses` and `onChangeAddresses` are both set, an `AddressEditor` for billing and shipping (with Same as billing) replaces the free-text Address field.
 
 ## Props
 
@@ -30,6 +30,13 @@ A structured form with labeled inputs for first name, last name, email, phone, a
 | `onSubmit` | `() => void` | --- | Called on submit button press; hides button if omitted |
 | `submitLabel` | `string` | `'Save Customer'` | Custom label for the submit button |
 | `showAddress` | `boolean` | `true` | Shows the Address field |
+| `showCompany` | `boolean` | `false` | Shows a Company field after Email and Phone |
+| `emailError` | `string` | --- | Shown as an alert under the Email field; the form does not validate |
+| `addresses` | `AddressEditorValue` | --- | Billing and shipping for the `AddressEditor` |
+| `onChangeAddresses` | `(next: AddressEditorValue) => void` | --- | Called with the next billing and shipping |
+| `countries` | `AddressEditorProps['countries']` | --- | Passed through to `AddressEditor` |
+| `statesFor` | `AddressEditorProps['statesFor']` | --- | Passed through to `AddressEditor` |
+| `defaultCountry` | `string` | --- | Passed through to `AddressEditor`; a new address starts in this country |
 | `className` | `string` | --- | Override container styles |
 
 ### CustomerFormValues
@@ -41,6 +48,7 @@ interface CustomerFormValues {
   email: string;
   phone: string;
   address: string;
+  company?: string;
 }
 ```
 
