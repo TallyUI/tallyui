@@ -90,6 +90,20 @@ describe('useSale updateLine (ADR-092 6b/6c)', () => {
     expect(result.current.order.lineItems[0].name).toBe('Other');
   });
 
+  it('S7: in the cart with an unlocked captured leg, updateLine refuses and leaves the order equal', async () => {
+    const result = saleOf();
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500, status: 'captured' })).toEqual(expect.any(String)); });
+    const id = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'cash', amountMinor: 500, status: 'captured' })]);
+    expect(result.current.order.payments[0].locked).toBeFalsy();
+    const before = result.current.order;
+    expect(update(result, { name: 'Other', sku: 'X', regularUnitPriceMinor: 1 })).toBe(LINE_EDIT_REFUSED);
+    expect(result.current.order).toEqual(before);
+  });
+
   it('S2: a parked edited line resumes with both SKUs, and a later scan adds a new line', async () => {
     const result = await resumedEdited();
     expect(result.current.order.lineItems).toHaveLength(1);
