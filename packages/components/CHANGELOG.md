@@ -1,5 +1,216 @@
 # @tallyui/components
 
+## 3.21.0
+
+### Minor Changes
+
+- 23eb0e4: `AccordionContent`'s `className` now goes to the inner padded view (default `pb-4 pt-0`) instead of the outer collapsible container, as in WCPOS v2. This changes what the prop means: a class that used to style the outer container (a border or `overflow-*`, say) now styles the padded view inside the fold, and a padding class now replaces `pb-4 pt-0`. No in-repo caller passed `className`.
+- 3c4b81b: `AccordionTrigger` draws WCPOS v2's 18px down chevron, on the right by default or before the label with `chevronPosition="left"`, and takes `headerClassName` for the outer header (merged after `flex`). The chevron turns 180° and dims to 0.8 opacity over 250ms as the item opens and back over 200ms as it closes; `AccordionContent` folds open and shut over 200ms on v2's ease, and stays mounted until the fold ends. Under reduced motion both are instant, and `forceMount` content does not fold.
+- dff924f: AddedToCartToast: v2's one 'added to cart' toast that updates in place and counts a burst of adds.
+- 83eebf9: AddressFields edits a CustomerAddress's parts (country and state pickers when the app passes them, Email on request, an emptied part removed), and ShippingAddressFields shows shipping as Same as billing until the cashier uses a different address.
+- b9fece2: New `BarcodeScanningSettings`, a port of the Scanning section of WCPOS v2's Settings › Barcode scanning: the scan threshold, minimum length, prefix and suffix, reported through `onChange` as they change.
+- 4319b3c: Cart: fees and shipping are rows in the cart's Qty / Item / Price / Total columns (the entered amount under Price, the display amount under Total), after the lines, as in WCPOS v2.
+- e9b3851: Cart: a fee or shipping row's Total opens WCPOS v2's line strip, a solid Edit and Remove under the row. Edit opens the charge form on that charge and applies with `updateFee` / `updateShipping`; Remove removes it. Replaces the Remove button under each charge row.
+- 1c5d2f7: The cart's `columns` setting gains v2's column `order`, the `price.onSale` switch for the struck regular price, a read-only `regularPrice` column, a translated Split link and SKU head, and the newly exported `CartColumnId` type.
+- 3b2f99a: `Cart`'s `lineCommit="close"` now gives the price popover WCPOS v2's write-on-close keypad too: Done, Escape discards, and any other close writes the typed price through the same price path and `onPriceChange`. A price refused on such a close shows under its line until that line's next price write. `LinePopover` takes `onCloseRefused`, called with the refusal when a `commit="close"` write on a close other than Done is refused.
+- c34fc71: `CartTotal`'s tax rows keep the rate's own label and carry WCPOS v2's tag beside it: "Including tax" when `taxInclusive` is `true`, "Excluding tax" when it is `false`, and no tag when it is absent. The old `incl. ` label prefix is gone. Each tax row has the test id `cart-total-tax-<index>`.
+- 24f2f88: `CartTotal` takes `fees` and `shipping` and shows a Fees and a Shipping row between Discount and the tax rows when each is not 0, and `Cart` passes the order's fee and shipping lines, so the cart's totals add up to its total, as in WCPOS v2.
+- ae1b243: `CashierSheet` gains v2's drawer door: the opt-in `drawer` prop (`CashierSheetDrawer`) draws "In the drawer" under "Your sales today" with the app's figure, the opener line and the register verbs, and calls `drawer.onOpen` when pressed.
+- 530744b: `CashierSheet` gains v2's "Hand the till to" and hold notices: the opt-in `handTo` prop (`CashierSheetHandTo`, `CashierSheetCashier`) lists the other cashiers with their open carts and calls `handTo.onHandTo(id)` when a row is pressed; `paying` shows "Finish the payment first" and holds the rows; `awaitingStore` shows the "Awaiting store" notice.
+- bef8aeb: `CashierSheet` gains v2's Store and Register rows: the opt-in `store` and `register` props (`CashierSheetPlace`) draw the name with a "Switch" verb that calls `onSwitch` so the app opens its own picker, and a `heldReason` line under the row that holds Switch.
+- cb8d977: New `CashierSheet`: WCPOS v2's cashier sheet on the right edge, with the header (avatar, name and the store · register · "since" line), "Your sales today" and Sign out. It displays what the app passes and calls the app back; Sign out never closes the sheet itself, so the app can ask through `SwitchConfirm` first.
+- 827675a: Catalogue: optional inStockKeepsBackorder keeps backorder products in the grid while the In Stock pill is on (default off, unchanged).
+- 0bdf81c: `Catalogue` takes `rowsSlot` (a `ReactNode`, default none): WCPOS v2's rows between the filter chips and the products (its `ListColumn` `rows`), for notices such as "Price check only until the register is open.". It renders under the header, above the grid, the table or the category tiles, with a 16 px gutter around and between the rows. Without it the catalogue renders as before.
+- 7134b8f: `Catalogue` takes `searchAccessory` (a `ReactNode`, default none), rendered at the end of the search row as WCPOS v2 puts the Product settings button beside its search; the Grid/Table `ViewToggle` (`showViewToggle`) moves from the status row into the search row, after the camera scan button, as in v2; an empty accessory (`false`, `null`, `''`) draws no row.
+- 803bbca: Catalogue: `variationsStyle="drill"` swaps the grid for a variable product's variant tiles (option chips, price, stock), with the product's tile first as Back, as v2's "Open in place".
+- 7be2853: `ViewToggle` takes `variant: 'icon'`, WCPOS v2's single view-mode button: one press switches to the other view (testID `view-toggle` on the control and `view-toggle-<next view>` on the button, labels "Switch to grid view" / "Switch to table view"). `Catalogue`'s search row now draws that form, and caps the search field at `max-w-160` on wide windows (not phones: width < 768 or height < 480), as in v2's PageBar, with the row's controls at its right end.
+- 1a77108: ChargeForm follows v2's charge rules: a blank name takes the kind's default (Fee, Shipping, Product), and a fee must be above zero, with v2's messages.
+- 1b2caa8: ComboboxContent takes WCPOS v2's size: 20rem wide (never narrower than its trigger) and at most 18.75rem tall. The new ComboboxList holds the items and scrolls past that, while an input above it stays in place.
+- a1e2b3f: `CartFoot` takes `note?: { text, onPress }` and `Cart` takes `checkout.note`, drawing WCPOS v2's note row above the Checkout button. It is hidden when the note is empty, quiet at rest, and on hover or focus washes and shows an edit glyph (always shown on a coarse pointer). It is 36 px high with a 44 px touch target, and pressing it calls `onPress` so the app opens its note editor.
+- 028c0e3: `Catalogue` takes `categoryBrowse: 'chips' | 'tiles'` (default `'chips'`). With `'tiles'` and `showCategoryNav`, the catalogue opens on WCPOS v2's browse root: All products, then each category as a `CategoryTile` poster with its product count and picture. A tile opens its products under a "Categories › name" breadcrumb whose first crumb goes back.
+- 8c87fd8: Adds `ConfirmDialog`: a title, an optional description, Cancel and a confirm button (destructive by default). It opens from a `trigger`, or is controlled with `open` and `onOpenChange`. Settings › Customer display's Forget dialog uses it.
+- 827e008: ConnectivityToast, WCPOS v2's 'Device went offline' / 'Website is unreachable' / 'Connection restored' toast for a connectivity change that holds 5 s.
+- 4341a30: CustomerDropdown pages: `browse(page)` and `search(query, page)` load the next 50 at the end of the list, as v2 (absent support: one page, as before).
+- 3f73c6f: CustomerDropdown: optional `browse` lists customers under Guest for an empty query, as v2 does (absent: unchanged).
+- d3f8db3: CustomerDropdown: Guest shows the person glyph on the chip, and optional onEditAddress/hasAddress add v2's address pin beside the chip (absent: no pin).
+- 924000d: CustomerDropdown: the customer chip opens a search dropdown anchored to it (Guest first, then results), as in WCPOS v2.
+- 6b173bb: DialogContent and AlertDialogContent: fade and scale in and out with WCPOS v2's dialog motion (150ms, scrim 150ms in / 200ms out); instant under reduced motion.
+- 25f8f86: `ListRow` gains `size="sm"` (the row height token, 44 at Regular) and `selected`, v2's current-row mark: the row is painted `bg-muted` with a primary bar on its left edge, `selected={false}` keeps the bar's room, and the state is announced as selected (checked on a radio or checkbox).
+- 8980084: `ListRow`: one flush row of a list as in WCPOS v2: a hairline under it, `leading`, body and `trailing` slots, the press and fine-pointer hover wash, the disabled dim, and a `button` role only when it has an action.
+- fae1b1a: `@tallyui/core` adds `MoneyFormatProvider`, `useFormatMoney` and `useCurrencySymbol`. `@tallyui/pos`'s `CurrencyProvider` renders the provider, and every `@tallyui/components` money amount and money-input symbol now reads the store's money format when one is provided. Without a provider, nothing changes. `discountLabel` takes an optional formatter as its third argument.
+- 79e5c03: OrderNoteSheet, WCPOS v2's Order details note field; Cart's optional noteSheet opens it from the ⋮ menu and the note row and writes the sale's note (no change without the prop).
+- 358fa6a: OrderStatusBadge renders as StatusBadge, as in WCPOS v2: a coloured dot and a foreground `text-sm` word with no tinted pill behind it (the `bg-*/15` wash, rounded corners and padding are gone). `className` still lands on the row, so an app that wants a background can pass one.
+- 64f30f9: RegisterBar draws its pill as WCPOS v2's warning dot and word, and its optional `awaitingStore` counts the sales still to send: 'Offline · N sales to send' offline, 'N sales awaiting store' online when no other pill shows.
+- 96e5b2c: RegisterCount's cash field is a large figure with the currency symbol in the field, as WCPOS v2's count. ClosureSheet leads with the cash variance as a large signed figure under "Variance · short/over/Exact", over Counted and Expected boxes; `closure-counted-cash`, `closure-expected-cash` and `closure-variance-cash` now hold the figure alone (e.g. "€63.30", "−€36.70"); other tenders are unchanged.
+- 502090c: `RegisterPanel` takes an optional `openedBy: { name, avatar? }` for the side sheet: the opener's name ends the header line in place of "Cashier", and WCPOS v2's "opened HH:MM by" line with the opener's avatar (or initials) sits under the drawer figure; without it nothing changes.
+- 5f8a7a7: Adds `SalesCardPanel`: the Sales room's Payments, Top products, Categories and Taxes cards open their figure in full in a right-hand panel, with a title, an optional scope line, a table with a total row, the order count and gross (and any missing cost) in the footer, Close, and Export CSV when `onExportCsv` is given. A `SalesCards` head that opens a panel is now 44 pt tall, dims on press and shows a chevron after its figure; without `onOpenCard` the cards are unchanged.
+- b050d25: DialogContent side="right": slides in and out with WCPOS v2's panel motion (250ms in, 200ms out, scrim fade); instant under reduced motion.
+- a6b7b9a: StatusBadge: a status as a coloured dot and a word, as in WCPOS v2. Variants `default`, `ok`, `warning`, `bad`, `info`, `muted`; `size="caption"` for a row's state line or a log level.
+- 0a9e866: `ToneDisc`: the round tone mark a state leads with, as in WCPOS v2: a wash and one glyph per tone (`ok`, `warning`, `bad`, `info`, `muted`), sizes `sm` 44, `default` 56 and `lg` 96, and an `icon` override. Adds the `CheckIcon`, `AlertTriangleIcon`, `AlertCircleIcon` and `InfoCircleIcon` glyphs. Needs `@tallyui/theme` with the tone tokens.
+- 10760f4: Nine Tabler nav icons from WCPOS v2's rail: CashRegisterIcon, GiftIcon, ReceiptIcon, DiscountIcon, UsersIcon, ChartLineIcon, ActivityHeartbeatIcon, SettingsIcon and MessageQuestionIcon.
+- 66ba608: `CustomerPicker` takes `showAvatar` to draw v2's initials on each result row, and `withGuest` to draw a Guest row above the results that picks `null`, as v2's customer select does. Both default to `false`.
+- 687c1f0: Dialog: opt-in `showClose`/`closeLabel` on DialogContent and `bordered` on DialogFooter draw v2's corner close and footer divider; defaults unchanged.
+- fca7e93: DiscountForm: `layout="dialog"` gains v2's Quick discount / Coupon tabs when `onApplyCoupon` is passed. The Coupon tab picks one of the app's `coupons` (the new `DiscountCoupon` type) from a searchable list and applies it; a refusal shows inline and the dialog stays open. Without `onApplyCoupon` the dialog renders as before.
+- f9d9e6b: DiscountForm `layout="dialog"` (v2 Add Discount) and an optional `title`; the default rendering is unchanged.
+- 9a7a39f: DiscountForm: the Coupon tab gains v2's "New coupon" (+) button through `onNewCoupon`, disabled with a reason through `newCouponDisabledReason`.
+- 26377f6: ProductFilterBar: optional `termGroups` adds a searchable single-select term pill per group (e.g. per Vendure facet) after the built-in chips.
+- 42e1517: `LinePopover` gains `commit="close"`, WCPOS v2's grow keypad: a full-width Done in place of Apply and Cancel, and on a quantity a − / + stepper row that writes at once, with − turning into Remove at a shown quantity of 1 when `onRemove` is given. Escape closes without writing, and any other close writes what was typed. `Cart` opts its quantity popover into it with `lineCommit="close"` (with `lineEditor="popover"`), which drops the popover's Remove action in favour of Remove at 1; the price popover keeps Apply and Cancel. The default draws the popover as before.
+- b13aefe: product tiles show v2's press veil and the in-cart badge plays v2's count beat, still under reduced motion.
+- 5f465fa: Cart: lines, fees and shipping pulse green when added (lines also on a quantity change), and tint red and collapse when removed, as in WCPOS v2; nothing moves under reduced motion.
+- d5bfbaa: MovementSheet: v2's reason chips fill the reason field; `reasons` replaces the defaults.
+- 52b67b4: Shell: NavRail and NavDrawer sit on WCPOS v2's sidebar wash, and the active item lifts to a white square (a tint in dark) with the selected ink. New theme tokens: sidebar, sidebar-foreground, sidebar-border, rail-accent, rail-selected, rail-selected-foreground. Apps with their own theme variants add these six to each variant.
+- b084d5a: `OpenSaleTabs` shows how long a parked sale has waited, in hours and in the warning colour, once it has waited an hour; `OpenSale` gains `parkedAt`.
+- 563e970: `OpenSaleTabs` takes a `className`, merged onto the bar's root, so an app that places the tabs at the top of the cart can restyle it.
+- 2163425: OrderDetail: optional `onReopen`, `onSync`, `onReceipt` and `reopenDisabled` draw v2's pinned order footer; nothing changes when they are omitted.
+- 14b1dd7: OrderStatusBadge follows WCPOS v2 on four points: `'refunded'` now uses the muted tone shared with `'cancelled'`; the muted tone's dot is `bg-muted-foreground` and its word stays in the foreground colour, so the Cancelled dot is visible; `'trash'` (Trash) and `'checkout-draft'` (Draft) join `OrderStatus`; and a status the badge does not know shows its raw string in the default (primary) tone instead of "Pending".
+- f82e8cc: OrderStatusBadge: adds WCPOS v2's `'on-hold'` (On hold), `'failed'` (Failed), `'pos-open'` (POS open) and `'pos-partial'` (POS partial) statuses with v2's tones. OrderDetail's money rows centre their amounts vertically.
+- c05ed6f: `OrderSyncNotices` is exported: the per-sale sync notices `OrdersList` shows (refusal, stuck since, late session, local warnings, note not sent, the store's warnings), with `children` at Retry's place, for an app's own order screen. `OrdersList` renders it and looks the same.
+- 0910c36: OrderDetail: optional discount (with coupon codes), shipping (with method), fees and per-rate tax rows, and a meta line under the header, in WCPOS v2's order view order. The hairline now sits above Total.
+- 61846d3: The tender pane offers every manual-capture payment method the host passes, records each as its wire method plus its own `methodId`, and labels ledger, takings and report rows with the method's title; takings and report rows key by kind and id (`legMethodId`), so two methods never merge. `takingsByMethod` returns an object with no prototype; read it with `Object.hasOwn`, not `hasOwnProperty`.
+- f6e680d: POSLayout: `tabBar="bottom"` draws v2's phone tab bar (Products / Cart with a count) and keeps both panes mounted.
+- 46d6dce: `POSLayout` takes `renderCheckout`, WCPOS v2's checkout column: when given, its result takes the products column's place and the browse slot unmounts. In the split layout the cart stays beside it (as the tender ledger); in the stacked layout it is the whole body, with no tabs. It is called with the layout in force, so the pane can draw its own ledger when the cart is not on screen.
+- d7435c8: Receipts and the orders list show what the store owes back on a reopened sale as Refund due (`ReceiptData.refundDueMinor`, `refundDueOf`); the receipt's change no longer includes it.
+- 257aafa: New `PrintingSettings`, a props-only port of the Printers section of WCPOS v2's Settings › Printing: the printer list with Test Print, Edit, Set Default and a confirmed Delete, the empty state, and Add Printer.
+- 1c368cf: ProductFilterBar: optional `terms` turns Category, Tag and Brand into v2's searchable picker pills; `onTermPress` still works.
+- 13b6de6: `ProductTable` takes `cartQuantity(doc)`, and draws WCPOS v2's in-cart count in the add column: once the cart
+  holds the product, the primary count badge takes the `+`'s place, labelled "In cart: N", and pressing it adds
+  another as the `+` does. A product with variants keeps its `>`. `Catalogue`'s table view passes the counts it
+  already reads from `cartLines`, as its grid tiles show them.
+- 4b605c3: `ProductTable` takes `showThumbnail` and `showAddButton`, and `Catalogue` takes `tableRow: { thumbnail, addButton }` for its table view, drawing WCPOS v2's product table row: the product's thumbnail leads the row (40 px, 56 px under a coarse pointer, an initial tile when there is no image) and a `+` labelled "Add to cart" ends it, or a `>` labelled "Variations" for a product with more than one variant. The button calls `onSelect` exactly as a row press does, once. Both default off. `PlusIcon` and `ChevronRightIcon` are new exports.
+- 9f3e83e: New `productsScreenColumns` and `useProductsScreenColumns` give `ProductTable` the read columns of WCPOS v2's Products screen: image, product with its variation count, stock with a Manage switch, stock status, categories and price.
+- 2964ecd: `Receipt` takes `actions`: a node that replaces Print receipt and New sale (never printed), or `false` for no buttons; `newSale` is then optional.
+- a51d4b2: `ReceiptSheet` takes an optional `email` prop (`ReceiptSheetEmail`) that draws WCPOS v2's receipt email form inside the sheet: "Email Receipt" opens an "Email Address" field prefilled from `defaultAddress`, an optional "Save email to the customer" switch, v2's offline notice with "Send when online", and an inline error. Send checks the address and calls `onSend`, which sends or queues in the app and returns a refusal to show or `null` to close the form. With `email` given, `onEmail` is not called; without it the sheet is unchanged.
+- 6b1eec0: ReceiptSheet draws v2's header close icon, footer top border and print icon; new `PrinterIcon`.
+- 70ac42f: New `ReceiptSheet`, a props-only right-edge sheet that ports the layout of WCPOS v2's receipt print sheet: template choice, printer, the app's preview, and Close, Email Receipt and Print.
+- 30c0cbf: The refund due on a reopened sale now reaches the receipt templates, ESC/POS, the WCPOS template data and the customer display, never as change (ADR-090 gate 36).
+- 1234170: RegisterCount is keypad-first and folds the notes and coins tiles under "Count by notes and coins", closed by default.
+  A new `onPrint` prop makes Close read "Close & print" and prints the Z report after the close lands.
+- bd6fa29: `RegisterCount` folds the non-cash tender inputs under an "Other tenders" toggle, closed by default and shown only when the session expects a non-cash tender, as in WCPOS v2.
+- 54c7d97: Reports: the period sales report counts a reopened sale's till money only, leaving out what the store already held, as takings do, and the Z report's breakdowns flag `tax_includes_store_paid` when its tax rates include tax on amounts paid earlier in the store (`TAX_STORE_PAID_NOTE`).
+  The closure sheet shows that note when the flag is set.
+- 42ca292: `SalesCards` takes `hide` (and `SalesRoom` takes `hideCards`) to leave out cards a backend's report cannot fill; without it all six show as before.
+- 21ecf2b: The Sales room's Orders card shows Median and Largest, as v2 does.
+- 827675a: New exports the platform apps copied before: `deriveSessionFigures` and `deriveVariance` on `@tallyui/core`'s browser-safe main entry; `tenderLabel` and a new `syncStatusQuiet` predicate (true when `SyncStatus` would show only "Sales are up to date.") on `@tallyui/components`.
+- d29c19c: `Skeleton` and `skeletonCount` (with `SKELETON_MAX_ROWS`), ported from WCPOS v2: a still, muted placeholder in the shape of what is loading, with `row`, `tile` and `chip` heights from the scale. `Catalogue` now draws skeleton tiles in the product tile's frame (grid view) or the table's header over skeleton rows (table view) while its first pull runs, instead of the "Loading products…" text; the text stays as the loading container's accessible label. `ProductTable` gains a `loading` prop: with no items, it draws its real header and one line placeholder per column cell instead of `emptyState`.
+- cf276f5: `Tender` and `TenderPane` take `back={false}` to hide the Back button, for a host that leaves the tender stage itself (WCPOS v2's phone checkout); the default still draws Back.
+- 8fbf880: The tender pane leads with the change due once the cash entered covers more than the total, with the tendered amount under it, as WCPOS v2 does.
+- 40cdd3b: `TenderPane` draws WCPOS v2's Full balance chip (`tender-quick-balance`) for a picked method that gives no change, such as Card terminal. It reads "Full balance" when the entry already equals the amount due, "Full balance {amount}" otherwise, and "Exact {amount}" while a split plan is active; pressing it only sets the entry. Cash keeps its Exact and quick-cash chips unchanged. New catalogue keys: `pos_checkout.full_balance` and `pos_checkout.full_balance_label`.
+- 9432192: Cart's `tenderLedger` shows the payments ledger (legs, Total, Paid, Remaining) under the cart totals during tender, as WCPOS v2's checkout cart; `Tender` and `TenderPane` take `ledger={false}` to leave it out of the pane.
+- 1219ecf: The tender pane draws its payment methods as WCPOS v2's tiles: an icon above the title, equal-width in rows of five, the picked one bordered.
+- 8a4e608: The tender pane has WCPOS v2's Split chip on its headline: Split the rest offers 2 to 6 equal ways, each payment is pre-typed with its share, and a method tile keeps the share that is due instead of the whole balance.
+- cf82d26: The tender pane leads like WCPOS v2's: a To pay (or Remaining) caption beside Split, the amount being entered as the large figure above the method tiles, and centred quick-cash chips.
+- d44f0d4: `TenderPane`, `Tender` and Cart's `tenderLedger` take an opt-in `confirmVoid`. With it, Cancel payment on a ledger leg first asks WCPOS v2's "Cancel this payment?", with the leg's amount ("Return {amount} cash to the customer" for cash, else "Void {amount} on {title}"), and `sale.voidTender` runs only on confirm; Cancel writes nothing. Default `false`: Cancel payment voids at once, as before.
+
+### Patch Changes
+
+- d0a064f: The cart's Qty head fits at phone width in every scale, and the cart heads read `pos_cart.col_*` from the components' catalogue.
+- 5119d20: Catalogue's category breadcrumb now splits the parent and the category with a chevron icon at wide widths, collapses to one "‹ Categories" control on a phone, wraps a long category name instead of cutting it off, and takes focus when a category is opened from its tile, with Escape going back to the tiles on web.
+- 827675a: ChargeForm: visible, translatable Name and Amount labels; the amount shows the sale currency's symbol as an affix instead of a currency-code placeholder.
+- 03998b5: `CustomerDropdown` clears a next page's error once a retry of that page loads.
+- 091d09a: Internal: one reduced-motion hook in components; InCartBadge behaviour is unchanged.
+- 76f0747: Rename the filter's PaymentMethodKind to core's PaymentKind and the selector's PaymentMethod to PaymentSelectorMethod, keeping the old names as deprecated aliases.
+- bfb1ad0: Show the unsendable-update message and Retry for pending reopened sales. Tell cashiers to reopen again after a reopen-required or revision-conflict rejection, and offer Retry only when the outbox can requeue the order.
+  The unsendable-update message now tells the cashier what to do.
+- 2c76884: Under a coarse pointer the category chips, tabs, Grid/Table toggle, register bar menu button and camera scan button get a hit area of at least 44 px (v2's MinTargetBand), with each control drawn at its size as before.
+- 612a181: `CustomerPicker` selects nothing when a customer create resolves after the picker has unmounted (the host closed it mid-create).
+- adbd169: `DialogContent side="left"` now draws a sheet on the left edge that slides in from the left, as v2's order sheet does; it was drawn as a centred dialog, which also fixes `OrderNoteSheet`.
+- 64e8323: `@tallyui/pos` now exports `tillLegsTheStoreRefuses`, the ids of the till legs a reopened sale may not keep once the store's own locked legs cover its total, the same rule `finalizeOrder` refuses at completion (ADR-090 gate 36c).
+
+  The tender pane disables Complete on a reopened sale whose store payments already cover it while till money sits on the sale, says "The store already holds this sale's payment. Remove the {amount} taken here to finish.", and offers a Remove payment control on each such leg. Its refund-due line now reads from its own `pos_checkout.refund_due` key.
+
+- de8c530: OpenSaleTabs: ← and → step between the open-sale tabs on the web (v2 cart/tabs.tsx).
+- 1bddd27: OrderStatusBadge: accepts Medusa's `'canceled'` as well as `'cancelled'`, and shows both as "Cancelled", the spelling WCPOS v2 shows.
+- cb10230: ReceiptSheet draws its close X and footer divider with Dialog's `showClose` and `bordered`; the close X now sits in the sheet's top-right corner.
+- 7b30c77: RegisterCount takes a note with the close, and ClosureSheet shows it, as v2 does.
+- 827675a: RegisterPanel's side presentation keeps the register-panel-sales-count, -amount and -movements testIDs.
+- 839a1ef: SettingsGroup draws no empty card when it has no children (Printers while loading).
+- 827675a: `SwitchConfirm`: when signing out with the register still open, "Close register" is the primary button and "Sign out anyway" the outline one, as in WCPOS v2.
+- 17ef951: The tender pane shows a reopened order's refund due (its locked legs beyond the new total) as "Refund due", never as till change, and `@tallyui/pos` now exports `lockedRefundDueMinor` (ADR-090 gate 36).
+- 827675a: Internal tidy: the cart tabs use `@tallyui/pos`'s `isPartlyPaid` instead of a copy, and the catalogue, stock badge and variations popover share one stock-status label table. Behaviour unchanged.
+- 827675a: ToggleGroupItem shows the pressed style (bg-accent) on the selected item(s), as Toggle does.
+- 6d726e1: Warning words use the darker warning-text ink, as v2 does.
+- dbcbe24: On web, the disabled New coupon button's reason and each order row's hint now reach assistive technology through `aria-describedby`, since react-native-web drops `accessibilityHint`.
+- Updated dependencies [4843172]
+- Updated dependencies [7b30c77]
+- Updated dependencies [0b3edbb]
+- Updated dependencies [1455e76]
+- Updated dependencies [fae1b1a]
+- Updated dependencies [bfb1ad0]
+- Updated dependencies [028c0e3]
+- Updated dependencies [3942708]
+- Updated dependencies [81198d2]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [1f40158]
+- Updated dependencies [bc9a686]
+- Updated dependencies [827675a]
+- Updated dependencies [e928f11]
+- Updated dependencies [6929703]
+- Updated dependencies [64e8323]
+- Updated dependencies [e48cac6]
+- Updated dependencies [52b67b4]
+- Updated dependencies [b084d5a]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [f5a739f]
+- Updated dependencies [3b25108]
+- Updated dependencies [1f3eae7]
+- Updated dependencies [b153da4]
+- Updated dependencies [61846d3]
+- Updated dependencies [383f99c]
+- Updated dependencies [86533d4]
+- Updated dependencies [048fbcf]
+- Updated dependencies [bc9a686]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [602a062]
+- Updated dependencies [1f40158]
+- Updated dependencies [d7435c8]
+- Updated dependencies [dff26e6]
+- Updated dependencies [d641cdf]
+- Updated dependencies [4e9fd98]
+- Updated dependencies [58602f6]
+- Updated dependencies [e020d0e]
+- Updated dependencies [e3afcfa]
+- Updated dependencies [98a0b9a]
+- Updated dependencies [bbe2e73]
+- Updated dependencies [e826ec0]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [5b1ac68]
+- Updated dependencies [23af8bf]
+- Updated dependencies [2b00532]
+- Updated dependencies [ce450d7]
+- Updated dependencies [3dea768]
+- Updated dependencies [290cf51]
+- Updated dependencies [f1748d1]
+- Updated dependencies [7a6075b]
+- Updated dependencies [2cb63cb]
+- Updated dependencies [30c0cbf]
+- Updated dependencies [6247788]
+- Updated dependencies [1f298cf]
+- Updated dependencies [54c7d97]
+- Updated dependencies [fa7ba60]
+- Updated dependencies [21ecf2b]
+- Updated dependencies [827675a]
+- Updated dependencies [f51a692]
+- Updated dependencies [17ef951]
+- Updated dependencies [3cec48d]
+- Updated dependencies [622196b]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [9e8f104]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [6a7f41b]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [5c4711c]
+- Updated dependencies [cc6f6cf]
+- Updated dependencies [23a6813]
+  - @tallyui/pos@3.21.0
+  - @tallyui/primitives@3.21.0
+  - @tallyui/core@3.21.0
+  - @tallyui/theme@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes

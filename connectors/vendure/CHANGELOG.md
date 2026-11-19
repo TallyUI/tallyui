@@ -1,5 +1,40 @@
 # @tallyui/connector-vendure
 
+## 3.21.0
+
+### Minor Changes
+
+- 791429d: `listVendureCustomers(context, options?)` lists a page of the store's customers with Vendure's list options passed through, the store's total, each customer's `createdAt` and its default billing and shipping addresses.
+- ca32a01: Vendure products now carry their option groups: `getVariants` gives each variant's `options` keyed by group name (a cart line reads "Size: 32"), and the new `getVariantOptions` lists the groups and their values in the order the API returns them for the catalogue's option pickers. The products schema goes from version 2 to 3, so the products collection drops and resyncs once on upgrade (ADR-060 amendment 9); orders, register sessions and stock levels on the till are kept. Take the upgrade on a till while it is online, so the catalogue refills straight away.
+
+### Patch Changes
+
+- 827675a: Internal tidy: the WooCommerce order, customer and order-push code use `WCPOS_UUID_META_KEY` instead of spelling the meta key, and stale doc comments are corrected (the Woo coupon order.create version, Medusa's ignored `maxPages` advice, the errors Vendure's `gql` throws). Behaviour unchanged.
+- 827675a: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- Updated dependencies [fae1b1a]
+- Updated dependencies [028c0e3]
+- Updated dependencies [3942708]
+- Updated dependencies [81198d2]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [1f40158]
+- Updated dependencies [bc9a686]
+- Updated dependencies [827675a]
+- Updated dependencies [e928f11]
+- Updated dependencies [e48cac6]
+- Updated dependencies [827675a]
+- Updated dependencies [f5a739f]
+- Updated dependencies [3b25108]
+- Updated dependencies [61846d3]
+- Updated dependencies [7a6075b]
+- Updated dependencies [2cb63cb]
+- Updated dependencies [827675a]
+- Updated dependencies [f51a692]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [cc6f6cf]
+- Updated dependencies [23a6813]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes

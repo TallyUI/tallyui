@@ -1,5 +1,123 @@
 # @tallyui/pos
 
+## 3.21.0
+
+### Minor Changes
+
+- 4843172: `analyzeScanTrace` (v2's barcode Test panel verdict): a scan or not, the code, the gaps, and one-tap fixes as `threshold`/`minChars`/`prefix` patches; `replayWedgeDetector` also reports `minAvgGapMs`.
+- 64e8323: `@tallyui/pos` now exports `tillLegsTheStoreRefuses`, the ids of the till legs a reopened sale may not keep once the store's own locked legs cover its total, the same rule `finalizeOrder` refuses at completion (ADR-090 gate 36c).
+
+  The tender pane disables Complete on a reopened sale whose store payments already cover it while till money sits on the sale, says "The store already holds this sale's payment. Remove the {amount} taken here to finish.", and offers a Remove payment control on each such leg. Its refund-due line now reads from its own `pos_checkout.refund_due` key.
+
+- b084d5a: `OpenSaleTabs` shows how long a parked sale has waited, in hours and in the warning colour, once it has waited an hour; `OpenSale` gains `parkedAt`.
+- 827675a: order.create version 9 (#790, ADR-088): the order builder splits each store-priced coupon over its lines, `finalizeOrder` stores the split (`PosOrderCoupon.lines`, `PosOrderCouponLine`), and the till sends it as `coupons[].lines` when the server advertises 9. Below 9 every payload is byte for byte as before. `pos_orders` goes to schema version 13 (identity migration, one-way) and `ORDER_CREATE_MAX_VERSION` is 9.
+- 1f3eae7: The order outbox sends a reopened sale (a `pos_orders` row with `storeOrderId`) as `order.update` v1, never
+  `order.create` (ADR-090 decision 4). New `toOrderUpdateEnvelope`; `toOrderCreateEnvelope` throws for such a row.
+  `OrderOutboxOptions.transport` and `useOrderOutbox`'s `transport` take `OrderCreateEnvelope | OrderUpdateEnvelope`.
+  Nothing writes `storeOrderId` yet.
+- b153da4: `OrderOutbox.discard(orderId)` and `useOrderOutbox().discard` remove one rejected sale.
+- 383f99c: `createClosureContext({ currency, store, … })` builds the `ClosureContext` for `buildClosureDocument` and `buildXReportDocument`. It has one money formatter (`formatDecimalMoney`, at the currency's minor-unit digits) and English defaults for every closure label (`ENGLISH_CLOSURE_LABELS`), so apps no longer assemble it by hand.
+- 048fbcf: `pos_orders` goes to schema version 14 (identity migration, one-way, ADR-090 decision 5): a reopened sale's `storeOrderId` and `baseRevision`, a line's, fee's and shipping line's `storeLineId`, and a payment's `storePaymentId`. Nothing writes them yet, and `order.create` never sends them.
+- bc9a686: `pos_orders` goes to schema version 15 (identity migration, one-way, ADR-090): `baseRevision` may be 128 characters, and a sale may store `refundDueMinor`. Nothing writes `refundDueMinor` yet. The store-order rebuild accepts a revision of up to 128 characters, down from 255.
+- fed2ec4: `pos_orders` goes to schema 16 (identity migration, one-way): a payment may store `methodId`. `addTender`/`setTender` take an optional `methodId`, kept through finalize, parking and reopen. The outbox sends it only to a store whose order.create cap is 10 or more (then as version 10); below that every payload is unchanged. New `takingsByMethod`; `reportOrderFromPosOrder` keys a leg with a methodId by its kind and id (`legMethodId`; optional `methodTitle` labels it by its own id). Register rows and payloads are unchanged.
+- 602a062: The order outbox no longer sends a reopened sale whose `order.update` it cannot build. It keeps the row pending, holds that store order's later rows behind it, and shows it in Needs attention (`UPDATE_UNSENDABLE`). New `isRequeueableOrder(order)`: `requeue()` no longer resends a reopened sale refused with `reopen_required` or `revision_conflict`.
+- d7435c8: Receipts and the orders list show what the store owes back on a reopened sale as Refund due (`ReceiptData.refundDueMinor`, `refundDueOf`); the receipt's change no longer includes it.
+- dff26e6: New `reopenStoreOrder` reopens a store order from the detail read the cashier opened. It refuses the order before anything is sent when:
+
+  - its status is cancelled, failed or trash;
+  - a product is gone from the till's catalogue;
+  - it has been paid more than its total;
+  - any W2 rebuild check fails.
+
+  It also refuses an order this till already holds: pass `useSale().holdsStoreOrder` as `openHere`.
+
+  Otherwise it sends `order.reopen` with that read's revision, reads the order again and builds the cart from the new read. The pre-check uses the sale's per-customer tax context (`taxContextFor`). When the answer is unknown, the result carries the envelope; pass it back as `resend` to retry with the same command id.
+
+  New `useSale().openStoreOrder` loads the result into an empty sale. Locked store payments no longer stop `closeSale` or `switchSale`.
+
+  `isReopenOffered` now also needs `orderCreate` 5 or more. A parked reopened order keeps the store's prices when it is resumed.
+
+- 4e9fd98: finalizeOrder completes a reopened store order (ADR-090): it writes the store ids, the base revision and the refund due, and the row is sent as order.update.
+- 58602f6: A sale's `Order` can carry the store order it reopens (`storeOrder`), the store's ids for the lines, fees and shipping it keeps (`storeLineId`), and the payments the store already holds (`storePaymentId`, `locked`). These ids survive resume, re-tax, charge edits and line splits. A locked payment is never removed, voided or replaced by a tender. With no store ids set, nothing changes.
+- e3afcfa: `useBarcodeScanner` takes an optional `fieldPolicy`. The default, `'reset'`, keeps today's rule (keys typed into an input or textarea are never scanned); `'ignore-editable'` also leaves keys typed into a select or a contentEditable element alone.
+- 98a0b9a: The wedge detector and `useBarcodeScanner` take an optional `gapRule`. The default, `'folded'`, keeps v2's folded average; `'every'` requires every gap in a burst to be under the threshold, so a slower key drops the burst and starts a new one.
+- bbe2e73: `useBarcodeScanner` takes `fieldPolicy: 'hold-money'`: as `'ignore-editable'`, except that a money field (an input with `inputmode="decimal"`) holds its keys until the run is known, so a scan never types into an amount and other runs go in at the caret as typing.
+- e826ec0: `sendOrderReopen` sends an online `order.reopen` v1 command, at most one per order in flight, and
+  `isReopenOffered` says when Re-open is offered (ADR-090).
+- 827675a: The tender reducer takes WCPOS v2 split V1 additively: `thenWays` on the fixed plan, `entryMode` with `set-entry-mode`, `percentOfMinor`, and pure `tenderFigures`. `SplitTab` is deprecated.
+- 827675a: `useSale` takes an optional `tenderGate`, awaited before a tender starts; a refusal stays on the cart and shows its message. Without it `startTender` is unchanged.
+- 5b1ac68: `toOrderUpdateEnvelope` builds at order.create version 5 or more, so a reopened sale never drops the store's fees and shipping; a store capped below 5 gets `UnsupportedOrderVersionError(5, cap)`. It refuses a row without `baseRevision` or without figures, and it pairs kept items' store ids by client id rather than by position (ADR-090). `toOrderCreateEnvelope` is unchanged.
+- 7a6075b: `@tallyui/core` adds the `ProductTerm` type and an optional `getTerms` product trait, so a connector can report a product's terms (facet values, tags, brands) each in its group; without it a product has no terms.
+  `@tallyui/pos` adds `productTerms`, `listTermGroups` (each group and term once, sorted by name like `listCategories`) and `hasTerm`.
+- 30c0cbf: The refund due on a reopened sale now reaches the receipt templates, ESC/POS, the WCPOS template data and the customer display, never as change (ADR-090 gate 36).
+- 6247788: `register_sessions` moves to schema version 2. Rows gain `count_note`, the cashier's note on the close count, which the migration sets to `null` on every older row; new sessions start with `count_note: null`. `closeSession` takes `note`, and the closure freezes a non-blank note as `breakdowns.variance_note`.
+
+  **Upgrade notes**
+
+  - Apps already open the collection with `await addRegisterSessionCollection(db)`, which migrates a version-0 or version-1 collection and keeps the register document.
+  - **Storage is one-way.** Once a till has opened this version, `register_sessions` is at schema version 2, and an older build shows no sessions until it is upgraded again. Never roll an app back across this version, and never open a second session while it hides the first.
+
+- 54c7d97: Reports: the period sales report counts a reopened sale's till money only, leaving out what the store already held, as takings do, and the Z report's breakdowns flag `tax_includes_store_paid` when its tax rates include tax on amounts paid earlier in the store (`TAX_STORE_PAID_NOTE`).
+  The closure sheet shows that note when the flag is set.
+- fa7ba60: `useSale().setAddresses(billing, shipping)` changes the picked customer's addresses on the open sale, re-taxing it like `setCustomer`, in the cart only (`ADDRESS_CHANGE_REFUSED` otherwise). A reopened refused order keeps the addresses it was stored with.
+- 21ecf2b: `salesFigures` totals carry `medianMinor` and `largestMinor` (v2's Orders card figures).
+- 17ef951: The tender pane shows a reopened order's refund due (its locked legs beyond the new total) as "Refund due", never as till change, and `@tallyui/pos` now exports `lockedRefundDueMinor` (ADR-090 gate 36).
+
+### Patch Changes
+
+- 7b30c77: closeSession stores the count note trimmed.
+- fae1b1a: `@tallyui/core` adds `MoneyFormatProvider`, `useFormatMoney` and `useCurrencySymbol`. `@tallyui/pos`'s `CurrencyProvider` renders the provider, and every `@tallyui/components` money amount and money-input symbol now reads the store's money format when one is provided. Without a provider, nothing changes. `discountLabel` takes an optional formatter as its third argument.
+- bfb1ad0: Show the unsendable-update message and Retry for pending reopened sales. Tell cashiers to reopen again after a reopen-required or revision-conflict rejection, and offer Retry only when the outbox can requeue the order.
+  The unsendable-update message now tells the cashier what to do.
+- 81198d2: `formatMoney(money, locale, format)` takes an optional store money format (`MoneyFormat`: currency position, thousand and decimal separators, decimals, symbol), as WooCommerce stores set them; without one it reads exactly as before, through Intl. `@tallyui/pos`'s `CurrencyProvider` now formats through it, and its `CurrencyFormat` type is `MoneyFormat`.
+- e48cac6: `minorToMajor` is exported from the `@tallyui/core` root and `minorUnitDigits` from `@tallyui/core/server`, so each money converter has one name everywhere. `currencyDecimals`, `moneyToMajor` and `@tallyui/pos`'s `minorToDecimal` are deprecated in their favour; nothing is removed.
+- 61846d3: The tender pane offers every manual-capture payment method the host passes, records each as its wire method plus its own `methodId`, and labels ledger, takings and report rows with the method's title; takings and report rows key by kind and id (`legMethodId`), so two methods never merge. `takingsByMethod` returns an object with no prototype; read it with `Object.hasOwn`, not `hasOwnProperty`.
+- 86533d4: Deprecate the 16 customer-display tuning constants and keyboard-wedge helpers as internal; they leave the public entry at the next major.
+- 1f40158: `ratePpmFromPercent` now comes from `@tallyui/core`; the export and its behaviour are unchanged.
+- d641cdf: - `reopenRefusedOrder` refuses a row carrying a store order (`store_order`).
+  - Locked store payments (`storePaymentId`) no longer count in register takings, drawer, method totals or the unsynced total.
+- e020d0e: A scanner prefix or suffix longer than one character (such as an AIM symbology id) is now stripped from the edges of a scanned code; before, only a single-character prefix or suffix was ever stripped.
+- 23af8bf: Reprints and Reports recompute the per-rate tax split of a WooCommerce sale with a converted line instead of
+  trusting the stored one, which was wrong for sales finalized before the previous fix (ADR-065). Stored orders
+  are not rewritten.
+- 1f298cf: Register figures and closures keep a payment method id named like an Object.prototype member (`__proto__`, `constructor`) as an ordinary key, instead of dropping it or writing to Object.prototype.
+- 827675a: Internal tidy: `allocateOrderDiscount` uses the shared largest-remainder routine, and the order builder applies line and order discounts through one helper. Behaviour and exports unchanged.
+- 9e8f104: Internal tidy: the customer-display modules share one system clock, one set of sale actions and one way to make a display call. Behaviour and exports unchanged.
+- 827675a: Internal tidy: the order and register outboxes share one retry-delay function and backoff defaults, and the order outbox validates an advertised order.create max in one place. Behaviour and exports unchanged.
+- 827675a: Internal tidy: the register hook and `writeClosure` build payment ledger rows with one function, and the conflict take-over and abandon actions share one fresh read. Behaviour and exports unchanged.
+- 6a7f41b: Internal tidy: the WooCommerce coupon source and discount codes share one customer-id check. Behaviour and exports unchanged.
+- 827675a: Internal tidy: the Vendure price fingerprint builds each variant's entry in one place, order history reuses its one tally-fields option, `REQUIRED_MULTI_INSTANCE_BY_ENGINE` keys on `WEB_STORAGE_ENGINE`, and stale planning and version comments are corrected. Behaviour unchanged.
+- 827675a: `precheckCommand` refuses an order.create 9 payload that carries a customer address without `taxAddress` (#790).
+
+  The order outbox treats an `unsupported_version` downgrade that would not go strictly lower, or would stay above the store's cap, as a terminal rejection instead of resending (#790).
+
+- 5c4711c: Fix: a WooCommerce-rounded sale with a line priced in the other tax mode recorded a per-rate tax split
+  (`taxByRate`, sent to the store, and the Z report's per-rate figures) that differed from its printed receipt. The
+  receipt, the recorded split, Reports and the Z report now share one rule.
+- Updated dependencies [fae1b1a]
+- Updated dependencies [028c0e3]
+- Updated dependencies [3942708]
+- Updated dependencies [81198d2]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [1f40158]
+- Updated dependencies [bc9a686]
+- Updated dependencies [827675a]
+- Updated dependencies [e928f11]
+- Updated dependencies [e48cac6]
+- Updated dependencies [827675a]
+- Updated dependencies [f5a739f]
+- Updated dependencies [3b25108]
+- Updated dependencies [61846d3]
+- Updated dependencies [7a6075b]
+- Updated dependencies [2cb63cb]
+- Updated dependencies [827675a]
+- Updated dependencies [f51a692]
+- Updated dependencies [827675a]
+- Updated dependencies [827675a]
+- Updated dependencies [cc6f6cf]
+- Updated dependencies [23a6813]
+  - @tallyui/core@3.21.0
+
 ## 3.20.1
 
 ### Patch Changes

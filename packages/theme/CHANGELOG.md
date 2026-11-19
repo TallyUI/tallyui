@@ -1,5 +1,13 @@
 # @tallyui/theme
 
+## 3.21.0
+
+### Minor Changes
+
+- 52b67b4: Shell: NavRail and NavDrawer sit on WCPOS v2's sidebar wash, and the active item lifts to a white square (a tint in dark) with the selected ink. New theme tokens: sidebar, sidebar-foreground, sidebar-border, rail-accent, rail-selected, rail-selected-foreground. Apps with their own theme variants add these six to each variant.
+- 3cec48d: Chart colour tokens from WCPOS v2, light and dark: `c1`–`c5` and their aliases `chart-1`–`chart-5` (classes such as `bg-c1` and `fill-chart-3`). Each meets 3:1 on the card. No existing token changes.
+- 622196b: Tone tokens from WCPOS v2, light and dark: `ok`, `ok-bg`, `warning-text`, `warning-bg`, `bad`, `bad-bg` (classes such as `bg-ok-bg` and `text-bad`). `ok` equals `success` and `bad` equals `destructive`; the `-bg` tokens are the washes behind a tone's glyph or band. No existing token changes.
+
 ## 3.20.1
 
 ## 3.20.0
