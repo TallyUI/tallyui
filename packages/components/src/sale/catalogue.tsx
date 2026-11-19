@@ -12,6 +12,7 @@ import { STOCK_STATUS_LABELS } from '../product/product-stock-badge';
 import { VariationPicker } from '../product/variation-picker';
 import { InCartBadge } from '../product/in-cart-badge';
 import { PressVeil } from '../product/press-veil';
+import { VariantParentTile, VariantTile } from '../product/variant-tile';
 import { Popover } from '@tallyui/primitives';
 import { CameraScanButton } from '../product/camera-scan-button';
 import { CameraScannerPanel, type CameraScannerPanelProps } from '../product/camera-scanner-panel';
@@ -134,8 +135,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** The cashier's next filters (requested filters when controlled). */
   onFiltersChange?: (filters: ProductFilters) => void;
   /** v2's Product settings › Variations. 'list' (default) opens the variant list chooser; 'popover' opens a grid tile's
-   * VariationPicker in a popover for a product with option groups. The table view keeps the list chooser. */
-  variationsStyle?: 'list' | 'popover';
+   * VariationPicker in a popover for a product with option groups; 'drill' swaps the grid for the product's variant
+   * tiles, with the product's tile first as Back, as v2's "Open in place". The table view keeps the list chooser. */
+  variationsStyle?: 'list' | 'popover' | 'drill';
   /** Show v2's camera scan button beside the search box; it opens an inline CameraScannerPanel. Default false.
    * The button shows only when cameraScanner is passed too. */
   cameraScan?: boolean;
@@ -253,6 +255,21 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
   useEffect(() => { if (chooserId !== null && choices.length === 0) setChooserId(null); }, [chooserId, choices]);
+  // The drill ('drill' style, grid view) is live like the chooser: the product's id, its tiles from the current entries.
+  const [drillId, setDrillId] = useState<string | null>(null);
+  const drillEntries = useMemo(() => (drillId === null ? []
+    : entries.filter((entry) => traits.getId(entry.product) === drillId)), [entries, drillId, traits]);
+  // A product that leaves the catalogue leaves its drill; so do a new search, a category change and the table view.
+  useEffect(() => { if (drillId !== null && drillEntries.length === 0) setDrillId(null); }, [drillId, drillEntries]);
+  useEffect(() => { setDrillId(null); }, [query, activeCategory?.id, state.view]);
+  // The variant's option values in the product's group order, then any other options; the title when it has none.
+  function chipsOf(entry: CatalogueEntry<Doc>) {
+    const options = entry.variant.options ?? {};
+    const names = (traits.getVariantOptions?.(entry.product) ?? []).map(({ name }) => name)
+      .filter((name) => Object.prototype.hasOwnProperty.call(options, name));
+    const chips = [...names, ...Object.keys(options).filter((name) => !names.includes(name))].map((name) => options[name]);
+    return chips.length > 0 ? chips : [entry.variant.title ?? traits.getName(entry.product)];
+  }
 
   // The picker step (#495): the entry waiting for its "Any" picks, and the cashier's picks so far.
   const [pickEntry, setPickEntry] = useState<CatalogueEntry<Doc> | null>(null);
@@ -287,7 +304,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   function selectProduct(product: Doc) {
     const variants = entries.filter((entry) => traits.getId(entry.product) === traits.getId(product));
     if (variants.length === 1) select(variants[0]);
-    else { closePicker(); setChooserId(traits.getId(product)); }
+    else if (variationsStyle === 'drill' && state.view !== 'table' && variants.length > 1) {
+      closePicker(); setChooserId(null); setDrillId(traits.getId(product));
+    } else { closePicker(); setChooserId(traits.getId(product)); }
   }
 
   // The variations popover (#719): the one open popover's product id, and each product's current entries in order.
@@ -417,7 +436,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
-      ) : <ProductGrid items={results} numColumns={columns}
+      ) : drillEntries.length > 0 ? <ProductGrid numColumns={columns} showUnsellable
+        items={[{ id: 'parent' }, ...drillEntries.map((entry) => ({ id: `variant-${entry.variant.id}`, entry }))]}
+        renderItem={({ entry }: { entry?: CatalogueEntry<Doc> }) => entry
+          ? <VariantTile testID={`variation-tile-${entry.variant.id}`} name={traits.getName(entry.product)} chips={chipsOf(entry)}
+            price={variantPriceLabel(entry.variant, currency)} stockStatus={entry.variant.stock.status} onPress={() => select(entry)} />
+          : <VariantParentTile doc={drillEntries[0].product} onPress={() => setDrillId(null)} />} />
+      : <ProductGrid items={results} numColumns={columns}
         renderItem={(product: Doc) => {
           const id = traits.getId(product);
           const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
