@@ -5,9 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { OrderCreateEnvelope } from '@tallyui/core';
 import { payloadBoundErrors, payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
-import { ORDER_CREATE_MAX_VERSION, PAYMENT_METHOD_ID_ORDER_CREATE_VERSION, toOrderCreateEnvelope, toOrderUpdateEnvelope } from './command';
+import { PAYMENT_METHOD_ID_ORDER_CREATE_VERSION, toOrderCreateEnvelope, toOrderUpdateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
-import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
 
 const fixturePath = fileURLToPath(new URL('./__fixtures__/order-create-v10.json', import.meta.url));
@@ -59,13 +58,9 @@ describe('order.create v10 payment method ids (ruling A, 2026-11-18)', () => {
     expect(payloadBoundErrors(sent.payload)).toEqual([]);
   });
 
-  it('pins the stored maxima and golden version to the till maximum of 10', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(ORDER_CREATE_MAX_VERSION).toBe(10);
-    expect(PAYMENT_METHOD_ID_ORDER_CREATE_VERSION).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it('keeps its golden at version 10 (the till maximum is pinned in command-v11.test.ts)', () => {
+    expect(PAYMENT_METHOD_ID_ORDER_CREATE_VERSION).toBe(10);
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(10);
   });
 
   it('keeps the note, a tax address and the coupon lines exactly as 9 does', () => {

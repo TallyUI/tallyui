@@ -826,3 +826,25 @@ describe('finalizeOrder records the tax rounding its figures were computed with 
     expect(freezeSentForm(stored).taxRounding).toStrictEqual({ granularity: 'per_line_items', mode: 'half_up' });
   });
 });
+
+describe("finalizeOrder stores the customer's addresses on every order (ADR-086 d2, amended 2026-11-19)", () => {
+  it('F1 stores billing and shipping without taxLocation, email and empty parts dropped, and no taxAddress', () => {
+    const builder = sale();
+    builder.setCustomer({ id: '42', name: 'Ann Lee', email: 'ann@example.com',
+      billing: { firstName: 'Ann', lastName: 'Lee', company: '', address1: '1 State St', city: 'Albany', country: 'US', email: 'ann@example.com' },
+      shipping: { address1: '9 River Rd', address2: '', city: 'Troy', country: 'US', phone: '' } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const stored = finalizeOrder(builder.getSnapshot());
+    expect(stored.customer).toStrictEqual({ id: '42', name: 'Ann Lee', email: 'ann@example.com',
+      billing: { firstName: 'Ann', lastName: 'Lee', address1: '1 State St', city: 'Albany', country: 'US' },
+      shipping: { address1: '9 River Rd', city: 'Troy', country: 'US' } });
+    expect(stored).not.toHaveProperty('taxAddress');
+  });
+
+  it('F2 stores neither address when every part is an empty string', () => {
+    const builder = sale();
+    builder.setCustomer({ id: '42', name: 'Ann Lee', billing: { firstName: '', city: '', country: '', email: '' }, shipping: { address1: '', postcode: '' } });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    expect(finalizeOrder(builder.getSnapshot()).customer).toStrictEqual({ id: '42', name: 'Ann Lee' });
+  });
+});

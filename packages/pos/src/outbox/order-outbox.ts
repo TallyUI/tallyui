@@ -449,8 +449,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           if (max !== undefined && max < (stored.sentVersion ?? from)) {
             try {
               const to = toOrderCreateEnvelope(stored, deviceId, 1, { maxVersion: max }).version;
-              // Each downgrade strictly lowers sentVersion and stays within the store's cap; sentVersion runs 10 down to 1,
-              // so an order downgrades at most 9 times. A pick that doesn't is terminal, never a resend at a version the store refused.
+              // Each downgrade strictly lowers sentVersion and stays within the store's cap; sentVersion runs 11 down to 1,
+              // so an order downgrades at most 10 times. A pick that doesn't is terminal, never a resend at a version the store refused.
               if (to <= max && to < (stored.sentVersion ?? from)) {
                 let changed = false;
                 await current.incrementalModify((data) => {

@@ -234,10 +234,10 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.customer` | instruction | 1 |
 | `payload.customer.email` | instruction | 1 |
 | `payload.customer.customerId` | instruction | 3 |
-| `payload.customer.billing` | informational (#722) | 8 |
-| `payload.customer.billing.*` | informational (#722) | 8 |
-| `payload.customer.shipping` | informational (#722) | 8 |
-| `payload.customer.shipping.*` | informational (#722) | 8 |
+| `payload.customer.billing` | informational (#722) | 8, and 11 without `taxAddress` |
+| `payload.customer.billing.*` | informational (#722) | 8, and 11 without `taxAddress` |
+| `payload.customer.shipping` | informational (#722) | 8, and 11 without `taxAddress` |
+| `payload.customer.shipping.*` | informational (#722) | 8, and 11 without `taxAddress` |
 | `payload.registerId` | informational | 1 |
 | `payload.cashierRef` | informational | 1 |
 | `payload.locationId` | instruction | 1 |
@@ -268,7 +268,8 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   always carries it, with a non-empty `country` on that address; the
   addresses (`firstName`, `lastName`, `company`, `address1`, `address2`,
   `city`, `state`, `postcode`, `country`, `phone`, each at most 255
-  characters) travel only at 8.
+  characters) travel with it at 8 and later.
+- `payload.customer.billing` / `.shipping` without `taxAddress` (version 11) are the customer's addresses on a sale not taxed by address: informational, stored on the order, never used to tax it (`docs/contract/order-create-v11.md`). Below 11 they are dropped, and at 9 and 10 an address without `taxAddress` is `invalid_payload`.
 - `payload.coupons[].lines` (version 9) is each coupon's share of each line it reduced, apportioned so the shares sum exactly to the coupon's figures (`docs/contract/order-create-v9.md`). A server may ignore it and allocate the coupon itself, as at version 6. A server that writes per-line adjustments uses it as sent. At 9 every coupon carries it; below 9 none does.
 - `payload.payments[].methodId` (version 10) is the payment method's own id on the platform, 1–64 characters, no NUL; `method` still decides cash. At 10 a leg may carry it; below 10 none does.
 - `payload.sessionId` is the session the server's register figures count
