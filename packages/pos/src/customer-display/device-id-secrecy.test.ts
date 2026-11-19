@@ -31,12 +31,22 @@ const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 /** Real timers, captured before any test installs fake ones. */
 const realSetTimeout = globalThis.setTimeout;
 const realDelay = (ms: number) => new Promise<void>((resolve) => void realSetTimeout(resolve, ms));
+const REAL_SLICE_MS = 20;
+const REAL_CEILING_MS = 2000;
 /**
  * Advances the fake clock in `stepMs` steps, at most 10, until `holds()`. D4's memory server hashes with
- * crypto.subtle.digest, which settles off the fake clock, so one fixed advance can end before a poll's answer lands.
+ * crypto.subtle.digest, which settles off the fake clock, so after each step this also yields real time, in
+ * REAL_SLICE_MS slices up to REAL_CEILING_MS in all, for a poll's answer to land before the next step and check.
  */
 async function waitUntil(what: string, stepMs: number, holds: () => boolean) {
-  for (let step = 0; step < 10 && !holds(); step += 1) await wait(stepMs);
+  let steps = 0;
+  for (let realMs = 0; !holds() && realMs < REAL_CEILING_MS; realMs += REAL_SLICE_MS) {
+    if (steps < 10) {
+      await wait(stepMs);
+      steps += 1;
+    }
+    if (!holds()) await realDelay(REAL_SLICE_MS);
+  }
   if (!holds()) throw new Error(`waitUntil: ${what} still false after 10 steps of ${stepMs} ms`);
 }
 
