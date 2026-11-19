@@ -25,6 +25,7 @@ const settings: StoreSettings = {
   taxBasedOn: 'shipping', baseTaxAddress: { country: 'AU', state: 'NSW', city: 'Sydney', postcode: '2000' },
   taxRateTable: [wooRate(1, 'AU', '10.0000'), wooRate(2, 'NZ', '15.0000')],
 };
+const inclusive: StoreSettings = { ...settings, pricesIncludeTax: true };
 const nzCustomer: CustomerSummary = { id: '7', name: 'Kiri', shipping: { country: 'NZ', city: 'Auckland', postcode: '1010' } };
 // order.create 8 is what lets saleTaxContexts re-match by address (#722).
 const contexts = (forSettings: StoreSettings) => saleTaxContexts(forSettings, { orderCreateVersion: 8 });
@@ -48,16 +49,16 @@ describe('useSale setAddresses (vendurepos gap 5.2)', () => {
   });
   afterEach(async () => { cleanup(); await db.remove(); });
 
-  function renderSale() {
-    const taxContextFor = contexts(settings);
+  function renderSale(forSettings: StoreSettings = settings) {
+    const taxContextFor = contexts(forSettings);
     function Wrapper({ children }: { children: ReactNode }) {
-      return <TaxProvider {...taxProviderProps(settings)}>{children}</TaxProvider>;
+      return <TaxProvider {...taxProviderProps(forSettings)}>{children}</TaxProvider>;
     }
-    return renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
+    return renderHook(() => useSale(forSettings, { registerId: 'register-1', cashierRef: 'cashier@store.test',
       capabilities: { orderCreate: 8 }, drafts: db.pos_drafts, taxContextFor }), { wrapper: Wrapper });
   }
-  function saleOn(customer: CustomerSummary | null) {
-    const { result } = renderSale();
+  function saleOn(customer: CustomerSummary | null, forSettings: StoreSettings = settings) {
+    const { result } = renderSale(forSettings);
     if (customer) act(() => result.current.setCustomer(customer));
     act(() => { result.current.add(entries[0], traits); });
     return result;
@@ -138,5 +139,28 @@ describe('useSale setAddresses (vendurepos gap 5.2)', () => {
     expect(readdress(result, undefined, qldAddress)).toBe(true);
     expect(result.current.order.customer?.shipping).toEqual(qldAddress);
     expect(result.current.error).toBe(CUSTOMER_REFUSALS[0]);
+  });
+
+  it('A8: clears its refusal once the leg in motion fails and the address applies', () => {
+    const result = saleOn(auCustomer);
+    let leg: string | null = null;
+    act(() => { leg = result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    expect(readdress(result, undefined, qldAddress)).toBe(false);
+    expect(result.current.error).toBe(ADDRESS_CHANGE_REFUSED);
+    act(() => { result.current.setTenderStatus(leg!, 'failed'); });
+    expect(result.current.error).toBe(ADDRESS_CHANGE_REFUSED); // setTenderStatus clears no error
+    expect(readdress(result, undefined, qldAddress)).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.customer?.shipping).toEqual(qldAddress);
+  });
+
+  it('A9: in an inclusive store, re-taxes to the new address exactly as a sale started on it, and keeps the total', () => {
+    const result = saleOn(auCustomer, inclusive);
+    const totalBefore = result.current.order.totalMinor;
+    expect(readdress(result, undefined, nzAddress)).toBe(true);
+    const fresh = saleOn({ id: '9', name: 'Matt', shipping: nzAddress }, inclusive);
+    expect(money(result.current.order)).toEqual(money(fresh.current.order));
+    expect(rateCodes(result.current.order)).toEqual([['NZ-GST-1']]);
+    expect(result.current.order.totalMinor).toBe(totalBefore);
   });
 });
