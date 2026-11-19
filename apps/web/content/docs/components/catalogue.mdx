@@ -50,7 +50,7 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `onStateChange` | `(state: CatalogueViewState) => void` | --- | Receives loaded state or the cashier's next state, including requested state in controlled mode |
 | `showViewToggle` | `boolean` | `false` | Shows the grid and table toggle in the header |
 | `showCategoryNav` | `boolean` | `false` | Shows category navigation in the header |
-| `categoryBrowse` | `'chips' \| 'tiles'` | `'chips'` | With `showCategoryNav`, shows categories as the chip row or as poster tiles with product counts that open under a breadcrumb |
+| `categoryBrowse` | `'chips' \| 'tiles'` | `'chips'` | With `showCategoryNav`, shows categories as the chip row or as poster tiles with product counts that open under a breadcrumb; the breadcrumb wraps a long category name, collapses to "‹ Categories" on a phone, and on web Escape goes back to the tiles |
 | `categories` | `ProductCategory[]` | --- | Replaces categories derived from the listed products |
 | `items` | `Doc[]` | --- | App-filtered and sorted list shown as given; `products` still drives scanning and variant choices |
 | `onQueryChange` | `(query: string) => void` | --- | Receives search text on each input change for app-owned filtering |

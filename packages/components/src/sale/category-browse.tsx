@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import type { ProductCategory } from '@tallyui/core';
 import { CategoryTile } from '../product/category-tile';
 
@@ -18,19 +18,5 @@ export function CategoryBrowseGrid({ categories, counts, total, columns, onOpen 
         </View>
       ))}
     </ScrollView>
-  );
-}
-
-// v2's breadcrumb is a row of its own above the products, and the parent crumb is the way back.
-export function CategoryCrumb({ here, onRoot }: { here: string; onRoot: () => void }) {
-  return (
-    <View testID="category-crumb" className="flex-row items-center gap-1 px-4 pt-2">
-      <Pressable testID="category-crumb-root" role="button" accessibilityLabel="Categories" onPress={onRoot}
-        className="min-h-11 justify-center rounded-md px-2">
-        <Text className="font-medium text-foreground">Categories</Text>
-      </Pressable>
-      <Text aria-hidden className="text-muted-foreground">›</Text>
-      <Text className="shrink px-1 font-semibold text-foreground" numberOfLines={1}>{here}</Text>
-    </View>
   );
 }
