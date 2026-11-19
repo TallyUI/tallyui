@@ -1,0 +1,46 @@
+---
+title: CustomerDisplaySettings
+description: CustomerDisplaySettings is Settings › Customer display, the till's paired displays, pairing a new one with a code, and forgetting one.
+---
+
+## Import
+
+```tsx
+import { CustomerDisplaySettings } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerDisplaySettings
+  pairing={useTillPairing(pairing)}
+  displays={useTillDisplays(service)}
+  onStartPairing={onStartPairing}
+  onConfirm={onConfirm}
+  onDecline={onDecline}
+  onCancelPairing={onCancelPairing}
+  onForget={onForget}
+/>
+```
+
+Props only: the app passes `useTillPairing` and `useTillDisplays` from `@tallyui/pos`, and wires every callback to the same `TillPairing`.
+
+**Paired displays** lists each display by name with its state: Connected, Connecting…, Waiting for the display, or Offline. Forget asks first and calls `onForget` only on confirm. With no displays, it says "No displays paired yet."
+
+**Pair a display** has a Pair a display button that calls `onStartPairing`. While a code is live, it shows the code and when it expires, then "Waiting for a display…" until a display enters it. Each display that enters the code shows its name and a check code, with Decline and Confirm; confirm only if the display shows the same check code. Cancel calls `onCancelPairing`.
+
+Errors show as text: a pairing error above the button, a forget error under the list. While the store can't be reached, or the cashier may not pair displays, a line above the groups says so.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `pairing` | `{ phase: PairingPhase; forgetError: PairingError \| null }` | required | From `useTillPairing(pairing)` |
+| `displays` | `{ status: TillDisplayStatus; displays: readonly TillDisplayEntry[] }` | required | From `useTillDisplays(service)` |
+| `onStartPairing` | `() => void` | required | Pair a display pressed |
+| `onConfirm` | `(claimId: string) => void` | required | Confirm pressed for a display |
+| `onDecline` | `(claimId: string) => void` | required | Decline pressed for a display |
+| `onCancelPairing` | `() => void` | required | Cancel pressed |
+| `onForget` | `(displayId: string) => void` | required | Forget confirmed |
+| `formatTime` | `(iso: string) => string` | the device's locale, hours and minutes | Formats the code's expiry |
+| `className` | `string` | --- | Override container styles |
