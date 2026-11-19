@@ -41,3 +41,4 @@ Renders store and cashier details, line items, discounts, taxes, totals, payment
 | `formatDate` | `(iso: string) => string` | `defaultFormatDate` | Formats the receipt time; the default uses the locale's medium date and short time |
 | `footerSlot` | `ReactNode` | --- | Printed content after the Change row and above the on-screen buttons |
 | `actions` | `ReactNode \| false` | --- | Replaces Print receipt and New sale with the host's own controls, never printed; `false` draws no buttons |
+| `printed` | `boolean` | `false` | Print reads 'Print again'; the app sets it once its print was dispatched |
