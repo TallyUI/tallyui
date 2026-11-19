@@ -78,6 +78,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'listTermGroups', 'hasTerm',
   // Settings › Printing's Auto label (9.5b): the pure printer pick a template's Auto choice names, never a hook or the store.
   'resolvePrinter',
+  // customer editor (10.1d): pure form-values-to-store-call functions (10.1c), never a hook or the store.
+  'toCustomerInput', 'toCustomerPatch', 'shipsToBilling',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

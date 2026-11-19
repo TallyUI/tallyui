@@ -1,0 +1,40 @@
+---
+title: CustomerEditor
+description: CustomerEditor adds or edits a customer with CustomerForm and its AddressEditor, an explicit Save and Cancel, and the store call.
+---
+
+## Import
+
+```tsx
+import { CustomerEditor } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+<CustomerEditor
+  customer={customer}
+  update={(id, patch) => connector.updateCustomer(id, patch)}
+  onSaved={(saved) => close(saved)}
+  onCancel={() => close()}
+  online={online}
+/>
+```
+
+Without `customer` the editor adds a new customer and its Save reads Add Customer; with `customer` it edits that one and Save reads Save. Save trims the fields, checks the email, and sends `create` the form as a create input, or `update` only what changed; an edit that changed nothing calls `onSaved` with the same customer and makes no call. Save is disabled while offline, while a save runs, or while the email is empty. A failed save shows the store's error under the form and Save can be pressed again. Shipping starts as Same as billing when the customer's shipping matches its billing.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `customer` | `Customer` | --- | Edit this customer; absent means add a new one |
+| `create` | `(input: CustomerInput) => Promise<Customer>` | --- | Add mode's store call |
+| `update` | `(id: string, patch: CustomerPatch) => Promise<Customer>` | --- | Edit mode's store call |
+| `onSaved` | `(customer: Customer) => void` | required | Called with the store's customer after a save, or with `customer` when an edit changed nothing |
+| `onCancel` | `() => void` | required | Called when Cancel is pressed |
+| `online` | `boolean` | required | Save is disabled while offline |
+| `countries` | `AddressEditorProps['countries']` | --- | Passed through to `AddressEditor` |
+| `statesFor` | `AddressEditorProps['statesFor']` | --- | Passed through to `AddressEditor` |
+| `defaultCountry` | `string` | --- | Passed through to `AddressEditor`; a new address starts in this country |
+| `className` | `string` | --- | Override container styles |
+| `testID` | `string` | `'customer-editor'` | Prefix for the form, Save, Cancel and error testIDs |

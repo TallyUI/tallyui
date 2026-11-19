@@ -1,6 +1,7 @@
 export { CustomerCard, type CustomerCardProps } from './customer-card';
 export { CustomerSelect, type CustomerSelectProps } from './customer-select';
 export { CustomerForm, type CustomerFormProps, type CustomerFormValues } from './customer-form';
+export { CustomerEditor, type CustomerEditorProps } from './customer-editor';
 export { CustomerOrderHistory, type CustomerOrderHistoryProps } from './customer-order-history';
 export { CustomerPicker, type CustomerPickerProps } from './customer-picker';
 export { CustomerDropdown, type CustomerDropdownProps } from './customer-dropdown';

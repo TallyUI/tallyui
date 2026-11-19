@@ -34,6 +34,11 @@ const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
+/** The cashier's text for an email the store's shape check would refuse, else undefined (CustomerPicker's and CustomerEditor's). */
+export function customerEmailError(email: string): string | undefined {
+  return email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email) ? `Enter a valid email address (up to ${EMAIL_MAX} characters)` : undefined;
+}
+
 /** The cashier's text for a customer search or create error (CustomerPicker's and CustomerDropdown's). */
 export function customerErrorText(error: unknown): string {
   if (error instanceof CustomerServiceError) {
@@ -84,7 +89,8 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
     const email = values.email.trim();
     if (!online || !create || creating || !email) return;
     // The till sends this email in order.create, whose shape check refuses one over 254 characters: refuse it here instead.
-    if (email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email)) return setError(`Enter a valid email address (up to ${EMAIL_MAX} characters)`);
+    const emailError = customerEmailError(email);
+    if (emailError) return setError(emailError);
     setCreating(true);
     setError(null);
     try {
