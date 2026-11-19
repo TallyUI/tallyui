@@ -5,7 +5,7 @@
  */
 import type { ReceiptData } from '../receipt/types';
 
-export type PrintJobKind = 'receipt' | 'report' | 'test';
+export type PrintJobKind = 'receipt' | 'report' | 'test' | 'drawer';
 
 export interface PrintJob {
   id: string;
