@@ -43,3 +43,40 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
     await expect(row).toHaveCount(0);
   });
 }
+
+// v2's poster stack (poster-tile/index.tsx:283-291): two cards behind each tile, seen past its right and foot edges,
+// and the root footer. The far card's seen edge is its box clipped by every ancestor that clips, so a tile or a
+// grid that clips the stack fails here even though the card's own box is unchanged.
+for (const [width, height] of [[390, 844], [1280, 800]] as const) {
+  test(`category tiles stacked at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/pos/category-browse');
+    const tile = page.getByTestId(/^category-tile-pcat_[a-z]+$/).first();
+    const id = (await tile.getAttribute('data-testid'))!;
+    await expect(page.getByTestId(`${id}-stack`)).toBeVisible();
+
+    const tileBox = (await tile.boundingBox())!;
+    const seen = await page.getByTestId(`${id}-stack-far`).evaluate((el) => {
+      let { right, bottom } = el.getBoundingClientRect();
+      for (let at = el.parentElement; at; at = at.parentElement) {
+        const style = getComputedStyle(at);
+        const box = at.getBoundingClientRect();
+        if (style.overflowX !== 'visible') right = Math.min(right, box.right);
+        if (style.overflowY !== 'visible') bottom = Math.min(bottom, box.bottom);
+      }
+      return { right, bottom };
+    });
+    const tileRight = tileBox.x + tileBox.width;
+    const tileBottom = tileBox.y + tileBox.height;
+    expect(seen.right - tileRight, 'the far card shows past the right edge').toBeGreaterThan(5.5);
+    expect(seen.right - tileRight).toBeLessThanOrEqual(6.5);
+    expect(seen.bottom - tileBottom, 'the far card shows past the foot').toBeGreaterThan(5.5);
+    expect(seen.bottom - tileBottom).toBeLessThanOrEqual(6.5);
+    const gridBox = (await page.getByTestId('category-browse').boundingBox())!;
+    expect(tileRight + 6, 'the grid does not clip the stack').toBeLessThanOrEqual(gridBox.x + gridBox.width);
+
+    await expect(page.getByTestId('category-browse-footer')).toBeVisible();
+    await expect(page.getByTestId('category-browse-footer')).toHaveText(/categories · .* products/);
+    await page.screenshot({ path: test.info().outputPath(`category-tiles-stacked-${width}.png`) });
+  });
+}
