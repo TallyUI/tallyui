@@ -127,13 +127,15 @@ export interface ChargeLine {
   taxStatus: 'taxable' | 'none';
   /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order. */
   amountIncludesTax?: boolean;
+  /** A fee's percentage of the cart (v2 Add Fee "%"): the builder sets `amountMinor` to it on every build. Fees only. Never stored on a finalized order. */
+  percent?: number;
   taxLines: LineItem['taxLines'];
   netMinor: number;
   taxMicros: string;
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean }
+export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
 
 export interface LineTaxLine {
   code?: string;
