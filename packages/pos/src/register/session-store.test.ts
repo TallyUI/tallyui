@@ -713,3 +713,43 @@ it('treats a deleted closure document as missing, not as a closure that already 
   // Truly gone from storage, not merely filtered out of a live query.
   expect(await db.closures.storageInstance.findDocumentsById([closureId], true)).toHaveLength(1);
 });
+
+describe('openSession without storeKey is deprecated (#1068)', () => {
+  /** A fresh session-store module, so its once-per-module warning flag starts unset. */
+  const freshOpen = async () => {
+    vi.resetModules();
+    return (await import('./session-store')).openSession;
+  };
+  const prefix = '[@tallyui/pos] openSession without storeKey is deprecated';
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('K4: warns once per module instance, however many sessions open without one', async () => {
+    const open = await freshOpen();
+    await open(db.register_sessions, input);
+    await open(db.register_sessions, { ...input, storeKey: null });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0]).startsWith(prefix)).toBe(true);
+  });
+
+  it('K5: does not warn when storeKey is passed', async () => {
+    const open = await freshOpen();
+    const doc = await open(db.register_sessions, { ...input, storeKey: 'store' });
+    expect(doc.store_key).toBe('store');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('K6: does not warn in production, and still writes store_key null', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const open = await freshOpen();
+    const doc = await open(db.register_sessions, input);
+    expect(doc.store_key).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

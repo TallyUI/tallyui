@@ -45,7 +45,8 @@ export function clampClosureScope(
  * `business_day` (a legacy or remote row) gets one from `opened_at` in `timezone`, reusing a2's
  * `businessDayOf` rather than duplicating it. Register and cashier are optional filters; the
  * store is not — a row's `store_key` must equal `scope.storeKey` (both `null` when neither is
- * set), as WCPOS always compared `store_id`.
+ * set), as WCPOS always compared `store_id`. A closure with no `store_key` (absent or `null`)
+ * counts as this store's (#665), as `register-adoption.ts` does when it renumbers.
  */
 export function selectClosureRows(rows: readonly Closure[], scope: ClosureScope, timezone: string) {
   return rows
@@ -58,7 +59,7 @@ export function selectClosureRows(rows: readonly Closure[], scope: ClosureScope,
         row.business_day >= scope.from &&
         row.business_day <= scope.to &&
         (!scope.registerId || row.register_id === scope.registerId) &&
-        (row.store_key ?? null) === (scope.storeKey ?? null) &&
+        (row.store_key ?? scope.storeKey ?? null) === (scope.storeKey ?? null) &&
         (scope.cashier === undefined || row.closed_by === scope.cashier),
     )
     .sort((a, b) => b.business_day.localeCompare(a.business_day) || b.closed_at.localeCompare(a.closed_at));
