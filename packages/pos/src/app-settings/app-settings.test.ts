@@ -9,7 +9,7 @@ import {
 } from '../index';
 import { uuidv7 } from '../pos-order';
 import {
-  appSettingCollection, appSettingSchema, appSettings$, DEFAULT_APP_SETTINGS, readAppSettings, writeAppSetting,
+  appSettingCollection, appSettingSchema, appSettings$, DEFAULT_APP_SETTINGS, readAppSettings, resolveAppSettings, writeAppSetting,
   type AppSettingCollection, type AppSettings,
 } from './app-settings';
 import { DEFAULT_TILE_FIELDS } from '../product/tile-fields';
@@ -176,5 +176,47 @@ describe('app settings', () => {
   it('CS7: exports the cart column ids and open-orders positions from the package entry', () => {
     expect(CART_COLUMN_IDS).toEqual(['quantity', 'image', 'name', 'sku', 'price', 'regularPrice', 'total']);
     expect(OPEN_ORDERS_POSITIONS).toEqual(['top', 'bottom']);
+  });
+
+  const resolveStored = (key: string, value: unknown) =>
+    resolveAppSettings([{ key, value: JSON.stringify(value) }]);
+
+  it('AP1: defaults print.autoPrintReceipt to false and print.templatePrinters to {}', () => {
+    expect(DEFAULT_APP_SETTINGS['print.autoPrintReceipt']).toBe(false);
+    expect(DEFAULT_APP_SETTINGS['print.templatePrinters']).toEqual({});
+    const settings = resolveAppSettings([]);
+    expect(settings['print.autoPrintReceipt']).toBe(false);
+    expect(settings['print.templatePrinters']).toEqual({});
+  });
+
+  it('AP2: reads print.autoPrintReceipt as a boolean only', () => {
+    expect(resolveStored('print.autoPrintReceipt', true)['print.autoPrintReceipt']).toBe(true);
+    for (const value of ['true', 1, null]) {
+      expect(resolveStored('print.autoPrintReceipt', value)['print.autoPrintReceipt']).toBe(false);
+    }
+  });
+
+  it('AP3: keeps only non-empty string template printers', () => {
+    const stored = { 'html-receipt': 'p1', '': 'p2', x: '', y: 3, z: 'p3' };
+    expect(resolveStored('print.templatePrinters', stored)['print.templatePrinters'])
+      .toEqual({ 'html-receipt': 'p1', z: 'p3' });
+  });
+
+  it('AP4: reads a non-object print.templatePrinters as {}', () => {
+    for (const value of [['p1'], null, 'p1']) {
+      expect(resolveStored('print.templatePrinters', value)['print.templatePrinters']).toEqual({});
+    }
+  });
+
+  it('AP5: drops template printer keys and values over 128 characters', () => {
+    const [ok, long] = ['k'.repeat(128), 'k'.repeat(129)];
+    expect(resolveStored('print.templatePrinters', { [ok]: ok, [long]: 'p1', a: long })['print.templatePrinters'])
+      .toEqual({ [ok]: ok });
+  });
+
+  it('AP6: writes the parsed print.templatePrinters', async () => {
+    await writeAppSetting(collection, 'print.templatePrinters', { 'html-receipt': 'p1', x: '' });
+    expect(await rawValue('print.templatePrinters')).toBe('{"html-receipt":"p1"}');
+    expect((await readAppSettings(collection))['print.templatePrinters']).toEqual({ 'html-receipt': 'p1' });
   });
 });

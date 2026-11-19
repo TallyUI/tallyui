@@ -58,27 +58,27 @@ export interface CartColumnSettings {
 }
 
 export type CartColumnId = 'quantity' | 'image' | 'name' | 'sku' | 'price' | 'regularPrice' | 'total';
-const DEFAULT_SHOWN: Record<CartColumnId, boolean> = {
+export const CART_COLUMN_DEFAULT_SHOWN: Record<CartColumnId, boolean> = {
   quantity: true, image: false, name: true, sku: false, price: true, regularPrice: false, total: true,
 };
 
 /** Every column in `columns.order`, then the default order. */
-function orderedIds(columns: CartColumnSettings): CartColumnId[] {
-  const all = Object.keys(DEFAULT_SHOWN) as CartColumnId[];
+export function cartColumnOrder(columns: CartColumnSettings = {}): CartColumnId[] {
+  const all = Object.keys(CART_COLUMN_DEFAULT_SHOWN) as CartColumnId[];
   return [...new Set([...(columns.order ?? []).filter((id) => all.includes(id)), ...all])];
 }
 
 const shown = (columns: CartColumnSettings, showPrice: boolean) => (id: CartColumnId) =>
-  (columns[id]?.show ?? DEFAULT_SHOWN[id]) && (id !== 'price' || showPrice);
+  (columns[id]?.show ?? CART_COLUMN_DEFAULT_SHOWN[id]) && (id !== 'price' || showPrice);
 
 /** The visible columns, in order; the heads and every line use it, so they cannot disagree. */
 export function cartColumnIds(columns: CartColumnSettings = {}, { showPrice = true }: { showPrice?: boolean } = {}): CartColumnId[] {
-  return orderedIds(columns).filter(shown(columns, showPrice));
+  return cartColumnOrder(columns).filter(shown(columns, showPrice));
 }
 
 /** cartColumnIds with a `fill` in Item's place when it is hidden, so the amount columns stay right-aligned. */
 export function cartColumnSlots(columns: CartColumnSettings = {}, { showPrice = true }: { showPrice?: boolean } = {}): (CartColumnId | 'fill')[] {
-  const ordered = orderedIds(columns);
+  const ordered = cartColumnOrder(columns);
   const ids = ordered.filter(shown(columns, showPrice));
   if (ids.includes('name')) return ids;
   const after = ordered.slice(ordered.indexOf('name') + 1);
