@@ -277,3 +277,29 @@ describe('vendurepos gap 2.10: a percent fee finalized', () => {
     expect(stored.amountMinor).toBe(242);
   });
 });
+
+describe('vendurepos gap 2.10: a return line and a percent fee (ADR-063 caps the return line at 0)', () => {
+  const cart = (inclusive: boolean, returnAmount?: number) => {
+    const builder = make([rate(1, '10.0000')], inclusive);
+    add(builder, 1000);
+    if (returnAmount !== undefined) add(builder, returnAmount, 'r');
+    builder.addFee(percentFee(10));
+    return builder.getSnapshot();
+  };
+
+  it.each([['P1: an exclusive store', false], ['P2: an inclusive store', true]])('%s: a return line of -3000 leaves the fee at 100', (_, inclusive) => {
+    // ADR-063: a return line settles at 0 today, so the fee's basis is the sale lines; if refunds change that, the percent block needs a floor (front desk, 2026-11-19).
+    const order = cart(inclusive, -3000);
+    expect(order.fees![0].amountMinor).toBe(100);
+    expect(order.lineItems[1].netMinor).toBe(0);
+    expect(order.totalMinor).toBe(cart(inclusive).totalMinor);
+    displayIdentity(order);
+  });
+
+  it('P3: a return line of -1000 leaves the fee at 100', () => {
+    // ADR-063: a return line settles at 0 today, so the fee's basis is the sale lines; if refunds change that, the percent block needs a floor (front desk, 2026-11-19).
+    const order = cart(false, -1000);
+    expect(order.fees![0].amountMinor).toBe(100);
+    displayIdentity(order);
+  });
+});
