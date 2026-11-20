@@ -195,10 +195,11 @@ describe('payment units (#1133 prerequisite 2)', () => {
     expect(result.current.order.payments[0].reference).toBeUndefined();
   });
 
-  it.each([['b', 0], ['b', -1], ['b', 1.5], ['b', 'empty'], ['e', 'unknown']])('P2-U3(%s): refuses invalid units (%s) without recording a leg', (_case, value) => {
+  it.each([['b', 0], ['b', -1], ['b', 1.5], ['b', NaN], ['b', 'empty'], ['e', 'unknown']])('P2-U3(%s): refuses invalid units (%s) without recording a leg', (_case, value) => {
     const { result } = renderSale();
     const lineId = result.current.order.lineItems[0].id;
     const units = typeof value === 'number' ? { [lineId]: value } : { [value === 'empty' ? '' : 'unknown']: 1 };
+    act(() => result.current.setQuantity(lineId, 3));
     act(() => {
       expect(result.current.addTender({ method: 'cash', amountMinor: 300, units })).toBeNull();
     });
@@ -242,5 +243,24 @@ describe('payment units (#1133 prerequisite 2)', () => {
       expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).not.toBeNull();
     });
     expect(result.current.order.payments).toHaveLength(release === 'Back' ? 1 : 3);
+  });
+
+  it('P2-U3(g): a failed leg\'s units are free to take again', () => {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    act(() => { result.current.setQuantity(lineId, 3); result.current.startTender('cash'); });
+    let first: string | null = null;
+    act(() => {
+      first = result.current.addTender({ method: 'external', amountMinor: 300, status: 'pending', units: { [lineId]: 2 } });
+    });
+    expect(first).not.toBeNull();
+    act(() => { expect(result.current.setTenderStatus(first!, 'failed')).toBe(true); });
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).not.toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(2);
+    expect(result.current.order.payments).toMatchObject([
+      { id: first, status: 'failed' }, { method: 'cash', amountMinor: 300, units: { [lineId]: 2 } },
+    ]);
   });
 });
