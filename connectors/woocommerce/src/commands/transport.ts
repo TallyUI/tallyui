@@ -1,6 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
+import { createWooCall, type Answer } from './http';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -253,31 +254,7 @@ function capability(flag: boolean | (() => boolean | Promise<boolean>) | undefin
 export function createWooCommandTransport(options: WooCommandTransportOptions): {
   send(batch: OrderCreateEnvelope[], context?: { local?: { orders?: ReadonlyMap<string, WooLocalOrder> } }): Promise<WooTransportOutcome>;
 } {
-  const fetch = options.fetch ?? globalThis.fetch;
-  let baseUrl = options.baseUrl;
-  while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-  type Answer = { status: number; body?: Awaited<ReturnType<Response['json']>>; retryAfter?: string | null; aborted: boolean };
-  const call = async (path: string, init: { method: string; body?: unknown }): Promise<Answer> => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30000);
-    try {
-      const response = await fetch(`${baseUrl}/${path}`, { method: init.method,
-        headers: { ...(init.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...await options.getHeaders() },
-        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }), signal: controller.signal });
-      let body;
-      try { body = await response.json(); } catch {}
-      return { status: response.status, body, retryAfter: response.headers.get('Retry-After'), aborted: controller.signal.aborted };
-    } catch {
-      return { status: 0, aborted: controller.signal.aborted };
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-  const retry = (answer: Answer, reason: string): WooTransportOutcome => {
-    if (answer.status === 0) return { kind: 'retry', reason: answer.aborted ? 'timeout' : 'network' };
-    const seconds = answer.retryAfter == null ? NaN : Number(answer.retryAfter);
-    return { kind: 'retry', reason, ...(Number.isFinite(seconds) && seconds >= 0 ? { retryAfterMs: seconds * 1000 } : {}) };
-  };
+  const { call, retry } = createWooCall(options);
   // WCPOS 2.0.0 and later (its pre-releases too) take money only through the ledger; 1.10.x and the fork have none.
   let siteLedger: boolean | undefined;
   const ledgerStore = async (): Promise<boolean | undefined> => {

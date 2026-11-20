@@ -142,6 +142,7 @@ export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION, WOO_NO
 export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooOrders, toWooStoreOrder } from './orders';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
+export { createWooRegisterTransport, wooApproveSession, type ApproverCredentials, type WooRegisterTransportOptions } from './commands/register-transport';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
 export { wooCouponSchema } from './schemas/coupons';

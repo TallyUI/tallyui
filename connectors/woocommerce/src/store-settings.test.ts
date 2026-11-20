@@ -701,6 +701,23 @@ describe('readWooCapabilities', () => {
     expect(connector.storeSettings).toBe(wooStoreSettings);
     expect(connector.capabilities).toBe(readWooCapabilities);
   });
+
+  // Woo 23: WCPOS 2.0.4's per-store register_sessions setting (Abstracts/Store.php:76,179).
+  it('T9: reads register_sessions true as register 3 from the one /stores read', async () => {
+    storesBody = [{ ...stores[0], register_sessions: true }];
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
+      lineTax: { none: true, classes: true },
+      register: 3,
+    });
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/stores'))).toHaveLength(1);
+  });
+
+  it.each([[false], ['yes'], [undefined]])('T9: leaves register out for register_sessions %j', async (register_sessions) => {
+    storesBody = [{ ...stores[0], register_sessions }];
+    expect(await readWooCapabilities(context)).not.toHaveProperty('register');
+  });
 });
 
 describe('wooPluginSupportsCoupons', () => {

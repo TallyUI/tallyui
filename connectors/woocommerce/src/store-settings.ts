@@ -164,7 +164,7 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
 
 // WCPOS 2.0.4 asks for approval when ABS(variance) > threshold for any `^\d+(\.\d+)?$` string, "0" included
 // (Register_Session_Store.php:400-405). A till counts whole minor units, so the threshold is truncated, never rounded.
-function wooThresholdMinor(value: unknown, currency: unknown): number | undefined {
+export function wooThresholdMinor(value: unknown, currency: unknown): number | undefined {
   if (typeof value !== 'string' || typeof currency !== 'string' || !/^\d+(\.\d+)?$/.test(value)) return undefined;
   const digits = minorUnitDigits(currency);
   const [whole, fraction = ''] = value.split('.');
@@ -227,6 +227,8 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
       ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
+      // WCPOS 2.0's per-store register_sessions setting: the register transport sends to sessions, movements and closures.
+      ...(stores[0].register_sessions === true ? { register: 3 } : {}),
     };
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;
