@@ -21,7 +21,7 @@ import { ProductGrid } from '@tallyui/components';
 />
 ```
 
-A scrollable product grid with optional search and filter slots rendered above the grid. Uses `ScrollView` with `flexWrap` for cross-platform grid layout rather than `FlatList` `numColumns`, keeping rendering predictable across native and web.
+A scrollable product grid with optional search and filter slots rendered above the grid. Uses a `FlatList` with `numColumns`, so only rows near the viewport render on native and web.
 
 ## Props
 
@@ -34,6 +34,7 @@ A scrollable product grid with optional search and filter slots rendered above t
 | `filterSlot` | `ReactNode` | — | Filter chips rendered between search and grid |
 | `emptyState` | `ReactNode` | — | Content shown when items array is empty |
 | `showUnsellable` | `boolean` | `false` | Shows products the channel doesn't sell (`traits.product.isSellable` false), which are hidden otherwise |
+| `footerSlot` | `ReactNode` | — | Rendered after the last tile, inside the list (for example a paging spinner); not shown with `emptyState` |
 | `className` | `string` | — | Override container styles |
 
 ## Slot pattern
