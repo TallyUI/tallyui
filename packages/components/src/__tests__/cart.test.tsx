@@ -193,6 +193,21 @@ describe('Cart', () => {
     expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
   });
 
+  it('K1: at order.create 6 a WooCommerce store offers No tax on shipping, and sends it (#1115)', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 6, lineTax: { none: true, classes: true },
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click('Shipping');
+    expect(screen.getByRole('switch', { name: 'No tax' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).toBe('none');
+  });
+
   it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
     act(() => sale.add(blue, traits));

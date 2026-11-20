@@ -34,7 +34,8 @@ As in WCPOS v2's Add Fee and Add Shipping, `allowPercent` adds a currency-or-% u
 | `currency` | `string` | required | Currency used to parse the amount into minor units and label its input |
 | `lineTax` | `{ none: boolean; classes: boolean }` | --- | Enables the No tax switch and tax class choices when shipping tax is not taken from the store |
 | `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices shown when `lineTax.classes` is enabled and the list is nonempty |
-| `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge |
+| `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge, unless `shippingNoTax` is set |
+| `shippingNoTax` | `boolean` | --- | With `shippingTaxFromStore`, the shipping kind also shows the No tax switch and sends `taxStatus: 'none'` when it is on; the tax class stays the store's |
 | `kind` | `'fee' \| 'shipping' \| 'custom'` | --- | Fixes the form to one kind, hides the kind selector, and names the form Add fee, Add shipping, or Add custom item; without it the form opens on Fee with the selector |
 | `initial` | `{ name: string; amountMinor: number; taxStatus?: 'taxable' \| 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean }` | --- | Edits that charge: the form is prefilled and titled `Edit <name>` |
 | `allowPercent` | `boolean` | --- | Shows the amount-unit toggle (currency symbol or %) on the fee kind; a percent fee applies with `amountMinor` 0 and `percent` |
