@@ -7,16 +7,31 @@ export type TenderView = 'select' | 'amount' | 'cancel';
 export type TenderLineId = string | number;
 
 export type TenderPlan =
-  | { kind: 'even'; ways: number; from: number }
+  | {
+      kind: 'even'; ways: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
+      from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
+    }
   | {
       kind: 'fixed';
       firstMinor: number;
       title: string | null;
       /** Equal shares the rest is split into after the first payment; absent means 1. */
       thenWays?: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
       from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
     }
-  | { kind: 'items'; lineIds: TenderLineId[]; firstMinor: number; ways: number; from: number };
+  | {
+      kind: 'items'; lineIds: TenderLineId[]; firstMinor: number; ways: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
+      from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
+    };
 /** @deprecated The split sub-view retired in WCPOS v2 split V1; kept for existing callers. */
 export type SplitTab = 'even' | 'amount' | 'percent' | 'item';
 

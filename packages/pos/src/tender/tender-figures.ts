@@ -24,7 +24,7 @@ export interface TenderFacts {
   balanceMinor: number;
   /** The order's payment legs in ledger order; only those that count toward paid are numbered. */
   payments: readonly { status?: PaymentLegStatus }[];
-  /** The counted legs since `plan.from`, as `tender-recorded` and `planLegs` read them. */
+  /** The plan's counted legs (by `plan.before`, else since `plan.from`), as `tender-recorded` and `planLegs` read them. */
   rowsSinceFrom: { minor: number; title: string }[];
   /** The selected method, or null in the select view. */
   method: PaymentMethodDescriptor | null;
@@ -42,7 +42,7 @@ export function tenderFigures(facts: TenderFacts) {
   const done = legs.filter((leg) => leg.state === 'done');
   const counted = payments.filter(countsTowardPaid).length;
   const n = counted + 1;
-  const ways = plan && split ? Math.min(plan.from, counted) + split.label.ways : 0;
+  const ways = plan && split ? counted - rowsSinceFrom.length + split.label.ways : 0;
   const groupDone =
     plan?.kind === 'items' && done.reduce((sum, leg) => sum + leg.minor, 0) >= plan.firstMinor;
   const thisPaymentMinor = split?.thisPaymentMinor ?? balanceMinor;

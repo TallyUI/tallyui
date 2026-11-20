@@ -10,7 +10,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
   activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
-  type TenderAction, type TenderKey, type TenderState, type useSale,
+  type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
@@ -49,9 +49,13 @@ const button = 'min-h-11 justify-center rounded-md border border-border bg-card 
 /** v2 tender-pane.tsx "Split the rest" strip: 2 to 6 equal ways. */
 const SPLIT_WAYS = [2, 3, 4, 5, 6];
 
-/** The captured legs since the plan began, as the reducer's `tender-recorded` and `planLegs` read them. */
-const rowsSince = (payments: readonly Leg[], from: number) =>
-  payments.filter(countsTowardPaid).slice(from).map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
+/** The captured legs in ledger order excluding `plan.before`, or sliced from `plan.from` when `before` is absent. */
+const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
+  const captured = payments.filter(countsTowardPaid);
+  const before = plan?.before;
+  return (before ? captured.filter((leg) => !before.includes(leg.id)) : captured.slice(plan?.from ?? 0))
+    .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
+};
 
 export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
@@ -62,7 +66,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const balance = order.balanceDueMinor;
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
-    if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan?.from ?? 0), balanceMinor: balance });
+    if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
   if (stage.kind !== 'tender') return null;
 
@@ -79,7 +83,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const changeLeads = !noChange && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
   const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
-  const rows = rowsSince(order.payments, state.plan?.from ?? 0).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
+  const rows = rowsSince(order.payments, state.plan).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
   const plan = activePlan(state.plan, rows.length, balance);
   const planned = plan ? planLegs(plan, rows, balance) : null;
   const counted = order.payments.filter(countsTowardPaid).length;
@@ -189,8 +193,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           {SPLIT_WAYS.map((count) => <View key={count} className="min-w-28 flex-1">
             <Pressable testID={`tender-split-even-${count}`} accessibilityRole="button"
               onPress={() => dispatch({ type: 'set-plan', balanceMinor: balance, plan: typed
-                ? { kind: 'fixed', firstMinor: figures.appliedMinor, title: null, thenWays: count, from: counted }
-                : { kind: 'even', ways: count, from: counted } })}
+                ? { kind: 'fixed', firstMinor: figures.appliedMinor, title: null, thenWays: count, from: counted, before: order.payments.map((leg) => leg.id) }
+                : { kind: 'even', ways: count, from: counted, before: order.payments.map((leg) => leg.id) } })}
               className="min-h-16 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-2">
               <Text className="font-semibold text-foreground">{t('pos_checkout.n_ways', { ways: count })}</Text>
               <Text className="text-sm text-muted-foreground">{t('pos_checkout.amount_each', { amount: money(evenSplitShareMinor(restMinor, count)) })}</Text>
