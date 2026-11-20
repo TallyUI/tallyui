@@ -554,6 +554,82 @@ it('an approved close prints too', async () => {
   expect(approve).toHaveBeenCalledTimes(1);
 }, 20_000);
 
+// #1096: `failureText` replaces the store's message for a failed close or Back to selling only;
+// the host's `approve` and `onPrint` failures and the approval-required refusal keep their own.
+// Without the prop the raw message shows: 'shows RegisterTenderInProgressError as its own message on Close'.
+const FAILURE = 'Could not save the count — try again';
+async function renderFailing(actions: Partial<Register['actions']>, extra?: Partial<RegisterCountProps>,
+  overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
+  const session = await seedSession(db, 10000);
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  render(
+    <RegisterHarness db={db} overrides={overrides}>
+      {(register) => (
+        <RegisterCount register={{ ...register, actions: { ...register.actions, ...actions } }} currency="EUR"
+          failureText={FAILURE} {...extra} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+}
+const countError = () => screen.getByTestId('count-error').textContent;
+
+it('T1: with failureText, a failed close shows exactly the failureText', async () => {
+  const closeSession = vi.fn(async () => { throw new Error('HTTP 500'); });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe(FAILURE));
+  expect(closeSession).toHaveBeenCalledTimes(1);
+});
+
+it('T1b: with failureText, a failed Back to selling shows exactly the failureText', async () => {
+  const backToSelling = vi.fn(async () => { throw new Error('HTTP 500'); });
+  await renderFailing({ backToSelling });
+  fireEvent.click(screen.getByTestId('count-back'));
+  await waitFor(() => expect(countError()).toBe(FAILURE));
+  expect(backToSelling).toHaveBeenCalledTimes(1);
+});
+
+it("T3: with failureText, approve's own failure shows its message", async () => {
+  const approve = vi.fn(async () => { throw new Error('Store refused'); });
+  await renderFailing({}, { approve }, { varianceThreshold: 500 });
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Store refused'));
+  expect(approve).toHaveBeenCalledTimes(1);
+});
+
+it("T4: with failureText, onPrint's failure after a close shows its message", async () => {
+  const closeSession = vi.fn(async () => {});
+  const onPrint = vi.fn(async () => { throw new Error('Printer offline'); });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] }, { onPrint });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Printer offline'));
+  expect(closeSession).toHaveBeenCalledTimes(1);
+});
+
+it('T5: with failureText, an approval-required rejection from closeSession shows the refusal copy', async () => {
+  const refused = Object.assign(new Error('approval required'), { name: 'RegisterApprovalRequiredError' });
+  const closeSession = vi.fn(async () => { throw refused; });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(screen.getByTestId('count-manager-line').textContent).toBe(APPROVAL_REQUIRED_TEXT));
+  expect(screen.queryByTestId('count-error')).toBeNull();
+  expect(screen.queryByText(FAILURE)).toBeNull();
+});
+
+it("T6: with failureText, the hook's sale-in-progress refusal shows its own message", async () => {
+  await renderFailing({}, undefined, { tenderInProgress: true });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Finish or cancel the sale in progress first.'));
+  expect(screen.queryByText(FAILURE)).toBeNull();
+  expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
+});
+
 // #1086: the count reads the store's money format; its prefills, Clear and keypad write its decimal separator.
 describe('the count in the store money format', () => {
   const DOT = { decimalSeparator: '.', thousandSeparator: ',' };

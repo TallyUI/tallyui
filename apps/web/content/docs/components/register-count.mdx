@@ -36,4 +36,5 @@ The non-cash tender inputs sit under an "Other tenders" toggle, which is closed 
 | `currency` | `string` | required | ISO 4217 code used for denomination faces, parsing, and display |
 | `approve` | `(input: { counted: Record<string, number> }) => Promise<{ approvedBy: string; approvedByName?: string; approval?: string; approvedVariance?: Record<string, number> } \| null>` | --- | Requested above `register.varianceThreshold` with the count; `null` refuses without changing the count, omission refuses with `APPROVAL_REQUIRED_TEXT`, and the approval fields are passed to `closeSession` |
 | `onPrint` | `() => void \| Promise<void>` | --- | The host's Z-report print, as `ClosureSheet`'s; awaited after a successful close; a print failure is the host's to show |
+| `failureText` | `string` | --- | Shown instead of the store's message when closing the register or going back to selling fails; `approve` and `onPrint` failures, and the approval-required and sale-in-progress refusals, keep their own text |
 | `className` | `string` | --- | Override container styles |

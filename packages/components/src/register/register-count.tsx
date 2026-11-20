@@ -132,7 +132,21 @@ export interface RegisterCountProps {
   } | null>;
   /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it after a successful close; a print failure is the host's to show. */
   onPrint?: () => void | Promise<void>;
+  /** Shown instead of the store's message when closing the register or going back to selling fails; the host's `approve` and `onPrint` failures, and the approval-required and sale-in-progress refusals, keep their own text. */
+  failureText?: string;
   className?: string;
+}
+
+/** A store call's rejection, marked so `attempt` can show `failureText` for it and not for the host's own. */
+class StoreCallFailed { constructor(readonly cause: unknown) {} }
+async function saving(call: () => Promise<unknown>) {
+  try {
+    await call();
+  } catch (e) {
+    // The hook's own refusals keep their text (by name: components import no class from pos, ADR-064).
+    const own = e instanceof Error && (e.name === 'RegisterApprovalRequiredError' || e.name === 'RegisterTenderInProgressError');
+    throw own ? e : new StoreCallFailed(e);
+  }
 }
 
 /**
@@ -145,7 +159,7 @@ export interface RegisterCountProps {
  * (registers c2) — `approve` is the host's own gate, and it runs regardless of `blind`: dropping
  * the server flag would otherwise leave a blind count with no gate at all over threshold.
  */
-export function RegisterCount({ register, currency, approve, onPrint, className }: RegisterCountProps) {
+export function RegisterCount({ register, currency, approve, onPrint, failureText, className }: RegisterCountProps) {
   const formatMoney = useFormatMoney();
   const currencySymbol = useCurrencySymbol();
   const { session, expected, blind, varianceThreshold, actions } = register;
@@ -246,6 +260,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
     } catch (e) {
       // The hook's own gate (by name: components import no class from pos, ADR-064).
       if (e instanceof Error && e.name === 'RegisterApprovalRequiredError') setRefusal(APPROVAL_REQUIRED_TEXT);
+      else if (e instanceof StoreCallFailed) setError(failureText ?? errorText(e.cause));
       else setError(errorText(e));
     } finally {
       setBusy(false);
@@ -277,16 +292,16 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           return;
         }
         const { approvedBy, approvedByName, approval, approvedVariance } = result;
-        await actions.closeSession({
+        await saving(() => actions.closeSession({
           counted, approvedBy, approvedByName, ...(note ? { note } : {}),
           ...(approval ? { approval } : {}), ...(approvedVariance ? { approvedVariance } : {}),
-        });
+        }));
         await onPrint?.();
       });
       return;
     }
     void attempt(async () => {
-      await actions.closeSession({ counted, ...(note ? { note } : {}) });
+      await saving(() => actions.closeSession({ counted, ...(note ? { note } : {}) }));
       await onPrint?.();
     });
   };
@@ -453,7 +468,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           variant="outline"
           className="min-h-11"
           disabled={busy}
-          onPress={() => attempt(actions.backToSelling)}
+          onPress={() => attempt(() => saving(actions.backToSelling))}
         >
           <Text>Back to selling</Text>
         </Button>
