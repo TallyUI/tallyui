@@ -3,10 +3,11 @@ import { Pressable, View, type TextInput } from 'react-native';
 import type { MovementType, useRegisterSession } from '@tallyui/pos';
 import { movementFieldError, normalizeAmount, parseMinor } from '@tallyui/pos';
 
-import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, useMoneyFormat, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
 import { errorText } from '../lib/error-text';
+import { readMoneyText } from '../lib/money-input';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -57,6 +58,7 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
   const t = useT();
   const currencySymbol = useCurrencySymbol();
   const formatMoney = useFormatMoney();
+  const format = useMoneyFormat();
   const digits = minorUnitDigits(currency);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -69,8 +71,10 @@ export function MovementSheet({ register, type, currency, onDone, onOpenChange, 
   const chips = reasons
     ? reasons.map((label) => ({ key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label }))
     : REASONS[type];
-  const fieldError = movementFieldError({ type, amount, reason });
-  const typed = normalizeAmount(amount);
+  const canonical = readMoneyText(amount, format);
+  const refused = !!format && type !== 'no_sale' && amount !== '' && canonical === undefined;
+  const fieldError = refused ? 'amount' : movementFieldError({ type, amount: canonical ?? amount, reason });
+  const typed = normalizeAmount(canonical ?? amount);
   const amountMinor = type === 'no_sale' ? 0 : fieldError === 'amount' ? NaN : parseMinor(typed, digits);
   // The server's grammar allows any decimal places and 15 integer digits; the currency and a safe integer allow fewer.
   // recordMovement refuses anything but a safe integer (ADR-068 6a) after the cash has moved, so the same test gates

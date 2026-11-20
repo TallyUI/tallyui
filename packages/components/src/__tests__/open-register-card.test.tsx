@@ -9,7 +9,8 @@
 // card opening the session is already visible through the caller swapping it out once
 // `register.session` is set (RegisterColumn).
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MoneyFormatProvider } from '@tallyui/core';
 import { closeSession, writeClosure } from '@tallyui/pos';
 import { OpenRegisterCard } from '../register/open-register-card';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
@@ -95,4 +96,66 @@ it('shows a thrown error by its message alone, without its class name', async ()
   fireEvent.click(screen.getByTestId('open-register-button'));
   await waitFor(() => expect(screen.getByText('Finish first')).toBeTruthy());
   expect(screen.queryByText(/FooError/)).toBeNull();
+});
+
+// #1086: the amount is read in the store's money format, and the prefill and chips write its decimal separator.
+describe('the amount in the store money format', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const field = () => screen.getByTestId('open-register-amount') as HTMLInputElement;
+  const openButton = () => screen.getByTestId('open-register-button') as HTMLButtonElement;
+  const mount = (format: typeof COMMA, currency = 'EUR', configuredFloatMinor?: number) => {
+    const openSession = vi.fn();
+    render(
+      <MoneyFormatProvider format={format}>
+        <RegisterHarness db={db}>
+          {(register) => (
+            <OpenRegisterCard
+              register={{ ...register, actions: { ...register.actions, openSession: (input) => {
+                openSession(input);
+                return register.actions.openSession(input);
+              } } }}
+              currency={currency}
+              configuredFloatMinor={configuredFloatMinor}
+            />
+          )}
+        </RegisterHarness>
+      </MoneyFormatProvider>,
+    );
+    return openSession;
+  };
+  const opened = async (openSession: ReturnType<typeof vi.fn>, countedFloatMinor: number) => {
+    fireEvent.click(openButton());
+    await waitFor(() => expect(openSession).toHaveBeenCalledTimes(1));
+    expect(openSession.mock.calls[0]![0]).toMatchObject({ countedFloatMinor });
+  };
+
+  it('OR1: COMMA opens with a grouped amount', async () => {
+    const openSession = mount(COMMA);
+    fireEvent.change(field(), { target: { value: '1.234,50' } });
+    await opened(openSession, 123450);
+  });
+
+  it.each([
+    ['OR2', COMMA, 'EUR', '1.234.56'],
+    ['OR3', DOT, 'KWD', '0,500'],
+  ] as const)('%s: %j in %s refuses %j', (_id, format, currency, text) => {
+    mount(format, currency);
+    fireEvent.change(field(), { target: { value: text } });
+    expect(openButton().disabled).toBe(true);
+  });
+
+  it('OR4: COMMA writes the configured float in its separator, and opens with it', async () => {
+    const openSession = mount(COMMA, 'EUR', 20000);
+    fireEvent.change(field(), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('open-register-chip-configured'));
+    expect(field().value).toBe('200,00');
+    await opened(openSession, 20000);
+  });
+
+  it('OR5: COMMA, KWD: the configured float prefill opens as itself, not a thousand times it', async () => {
+    const openSession = mount(COMMA, 'KWD', 1500);
+    expect(field().value).toBe('1,500');
+    await opened(openSession, 1500);
+  });
 });
