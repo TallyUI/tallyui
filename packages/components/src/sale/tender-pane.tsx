@@ -124,15 +124,15 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   function take() {
     if (!method || pickRefused) return;
     const tender = tenderOf(method);
-    // No pick stands (a plan is set, or nothing is picked): the leg carries no units.
-    const units = pick === null ? {} : partPick ? { units: pick.picks } : { units: state.pickedUnits };
+    // No pick stands (a plan is set, or nothing is picked): the leg carries no units. Otherwise it carries the picks that stand (pickFigure), never the raw ones.
+    const units = pick === null ? {} : { units: pick.picks };
     const id = tender.method === 'cash'
       ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}) })
       : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');
-    dispatch({ type: 'tender-started', paymentId: id });
+    dispatch({ type: 'tender-started', paymentId: id, units: pick === null ? {} : pick.picks });
   }
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">

@@ -73,7 +73,7 @@ export type TenderAction =
     }
   | { type: 'pick-transport'; transport: PaymentTransport }
   | { type: 'pick-reader'; readerId: string | null }
-  | { type: 'tender-started'; paymentId?: string }
+  | { type: 'tender-started'; paymentId?: string; /** The units the recorded leg carries; frozen in place of pickedUnits when given (`{}` for a money-only leg). */ units?: Readonly<Record<string, number>> }
   | { type: 'key'; key: TenderKey }
   | { type: 'set-entry'; minor: number }
   | { type: 'set-entry-mode'; mode: 'money' | 'percent' }
@@ -176,11 +176,14 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
     case 'tender-started': {
       // A leg is being recorded: the method stays chosen for the next one; the entry
       // clears until `tender-recorded` pre-types the next planned leg. Picked units freeze
-      // to the pressed payment's id, so a void of that payment later frees them.
-      const freeze = action.paymentId !== undefined && Object.keys(state.pickedUnits).length > 0;
-      const units = freeze
-        ? { unitAllocations: { ...state.unitAllocations, [String(action.paymentId)]: state.pickedUnits }, pickedUnits: {} }
-        : {};
+      // to the pressed payment's id, so a void of that payment later frees them. When the action names the leg's units, those freeze, not the raw picks.
+      const leg = action.units ?? state.pickedUnits;
+      const freeze = action.paymentId !== undefined && Object.keys(leg).length > 0;
+      const clear = action.paymentId !== undefined && Object.keys(state.pickedUnits).length > 0;
+      const units = {
+        ...(freeze ? { unitAllocations: { ...state.unitAllocations, [String(action.paymentId)]: leg } } : {}),
+        ...(clear ? { pickedUnits: {} } : {}),
+      };
       return { ...state, entryMinor: 0, entryDirty: false, entryMode: 'money', splitView: false, ...units };
     }
     case 'back':

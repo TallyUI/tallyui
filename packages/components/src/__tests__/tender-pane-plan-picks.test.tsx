@@ -62,4 +62,32 @@ it('HP3: a pick on a line the order does not have never reaches the leg', { time
   expect(sale.order.payments).toHaveLength(1);
   expect(sale.order.payments[0].units).toBeUndefined();
   expect(sale.order.payments[0].amountMinor).toBe(balance);
+  expect(host.state.unitAllocations).toEqual({});
+});
+
+it('HP4: a full-balance pick with an unknown line takes the standing units', { timeout: 20_000 }, () => {
+  const lineId = start();
+  press('tender-split-chip');
+  act(() => host.dispatch({ type: 'set-split-units', lineId, units: 2, unpaidUnits: 2 }));
+  act(() => host.dispatch({ type: 'set-split-units', lineId: 'ghost', units: 1, unpaidUnits: 1 }));
+  const balance = sale.order.balanceDueMinor;
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(sale.order.payments[0].units).toEqual({ [lineId]: 2 });
+  expect(sale.order.payments[0].amountMinor).toBe(balance);
+  expect(host.state.unitAllocations).toEqual({ [sale.order.payments[0].id]: { [lineId]: 2 } });
+  expect(host.state.pickedUnits).toEqual({});
+});
+
+it('HP5: a part pick with an unknown line freezes only the standing units', { timeout: 20_000 }, () => {
+  const lineId = start();
+  press('tender-split-chip');
+  act(() => host.dispatch({ type: 'set-split-units', lineId, units: 1, unpaidUnits: 2 }));
+  act(() => host.dispatch({ type: 'set-split-units', lineId: 'ghost', units: 1, unpaidUnits: 1 }));
+  const balance = sale.order.balanceDueMinor;
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(sale.order.payments[0].units).toEqual({ [lineId]: 1 });
+  expect(sale.order.payments[0].amountMinor).toBeLessThan(balance);
+  expect(host.state.unitAllocations).toEqual({ [sale.order.payments[0].id]: { [lineId]: 1 } });
 });

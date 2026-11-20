@@ -200,7 +200,7 @@ describe('a taken leg freezes its picked units (#1133)', () => {
     const id = sale.order.payments[0].id;
     expect(typeof id).toBe('string');
     expect(id.length).toBeGreaterThan(0);
-    expect(actions).toHaveBeenCalledWith({ type: 'tender-started', paymentId: id });
+    expect(actions).toHaveBeenCalledWith({ type: 'tender-started', paymentId: id, units: {} });
   }, 20_000);
 
   it('B2: does not dispatch tender-started when a locked sale refuses the leg', async () => {
