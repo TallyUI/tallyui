@@ -1,0 +1,18 @@
+---
+title: Notice
+description: Notice draws a tone band (bad, warning or info) for a form error or an attention line. A live bad band is an assertive alert; warning and info are polite status lines.
+---
+
+```tsx
+import { Notice } from '@tallyui/components';
+<Notice tone="bad" title="The payment was declined" actions={[{ label: 'Try again', onPress: retry, primary: true }]} />
+```
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `tone` | `'bad' \| 'warning' \| 'info'` | — | The band's wash, border and glyph |
+| `title` | `string` | — | The band's line; `children` go under it |
+| `actions` | one or two `NoticeAction` | — | Ghost small buttons; `primary` inks the label in the accent |
+| `icon` | `ComponentType<SvgIconProps> \| null` | the tone's glyph | `null` draws no glyph |
+| `live` | `boolean` | `true` | `false` is a plain group with no live region; iOS speaks a live bad title once on mount |
+| `testID` | `string` | — | Title `<testID>-title`, actions `<testID>-action-<index>` |
