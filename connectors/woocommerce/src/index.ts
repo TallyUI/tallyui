@@ -11,6 +11,7 @@ import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { createWooOrders, WOO_ORDER_FILTERS } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
+import { wooListRegisters } from './registers';
 import { wooPaymentMethods } from './payment-methods';
 import { wooReceiptTemplates } from './receipt-templates';
 import { version } from '../package.json';
@@ -81,6 +82,7 @@ const wooConnectorParts = {
   storeSettings: wooStoreSettings,
   paymentMethods: wooPaymentMethods,
   capabilities: readWooCapabilities,
+  listRegisters: wooListRegisters,
   receiptTemplates: wooReceiptTemplates,
 
   auth: {

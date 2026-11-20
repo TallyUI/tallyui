@@ -139,6 +139,16 @@ export async function wooStoreSettings(context: SyncContext): Promise<StoreSetti
   }
 }
 
+// WCPOS 2.0.4 asks for approval when ABS(variance) > threshold for any `^\d+(\.\d+)?$` string, "0" included
+// (Register_Session_Store.php:400-405). A till counts whole minor units, so the threshold is truncated, never rounded.
+function wooThresholdMinor(value: unknown, currency: unknown): number | undefined {
+  if (typeof value !== 'string' || typeof currency !== 'string' || !/^\d+(\.\d+)?$/.test(value)) return undefined;
+  const digits = minorUnitDigits(currency);
+  const [whole, fraction = ''] = value.split('.');
+  const minor = Number(whole + fraction.slice(0, digits).padEnd(digits, '0'));
+  return Number.isSafeInteger(minor) ? minor : undefined;
+}
+
 export async function readWooCapabilities(context: SyncContext): Promise<ServerCapabilities | undefined> {
   try {
     const response = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, {
@@ -177,6 +187,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     }
     const orderCreate = capabilities.includes('order_create_v5')
       ? (coupons ? WOO_TAX_ADDRESS_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
+    const thresholdMinor = wooThresholdMinor(stores[0].variance_threshold, stores[0].currency);
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
@@ -184,6 +195,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       coupons,
       // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
+      ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
     };
   } catch (error) {
     if (error instanceof ConnectorUnauthorizedError) throw error;
