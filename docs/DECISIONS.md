@@ -4407,6 +4407,33 @@ interface OrderCreatePayload {
 - **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
   from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
   replaces that for every line kind alike.
+- **Amendment 2 (2026-11-20): the WooCommerce order-lines gate gets a version fallback** (the front desk's rulings,
+  2026-11-20, on the tally-woo lane's stock-store proofs; TallyUI #1107 and #1117):
+  - **What it supersedes.** The 6 Oct ruling behind TallyUI #470 made `orderCreate` above 3 capability-only: a store
+    got the order-lines versions only when `/status` listed `order_create_v5` (the TallyUI fork). This amendment
+    supersedes that ruling for stock WCPOS on the 1.10 line from 1.10.20 and on the 2.0 line from 2.0.4. Everywhere
+    else it stands.
+  - **Why.** On 20 Nov the tally-woo lane pushed to throwaway stock stores:
+    - stock 1.10.20 took `order.create` v3 to v7 to the cent (128 of 128 figures);
+    - stock 2.0.4, proved on TallyUI main, matched 103 of 103.
+    A version number cannot tell stock from the fork, but these proofs show the stock releases take those versions.
+  - **The gate** (`connectors/woocommerce/src/store-settings.ts`):
+    - When `/status` lists `order_create_v5`, the flag decides as before.
+    - When `/status` cannot be read, the store gets 3.
+    - Otherwise the `/site` `wcpos_version` is a fallback:
+      - **1.10 line (#1107):** a plain `1.10.N` with N ≥ 20 (`WOO_ORDER_LINES_FLOOR`) gets the order-lines version,
+        capped at 7 (`WOO_ORDER_LINES_VERSION_CAP`). Version 8's tax address is unproven there: stock `/stores`
+        answers `base`. This route applies only when `/status` sent no capabilities list.
+      - **2.0 line (#1117):** a plain `2.0.N` with N ≥ 4 (`WOO_ORDER_LINES_20_FLOOR`) gets the order-lines version,
+        capped at 6 (`WOO_ORDER_LINES_20_CAP`), the highest version the 2.0.4 proof shows to the cent. This applies
+        with or without a capabilities list, as long as `order_create_v5` is not in it.
+      - Anything else (a prerelease, another line, no `/site` version) gets 3.
+  - **Not on this route.** Split tender still needs `order_payments_list`. Nothing is added to the WCPOS plugin.
+  - **Shipping lines with tax status `none`** (#1107): the connector sends the line's tax status to the store, and in
+    WooCommerce mode the till leaves the line untaxed, as the store saves it. The 1.10.20 and 2.0.4 plugin code both
+    clear a `none` shipping line's tax from its meta. Whether stock 2.0.4 saves that
+    line with 0.00 tax on the wire (case B) is still open; the front desk dispatches that check.
+  - **Undo:** restore the capability-only gate by reverting #1107 and #1117.
 
 ## ADR-076 WooCommerce tax: the WCPOS engine ported into core, several rates per class, Woo rounding
 
