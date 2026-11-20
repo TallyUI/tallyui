@@ -175,6 +175,21 @@ describe('createWooRegisterTransport: register.closure.submit', () => {
     expect(calls.map(({ path }) => path)).toStrictEqual([`sessions/${SESSION}/status`, 'closures', `sessions/${SESSION}/status`]);
   });
 
+  it('T5: a closure 404 is register_session_unknown with the store code, never a retry', async () => {
+    const { transport } = store(closures(json(404, { code: 'wcpos_session_not_found', message: 'x' }), json(404, { code: 'wcpos_closure_not_found' })));
+    expect(await transport.send([closure(), closure()])).toMatchObject({ kind: 'results', results: [
+      { status: 'rejected', error: { code: 'register_session_unknown', data: { storeCode: 'wcpos_session_not_found' } } },
+      { status: 'rejected', error: { code: 'register_session_unknown', data: { storeCode: 'wcpos_closure_not_found' } } }] });
+  });
+
+  it("T5: a replay after a lost response (status 409, closure 200) is applied with the store's id and number", async () => {
+    const { calls, transport } = store({ queue: { [`sessions/${SESSION}/status`]: [json(409, { code: 'wcpos_session_transition_refused' })],
+      closures: [json(200, { id: CLOSURE, number: 5 })] } });
+    expect(await transport.send([closure()])).toMatchObject({ kind: 'results', results: [
+      { status: 'applied', register: { closure: { serverClosureId: CLOSURE, number: 5 } } }] });
+    expect(calls.map(({ path }) => path)).toStrictEqual([`sessions/${SESSION}/status`, 'closures']);
+  });
+
   it.each([[{ counted: { cash: -1 } }], [{ counted: { 'gift card': 100 } }], [{ tillExpected: { cash: 0, ['x'.repeat(192)]: 1 } }]])(
     'T5: %j is invalid_payload with no request', async (extra) => {
       const { calls, transport } = store();
@@ -268,6 +283,18 @@ describe('wooApproveSession', () => {
     ['a 409', json(409, { code: 'wcpos_session_transition_refused' }), { refused: 'not_counting' }],
   ])('T8: %s answers %j', async (_, answer, expected) => {
     expect(await approveStore(answer).approve()).toStrictEqual(expected);
+  });
+
+  it('T8: a counting 404 answers not_counting with no approve request', async () => {
+    const paths: string[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      paths.push(String(url).slice(baseUrl.length + 1));
+      return json(404, { code: 'wcpos_session_not_found' });
+    });
+    const context: SyncContext = { connectorId: 'woocommerce', baseUrl, headers: {}, fetch };
+    expect(await wooApproveSession(context, { sessionId: SESSION, credentials, counted: { cash: 15000 }, currency: 'USD' }))
+      .toStrictEqual({ refused: 'not_counting' });
+    expect(paths).toStrictEqual([`sessions/${SESSION}/status`]);
   });
 
   it('T8: a 500 throws without the username or password in the message', async () => {

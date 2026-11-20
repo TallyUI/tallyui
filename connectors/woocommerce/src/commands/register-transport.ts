@@ -146,6 +146,7 @@ export function createWooRegisterTransport(options: WooRegisterTransportOptions)
             return { id, status: 'applied', register: { session: { id: p.sessionId, status: 'closed' },
               closure: { serverClosureId: String(body?.id), number: body?.number } } };
           }
+          if (status === 404) return rejected(id, 'register_session_unknown', body?.message, storeCode(answer));
           if (status === 403 && body?.code === 'wcpos_override_refused') {
             const variance = wooSignedMinor(body?.data?.variance, currency);
             const thresholdMinor = wooThresholdMinor(body?.data?.threshold, currency);
