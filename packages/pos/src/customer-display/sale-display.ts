@@ -7,7 +7,7 @@ import type { Order, Payment, SentOrder } from '../order';
 import { buildReceiptData } from '../receipt/build-receipt-data';
 import type { ReceiptConfig } from '../receipt/types';
 import type { SaleStage } from '../sale/use-sale';
-import { legStatus } from '../tender/payment-legs';
+import { countsTowardPaid, legStatus } from '../tender/payment-legs';
 import { callDisplay, type DisplayCall, type DisplayLink } from './display-link';
 import type { DisplayPayment } from './protocol';
 
@@ -87,7 +87,7 @@ export function createSaleDisplayPublisher(link: DisplayLink, options: SaleDispl
         send('cart', null);
         return remember();
       }
-      const receipt = buildReceiptData(shown, options.receipt ?? { storeName: '' });
+      const receipt = buildReceiptData({ ...shown, payments: shown.payments.filter(countsTowardPaid) }, options.receipt ?? { storeName: '' });
       // A switch to another sale is never a payment event.
       const event = sameOrder ? derivePaymentEvent(prior?.payments ?? [], shown.payments, prior?.completed ?? false,
         completed, shown.balanceDueMinor, options) : null;
