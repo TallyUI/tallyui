@@ -284,3 +284,28 @@ describe('parseInfoCapabilities receiptEmail (vendurepos 12.1b)', () => {
     expect(warn).toHaveBeenCalledWith('ignoring a malformed receiptEmail');
   });
 });
+
+describe('parseInfoCapabilities pluginContract (#1114)', () => {
+  const base = { contracts: { 'order.create': [1], register: [1, 2, 3] }, coupons: true };
+
+  it('reads pluginContract 3', () => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ ...base, pluginContract: 3 }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, coupons: true, pluginContract: 3 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('omits absent pluginContract without warning', () => {
+    const warn = vi.fn();
+    const caps = parseInfoCapabilities(base, warn);
+    expect(caps).not.toHaveProperty('pluginContract');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each([['3'], [0], [-1], [1.5], [null]])('leaves out and warns once for malformed pluginContract %j', (pluginContract) => {
+    const warn = vi.fn();
+    expect(parseInfoCapabilities({ ...base, pluginContract }, warn))
+      .toStrictEqual({ orderCreate: 1, register: 3, coupons: true });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(`malformed pluginContract: ${JSON.stringify(pluginContract)}`);
+  });
+});
