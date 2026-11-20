@@ -150,6 +150,7 @@ export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscou
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
 export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID } from './sale/use-sale';
