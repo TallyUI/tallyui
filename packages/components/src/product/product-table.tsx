@@ -28,8 +28,10 @@ const THUMB_COARSE = 56;
 const CELL_PAD_X = 24;
 // The add column: a 40 px md IconButton centred with 8 px either side.
 const ACTION_WIDTH = 56;
-// The table has no row height constant, so skeleton rows are counted at v2's DataTableSkeleton figure (48).
+// The table has no row height constant, so skeleton rows are drawn and counted at v2's DataTableSkeleton figure (48), or taller with the thumbnail.
 const SKELETON_ROW_HEIGHT = 48;
+// A skeleton row with the thumbnail: the image plus the cell's py-1.5 (12 px) and the row's 1 px border.
+const SKELETON_THUMB_PAD = 13;
 
 // Place column content horizontally inside column-direction Views.
 const ALIGN = { left: 'items-start', center: 'items-center', right: 'items-end' } as const;
@@ -121,6 +123,7 @@ export function ProductTable({
   const context = useTraitContext();
   const thumb = usePointer() === 'coarse' ? THUMB_COARSE : THUMB_FINE;
   const thumbnail = showThumbnail && traits !== undefined;
+  const skeletonRow = Math.max(SKELETON_ROW_HEIGHT, thumbnail ? thumb + SKELETON_THUMB_PAD : 0);
   const addButton = showAddButton && onSelect !== undefined;
   const resolvedColumns = useMemo(() => columns ?? (traits
     ? defaultProductColumns(traits, context, { currencySymbol }) : []), [columns, traits, context, currencySymbol]);
@@ -209,8 +212,8 @@ export function ProductTable({
             // v2's DataTableSkeleton: one placeholder per cell, in the real cells' widths, so the rows that replace them line up.
             <TableBody className="flex-1 overflow-hidden" accessibilityLabel="Loading" aria-busy
               onLayout={(event) => setSkeletonHeight(event.nativeEvent.layout.height)}>
-              {Array.from({ length: skeletonCount(skeletonHeight, SKELETON_ROW_HEIGHT) }, (_, row) => (
-                <TableRow key={row} testID="product-table-skeleton-row" className="border-b border-border">
+              {Array.from({ length: skeletonCount(skeletonHeight, skeletonRow) }, (_, row) => (
+                <TableRow key={row} testID="product-table-skeleton-row" className="border-b border-border" style={{ minHeight: skeletonRow }}>
                   {thumbnail ? <TableCell style={{ width: thumb + CELL_PAD_X }} className="flex-none px-3 py-1.5">
                     <Skeleton style={{ width: thumb, height: thumb }} className="flex-none rounded-md" /></TableCell> : null}
                   {resolvedColumns.map((column) => (
