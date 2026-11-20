@@ -44,4 +44,18 @@ describe('order.create fee taxMinor in WooCommerce mode (#1131)', () => {
     expect(fee.taxLines.map((tax) => tax.taxMicros)).toStrictEqual(['50500000', '50500000']);
     expect(sent.taxMinor).toBe(100);
   });
+
+  it("F5: a generic store's inclusive half-cent tie is rounded half away from zero", () => {
+    const builder = createOrderBuilder({
+      currency: 'USD',
+      taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 200000 },
+    });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1999, currency: 'USD' } });
+    builder.addFee({ name: 'Fee', amountMinor: 9, taxClass: 'fee-rounding-test' });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const finalized = finalizeOrder(builder.getSnapshot(), options);
+    expect(finalized.fees![0].taxMicros).toBe('1500000');
+    const { payload } = toOrderCreateEnvelope(finalized, 'till');
+    expect(payload.fees![0].taxMinor).toBe(2);
+  });
 });
