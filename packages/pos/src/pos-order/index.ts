@@ -12,5 +12,6 @@ export { moneyDivergence, type MoneyDivergence } from './money-divergence';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';
 export { isReopened, replacedOrderIds } from './reopened';
 export { noteDelivery, type NoteDelivery } from './note-delivery';
+export { extrasNotSent, type ExtrasNotSent } from './extras-delivery';
 export { sameSale, OrderContentMismatchError } from './same-sale';
 export { refundDueOf } from './refund-due';

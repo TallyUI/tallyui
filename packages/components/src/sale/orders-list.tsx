@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
-import { NOTE_NOT_SENT, orderReference } from './order-reference';
+import { extrasNotSent, isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 
 /** One order from the store's own history (ADR-052 amendment 1), mapped by the app from its platform. */
@@ -57,6 +57,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     ? order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? '')
       ? REOPEN_AGAIN_SENTENCE : refusalSentence(order.error?.code)
     : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
+  const extras = extrasNotSent(order);
   return <>
     {stuckEntry ? <Text className="text-destructive">
       {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
@@ -72,6 +73,11 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
         : "The terminal's payment reference couldn't be kept; the payment is recorded without it."}
     </Text>)}
     {noteDelivery(order) === 'not_sent' ? <Text testID={`order-note-not-sent-${order.id}`} className="text-foreground">{NOTE_NOT_SENT}</Text> : null}
+    {extras.taxIds ? <Text testID={`order-tax-ids-not-sent-${order.id}`} className="text-foreground">{TAX_IDS_NOT_SENT}</Text> : null}
+    {extras.meta ? <Text testID={`order-meta-not-sent-${order.id}`} className="text-foreground">{META_NOT_SENT}</Text> : null}
+    {extras.skuLineIds.length ? <Text testID={`order-sku-not-sent-${order.id}`} className="text-foreground">
+      {((ids) => `The edited ${ids.length === 1 ? 'SKU' : 'SKUs'} of ${order.lines.filter((line) => ids.includes(line.id)).map((line) => line.name).join(', ')} couldn't be sent to the store.`)(extras.skuLineIds)}
+    </Text> : null}
     {children}
     {knownWarnings(order.warnings).filter((warning) => warning.code !== 'register_session_unknown').map((warning, index) => <View key={index} className="border-l-4 border-warning pl-2"><Text className="text-foreground">
       {warning.code === 'insufficient_stock'

@@ -60,14 +60,14 @@ export function cutText(text: string, max: number): string {
 }
 
 // What order.create 12's shape check accepts (order-payload-shape.ts); a bad entry is dropped, not sent, so one bad extra never holds the sale (desk, F1054-1).
-function sendableTaxIds(taxIds: readonly OrderCreateTaxId[] | undefined): OrderCreateTaxId[] {
+export function sendableTaxIds(taxIds: readonly OrderCreateTaxId[] | undefined): OrderCreateTaxId[] {
   return (taxIds ?? []).flatMap(({ type, value, country }) => {
     const id = { type: cutText(type, ORDER_TAX_ID_TYPE_MAX), value: cutText(value, ORDER_TAX_ID_VALUE_MAX) };
     const code = country?.toUpperCase();
     return id.type && id.value ? [{ ...id, ...(code !== undefined && /^[A-Z]{2}$/.test(code) ? { country: code } : {}) }] : [];
   }).slice(0, ORDER_TAX_IDS_MAX);
 }
-function sendableMeta(meta: readonly OrderCreateMeta[] | undefined): OrderCreateMeta[] {
+export function sendableMeta(meta: readonly OrderCreateMeta[] | undefined): OrderCreateMeta[] {
   const kept = new Set<string>();
   return (meta ?? []).flatMap((entry) => {
     const key = cutText(entry.key, ORDER_META_KEY_MAX);
@@ -76,6 +76,7 @@ function sendableMeta(meta: readonly OrderCreateMeta[] | undefined): OrderCreate
     return [{ key, value: cutText(entry.value, ORDER_NOTE_MAX) }];
   }).slice(0, ORDER_META_MAX);
 }
+export const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueSku !== undefined && line.sku !== '' && line.sku !== line.catalogueSku;
 
 /**
  * Version 4 (#286): a line's discount made tax-exclusive. An exclusive line's is unchanged; an inclusive line's
@@ -170,7 +171,6 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   const untaxedAddresses = !taxAddress && !!(order.customer?.billing || order.customer?.shipping)
     && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
   // Version 12 is 11 plus tax ids, meta and a catalogue line's edited SKU (ADR-092), on the same terms; otherwise none of them is sent.
-  const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueSku !== undefined && line.sku !== '' && line.sku !== line.catalogueSku;
   const sentTaxIds = sendableTaxIds(order.customer?.taxIds), sentMeta = sendableMeta(order.meta);
   const extras = !!(sentTaxIds.length || sentMeta.length || order.lines.some(editedSku))
     && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
