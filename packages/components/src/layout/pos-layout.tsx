@@ -1,9 +1,27 @@
-import { useState, type ReactNode } from 'react';
-import { Pressable, Text, View, useWindowDimensions, type ViewProps } from 'react-native';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, Platform, Pressable, Text, View, useWindowDimensions, type ViewProps } from 'react-native';
 
 import { cn } from '@tallyui/theme';
+import { CROSSFADE } from '../lib/motion';
+import { useReducedMotion } from '../lib/use-reduced-motion';
 import { InCartBadge } from '../product/in-cart-badge';
 import { GiftIcon, ShoppingCartIcon } from '../ui';
+
+function useColumnFade(mode: 'checkout' | 'products', enabled: boolean) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const previousMode = useRef(mode);
+  const reduced = useReducedMotion();
+  useLayoutEffect(() => {
+    if (mode === previousMode.current) return;
+    previousMode.current = mode;
+    if (!enabled || reduced !== false) { opacity.setValue(1); return; }
+    opacity.setValue(0);
+    const animation = Animated.timing(opacity, { toValue: 1, duration: CROSSFADE, useNativeDriver: Platform.OS !== 'web' });
+    animation.start();
+    return () => { animation.stop(); opacity.setValue(1); };
+  }, [mode, enabled, reduced, opacity]);
+  return opacity;
+}
 
 export interface POSLayoutProps extends Omit<ViewProps, 'children'> {
   browseSlot: ReactNode;
@@ -39,6 +57,7 @@ export function POSLayout({
   const { width } = useWindowDimensions();
   const layout = layoutProp ?? (width >= breakpoint ? 'split' : 'stacked');
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse');
+  const opacity = useColumnFade(renderCheckout ? 'checkout' : 'products', layout === 'split');
   const checkout = (mode: 'split' | 'stacked') =>
     <View testID="pos-checkout-column" className="flex-1 bg-card">{renderCheckout?.(mode)}</View>;
 
@@ -48,7 +67,9 @@ export function POSLayout({
 
       {layout === 'split' ? (
         <View className="flex-1 flex-row">
-          <View className="flex-[3]">{renderCheckout ? checkout('split') : browseSlot}</View>
+          <View className="flex-[3]">
+            <Animated.View testID="pos-column-fade" style={{ flex: 1, opacity }}>{renderCheckout ? checkout('split') : browseSlot}</Animated.View>
+          </View>
           <View className="flex-[2] border-l border-border">{cartSlot}</View>
         </View>
       ) : renderCheckout ? (
