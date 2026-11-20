@@ -63,6 +63,10 @@ export interface ReceiptSheetProps {
   onEmail?: () => void;
   /** v2's email form: "Email Receipt" opens it inside the sheet. When given, it takes the place of `onEmail`. */
   email?: ReceiptSheetEmail;
+  /** v2's "Download PDF": drawn only when given, between Email Receipt and Print. The app makes and saves the PDF. */
+  onDownloadPdf?: () => void;
+  /** Download PDF shows its loading state and cannot be pressed. */
+  downloadingPdf?: boolean;
   /** The preview. */
   children: ReactNode;
 }
@@ -181,7 +185,7 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queue
 
 export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates, templateId, onTemplateChange,
   printerLabel = 'Browser print dialog', printers, printerId, autoPrinterName, onPrinterChange,
-  onPrint, printing = false, printed = false, onEmail, email, children }: ReceiptSheetProps): JSX.Element {
+  onPrint, printing = false, printed = false, onEmail, email, onDownloadPdf, downloadingPdf = false, children }: ReceiptSheetProps): JSX.Element {
   const t = useT();
   const [sent, setSent] = useState<'sent' | 'queued' | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -212,13 +216,20 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
         <ScrollView className="flex-1" contentContainerClassName="pb-2">{children}</ScrollView>
         {email && emailOpen ? <EmailForm email={email} onDone={(queued) => { setEmailOpen(false); setSent(queued ? 'queued' : 'sent'); }} /> : null}
         {email && sent ? <Text testID="receipt-email-sent" className="py-2 text-sm text-foreground">{t(sent === 'queued' ? 'receipt.email_queued' : 'receipt.email_sent')}</Text> : null}
-        {/* v2's footer also has Download PDF and Sync order; TallyUI has neither. `email` draws v2's form above, the app sends. */}
+        {/* v2's footer also has Sync order, which TallyUI does not have. `email` draws v2's form above, and the app sends. Download PDF is drawn when `onDownloadPdf` is given. */}
         <DialogFooter bordered className="gap-2" testID="receipt-footer">
           <DialogClose asChild>
             <Button variant="outline" testID="receipt-close-button"><Text>Close</Text></Button>
           </DialogClose>
           {onEmailPress ? (
             <Button variant="outline" testID="receipt-email-button" onPress={onEmailPress}><Text>Email Receipt</Text></Button>
+          ) : null}
+          {onDownloadPdf ? (
+            <Button variant="outline" testID="receipt-download-pdf-button" onPress={onDownloadPdf} disabled={downloadingPdf}
+              accessibilityState={{ disabled: downloadingPdf, busy: downloadingPdf }}>
+              {downloadingPdf ? <Loader size="sm" /> : null}
+              <Text>Download PDF</Text>
+            </Button>
           ) : null}
           <Button testID="receipt-print-button" onPress={onPrint} disabled={printing}
             accessibilityState={{ disabled: printing, busy: printing }}>
