@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
 import type { Order } from '../order/types';
-import { roundedTaxByRate } from '../tax/exact';
+import { roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import type { TaxContext } from '../tax/types';
 import { pickedUnitsMinor, splitUnitLines } from './split-units';
 
@@ -89,6 +89,8 @@ describe('splitUnitLines', () => {
     expect(groups).toBe(2);
     const total = splitUnitLines(order).reduce((sum, li) => sum + li.totalMinor, 0);
     expect(Math.abs(total - order.totalMinor)).toBeLessThanOrEqual(groups);
+    expect(splitUnitLines(order).map((li) => li.totalMinor)).toEqual([116, 110, 115, 111]);
+    expect(total).toBe(order.totalMinor);
   });
 
   it.each([false, true])('S6: prices converted lines in their own mode (store inclusive: %s)', (pricesIncludeTax) => {
@@ -167,5 +169,39 @@ describe('splitUnitLines', () => {
     const order = builder.getSnapshot();
     const picks = Object.fromEntries(order.lineItems.map((li) => [li.id, li.quantity]));
     expect(pickedUnitsMinor(splitUnitLines(order), picks, {})).toBe(347);
+  });
+
+  it('S10: telescopes exclusive tax in mixed per_rate_group_items orders', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: {
+      ...taxContext, pricesIncludeTax: false, rounding: { granularity: 'per_rate_group_items', mode: 'half_up' },
+    } });
+    for (const [index, taxInclusive] of [false, true, false].entries()) {
+      builder.addLine({ productId: String(index), name: 'Item', unitPrice: { amount: 105, currency: 'USD', taxInclusive } });
+    }
+    const order = builder.getSnapshot();
+    expect(roundedTaxByRate(order.lineItems, order.taxRounding)).toBeUndefined();
+    const figures = splitUnitLines(order).map((li) => li.totalMinor);
+    expect(figures).toEqual([116, order.lineItems[1].netMinor, 115]);
+    expect(figures.reduce((sum, figure) => sum + figure, 0)).toBe(order.totalMinor);
+  });
+
+  it('S11: preserves WooCommerce totalMinor when fractional coupon nets round differently', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: {
+      ...taxContext, pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: true },
+      getTaxRates: () => [{ id: 1, code: 'tax', label: 'Tax', rate: '10.0000', priority: 1, compound: false, shipping: true }],
+    } });
+    for (const productId of ['1', '2', '3']) {
+      builder.addLine({ productId, name: productId, unitPrice: { amount: 105, currency: 'USD' } });
+    }
+    builder.setCoupons(['save'], {
+      configs: new Map([['save', { discount_type: 'fixed_cart', amount: '0.006', limit_usage_to_x_items: null,
+        product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+      couponIds: new Map([['save', '1']]), productCategories: new Map(), calcDiscountsSequentially: false,
+    });
+    const order = builder.getSnapshot();
+    // The first line's 104.4-minor net plus 10.44-minor tax rounds to 115, versus 104 + 10.
+    expect(order.lineItems.some((li) => li.totalMinor !== li.netMinor + roundMicrosToMinor(BigInt(li.taxMicros)))).toBe(true);
+    const figures = splitUnitLines(order).map((li) => li.totalMinor);
+    expect(figures).toEqual(order.lineItems.map((li) => li.totalMinor));
   });
 });
