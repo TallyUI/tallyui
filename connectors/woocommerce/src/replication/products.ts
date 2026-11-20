@@ -232,7 +232,11 @@ export const wooProductReplication: ReplicationAdapter<any, WooProductCheckpoint
         });
         await checkResponse(response);
         const body = await response.json();
-        for (const doc of body.documents) {
+        // WCPOS 2.0.x answers a bare array of variations; 1.10.x wraps each in a sync envelope under `documents`.
+        const docs = Array.isArray(body) ? body.map((payload: { parent_id?: number }) => ({ parent_id: payload.parent_id, payload }))
+          : Array.isArray(body?.documents) ? body.documents : undefined;
+        if (!docs) throw new Error(`Unexpected /variations response: ${JSON.stringify(body)?.slice(0, 100)}`);
+        for (const doc of docs) {
           const parentId = doc.parent_id ?? doc.payload.parent_id;
           const group = variations.get(parentId) ?? [];
           group.push(toVariationDocument(doc.payload));
