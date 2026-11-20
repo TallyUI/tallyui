@@ -594,6 +594,26 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toBeUndefined();
   });
 
+  it.each([
+    ['20.00', 'USD', 2000],
+    ['0', 'USD', 0],
+    ['20.005', 'USD', 2000],
+    ['5', 'JPY', 5],
+  ])('T5: reads variance_threshold %j in %s as registerApproval %i, truncated', async (variance_threshold, currency, thresholdMinor) => {
+    storesBody = [{ ...stores[0], currency, variance_threshold }];
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
+      lineTax: { none: true, classes: true },
+      registerApproval: { thresholdMinor },
+    });
+  });
+
+  it.each([[''], [undefined], ['abc']])('T5: leaves registerApproval out for variance_threshold %j', async (variance_threshold) => {
+    storesBody = [{ ...stores[0], variance_threshold }];
+    expect(await readWooCapabilities(context)).not.toHaveProperty('registerApproval');
+  });
+
   // Woo 16: stock WCPOS 1.10.20+ sends no capabilities array; its version is the fallback, capped at 7.
   it.each(['1.10.20', '1.10.27'])('G1: takes order version 7 and coupons from stock site version %s with no capabilities key', async (wcpos_version) => {
     statusBody = {};
