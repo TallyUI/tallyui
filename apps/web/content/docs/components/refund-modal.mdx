@@ -1,0 +1,31 @@
+---
+title: RefundModal
+description: A dialog hosting RefundForm with controlled open state
+---
+
+Hosts `RefundForm` in a dialog with the same props except `onCancel`, plus `open` and `onOpenChange`. The form's initial Cancel button calls `onOpenChange(false)` to request closing the dialog. Cancel within the confirmation step returns to the form.
+
+## Usage
+
+```tsx
+import { RefundModal } from '@tallyui/components';
+
+<RefundModal
+  open={open}
+  onOpenChange={setOpen}
+  lines={[{ id: 'line-1', name: 'Mug', quantity: 1, totalMinor: 500, taxMinor: 100 }]}
+  refunds={[]}
+  currency="EUR"
+  orderReference="1042"
+  orderTotalMinor={600}
+  onConfirm={handleConfirm}
+/>
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `open` | `boolean` | --- | Required controlled dialog open state |
+| `onOpenChange` | `(open: boolean) => void` | --- | Required callback for changes to the dialog's open state |
+| Other form props | `Omit<RefundFormProps, 'onCancel'>` | See [RefundForm](/docs/components/refund-form) | All other `RefundFormProps`; the modal supplies `onCancel` |

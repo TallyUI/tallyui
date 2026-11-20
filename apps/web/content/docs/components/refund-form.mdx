@@ -1,0 +1,69 @@
+---
+title: RefundForm
+description: Collect refund quantities, restock choices, shipping, an adjustment, a destination, and a reason
+---
+
+Collects refund quantities and restock choices for order lines, shipping, a signed adjustment, a refund destination, and a reason. The form calls the caller's `onConfirm` callback with a `RefundFormValue` after the user confirms the refund.
+
+## Usage
+
+```tsx
+import { RefundForm } from '@tallyui/components';
+
+<RefundForm
+  lines={[{ id: 'line-1', name: 'Mug', quantity: 1, totalMinor: 500, taxMinor: 100 }]}
+  refunds={[]}
+  currency="EUR"
+  orderReference="1042"
+  orderTotalMinor={600}
+  onConfirm={handleConfirm}
+  onCancel={handleCancel}
+/>
+```
+
+## Behaviour
+
+- Refund quantities are capped at each line's remaining refundable quantity.
+- Each line's restock checkbox starts at `defaultRestock`, which is `true` unless set.
+- The shipping field is shown only when `refundableShippingMinor` is greater than zero.
+- Shipping above `refundableShippingMinor` prevents confirmation.
+- The refund total is the amount returned by `priceRefund` plus shipping and the signed adjustment.
+- Confirmation requires a positive total no greater than `orderTotalMinor - refundedMinor`.
+- Confirmation requires a non-blank reason.
+- The destination defaults to `original_method` when `originalMethod.available` is true, and to `cash` otherwise.
+- Setting `online` to `false` disables confirmation.
+- The first submit action opens a confirmation step showing the amount and order reference.
+- The confirmation action calls `onConfirm` with the collected value.
+- Confirmation stays disabled while the promise returned by `onConfirm` is pending.
+- The form displays the `error` prop in preference to a caught confirmation error.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `lines` | `ReadonlyArray<RefundableOrderLine & { name: string }>` | --- | Required order lines with `id`, `quantity`, `totalMinor`, `taxMinor`, and `name` |
+| `refunds` | `readonly EarlierRefund[]` | --- | Required earlier refunds, each with `lines` containing `orderLineId` and `quantity` |
+| `currency` | `string` | --- | Required currency for parsing and formatting amounts |
+| `orderReference` | `string` | --- | Required order number shown in the confirmation |
+| `orderTotalMinor` | `number` | --- | Required order total including tax, in minor units |
+| `refundedMinor` | `number` | `0` | Money already refunded on the order, expressed as a positive amount in minor units |
+| `refundableShippingMinor` | `number` | `0` | Shipping still refundable including tax, in minor units |
+| `originalMethod` | `{ title: string; available: boolean }` | --- | Original payment method; omit for a cash sale |
+| `defaultRestock` | `boolean` | `true` | Starting restock choice for each line |
+| `online` | `boolean` | `true` | Whether confirmation is enabled, subject to validation and busy state |
+| `error` | `string` | --- | Caller-supplied refusal displayed above the actions |
+| `onConfirm` | `(refund: RefundFormValue) => void \| Promise<unknown>` | --- | Required callback invoked on confirmation |
+| `onCancel` | `() => void` | --- | Required callback for Cancel before the confirmation step |
+
+## RefundFormValue
+
+A `Pick` of `OrderRefundPayload` from `@tallyui/core` containing these fields.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `lines` | `OrderRefundLine[]` | Selected lines, each with `orderLineId`, `quantity`, and `restock` |
+| `shippingMinor` | `number` | Shipping refund in minor units |
+| `adjustmentMinor` | `number` | Signed adjustment in minor units |
+| `totalMinor` | `number` | Priced line total plus shipping and adjustment, in minor units |
+| `destination` | `'original_method' \| 'cash'` | Refund destination |
+| `reason` | `string` | Reason with leading and trailing whitespace removed |
