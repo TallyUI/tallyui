@@ -26,6 +26,28 @@ const cart = displayCart(receipt);
 const show = (state: DisplayState) => render(<CustomerDisplayScreen state={state} />);
 
 describe('CustomerDisplayScreen', () => {
+  it('D3: shows picked cash tender and change while paid and due count only the applied money', () => {
+    const pickedCart = displayCart({
+      ...receipt, totals: { ...receipt.totals, totalMinor: 2000 },
+      payments: [{ method: 'cash', amountMinor: 2000, changeMinor: 1500 }, { method: 'external', amountMinor: 300 }],
+    });
+    const leg = { method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500 };
+    show({ config, view: { screen: 'payment', cart: pickedCart, payment: { state: 'approved', leg } } });
+    const text = screen.getByTestId('customer-display-payment').textContent;
+    expect(text).toContain(`Approved${money(500)}Tendered ${money(2000)}Change ${money(1500)}`);
+    expect(text).toContain(`Paid so far${money(800)}`);
+    cleanup();
+    show({ config, view: { screen: 'payment', cart: pickedCart, payment: {
+      state: 'approved', leg: { method: 'cash', amountMinor: 500 },
+    } } });
+    const plain = screen.getByTestId('customer-display-payment').textContent;
+    expect(plain).not.toContain('Tendered');
+    expect(plain).not.toContain('Change');
+    cleanup();
+    show({ config, view: { screen: 'payment', cart: pickedCart, payment: { state: 'approved' } } });
+    expect(screen.getByTestId('customer-display-payment').textContent).toContain(`Approved${money(1200)}`);
+  });
+
   it('shows the store and the configured welcome when idle', () => {
     show({ config, view: { screen: 'idle', reason: 'no_cart' } });
     expect(screen.getByTestId('customer-display-idle').textContent).toBe('Corner ShopHello there');

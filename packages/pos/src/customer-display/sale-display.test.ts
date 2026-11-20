@@ -12,6 +12,16 @@ const pay = (id: string, status?: Payment['status'], amountMinor = 1000, method 
 const leg = (amountMinor = 1000, method = 'card') => ({ method, amountMinor });
 
 describe('derivePaymentEvent', () => {
+  it('D1: an approved cash pick carries tender and change; a plain leg carries neither', () => {
+    const pick = { ...pay('pick', 'captured', 500, 'cash'), tenderedMinor: 2000, changeMinor: 1500, units: { line: 1 } };
+    expect(derivePaymentEvent([], [pick], false, false, 1500)).toEqual({
+      state: 'approved', leg: { method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500 },
+    });
+    expect(derivePaymentEvent([], [pay('plain', 'captured', 600, 'cash')], false, false, 1400)).toEqual({
+      state: 'approved', leg: { method: 'cash', amountMinor: 600 },
+    });
+  });
+
   it('1: a sale that becomes completed is complete, with the last captured leg', () => {
     const next = [pay('a', 'captured', 400, 'cash'), pay('b', undefined, 600), pay('c', 'failed', 50)];
     expect(derivePaymentEvent(next, next, false, true, 0)).toEqual({ state: 'complete', leg: leg(600) });

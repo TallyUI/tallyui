@@ -37,6 +37,7 @@ export function derivePaymentEvent(
 ): DisplayPayment | null {
   const leg = (payment: Payment) => ({
     method: options.methodTitle ? options.methodTitle(payment.method) : payment.method, amountMinor: payment.amountMinor,
+    ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor, changeMinor: payment.changeMinor } : {}),
   });
   if (!wasCompleted && completed) {
     const last = next.filter((payment) => legStatus(payment) === 'captured').at(-1);

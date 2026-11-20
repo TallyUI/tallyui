@@ -848,6 +848,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       }
       if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
         || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < tender.amountMinor)) return null;
+      if (tender.tenderedMinor !== undefined) {
+        const snapshot = builderNow.current.getSnapshot();
+        if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
+      }
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
