@@ -1,5 +1,6 @@
 import { minorUnitDigits, woocommerceTax, woocommerceCoupons } from '@tallyui/core';
 import type { TaxContext, WooRate } from '../tax/types';
+import { roundMicrosToMinor } from '../tax/exact';
 import type { RateTaxLine } from '../tax/exact';
 import type { ChargeLine, LineItem, LineTaxLine, OrderCoupon } from './types';
 import type { OrderCouponContext } from './order-builder';
@@ -98,6 +99,14 @@ export function woocommerceTotals(lines: readonly LineItem[], fees: readonly Cha
   return { subtotalMinor: Math.round(woocommerceTax.roundHalfUp(productNet, dp) * factor),
     taxMinor: Math.round((roundAtSubtotal ? woocommerceTax.roundHalfUp(tax, dp) : woocommerceTax.roundTaxTotal(tax, dp, inclusive)) * factor),
     totalMinor: Math.round(woocommerceTax.roundHalfUp(woocommerceTax.roundHalfUp(amount + tax, 6), dp) * factor) };
+}
+
+/** A WooCommerce charge's tax in minor units as the store totals it (#1120): each rate rounded on its own, then summed,
+ *  as woocommerceTaxByRate rounds its rows; the summed micros rounded once when the store rounds at subtotal. */
+export function woocommerceChargeTaxMinor(charge: { taxLines: readonly LineTaxLine[]; taxMicros: string },
+  roundAtSubtotal: boolean, inclusive: boolean): number {
+  if (roundAtSubtotal) return roundMicrosToMinor(BigInt(charge.taxMicros));
+  return charge.taxLines.reduce((sum, tax) => sum + woocommerceTax.roundTaxTotal(Number(tax.taxMicros) / 1e6, 0, inclusive), 0);
 }
 
 /** Order-math's rate buckets, including zero rows; the last row takes the bounded order tax residue. */

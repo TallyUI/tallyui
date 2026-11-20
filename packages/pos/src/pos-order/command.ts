@@ -1,6 +1,7 @@
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '@tallyui/core';
 import type { OrderCreateEnvelope, OrderCreateMeta, OrderCreatePayload, OrderCreateTaxId, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
+import { woocommerceChargeTaxMinor } from '../order/woocommerce-tax';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
@@ -211,7 +212,11 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
         clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
         amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
-        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
+        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}),
+        // #1120: WooCommerce totals a shipping line's tax per rate, as its own order totals do.
+        taxMinor: order.taxRounding?.granularity === 'woocommerce'
+          ? woocommerceChargeTaxMinor(charge, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+          : roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
       ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
