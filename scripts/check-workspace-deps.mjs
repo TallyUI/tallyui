@@ -53,6 +53,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'refundableLines', 'priceRefund',
   // the sale note (ADR-083 condition 2): the one pure test of whether a till order's note reached the store, never a hook or the store.
   'noteDelivery',
+  // the sale's extras (ADR-092 condition 1): the one pure test of which tax ids, meta and edited SKUs a downgrade did not send, never a hook or the store.
+  'extrasNotSent',
   // ADR-090 W4e and gates 36/36c: the pure refund-due figures and refused till legs the orders list and the tender pane show.
   'refundDueOf', 'lockedRefundDueMinor', 'tillLegsTheStoreRefuses',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.

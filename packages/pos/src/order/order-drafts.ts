@@ -3,7 +3,7 @@ import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
 import { capturedMinor } from '../tender/payment-legs';
-import { createOrderBuilder, type OrderBuilder } from './order-builder';
+import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
 
 /** Apps create their drafts collection with this schema. */
@@ -61,9 +61,10 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
 /**
  * Rebuilds a saved order on `taxContext`. Fees and shipping re-derive their rates; under woo granularity lines re-derive
  * from their class too. Outside woo, a line marked taxFromClass re-derives from its class unless `keepTaxRates` is set;
- * every other line (given rates, a draft from before the marker) keeps its stored rates.
+ * every other line (given rates, a draft from before the marker) keeps its stored rates. `keepCoupons` puts the saved
+ * coupons back as parked, figures and all, while an unlocked leg is live (ADR-077 d3, amended 2026-11-19); otherwise none.
  */
-export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean }): OrderBuilder {
+export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean; keepCoupons?: boolean }): OrderBuilder {
   const { currency, taxContext } = options;
   const builder = createOrderBuilder({
     currency,
@@ -131,7 +132,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
   }
 
-  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3), never restored from the draft.
+  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3); only keepCoupons, below, restores them from the draft.
   // Restore payments
   for (const payment of saved.payments) {
     builder.addPayment({
@@ -146,6 +147,14 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
+  }
+  // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).
+  if (options.keepCoupons && saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length) {
+    const restored = builder.getSnapshot();
+    builder.setCoupons(saved.coupons.map((coupon) => coupon.code), { kind: 'kept', coupons: saved.coupons,
+      displayRows: saved.display.coupons.map((row) => row.amountMinor), lines: new Map(saved.lineItems.map((li) => [li.id, li])),
+      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }),
+      legIds: saved.payments.filter(isLiveLeg).map((p) => p.id) });
   }
   return builder;
 }

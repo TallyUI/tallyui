@@ -1,5 +1,5 @@
 import { ConnectorUnauthorizedError, StoreSettingsError } from '@tallyui/core';
-import type { StoreSettings, StoreSettingsChoice, SyncContext } from '@tallyui/core';
+import type { StoreSettings, StoreSettingsChoice, StoreTaxRate, SyncContext } from '@tallyui/core';
 
 type Store = { id: string; default_region_id: string | null };
 type Country = { iso_2: string };
@@ -7,8 +7,19 @@ type Region = { id: string; name: string; currency_code: string; countries?: Cou
 type PricePreference = { attribute: string; value: string; is_tax_inclusive: boolean };
 type SalesChannel = { id: string; name: string };
 type ApiKey = { id: string; title: string; token: string; revoked_at: string | null; sales_channels?: SalesChannel[] };
-type TaxRate = { rate: number | null; is_default: boolean; rules?: unknown[] };
-type TaxRegion = { country_code: string; province_code: string | null; tax_rates?: TaxRate[] };
+type TaxRate = {
+  id: string;
+  name: string | null;
+  code: string | null;
+  rate: number | null;
+  is_default: boolean;
+  rules?: { reference: string; reference_id: string }[];
+};
+type TaxRegion = { id: string; country_code: string; province_code: string | null; tax_rates?: TaxRate[] };
+
+const TAX_REGIONS_PAGE_SIZE = 100;
+// As Woo's rate list: at most 100 pages, so a misbehaving count can never loop for ever.
+const MAX_TAX_REGION_PAGES = 100;
 
 /** Except for 401/403 (`ConnectorUnauthorizedError`), a non-OK response becomes `StoreSettingsError('failed')`, carrying the HTTP status and Medusa's own `message`. */
 async function get(context: SyncContext, path: string): Promise<any> {
@@ -42,8 +53,37 @@ function channelName(key: ApiKey): string {
 }
 
 /**
- * Reads the store's currency, tax inclusivity and location tax rate, and the
- * publishable-key channel, from Medusa's admin API only (TV4b). Read-only
+ * Every tax region's rates, in Medusa's order, for an app's "View all tax rates" table (#673).
+ * Display only: the cart's rate stays `taxRatesPpm`. A rate with no percentage is left out.
+ */
+async function allMedusaTaxRates(context: SyncContext): Promise<StoreTaxRate[]> {
+  const rates: StoreTaxRate[] = [];
+  for (let page = 0; page < MAX_TAX_REGION_PAGES; page++) {
+    const offset = page * TAX_REGIONS_PAGE_SIZE;
+    const res = await get(context, `/admin/tax-regions?limit=${TAX_REGIONS_PAGE_SIZE}&offset=${offset}&fields=id,country_code,province_code,parent_id,*tax_rates,*tax_rates.rules`);
+    const regions: TaxRegion[] = res.tax_regions ?? [];
+    for (const region of regions) {
+      for (const rate of region.tax_rates ?? []) {
+        if (rate.rate == null) continue;
+        rates.push({
+          id: rate.id,
+          name: rate.name || rate.code || rate.id,
+          rate: String(rate.rate),
+          // Codes as Medusa stores them (lower case); the app formats them.
+          location: region.province_code !== null ? { country: region.country_code, region: region.province_code } : { country: region.country_code },
+          ...(rate.rules?.length ? { rules: rate.rules.map((r) => ({ reference: r.reference, referenceId: r.reference_id })) } : {}),
+        });
+      }
+    }
+    if (regions.length < TAX_REGIONS_PAGE_SIZE || offset + regions.length >= res.count) break;
+  }
+  return rates;
+}
+
+/**
+ * Reads the store's currency, tax inclusivity and location tax rate, the
+ * publishable-key channel, and once every choice is made, every tax region's
+ * rates (`allTaxRates`), from Medusa's admin API only (TV4b). Read-only
  * (ADR-048). Region, then country, then channel: the first ambiguity that
  * needs a choice reports every choice known at that point, so the app asks
  * once.
@@ -100,6 +140,9 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
   // No tax region, or no default rate: Medusa's system provider adds no tax line, so default is 0 — never a silent guess.
   const taxRatesPpm = { default: defaultRate?.rate != null ? Math.round(defaultRate.rate * 10_000) : 0 };
 
+  // Only once every choice is made, so a choice_required path makes no extra request.
+  const allTaxRates = await allMedusaTaxRates(context);
+
   return {
     currency: region.currency_code.toUpperCase(),
     pricesIncludeTax,
@@ -111,5 +154,6 @@ export const medusaStoreSettings = async (context: SyncContext, choice?: StoreSe
       currency_code: region.currency_code.toLowerCase(),
       publishable_key: channelKey.token,
     },
+    allTaxRates,
   };
 };

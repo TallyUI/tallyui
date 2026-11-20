@@ -34,6 +34,7 @@ export { Skeleton, skeletonCount, SKELETON_MAX_ROWS, type SkeletonProps } from '
 export { Badge, badgeVariants, badgeTextVariants, type BadgeProps } from './badge';
 export { StatusBadge, statusDotVariants, type StatusBadgeProps } from './status-badge';
 export { ToneDisc, type ToneDiscProps, type ToneDiscTone } from './tone-disc';
+export { Notice, type NoticeProps, type NoticeAction } from './notice';
 export { Avatar, avatarVariants, avatarInitials, type AvatarProps } from './avatar';
 
 // Interactive

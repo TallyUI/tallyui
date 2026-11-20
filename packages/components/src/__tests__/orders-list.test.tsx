@@ -94,6 +94,11 @@ describe('OrdersList sale note (ADR-083 condition 2)', () => {
       .toBe(notSent ? "The customer note couldn't be sent to the store." : null);
   });
 
+  it('OL1 says the tax ids were not sent below 12 (ADR-092 condition 1)', () => {
+    render(<OrdersList orders={[order('o1', { customer: { taxIds: [{ type: 'eu_vat', value: 'DE123456789' }] }, sentVersion: 11 })]} onRetry={async () => 0} />);
+    expect(screen.getByTestId('order-tax-ids-not-sent-o1').textContent).toBe("The customer's tax IDs couldn't be sent to the store.");
+  });
+
   it('shows the note in the expanded order', () => {
     render(<OrdersList orders={[order('o1', { note: 'Deliver after 5' }), order('o2')]} onRetry={async () => 0} />);
     expect(screen.queryByTestId('order-note-o1')).toBeNull();

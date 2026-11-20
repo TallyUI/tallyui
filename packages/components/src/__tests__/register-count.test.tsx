@@ -19,7 +19,8 @@
 // - the `it.each` unsynced-sales pluralization: `unsyncedCount` is an outbox field
 //   `useRegisterSession` itself never ported (no outbox yet); there is nothing to pluralize.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MoneyFormatProvider } from '@tallyui/core';
 import type { PosOrderPayment } from '@tallyui/pos';
 import { APPROVAL_REQUIRED_TEXT, RegisterCount, type RegisterCountProps } from '../register/register-count';
 import { createRegisterDb, RegisterHarness, seedSession, type RegisterDb } from './register-harness';
@@ -552,3 +553,157 @@ it('an approved close prints too', async () => {
   await waitFor(() => expect(calls).toEqual(['close', 'print']));
   expect(approve).toHaveBeenCalledTimes(1);
 }, 20_000);
+
+// #1096: `failureText` replaces the store's message for a failed close or Back to selling only;
+// the host's `approve` and `onPrint` failures and the approval-required refusal keep their own.
+// Without the prop the raw message shows: 'shows RegisterTenderInProgressError as its own message on Close'.
+const FAILURE = 'Could not save the count — try again';
+async function renderFailing(actions: Partial<Register['actions']>, extra?: Partial<RegisterCountProps>,
+  overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
+  const session = await seedSession(db, 10000);
+  await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
+  render(
+    <RegisterHarness db={db} overrides={overrides}>
+      {(register) => (
+        <RegisterCount register={{ ...register, actions: { ...register.actions, ...actions } }} currency="EUR"
+          failureText={FAILURE} {...extra} />
+      )}
+    </RegisterHarness>,
+  );
+  await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+}
+const countError = () => screen.getByTestId('count-error').textContent;
+
+it('T1: with failureText, a failed close shows exactly the failureText', async () => {
+  const closeSession = vi.fn(async () => { throw new Error('HTTP 500'); });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe(FAILURE));
+  expect(closeSession).toHaveBeenCalledTimes(1);
+});
+
+it('T1b: with failureText, a failed Back to selling shows exactly the failureText', async () => {
+  const backToSelling = vi.fn(async () => { throw new Error('HTTP 500'); });
+  await renderFailing({ backToSelling });
+  fireEvent.click(screen.getByTestId('count-back'));
+  await waitFor(() => expect(countError()).toBe(FAILURE));
+  expect(backToSelling).toHaveBeenCalledTimes(1);
+});
+
+it("T3: with failureText, approve's own failure shows its message", async () => {
+  const approve = vi.fn(async () => { throw new Error('Store refused'); });
+  await renderFailing({}, { approve }, { varianceThreshold: 500 });
+  enter('1.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Store refused'));
+  expect(approve).toHaveBeenCalledTimes(1);
+});
+
+it("T4: with failureText, onPrint's failure after a close shows its message", async () => {
+  const closeSession = vi.fn(async () => {});
+  const onPrint = vi.fn(async () => { throw new Error('Printer offline'); });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] }, { onPrint });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Printer offline'));
+  expect(closeSession).toHaveBeenCalledTimes(1);
+});
+
+it('T5: with failureText, an approval-required rejection from closeSession shows the refusal copy', async () => {
+  const refused = Object.assign(new Error('approval required'), { name: 'RegisterApprovalRequiredError' });
+  const closeSession = vi.fn(async () => { throw refused; });
+  await renderFailing({ closeSession: closeSession as unknown as Register['actions']['closeSession'] });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(screen.getByTestId('count-manager-line').textContent).toBe(APPROVAL_REQUIRED_TEXT));
+  expect(screen.queryByTestId('count-error')).toBeNull();
+  expect(screen.queryByText(FAILURE)).toBeNull();
+});
+
+it("T6: with failureText, the hook's sale-in-progress refusal shows its own message", async () => {
+  await renderFailing({}, undefined, { tenderInProgress: true });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Finish or cancel the sale in progress first.'));
+  expect(screen.queryByText(FAILURE)).toBeNull();
+  expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
+});
+
+// #1086: the count reads the store's money format; its prefills, Clear and keypad write its decimal separator.
+describe('the count in the store money format', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const mount = async (format: typeof COMMA, currency = 'EUR', counted?: Record<string, number>) => {
+    const closeSession = vi.fn(async (_input: CloseInput) => {});
+    const session = await seedSession(db, 10000);
+    await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting', ...(counted ? { counted } : {}) });
+    render(
+      <MoneyFormatProvider format={format}>
+        <RegisterHarness db={db}>
+          {/* Mounted once the session is read, as its callers do, so a persisted count can prefill. */}
+          {(register) => register.session && (
+            <RegisterCount register={{ ...register, actions: { ...register.actions, closeSession: closeSession as unknown as Register['actions']['closeSession'] } }}
+              currency={currency} />
+          )}
+        </RegisterHarness>
+      </MoneyFormatProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('register-count')).toBeTruthy());
+    return { session, closeSession };
+  };
+  const closesWith = async (closeSession: ReturnType<typeof vi.fn>, counted: Record<string, number>) => {
+    expect(closeButton().disabled).toBe(false);
+    fireEvent.click(closeButton());
+    await waitFor(() => expect(closeSession).toHaveBeenCalledTimes(1));
+    expect(closeSession.mock.calls[0]![0].counted).toEqual(counted);
+  };
+
+  it('RC1: COMMA counts a grouped cash amount', async () => {
+    const { closeSession } = await mount(COMMA);
+    enter('1.234,50');
+    await closesWith(closeSession, { cash: 123450 });
+  }, 20_000);
+
+  it.each([
+    ['RC2', COMMA, 'EUR', '1.234.56'],
+    ['RC3', DOT, 'KWD', '0,500'],
+  ] as const)('%s: %j in %s refuses %j', async (_id, format, currency, text) => {
+    await mount(format, currency);
+    enter(text);
+    expect(closeButton().disabled).toBe(true);
+  }, 20_000);
+
+  it('RC4: COMMA, KWD: the keypad types the comma, and 1,500 counts 1500', async () => {
+    const { closeSession } = await mount(COMMA, 'KWD');
+    expect(screen.getByTestId('count-key-decimal').textContent).toBe(',');
+    for (const name of ['1', 'decimal', '5', '0', '0']) key(name);
+    expect(amount()).toBe('1,500');
+    await closesWith(closeSession, { cash: 1500 });
+  }, 20_000);
+
+  it('RC5: COMMA resumes a persisted count in its separator', async () => {
+    await mount(COMMA, 'EUR', { cash: 1250 });
+    await waitFor(() => expect(amount()).toBe('12,50'));
+  }, 20_000);
+
+  it('RC6: COMMA counts a grouped other tender', async () => {
+    const { session, closeSession } = await mount(COMMA);
+    await sale('order-1', session.id, [{ method: 'external', amountMinor: 2200 }]);
+    await openTenders();
+    await waitFor(() => expect(screen.getByTestId('count-tender-external')).toBeTruthy());
+    enter('100');
+    fireEvent.change(screen.getByTestId('count-tender-external'), { target: { value: '1.234,50' } });
+    await closesWith(closeSession, { cash: 10000, external: 123450 });
+  }, 20_000);
+
+  it('RC7: COMMA, Clear writes 0,00 and the next key starts fresh', async () => {
+    const { closeSession } = await mount(COMMA);
+    openTiles();
+    fireEvent.click(screen.getByTestId('count-clear'));
+    expect(amount()).toBe('0,00');
+    key('5');
+    expect(amount()).toBe('5');
+    await closesWith(closeSession, { cash: 500 });
+  }, 20_000);
+});

@@ -174,5 +174,45 @@
     "count": 1,
     "offset": 0,
     "limit": 1000
+  },
+  "_taxRegionsAll": "Hand-written for #673 in the shape the live L-A1 test proved on medusa-dev (GET /admin/tax-regions?limit=100&offset=0&fields=id,country_code,province_code,parent_id,*tax_rates,*tax_rates.rules); not a recording.",
+  "taxRegionsAll": {
+    "tax_regions": [
+      {
+        "id": "txreg_de",
+        "country_code": "de",
+        "province_code": null,
+        "parent_id": null,
+        "tax_rates": [
+          { "id": "txr_de_standard", "name": "Germany", "code": "DE-STANDARD", "rate": 19, "is_default": true, "rules": [] },
+          {
+            "id": "txr_de_books",
+            "name": "Books",
+            "code": "DE-BOOKS",
+            "rate": 7,
+            "is_default": false,
+            "rules": [{ "id": "txrule_books", "reference": "product_type", "reference_id": "ptyp_books", "tax_rate_id": "txr_de_books" }]
+          },
+          { "id": "txr_de_unset", "name": "Unset", "code": null, "rate": null, "is_default": false, "rules": [] }
+        ]
+      },
+      {
+        "id": "txreg_de_by",
+        "country_code": "de",
+        "province_code": "by",
+        "parent_id": "txreg_de",
+        "tax_rates": [{ "id": "txr_de_by", "name": "Bavaria", "code": "DE-BY", "rate": 2, "is_default": true, "rules": [] }]
+      },
+      {
+        "id": "txreg_fr",
+        "country_code": "fr",
+        "province_code": null,
+        "parent_id": null,
+        "tax_rates": [{ "id": "txr_fr_standard", "name": "", "code": "FR-STANDARD", "rate": 20, "is_default": true, "rules": [] }]
+      }
+    ],
+    "count": 3,
+    "offset": 0,
+    "limit": 100
   }
 }

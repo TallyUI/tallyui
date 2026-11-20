@@ -79,6 +79,18 @@ describe('adoptRegisterResults', () => {
     expect((await command(s.id)).toJSON()).toStrictEqual(after);
   });
 
+  it('take over at register contract 3 requeues the refused open as version 3 with supersedes (#1105)', async () => {
+    const s = await open();
+    await conflict(s.id);
+    const before = (await command(s.id)).toJSON();
+    await takeOverSession({ commands: db.register_commands, sessions: db.register_sessions, sessionId: s.id, now, registerContract: 3 });
+    const after = (await command(s.id)).toJSON();
+    expect(after).toMatchObject({ key: before.key, seq: before.seq, version: 3, syncStatus: 'pending', updatedAt: now,
+      payload: { ...before.payload, sessionId: s.id, supersedes: 'other' } });
+    expect(after.commandId).not.toBe(before.commandId);
+    expect(after).not.toHaveProperty('error');
+  });
+
   it('take over refused a second time stays in conflict with the new data', async () => {
     const s = await open();
     await conflict(s.id);

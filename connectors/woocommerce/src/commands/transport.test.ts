@@ -949,3 +949,26 @@ describe('the tax address as WCPOS meta with billing and shipping (#722, order.c
     expect(bytes).not.toContain('"shipping":');
   });
 });
+
+describe('shipping tax status as WCPOS meta (Woo 16)', () => {
+  function shippingLine(taxStatus: 'none' | 'taxable') {
+    const envelope = order();
+    envelope.version = 7;
+    envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', methodId: 'flat_rate', amountMinor: 500, taxStatus, taxMinor: 0 }];
+    envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 800;
+    const result = toWooOrderPayload(envelope);
+    if (!('payload' in result)) throw new Error(result.error.message);
+    return (result.payload.shipping_lines as unknown[])[0];
+  }
+
+  it('S1: pushes a none shipping line with its tax status in _woocommerce_pos_data', () => {
+    expect(shippingLine('none')).toStrictEqual({ method_id: 'flat_rate', method_title: 'Delivery', total: '5.00',
+      meta_data: [{ key: '_woocommerce_pos_data', value: '{"tax_status":"none"}' }] });
+  });
+
+  it('S2: pushes a taxable shipping line with no meta_data key', () => {
+    const line = shippingLine('taxable');
+    expect(line).toStrictEqual({ method_id: 'flat_rate', method_title: 'Delivery', total: '5.00' });
+    expect(line).not.toHaveProperty('meta_data');
+  });
+});

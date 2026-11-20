@@ -99,7 +99,7 @@ export type { SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory,
 export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
 export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS, createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './customer-display';
-export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
+export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayPauseReason, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
 export { createTillDevice } from './customer-display';
@@ -152,9 +152,10 @@ export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscou
 export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, type SaleRemoval } from './sale/use-sale';
 export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';

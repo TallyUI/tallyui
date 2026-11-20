@@ -50,9 +50,10 @@ export function deviceNameOf(name: string | null | undefined): string | undefine
   return trimmed || undefined;
 }
 
-export function sessionOpenCommand(s: RegisterSession, v2?: { deviceName?: string | null }): BuiltCommand {
+/** The options make a v2 open, or version 3 at register contract 3 (#1105); the payload is v2's. */
+export function sessionOpenCommand(s: RegisterSession, v2?: { deviceName?: string | null; registerContract?: number }): BuiltCommand {
   const deviceName = deviceNameOf(v2?.deviceName);
-  return { key: `session.open:${s.id}`, type: 'register.session.open', version: v2 ? 2 : 1, payload: {
+  return { key: `session.open:${s.id}`, type: 'register.session.open', version: v2 ? ((v2.registerContract ?? 0) >= 3 ? 3 : 2) : 1, payload: {
     sessionId: s.id, registerId: s.register_id, openedAt: s.opened_at_gmt, countedFloatMinor: s.counted_float_minor,
     ...(s.store_key == null ? {} : { storeKey: s.store_key }),
     ...(s.business_day == null ? {} : { businessDay: s.business_day }),
@@ -135,7 +136,7 @@ export function reconcileRegisterCommands({ commands, sessions, movements, closu
       events.push(...entries.filter((entry) => entry.type !== 'void').map(movementCommand),
         ...entries.filter((entry) => entry.type === 'void').map(movementCommand));
       if (session.status_at != null && sentStatus(session)) events.push(sessionTransitionCommand({ ...session, status_at: session.status_at }));
-      return { session, number: closureRows[0]?.number, built: [(registerContract ?? 0) >= 2 ? sessionOpenCommand(session, { deviceName }) : sessionOpenCommand(session), ...events,
+      return { session, number: closureRows[0]?.number, built: [(registerContract ?? 0) >= 2 ? sessionOpenCommand(session, { deviceName, registerContract }) : sessionOpenCommand(session), ...events,
         ...closureRows.map((closure) => closureCommand(closure, { registerContract, approval: session.approver_token }))] };
     }));
     facts.sort((a, b) => Number(a.session.status !== 'closed') - Number(b.session.status !== 'closed')
