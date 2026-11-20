@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, formatMoney, type SyncContext } from '@tallyui/core';
-import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
+import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, wooOnOrderLinesLine, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
   WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
@@ -413,6 +413,7 @@ describe('readWooCapabilities', () => {
     { capabilities: { order_create_v5: true } },
     { order_create_v5: true },
   ])('uses order version 3 when the v5 capability list is missing in %j', async (body) => {
+    siteBody = { wcpos_version: '1.10.19' };
     statusBody = body;
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
@@ -467,6 +468,7 @@ describe('readWooCapabilities', () => {
     [{ capabilities: ['products_id_fast_path'] }, false],
     [{ capabilities: 'order_payments_list' }, false],
   ])('reads the payment list advertisement from %j', async (body, multiplePayments) => {
+    siteBody = { wcpos_version: '1.10.19' };
     fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
@@ -583,6 +585,50 @@ describe('readWooCapabilities', () => {
   it('returns undefined for invalid JSON', async () => {
     fetchMock.mockResolvedValueOnce(new Response('invalid JSON'));
     expect(await readWooCapabilities(context)).toBeUndefined();
+  });
+
+  // Woo 16: stock WCPOS 1.10.20+ sends no capabilities array; its version is the fallback, capped at 7.
+  it.each(['1.10.20', '1.10.27'])('G1: takes order version 7 and coupons from stock site version %s with no capabilities key', async (wcpos_version) => {
+    statusBody = {};
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 7, coupons: true });
+  });
+
+  it.each([
+    { wcpos_version: '1.10.19' }, { wcpos_version: '1.10.0' }, { wcpos_version: '1.10.20-beta.1' }, { wcpos_version: '1.10.21-beta.1' },
+    { wcpos_version: '1.11.0' }, { wcpos_version: '2.0.4' }, {}, { wcpos_version: 'latest' },
+  ])('G2: uses order version 3 with no capabilities key and site %j', async (body) => {
+    statusBody = {};
+    siteBody = body;
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3 });
+  });
+
+  it.each([
+    [['order_create_v5'], '1.10.20', 8], [['order_create_v5'], '1.10.19', 8], [['order_create_v5'], '2.0.4', 8],
+    [['order_create_v5'], '1.8.99', 5], [['products_id_fast_path'], '2.0.4', 3], [[], '1.10.20', 3],
+  ])('G3: lets the capabilities %j decide over site version %s, giving %i', async (capabilities, wcpos_version, orderCreate) => {
+    statusBody = { capabilities };
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate });
+  });
+
+  it('G4: keeps order version 3 when status answers HTTP 500 on a 1.10.20 site', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: true });
+  });
+
+  it.each(['HTTP 500', 'network'])('G4: keeps order version 3 when site fails (%s) with no capabilities key', async (failure) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json({}));
+    if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('network'));
+    else fetchMock.mockResolvedValueOnce(Response.json({ wcpos_version: '1.10.20' }, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: false });
+  });
+
+  it.each([
+    ['1.10.20', true], ['1.10.99', true], [' 1.10.20 ', true], ['1.10.19', false], ['1.10.20+build.1', false],
+    ['1.10.21-rc.1', false], ['1.10', false], ['1.11.0', false], [undefined, false],
+  ])('wooOnOrderLinesLine(%j) is %s', (version, expected) => {
+    expect(wooOnOrderLinesLine(version)).toBe(expected);
   });
 
   it('wires both readers into the connector', () => {
