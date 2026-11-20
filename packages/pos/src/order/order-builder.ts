@@ -154,7 +154,7 @@ export interface OrderBuilder {
   /**
    * Edits a line's name, SKU or regular unit price (ADR-092 6b/6c); `regularUnitPriceMinor: null` removes it. Name and SKU
    * are trimmed and may not be empty. A catalogue line's first SKU edit keeps the SKU it was added with as `catalogueSku`.
-   * The whole patch is checked first, so a patch that throws changes nothing.
+   * A custom line refuses a regular price (ADR-077 d3). The whole patch is checked first, so a patch that throws changes nothing.
    */
   updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): void;
   removeItem(lineId: string): void;
@@ -702,6 +702,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       if (regular != null && (!Number.isInteger(regular) || regular < 0)) throw new RangeError('Regular price must be integer minor units >= 0');
       const li = lineItems.find((line) => line.id === lineId);
       if (!li) throw new Error(`Unknown line ${lineId}`);
+      // ADR-077 d3: a custom line has no regular price; addLine drops one too.
+      if (li.custom && regular != null) throw new RangeError('A custom line has no regular price');
       const { regularUnitPriceMinor: _regular, ...unpriced } = li;
       const changes = { ...(name !== undefined ? { name } : {}),
         ...(sku !== undefined ? { sku, ...(!li.custom && li.catalogueSku === undefined ? { catalogueSku: li.sku } : {}) } : {}),

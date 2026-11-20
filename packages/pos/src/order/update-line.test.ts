@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createOrderBuilder } from './order-builder';
 import type { TaxContext } from '../tax/types';
 import type { Order } from './types';
@@ -84,6 +84,22 @@ describe('OrderBuilder.updateLine (ADR-092 6b/6c)', () => {
     const after = builder.getSnapshot().lineItems[0];
     expect(after).toMatchObject({ name, sku });
     expect(after.catalogueSku).toBe(catalogueSku);
+  });
+
+  it('L7: a custom line refuses a regular price and changes nothing; null is allowed (ADR-077 d3)', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext });
+    const emit = vi.fn();
+    const id = builder.addLine({ productId: 'custom:1', custom: true, name: 'Repair', sku: 'R-1', unitPrice: { amount: 500, currency: 'USD' } });
+    builder.order$.subscribe(emit);
+    emit.mockClear();
+    const before = builder.getSnapshot();
+    expect(() => builder.updateLine(id, { regularUnitPriceMinor: 500 })).toThrow(RangeError);
+    expect(() => builder.updateLine(id, { regularUnitPriceMinor: 500 })).toThrow('A custom line has no regular price');
+    expect(builder.getSnapshot()).toEqual(before);
+    expect('regularUnitPriceMinor' in builder.getSnapshot().lineItems[0]).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+    expect(() => builder.updateLine(id, { regularUnitPriceMinor: null })).not.toThrow();
+    expect('regularUnitPriceMinor' in builder.getSnapshot().lineItems[0]).toBe(false);
   });
 
   it('L6: two unedited scans of the same product still merge', () => {
