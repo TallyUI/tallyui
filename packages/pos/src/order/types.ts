@@ -177,8 +177,8 @@ export interface Payment {
   methodId?: string;
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
-  // For cash, record the full amount tendered here, not the capped amount: `finalizeOrder`
-  // caps it at the balance due and writes out `tenderedMinor`/`changeMinor` itself.
+  // Cash records the full tendered amount, except a leg taken for picked units with `tenderedMinor`:
+  // it records the pick's money here and keeps the amount handed over and the change.
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;
