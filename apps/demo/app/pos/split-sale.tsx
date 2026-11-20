@@ -1,9 +1,10 @@
 // The split sale screen (parity S3a): v2's checkout column (pos-columns.tsx:118-162). At tender the checkout pane takes
 // the products column's place and the cart stays beside it as the Payments ledger; on a phone the pane is the whole
-// body, with its own ledger.
+// body, with its own ledger. While Split is pressed the cart is v2's split-by-item bill: one useTender reducer drives
+// both columns, so the units picked on the cart are this payment's.
 import { ScrollView } from 'react-native';
 import { Stack } from 'expo-router';
-import { Cart, Catalogue, POSLayout, Receipt, Tender } from '@tallyui/components';
+import { Cart, Catalogue, POSLayout, Receipt, Tender, useTender } from '@tallyui/components';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import { ConnectorProvider, type StoreSettings } from '@tallyui/core';
 import { TaxProvider, taxProviderProps, useSale } from '@tallyui/pos';
@@ -20,8 +21,9 @@ const products = [
 function Sale() {
   const sale = useSale(settings, { registerId: 'demo-register', cashierRef: 'demo-cashier', capabilities: { orderCreate: 5, lineTax: { none: true, classes: true } } });
   const { stage } = sale;
+  const tender = useTender(sale);
   const renderCheckout = stage.kind === 'tender'
-    ? (layout: 'split' | 'stacked') => <ScrollView className="flex-1"><Tender sale={sale} ledger={layout === 'stacked'} /></ScrollView>
+    ? (layout: 'split' | 'stacked') => <ScrollView className="flex-1"><Tender sale={sale} tender={tender} ledger={layout === 'stacked'} /></ScrollView>
     : stage.kind === 'receipt'
       ? () => <ScrollView testID="sale-receipt" className="flex-1">
         <Receipt order={stage.order} posOrder={stage.posOrder} store={{ name: 'Demo store' }} cashier="Demo cashier"
@@ -29,7 +31,7 @@ function Sale() {
       </ScrollView>
       : undefined;
   const cart = stage.kind === 'tender'
-    ? <Cart sale={sale} showTotal={false} tenderLedger={{}} />
+    ? <Cart sale={sale} showTotal={false} tenderLedger={{}} picker={tender.picker} />
     : <Cart sale={sale} showTotal={false} checkout={{ onCheckout: () => sale.startTender('cash') }} />;
   return <>
     <Stack.Screen options={{ title: 'Split sale' }} />

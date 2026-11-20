@@ -225,7 +225,8 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         entryMinor,
         entryDirty: false,
         entryMode: 'money',
-        splitView: false,
+        // Split closed means no picks: while units are picked (a leg recorded or settled elsewhere), Split stays open.
+        splitView: Object.keys(state.pickedUnits).length > 0 ? state.splitView : false,
         pickedLineIds: [],
         linesPaidBy,
       };

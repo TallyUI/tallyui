@@ -142,7 +142,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
-      columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={picker ? undefined : () => split(line.id)}
+      columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={picker ? undefined : () => split(line.id)} picking={picker !== undefined}
       quantitySlot={picker ? pickable(line) ? <PickStepper picker={picker} id={line.id} name={line.name} unpaid={unpaid(line)}
         currency={order.currency} /> : undefined : lineEditor === 'popover' ? <LinePopover kind="quantity" lineName={line.name} currency={order.currency}
         value={line.quantity} onApply={(quantity) => { sale.setQuantity(line.id, quantity); return null; }} commit={lineCommit}
@@ -179,7 +179,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       onApply={(amount, reason) => applyPrice(line, amount, reason)} /> : null}
   </>;
   return <View dataSet={{ print: 'hide' }} className="flex-1 min-h-0" onLayout={(event) => setCartWidth(event.nativeEvent.layout.width)}>
-    {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} />}
+    {empty ? null : <CartColumnHeads showPrice={showPrice} columns={columns} picking={picker !== undefined} />}
     <CartPanel items={order.lineItems} renderItem={renderItem} pulseKey={(line) => line.quantity} identity={order.id}
     footerClassName="px-2 py-2"
     emptyState={empty ? <View testID="cart-empty" className="flex-1 items-center justify-center gap-3 px-3 py-6">
@@ -197,7 +197,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
             onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
             {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)} percent={charge.percent}
               total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
-              showPrice={showPrice} columns={columns} testID="cart-charge-line" wrapTotal={wrapTotal} />}
+              showPrice={showPrice} columns={columns} picking={picker !== undefined} testID="cart-charge-line" wrapTotal={wrapTotal} />}
           </ChargeStrip>
           {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}

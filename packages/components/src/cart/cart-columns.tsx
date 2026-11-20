@@ -20,6 +20,9 @@ export const CART_COLUMNS = {
   regularPrice: { head: 'w-18 flex-none items-end px-2', cell: 'w-18 flex-none items-end px-2' },
   total: { head: 'w-20 flex-none items-end pr-3 pl-2', cell: 'min-w-20 flex-none items-end pr-3 pl-2' },
 };
+/** The quantity column while Cart's `picker` is on: room for v2's `− 99 of 99 +` stepper and its "This payment" head
+ * (two 44px buttons and the count, about 165px; v2's split.jpg gives the column about 160px at 1280×800). */
+export const CART_PICKING_QUANTITY = { head: 'w-48 flex-none items-center px-2', cell: 'w-48 flex-none items-center px-2' };
 
 /** Under this cart width the Price column folds away, so the item name keeps room to read. */
 const PRICE_COLUMN_MIN_WIDTH = 300;
@@ -97,6 +100,8 @@ export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
   showPrice?: boolean;
   /** Which columns show (v2's Cart Settings › Columns); pass the same value as each CartLine's `columns`. */
   columns?: CartColumnSettings;
+  /** Cart's `picker` is on: the quantity column heads v2's split-by-item bill, "This payment" (default false). */
+  picking?: boolean;
   className?: string;
 }
 
@@ -107,13 +112,13 @@ export interface CartColumnHeadsProps extends Omit<ViewProps, 'children'> {
  * <CartColumnHeads showPrice={showPrice} />
  * ```
  */
-export function CartColumnHeads({ showPrice = true, columns, className, ...props }: CartColumnHeadsProps): JSX.Element {
+export function CartColumnHeads({ showPrice = true, columns, picking = false, className, ...props }: CartColumnHeadsProps): JSX.Element {
   const t = useT();
-  const label = (id: CartColumnId) => HEADS[id] && t(HEADS[id]);
+  const label = (id: CartColumnId) => picking && id === 'quantity' ? t('pos_checkout.this_payment') : HEADS[id] && t(HEADS[id]);
   return (
     <View role="row" className={cn('flex-row border-b border-border', className)} {...props}>
       {cartColumnSlots(columns, { showPrice }).map((id) => id === 'fill' ? <View key={id} className="flex-1" /> : (
-        <View key={id} role="columnheader" className={cn('h-9 justify-center', CART_COLUMNS[id].head)}>
+        <View key={id} role="columnheader" className={cn('h-9 justify-center', (picking && id === 'quantity' ? CART_PICKING_QUANTITY : CART_COLUMNS[id]).head)}>
           {label(id) ? <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground" numberOfLines={1}>{label(id)}</Text> : null}
         </View>
       ))}

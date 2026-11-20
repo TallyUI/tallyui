@@ -15,8 +15,6 @@ return <>
 </>;
 ```
 
-Cart's `picker` prop lands with #1055.
-
 The hook returns `state: TenderState`, `dispatch: (action: TenderAction) => void`, and `picker: TenderPicker | undefined`. The picker exposes `picked`, `paid` (including units held by pending payments), `unitMinor(lineId, units)`, and `onPick(lineId, units)`. It is available in tender after opening Split or picking units, unless a split plan is active. Back clears the picks.
 
 Closing Split clears the picks.

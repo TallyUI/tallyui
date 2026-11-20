@@ -97,6 +97,7 @@
 	"pos_checkout.store_holds_payment": "The store already holds this sale's payment. Remove the {amount} taken here to finish.",
 	"pos_checkout.take_amount_in": "Take {amount} in {method}",
 	"pos_checkout.tendered": "Tendered",
+	"pos_checkout.this_payment": "This payment",
 	"pos_checkout.to_pay": "To pay",
 	"pos_checkout.void_on_method": "Void {amount} on {title}",
 	"receipt.email_queued": "Receipt email queued",

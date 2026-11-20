@@ -464,4 +464,18 @@ describe('split by units', () => {
     expect(paidUnitsByLine(state.unitAllocations, ['p1', 'p2'])).toEqual({ a: 2 });
     expect(paidUnitsByLine(state.unitAllocations, ['p2'])).toEqual({ a: 1 });
   });
+
+  it('T1: tender-recorded keeps Split open while units are picked, and closes it when none are', () => {
+    const allocations = { p1: { a: 1 } };
+    const state = { ...pick(initialTenderState, 1), splitView: true, unitAllocations: allocations };
+    expect(state.pickedUnits).toEqual({ a: 1 });
+    const recorded = tenderReducer(state, { type: 'tender-recorded', rowsSinceFrom: [], balanceMinor: 100 });
+    expect(recorded.splitView).toBe(true);
+    expect(recorded.pickedUnits).toEqual({ a: 1 });
+    expect(recorded.unitAllocations).toEqual(allocations);
+    const none = tenderReducer({ ...state, pickedUnits: {} }, { type: 'tender-recorded', rowsSinceFrom: [], balanceMinor: 100 });
+    expect(none.splitView).toBe(false);
+    expect(none.pickedUnits).toEqual({});
+    expect(none.unitAllocations).toEqual(allocations);
+  });
 });

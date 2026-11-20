@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney } from '@tallyui/core';
+import en from '../i18n/locales/en/components.json';
 import { Cart } from '../sale/cart';
 import { blue, SaleHarness, sale, traits } from './sale-harness';
 
@@ -100,6 +101,15 @@ describe('Cart picker', () => {
     expect(screen.queryByTestId(`cart-line-${b}-pick-plus`)).toBeNull();
     expect(screen.queryByTestId(`cart-line-${b}-pick-units`)).toBeNull();
     expect(within(screen.getByText('Alteration').parentElement!.parentElement!).getByText('1')).toBeTruthy();
+  });
+
+  it('P8: with picker the quantity column heads "This payment"; without it, the head is unchanged', { timeout: 20_000 }, () => {
+    const { pick } = setup();
+    const quantityHead = () => screen.getAllByRole('columnheader')[0].textContent;
+    expect(quantityHead()).toBe(en['pos_cart.col_qty']);
+    expect(quantityHead()).toBe('Qty');
+    pick({});
+    expect(quantityHead()).toBe('This payment');
   });
 
   // The harness builds no negative-total line (a negative custom price displays 0), so P7 covers a fractional quantity.
