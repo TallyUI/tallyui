@@ -226,7 +226,7 @@ describe('ChargeForm', () => {
     });
 
     it('C7: without shippingTaxFromStore, No tax follows lineTax.none, not shippingNoTax', () => {
-      mountShipping({ shippingTaxFromStore: undefined, lineTax: { classes: true }, taxClasses });
+      mountShipping({ shippingTaxFromStore: undefined, lineTax: { none: false, classes: true }, taxClasses });
       expect(screen.queryByRole('switch', { name: 'No tax' })).toBeNull();
       expect(screen.getByRole('group', { name: 'Tax class' })).toBeTruthy();
     });
