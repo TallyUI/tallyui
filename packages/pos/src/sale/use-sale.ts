@@ -3,7 +3,7 @@ import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
-import { paidUnitsByLine, unitAllocationsFromLegs, unpaidUnitsByLine } from '../tender/split-units';
+import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
@@ -831,7 +831,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
@@ -840,9 +840,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.units) {
         const { lineItems, payments } = builderNow.current.getSnapshot();
-        const paid = paidUnitsByLine(unitAllocationsFromLegs(payments), payments.filter(countsTowardPaid).map((p) => p.id));
         // unpaidUnitsByLine reads only id and quantity, so totalMinor can be 0.
-        const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), paid);
+        const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
         if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
       }
       if (tender.method === 'external') {

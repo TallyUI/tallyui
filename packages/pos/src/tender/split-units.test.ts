@@ -3,6 +3,7 @@ import type { Payment } from '../order/types';
 import { countsTowardPaid, type PaymentLegStatus } from './payment-legs';
 import { initialTenderState, tenderReducer } from './tender-state';
 import {
+  heldUnitsByLine,
   paidUnitsByLine,
   pickedUnitsMinor,
   unitsMinor,
@@ -10,6 +11,18 @@ import {
   unpaidUnitsByLine,
   type SplitUnitLine,
 } from './split-units';
+
+it('P3-H1: holds captured and in-motion units, freeing failed and voided legs', () => {
+  const payments: Payment[] = [
+    { id: 'p1', method: 'cash', amountMinor: 100, units: { a: 1 } },
+    { id: 'p2', method: 'external', amountMinor: 100, status: 'pending', units: { a: 1, b: 1 } },
+    { id: 'p3', method: 'external', amountMinor: 100, status: 'authorized', units: { b: 2 } },
+    { id: 'p4', method: 'external', amountMinor: 100, status: 'failed', units: { a: 5 } },
+    { id: 'p5', method: 'external', amountMinor: 100, status: 'voided', units: { b: 5 } },
+    { id: 'p6', method: 'cash', amountMinor: 100, status: 'captured' },
+  ];
+  expect(heldUnitsByLine(payments)).toEqual({ a: 2, b: 3 });
+});
 
 it('P2-U1: copies units from every leg, including voided legs, and skips amount-only legs', () => {
   const payments: Payment[] = [
