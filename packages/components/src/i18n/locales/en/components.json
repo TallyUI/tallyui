@@ -77,6 +77,7 @@
 	"pos_checkout.paid_in_full": "Paid in full",
 	"pos_checkout.paid_of_total": "{paid} of {total} paid",
 	"pos_checkout.part_payment_left": "Part payment · {left} left after this",
+	"pos_checkout.pick_amount_due": "This payment is {amount} for the picked items",
 	"pos_checkout.payments_tab": "Payments",
 	"pos_checkout.refund_due": "Refund due {amount}",
 	"pos_checkout.remaining": "Remaining",

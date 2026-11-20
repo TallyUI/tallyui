@@ -9,7 +9,7 @@ import { useEffect, useState, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
+  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
   type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -18,6 +18,7 @@ import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 import { offeredMethods, tenderOf } from './offered-methods';
 import { TenderLedger } from './tender-ledger';
+import { pickFigure } from './use-tender';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
 import { CreditCardIcon } from '../ui/icon/credit-card-icon';
 
@@ -76,10 +77,16 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const method = state.methodId ? descriptorOf(state.methodId) ?? null : null;
   // ADR-072: change comes only from cash, so a non-cash method's `change: true` gives none (take() records no change for it).
   const givesChange = method !== null && wireMethodOf(method) === 'cash' && method.capabilities.change === true;
-  const figures = tenderRounding(state, balance, method);
+  const pick = state.plan || Object.keys(state.pickedUnits).length === 0 ? null : pickFigure(order, state.pickedUnits);
+  const target = pick ? Math.min(pick.minor, balance - inMotionMinor(order.payments)) : balance;
+  const partPick = pick !== null && target < balance;
+  const entry = state.entryDirty ? state.entryMinor : target;
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, method);
+  const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
+    || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   const entryChange = changeMinor(figures.entryMinor, figures.appliedMinor, givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
-  const noChange = method !== null && !givesChange && figures.entryMinor > balance;
+  const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
   const changeLeads = !noChange && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
   const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
@@ -92,14 +99,17 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const typed = state.entryDirty && figures.appliedMinor > 0 && figures.appliedMinor < balance;
   const restMinor = balance - (typed ? figures.appliedMinor : 0);
   const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
-  const dueMinor = planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
+  const dueMinor = partPick ? target : planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
   const [onlyLeg] = order.payments;
   // startTender('external') records the card leg for the total: its reference is edited in place, as before.
   const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
-  const hint = noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
+  const hint = partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
+    : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
+    : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
+    : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
     : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their removal.
@@ -108,16 +118,16 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const canComplete = balance === 0 && !order.payments.some(isInMotion) && refused.length === 0;
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
-  const tillChange = order.changeDueMinor - refundDue;
-  const cannotTake = figures.appliedMinor <= 0 || noChange;
+  const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
+  const cannotTake = figures.appliedMinor <= 0 || noChange || pickRefused;
 
   function take() {
-    if (!method) return;
+    if (!method || pickRefused) return;
     const tender = tenderOf(method);
-    const units = Object.keys(state.pickedUnits).length ? { units: state.pickedUnits } : {};
+    const units = partPick ? { units: pick.picks } : Object.keys(state.pickedUnits).length ? { units: state.pickedUnits } : {};
     const id = tender.method === 'cash'
-      ? sale.addTender({ ...tender, ...units, amountMinor: figures.entryMinor })
-      : sale.addTender({ ...tender, ...units, amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
+      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}) })
+      : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');
@@ -132,7 +142,12 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           {balanceInCaption ? <>{' '}<Text testID="tender-balance">{money(balance)}</Text></> : null}
         </Text>
         {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
-          onPress={() => dispatch(splitOn ? { type: 'clear-plan', balanceMinor: balance } : { type: 'open-split' })}>
+          onPress={() => {
+            if (splitOn) {
+              dispatch({ type: 'clear-plan', balanceMinor: balance });
+              for (const lineId of Object.keys(state.pickedUnits)) dispatch({ type: 'set-split-units', lineId, units: 0, unpaidUnits: 0 });
+            } else dispatch({ type: 'open-split' });
+          }}>
           <Text className="font-semibold text-foreground">{t('pos_checkout.split')}</Text>
         </Pressable> : null}
       </View>
@@ -149,7 +164,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 

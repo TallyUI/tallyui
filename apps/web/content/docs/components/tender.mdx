@@ -29,6 +29,7 @@ Renders only during the sale's tender stage. The headline shows the total, or wh
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
+| `tender` | `ReturnType<typeof useTender>` | own reducer | Share [useTender](/docs/components/use-tender)'s state and dispatch with Cart's unit picker |
 | `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered: each manual-capture descriptor gets a tile and records its wire method (`cash` or `external`) plus its own id as `methodId`; other capture modes are not shown |
 | `ledger` | `boolean` | `true` | Draws the payments ledger in the [TenderPane](/docs/components/tender-pane); pass `false` when Cart's `tenderLedger` shows it in the cart column |
 | `back` | `boolean` | `true` | Draws the [TenderPane](/docs/components/tender-pane)'s Back button; pass `false` when the host leaves the tender stage itself, as WCPOS v2's phone checkout does |

@@ -60,8 +60,10 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
   'UI_SCALES', 'UI_THEMES',
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
-  'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
-  'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
+  // initialTenderState is a pure constant that useTender resets to.
+  'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
+  // inMotionMinor is pure, and the tender pane's pick target needs it.
+  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg',
   // the tender picker (#1133 11c): the pure charged line figures used to price a unit pick.
   'splitUnitLines',
   // the tender picker (#1133 11c): the pure count of units captured or held by an in-motion leg.
