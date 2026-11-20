@@ -6777,3 +6777,36 @@ interface OrderCreatePayload {
 - **Evidence to come with the PRs:** a v12 golden fixture, and the v3–v11 fixtures unchanged; server prechecks that
   refuse each field below 12; the bounds at their limits and one past them; an identity migration test 17→18; a
   requeued order that comes back into `needsAttention` after it was stamped.
+
+## ADR-093 Store closures as an optional, online `TallyConnector.closures?` surface
+
+- **Date:** 2026-11-20 · **Status:** Accepted (front desk, 2026-11-20: the tally-woo 24 group declares `Correction`
+  and `ApproverCredentials` in core within a 40-line cap, and this entry lands before any code) · **Relates to:**
+  ADR-081 (optional, online `listOrders`/`getOrders`, the model for this surface), ADR-068 and ADR-082 (closures
+  are submitted through the register outbox), ADR-032 amendment 1 (the pos `settled-figures` port, whose
+  `Correction` shape this keeps). The tally-woo spec 24 (`woo-closures-read-recount`) is the source. WCPOS v2 is
+  the reference for features and taste.
+- **Context:**
+  - WCPOS v2's closure room reads the store's Z closures, shows each one's corrections, records a reprint and sends
+    a late recount. TallyUI had no closure read on `TallyConnector`: a till saw only its own local closures.
+  - `Correction` is declared in `@tallyui/pos` (`register/settled-figures.ts`), so a connector cannot return one
+    without importing pos.
+  - A recount by a cashier without the right to manage closures carries a manager's sign-in. Register contract 3
+    (ADR-082) needs the same credentials for its approval, so the type is shared.
+- **Decision:**
+  1. **Optional and online.** `closures?` is an optional, read-through member of `TallyConnector`, with no
+     collection, no cache and no replication: a local copy of server closures would be a second source of truth
+     (ADR-081 decision 1). A connector without it is unchanged, and the app hides its server-closure features, as
+     it hides order history without `listOrders`. Medusa and Vendure are untouched until they implement it.
+  2. **Reads and appended corrections only.** Closures are still submitted through the register outbox (ADR-068,
+     ADR-082). This surface reads them (`list`, `get`, `last`), appends a recount as a correction (`recount`) and
+     records a reprint (`markPrinted`). It never edits a closure's recorded figures.
+  3. **Shared types in core.** `Correction` moves from pos to core, and pos re-exports it, so nothing that imports it
+     from `@tallyui/pos` changes. Its `type` union is widened with `'late_refund'` (WCPOS v2.0.4 appends one), and
+     `deriveSettled` treats a late refund as a late sale on the refund side (front desk, 2026-11-20). `ApproverCredentials` (`{username, password}`) lives in core, used by
+     the register approval and the recount alike.
+  4. **Credentials.** `ApproverCredentials` go straight to the store, once per call. A connector never logs them,
+     keeps them or puts them in an error.
+  5. **Blind figures.** Figures a store withholds from the signed-in user are absent, never zero.
+  6. **Money.** Every amount is in integer minor units, as elsewhere in core; a connector converts the store's
+     decimals both ways.

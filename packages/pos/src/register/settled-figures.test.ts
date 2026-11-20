@@ -3,6 +3,7 @@
 // real-world equivalent, not a literal digit copy of WCPOS's four-decimal fixtures.
 import { expect, it } from 'vitest';
 import { type Correction, deriveSettled } from './settled-figures';
+import type { Correction as PublicCorrection } from '../index';
 import closureLocalRow from './__fixtures__/closure-local-row.json';
 import correctionsDst from './__fixtures__/corrections-dst.json';
 
@@ -109,4 +110,20 @@ it('reports a shortfall for a tender introduced after counting', () => {
   const result = deriveSettled(recorded, [correction(1, 'late_sale', { expected_delta: { voucher: 1234 } })]);
   expect(result.settled.variance.voucher).toBe(-1234);
   expect(result.touched.has('variance.voucher')).toBe(true);
+});
+
+// Revert: deriveSettled ignores late_refund, or the pos entry stops exporting core's Correction.
+it('P1: a late refund lowers expected cash and raises both refunds totals, never sales', () => {
+  const refund: PublicCorrection = correction(1, 'late_refund', { expected_delta: { cash: -500 }, refunds_delta: 500 });
+  const result = deriveSettled(recorded, [refund]);
+  expect(result.settled.expected).toEqual({ cash: 9500, card: 2000 });
+  expect(result.settled.period_refunds_total_minor).toBe(1000);
+  expect(result.settled.perpetual_refunds_total_minor).toBe(5500);
+  expect(result.settled.period_sales_total_minor).toBe(12000);
+  expect(result.settled.perpetual_sales_total_minor).toBe(100000);
+  expect(result.touched.has('expected.cash')).toBe(true);
+  expect(result.touched.has('period_refunds_total_minor')).toBe(true);
+  expect(result.touched.has('perpetual_refunds_total_minor')).toBe(true);
+  expect(result.touched.has('period_sales_total_minor')).toBe(false);
+  expect(result.touched.has('perpetual_sales_total_minor')).toBe(false);
 });

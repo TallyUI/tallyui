@@ -2,8 +2,8 @@ import type { RegisterInfo, SyncContext } from '@tallyui/core';
 import { wooMinorFromDecimal } from './commands/transport';
 import { throwIfUnauthorized } from './unauthorized';
 
-/** WCPOS 2.0's registers (`GET registers`), with the float in the store currency's minor units; `[]` below 2.0 (no route). */
-export async function wooListRegisters(context: SyncContext): Promise<RegisterInfo[]> {
+/** The first store from `GET stores` and its currency, upper-cased. */
+async function wooFirstStore(context: SyncContext): Promise<{ currency: string; store: Record<string, unknown> }> {
   const init = { method: 'GET', headers: context.headers, signal: context.signal };
   const storesResponse = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/stores`, init);
   throwIfUnauthorized(storesResponse, 'stores');
@@ -12,7 +12,18 @@ export async function wooListRegisters(context: SyncContext): Promise<RegisterIn
   if (!Array.isArray(stores) || stores.length === 0) throw new Error('WooCommerce stores: expected a non-empty array');
   const store = stores[0];
   if (typeof store?.currency !== 'string') throw new Error('WooCommerce stores: expected a currency');
-  const currency: string = store.currency.toUpperCase();
+  return { currency: store.currency.toUpperCase(), store };
+}
+
+/** The store currency (`stores[0].currency`), upper-cased. */
+export async function wooStoreCurrency(context: SyncContext): Promise<string> {
+  return (await wooFirstStore(context)).currency;
+}
+
+/** WCPOS 2.0's registers (`GET registers`), with the float in the store currency's minor units; `[]` below 2.0 (no route). */
+export async function wooListRegisters(context: SyncContext): Promise<RegisterInfo[]> {
+  const init = { method: 'GET', headers: context.headers, signal: context.signal };
+  const { currency, store } = await wooFirstStore(context);
   // WCPOS sets the close time per store; core reads it per register.
   const closeTime = typeof store.expected_close_time === 'string' && /^\d{2}:\d{2}$/.test(store.expected_close_time)
     ? store.expected_close_time : undefined;

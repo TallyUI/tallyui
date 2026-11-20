@@ -1,5 +1,5 @@
 // Woo 23: register commands against WCPOS 2.0.4's routes (API/V2/Sessions_Controller.php:38-56, Closures_Controller.php:215-241).
-import { minorUnitDigits, type CommandResult, type RegisterClosureSubmitPayload, type RegisterCommandEnvelope, type RegisterCommandResult,
+import { minorUnitDigits, type ApproverCredentials, type CommandResult, type RegisterClosureSubmitPayload, type RegisterCommandEnvelope, type RegisterCommandResult,
   type RegisterMovementRecordPayload, type RegisterMovementVoidPayload, type RegisterSessionOpenPayload,
   type RegisterSessionTransitionPayload, type SyncContext } from '@tallyui/core';
 import { wooThresholdMinor } from '../store-settings';
@@ -12,20 +12,17 @@ export interface WooRegisterTransportOptions extends Pick<WooCommandTransportOpt
   currency: string | (() => string | Promise<string>);
 }
 
-/** A manager's WordPress sign-in for one approval; never logged or stored. */
-export interface ApproverCredentials { username: string; password: string }
-
 // Closure_Store::tenders (v2.0.4 Services/Closure_Store.php:537-551).
 const TENDER_KEY = /^[a-zA-Z0-9_-]{1,191}$/;
 
 /** A whole minor amount as a decimal string at `digits`, by string slicing (no float maths). */
-function wooDecimal(minor: number, digits: number): string {
+export function wooDecimal(minor: number, digits: number): string {
   const text = String(Math.abs(minor)).padStart(digits + 1, '0');
   return `${minor < 0 ? '-' : ''}${digits ? `${text.slice(0, -digits)}.${text.slice(-digits)}` : text}`;
 }
 
 /** A store decimal, with an optional leading `-`, as minor. */
-function wooSignedMinor(value: unknown, currency: string): number | undefined {
+export function wooSignedMinor(value: unknown, currency: string): number | undefined {
   if (typeof value !== 'string') return undefined;
   const text = value.trim();
   if (!text.startsWith('-')) return wooMinorFromDecimal(text, currency);
