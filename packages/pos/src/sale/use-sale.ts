@@ -3,7 +3,7 @@ import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
-import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
+import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
@@ -62,6 +62,11 @@ export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. C
 export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
 /** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
 export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
+/** #1095: restore()'s refusal of a removal whose sale moved on (reset, parked, finished) or that is already back. */
+export const RESTORE_STALE = 'This item can no longer be put back. Add it again.';
+/** Taken by `removal()` before a remove; pass it to `restore()`. Hosts never build one. */
+export type SaleRemoval = { readonly kind: 'line' | 'fee' | 'shipping'; readonly id: string; readonly item: LineItem | ChargeLine;
+  readonly index: number; readonly orderId: string; readonly taxContext: TaxContext; readonly epoch: number };
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -234,6 +239,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const repricing = useRef<Promise<string | null> | null>(null);
   const [couponsRepricing, setCouponsRepricing] = useState(false);
   const generation = useRef(0);
+  const saleEpoch = useRef(0); // #1095: bumped by every resetSale (new sale, park, resume, switch); a removal from an older epoch is stale.
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
@@ -300,6 +306,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     keptCoupons.current = undefined; keptLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
+    saleEpoch.current++;
     setBuilder(next);
     setOrder(next.getSnapshot());
     // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
@@ -623,6 +630,27 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       }
     },
     remove(lineId: string) { if (!editRefusal()) builderNow.current.removeItem(lineId); },
+    /** #1095: the line, fee or shipping line `id` as it is now, taken before a remove for `restore()`; null when it is not there. */
+    removal(kind: SaleRemoval['kind'], id: string): SaleRemoval | null {
+      const order = builderNow.current.getSnapshot();
+      const list: readonly (LineItem | ChargeLine)[] = kind === 'line' ? order.lineItems : kind === 'fee' ? order.fees ?? [] : order.shipping ?? [];
+      const index = list.findIndex((item) => item.id === id);
+      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext, epoch: saleEpoch.current };
+    },
+    /** #1095, v2's Undo: puts a removal back at its old index (clamped), re-taxed when the sale's rates moved since; returns a refusal or null. */
+    restore(removal: SaleRemoval): string | null {
+      const held = editRefusal(); if (held) return held;
+      const order = builderNow.current.getSnapshot(), moved = removal.taxContext !== taxNow.current.taxContext;
+      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id || removal.epoch !== saleEpoch.current) return RESTORE_STALE;
+      const ids = [removal.item, ...(removal.kind === 'line' ? (removal.item as LineItem).discounts : [])].map((entry) => entry.id);
+      if ([...order.lineItems.flatMap((li) => [li, ...li.discounts]), ...order.fees ?? [], ...order.shipping ?? [], ...order.discounts, ...order.payments]
+        .some((entry) => ids.includes(entry.id))) return RESTORE_STALE; // already back
+      // A re-tax runs only as retaxFor allows it (stage and busy are refused above).
+      if (moved && (capturedMinor(order.payments) !== 0 || order.payments.some(isInMotion) || keptCodes())) return RESTORE_STALE;
+      builderNow.current.restoreItem(removal.kind, removal.item, removal.index);
+      if (moved) retax(builderNow.current.getSnapshot().customer, taxNow.current);
+      return null;
+    },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
     applyDiscount(lineId: string | null, discount: Discount): string | null {
       const held = editRefusal(); if (held) return held;
