@@ -198,6 +198,7 @@ describe('Medusa order history through the plugin orders route (#1114)', () => {
 
   const ctx2: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 2 } };
   const ctx3: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 3 } };
+  const ctx4: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 4 } };
   const X = L[0];
   const Y = L[2];
   const pluginOf = (ids: string[], extra: Record<string, unknown> = { hasMore: false }) =>
@@ -205,6 +206,53 @@ describe('Medusa order history through the plugin orders route (#1114)', () => {
   const call = (spy: { mock: { calls: unknown[][] } }, index: number) => new URL(String(spy.mock.calls[index]?.[0]));
   const path = (url: URL) => `${url.origin}${url.pathname}`;
   const entries = (url: URL) => [...url.searchParams.entries()];
+
+  it('C1 (#1125) searches display numbers across all channels at contract 4', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([]));
+    await listOrders(ctx4, { search: '303' });
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/tally/v1/orders`);
+    expect(entries(url).sort()).toStrictEqual([['allChannels', 'true'], ['page', '1'], ['perPage', '25'], ['search', '303']]);
+  });
+
+  it('C2 sends register and customer filters across all channels at contract 4', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([]));
+    await listOrders(ctx4, { registerId: 'reg-1', customerId: 'cus_1' });
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/tally/v1/orders`);
+    expect(entries(url).sort()).toStrictEqual([
+      ['allChannels', 'true'], ['customerId', 'cus_1'], ['page', '1'], ['perPage', '25'], ['registerId', 'reg-1'],
+    ]);
+  });
+
+  it.each([{ search: '303' }, { registerId: 'reg-1' }])('C3 omits allChannels at contract 3 for %j', async (query) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([]));
+    await listOrders(ctx3, query);
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/tally/v1/orders`);
+    expect(url.searchParams.has('allChannels')).toBe(false);
+  });
+
+  it.each([{ search: 'smith' }, {}])('C4 keeps %j on the admin path without allChannels at contract 4', async (query) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.list));
+    await listOrders(ctx4, query);
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/admin/orders`);
+    expect(url.searchParams.has('allChannels')).toBe(false);
+  });
+
+  it('C5 sends allChannels at contract 5 too', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([]));
+    await listOrders({ ...context, capabilities: { orderCreate: 1, pluginContract: 5 } }, { registerId: 'reg-1' });
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/tally/v1/orders`);
+    expect(url.searchParams.get('allChannels')).toBe('true');
+  });
 
   it('N1 offers registerId only at plugin contract 3', () => {
     for (const capabilities of [undefined, { orderCreate: 1 }, { orderCreate: 1, pluginContract: 2 }]) {
