@@ -31,9 +31,8 @@ export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before 
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
  * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a kept
- * paid draft's parked legs, and `resume` keeps
- * a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the sale stays on the till until it is paid or
- * its paid legs are voided.
+ * paid draft's parked legs, and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
+ * sale stays on the till until it is paid or its paid legs are voided.
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';

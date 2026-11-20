@@ -558,6 +558,37 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.order.payments).toHaveLength(2);
   });
 
+  it('T29: with the kept coupons, a voided parked leg is not held while another stays live: Pay tenders total minus the live leg', async () => {
+    const shop = store();
+    const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
+    const { result } = renderSale({ discountCodes: shop.codes, onSaleCompleted });
+    await apply(result, 'a');
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 300 })).toEqual(expect.any(String)); });
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 200 })).toEqual(expect.any(String)); });
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    shop.perUnit.a = 300;
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    const [kept, voided] = result.current.order.payments;
+    expect(voided.amountMinor).toBe(200);
+    act(() => { expect(result.current.voidTender(voided.id)).toBe(true); });
+    await settle();
+    expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+    expect(result.current.order.couponPricesStale ?? false).toBe(false);
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([kept, expect.objectContaining({ method: 'external', amountMinor: 780 })]);
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.stage.kind).toBe('receipt');
+    type Stored = { totalMinor: number; payments: { amountMinor: number }[] };
+    const rows = (await db.pos_orders.find().exec()).map((doc) => doc.toJSON() as unknown as Stored);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalMinor).toBe(1080);
+    expect(rows[0].payments.map((payment) => payment.amountMinor)).toEqual([300, 780]);
+  });
+
   /** A one-line sale paid by a captured cash leg and completed: the receipt stage, with the finished builder still live. */
   async function saleOnReceipt() {
     const onSaleCompleted = vi.fn();
