@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StoreSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { PosOrder } from '../pos-order';
+import { heldUnitsByLine } from '../tender';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
@@ -182,6 +183,57 @@ describe('useSale split tender', () => {
   });
 });
 
+
+describe('payment units (#1133 prerequisite 3)', () => {
+  function pendingUnitsSale() {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    act(() => { result.current.setQuantity(lineId, 3); result.current.startTender('cash'); });
+    let first: string | null = null;
+    act(() => {
+      first = result.current.addTender({ method: 'external', amountMinor: 300, status: 'pending', units: { [lineId]: 2 } });
+    });
+    expect(first).toEqual(expect.any(String));
+    return { result, lineId, first };
+  }
+
+  it.each(['pending', 'authorized'] as const)('P3-H2: a %s leg holds its units and leaves one free', (status) => {
+    const { result, lineId, first } = pendingUnitsSale();
+    if (status === 'authorized') act(() => { expect(result.current.setTenderStatus(first!, status)).toBe(true); });
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(1);
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 100, units: { [lineId]: 1 } })).toEqual(expect.any(String));
+    });
+  });
+
+  it.each(['failed', 'void', 'captured'] as const)('P3-H4: a pending leg becomes %s', (release) => {
+    const { result, lineId, first } = pendingUnitsSale();
+    act(() => {
+      expect(release === 'void' ? result.current.voidTender(first!) : result.current.setTenderStatus(first!, release)).toBe(true);
+    });
+    act(() => {
+      const next = result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } });
+      if (release === 'captured') {
+        expect(next).toBeNull();
+        expect(result.current.addTender({ method: 'cash', amountMinor: 100, units: { [lineId]: 1 } })).toEqual(expect.any(String));
+      } else expect(next).toEqual(expect.any(String));
+    });
+  });
+
+  it('P3-H5: two legs in motion can hold all three units without overlap', () => {
+    const { result, lineId } = pendingUnitsSale();
+    act(() => {
+      expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'authorized', units: { [lineId]: 2 } })).toBeNull();
+      expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'authorized', units: { [lineId]: 1 } })).toEqual(expect.any(String));
+      expect(result.current.addTender({ method: 'cash', amountMinor: 100, units: { [lineId]: 1 } })).toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(2);
+    expect(heldUnitsByLine(result.current.order.payments)[lineId]).toBe(3);
+  });
+});
 
 describe('payment units (#1133 prerequisite 2)', () => {
   it.each([['a', undefined], ['d', 'x'.repeat(256)]])('P2-U3(%s): stores units even when a reference is dropped', (_case, reference) => {

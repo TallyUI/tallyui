@@ -170,6 +170,7 @@ export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCol
 export { sendOrderReopen, isOrderReopenInFlight, isReopenOffered, type OrderReopenOutcome, storeOrderForReopen, ReopenEntryError, REOPEN_REFUSED_STATUSES, type ReopenEntryReason, reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE, type ReopenStoreOrderOutcome } from './reopen';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg, unitsMinor, unitAllocationsFromLegs, paidUnitsByLine, unpaidUnitsByLine, pickedUnitsMinor } from './tender';
+export { heldUnitsByLine } from './tender';
 export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures, SplitUnitLine, UnitAllocations } from './tender';
 
 // Register

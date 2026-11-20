@@ -29,6 +29,16 @@ function discountedSale() {
 }
 
 describe('finalizeOrder', () => {
+  it('P3-H3: keeps payment units on the device, out of stored payments and the envelope', () => {
+    const builder = sale();
+    const lineId = builder.getSnapshot().lineItems[0].id;
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor, units: { [lineId]: 1 } });
+    const posOrder = finalizeOrder(builder.getSnapshot());
+    expect(posOrder.payments[0]).not.toHaveProperty('units');
+    expect(JSON.stringify(toOrderCreateEnvelope(posOrder, 'device-1'))).not.toContain('"units"');
+    expect(builder.getSnapshot().payments[0].units).toEqual({ [lineId]: 1 });
+  });
+
   it("finalizes a fully paid reopened store order; a plain order's output is unchanged", () => {
     const builder = sale();
     builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });

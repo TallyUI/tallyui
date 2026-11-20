@@ -1,4 +1,5 @@
 import type { Payment } from '../order/types';
+import { countsTowardPaid, isInMotion } from './payment-legs';
 import type { TenderLineId } from './tender-state';
 
 /** A cart line as a unit split prices it: `totalMinor` is the line's money with tax inside, as the cashier is charged. */
@@ -13,6 +14,9 @@ export type UnitAllocations = Record<string, Record<string, number>>;
 export function unitAllocationsFromLegs(payments: readonly Payment[]): UnitAllocations {
   return Object.fromEntries(payments.filter((leg) => leg.units !== undefined).map((leg) => [leg.id, { ...leg.units }]));
 }
+
+/** Units of each line a leg holds while captured or in motion (pending, authorized); a failed or voided leg frees them (#1133). */
+export function heldUnitsByLine(payments: readonly Payment[]): Record<string, number> { return paidUnitsByLine(unitAllocationsFromLegs(payments), payments.filter((leg) => countsTowardPaid(leg) || isInMotion(leg)).map((leg) => leg.id)); }
 
 /**
  * The money `units` units of a line carry, cumulatively: floor(total·units/quantity).
