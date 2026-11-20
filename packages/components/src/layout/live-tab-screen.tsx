@@ -43,7 +43,7 @@ export function LiveTabScreen({
   const onPress = state === 'parked' ? onUseHere : onReload;
 
   return (
-    <View className={cn('flex-1 items-center justify-center gap-4 bg-bg p-6', className)} {...viewProps}>
+    <View className={cn('flex-1 items-center justify-center gap-4 bg-background p-6', className)} {...viewProps}>
       <Text className="text-center text-lg font-bold text-foreground">{parkedTitle}</Text>
       <Text className="text-center text-sm text-muted-foreground">{body}</Text>
       <Pressable onPress={onPress} className="items-center rounded-lg bg-primary px-4 py-3">

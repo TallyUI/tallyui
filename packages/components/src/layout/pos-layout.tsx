@@ -43,7 +43,7 @@ export function POSLayout({
     <View testID="pos-checkout-column" className="flex-1 bg-card">{renderCheckout?.(mode)}</View>;
 
   return (
-    <View className={cn('flex-1 bg-bg', className)} {...viewProps}>
+    <View className={cn('flex-1 bg-background', className)} {...viewProps}>
       {headerSlot && <View className="border-b border-border">{headerSlot}</View>}
 
       {layout === 'split' ? (
