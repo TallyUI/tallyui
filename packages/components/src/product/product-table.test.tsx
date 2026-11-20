@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { Text } from 'react-native';
 import { ConnectorProvider } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
@@ -237,5 +237,23 @@ describe('ProductTable loading', () => {
     render(table({ loading: true }));
     expect(rowIds()).toEqual(['product-row-1', 'product-row-2', 'product-row-3']);
     expect(screen.queryAllByTestId('product-table-skeleton-row')).toHaveLength(0);
+  });
+
+  it('K1: skeleton rows fill a 480 px body at 48 px each', () => {
+    render(table({ items: [], loading: true }));
+    const node = screen.getByLabelText('Loading') as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => node.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 800, height: 480 } } }));
+    const rows = screen.getAllByTestId('product-table-skeleton-row');
+    expect(rows).toHaveLength(10);
+    expect(rows[0].style.minHeight).toBe('48px');
+  });
+
+  it('K2: with the thumbnail, a skeleton row is the image plus 13 px', () => {
+    render(table({ items: [], loading: true, showThumbnail: true }));
+    const node = screen.getByLabelText('Loading') as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => node.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 800, height: 480 } } }));
+    const rows = screen.getAllByTestId('product-table-skeleton-row');
+    expect(rows).toHaveLength(7);
+    expect(rows[0].style.minHeight).toBe('69px');
   });
 });
