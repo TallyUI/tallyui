@@ -26,7 +26,18 @@ The component is controlled and has no Save button: as in v2, every change is re
 
 The two number fields take digits only and report a whole number of 0 or more; any other character is dropped as it is typed. While a number field is empty it reports nothing, and when it loses focus it shows the current value again. Prefix and suffix are reported exactly as typed, with no trimming, since a scanner's prefix may be a space.
 
-v2's Sound section, its input source chooser and its Barcode Scanning Test panel are not part of this component.
+v2's Sound section, its input source chooser, and the test panel's key capture, timing chart and history are not part of this component.
+
+## Test verdict
+
+The app captures the keys, runs `analyzeScanTrace` from `@tallyui/pos` with the current values, and passes the analysis through `test`. Use `analysis: null` before the first test scan; the optional `capture` field renders the app's capture UI first. Apply calls `onChange` with the suggestion's settings.
+
+Exactly one headline appears, using the first matching condition in this order (`avg` is the rounded average gap and `threshold` is the current threshold):
+
+1. Scan: `Detected as a scan → {code}`.
+2. Near miss: `Treated as typing — average gap {avg}ms is above your {threshold}ms threshold`.
+3. Non-finite average: `Treated as typing — only one key pressed, so there are no gaps to measure`.
+4. Otherwise: `Treated as typing (average gap {avg}ms) — correctly ignored`.
 
 ## Props
 
@@ -35,3 +46,4 @@ v2's Sound section, its input source chooser and its Barcode Scanning Test panel
 | `values` | `BarcodeScanningValues` | required | `{ threshold: number; minChars: number; prefix: string; suffix: string }` |
 | `onChange` | `(patch: Partial<BarcodeScanningValues>) => void` | required | Called with the one field that changed, as soon as it holds a valid value |
 | `className` | `string` | --- | Override container styles |
+| `test` | `{ analysis: TraceAnalysis \| null; capture?: ReactNode }` | --- | Draws v2's Barcode Scanning Test verdict; Apply calls `onChange` with the suggestion's settings |
