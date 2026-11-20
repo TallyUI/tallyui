@@ -240,7 +240,7 @@ describe('a plan keys its legs by payment id (#1133 prerequisite 1)', () => {
     const A = sale.order.payments[0];
     const lineId = sale.order.lineItems[0].id;
     act(() => {
-      dispatch({ type: 'set-plan', balanceMinor: 1500, plan: { kind: 'items', lineIds: [lineId], firstMinor: 1000, ways: 1, from: 1 } });
+      dispatch({ type: 'set-plan', balanceMinor: 1500, plan: { kind: 'items', lineIds: [lineId], firstMinor: 1000, ways: 1, from: 1, before: [A.id] } });
     });
     act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
     expect(state.linesPaidBy[lineId]).toEqual(['cash']);
@@ -259,6 +259,30 @@ describe('a plan keys its legs by payment id (#1133 prerequisite 1)', () => {
     act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); });
     expect(text('tender-plan')).toBe('2 of 3');
     fireEvent.click(screen.getByTestId(`tender-leg-${A.id}-void`));
+    expect(text('tender-plan')).toBe('2 of 3');
+  }, 20_000);
+
+  it('D3: a pending leg pressed before the plan does not join it when it captures', () => {
+    startPane();
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const A = sale.order.payments[0];
+    fireEvent.click(screen.getByTestId('tender-split-chip'));
+    fireEvent.click(screen.getByTestId('tender-split-even-3'));
+    expect(text('tender-plan')).toBe('1 of 3');
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    expect(text('tender-plan')).toBe('2 of 3');
+    act(() => { expect(sale.setTenderStatus(A.id, 'captured')).toBe(true); });
+    expect(text(`tender-leg-${A.id}-status`)).toBe('Captured');
+    expect(text('tender-plan')).toBe('2 of 3');
+  }, 20_000);
+
+  it('D4: a plan without before keeps the slice(from) reading', () => {
+    startPane();
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500 }); });
+    act(() => {
+      dispatch({ type: 'set-plan', balanceMinor: 1500, plan: { kind: 'even', ways: 3, from: 1 } });
+    });
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); });
     expect(text('tender-plan')).toBe('2 of 3');
   }, 20_000);
 });

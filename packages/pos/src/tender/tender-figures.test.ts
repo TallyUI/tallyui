@@ -116,6 +116,12 @@ describe('tenderFigures', () => {
       { n: 3, ways: 4, toCome: 1 },
     ],
     [
+      'numbers a plan by its own legs when a leg before it was voided (#1133)',
+      facts({ balanceMinor: 1000, payments: [{ status: 'voided' }, { status: 'captured' }], rowsSinceFrom: [{ minor: 500, title: 'cash' }] },
+        { plan: { kind: 'even', ways: 3, from: 1, before: ['a'] } }),
+      { n: 2, ways: 3 },
+    ],
+    [
       'figures a fixed first payment followed by three equal shares in the select view',
       facts({ balanceMinor: 18250 },
         { view: 'select', plan: { kind: 'fixed', firstMinor: 2000, thenWays: 3, title: null, from: 0 } }),
