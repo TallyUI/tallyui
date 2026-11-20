@@ -139,3 +139,34 @@ describe('WCPOS 1.10.20 variations pull', () => {
     expect((await till.local()).size).toBe(0);
   });
 });
+
+describe('WCPOS 2.0.x variations pull', () => {
+  const bare = fixture.documents.map((doc) => doc.payload);
+
+  // The bare items carry the parent only on themselves (parent_id: 102), so this also proves the parent lookup.
+  it('stores sorted variations from a bare array after one request', async () => {
+    const store = createFakeStore(1);
+    Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });
+    store.respond = (url) => {
+      if (url.pathname !== '/wp-json/wcpos/v2/variations') return;
+      const include = url.searchParams.get('include')!.split(',').map(Number);
+      return Response.json(bare.filter((item) => include.includes(item.id)).reverse());
+    };
+    const till = await startTill(store, { adapter: wooProductReplication, batchSize: 10 });
+    await till.sync();
+    expect((await till.local()).get('u1')).toMatchObject({
+      id: 102, variation_docs: fixture.documents.map((doc) => toVariationDocument(doc.payload)),
+    });
+    expect(store.requests.filter((url) => url.pathname.endsWith('/variations'))).toHaveLength(1);
+  });
+
+  it('rejects an unexpected variations body and stores no products from that page', async () => {
+    const store = createFakeStore(2);
+    Object.assign(store.rows[1], { id: 102, type: 'variable', variations: [104, 105, 106] });
+    store.respond = (url) => url.pathname === '/wp-json/wcpos/v2/variations' ? Response.json({}) : undefined;
+    await expect(wooProductReplication.pull.handler(undefined, 10, context)).rejects.toThrow('/variations');
+    const till = await startTill(store, { adapter: wooProductReplication, batchSize: 10 });
+    await vi.waitFor(() => expect(till.errors.length).toBeGreaterThan(0));
+    expect((await till.local()).size).toBe(0);
+  });
+});
