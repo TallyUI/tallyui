@@ -3,7 +3,7 @@ import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
 import { capturedMinor } from '../tender/payment-legs';
-import { couponPricingBasis, createOrderBuilder, type OrderBuilder } from './order-builder';
+import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
 
 /** Apps create their drafts collection with this schema. */
@@ -152,7 +152,8 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     const restored = builder.getSnapshot();
     builder.setCoupons(saved.coupons.map((coupon) => coupon.code), { kind: 'kept', coupons: saved.coupons,
       displayRows: saved.display.coupons.map((row) => row.amountMinor), lines: new Map(saved.lineItems.map((li) => [li.id, li])),
-      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }) });
+      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }),
+      legIds: saved.payments.filter(isLiveLeg).map((p) => p.id) });
   }
   return builder;
 }

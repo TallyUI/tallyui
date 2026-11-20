@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { couponPricingBasis, createOrderBuilder, type KeptCouponContext } from './order-builder';
+import { couponPricingBasis, createOrderBuilder, isLiveLeg, type KeptCouponContext } from './order-builder';
 import type { Order } from './types';
 
 const taxContext = { getTaxRatePpm: () => 200000, pricesIncludeTax: false, rounding: { granularity: 'per_order' as const, mode: 'half_away_from_zero' as const } };
@@ -17,7 +17,8 @@ function paidSale(amountMinor = 100) {
 function kept(parked: Order, overrides: Partial<KeptCouponContext> = {}): KeptCouponContext {
   return { kind: 'kept', coupons: parked.coupons!, displayRows: parked.display.coupons!.map(({ amountMinor }) => amountMinor),
     lines: new Map(parked.lineItems.map((li) => [li.id, li])),
-    basis: couponPricingBasis(parked), linesBasis: couponPricingBasis({ ...parked, customer: null }), ...overrides };
+    basis: couponPricingBasis(parked), linesBasis: couponPricingBasis({ ...parked, customer: null }),
+    legIds: parked.payments.filter(isLiveLeg).map(({ id }) => id), ...overrides };
 }
 
 describe('order builder kept coupons (ADR-077 d3, amended 2026-11-19)', () => {
@@ -25,7 +26,7 @@ describe('order builder kept coupons (ADR-077 d3, amended 2026-11-19)', () => {
     const { builder, leg } = paidSale(100);
     // Parked at 250 off: the kept figures differ from the builder's own 100, so only a verbatim copy matches.
     const other = paidSale(250).parked;
-    builder.setCoupons(['a'], kept(other));
+    builder.setCoupons(['a'], kept(other, { legIds: [leg] }));
     let order = builder.getSnapshot();
     expect(order.coupons).toEqual(other.coupons);
     expect(order.coupons?.[0].discountMinor).toBe(250);

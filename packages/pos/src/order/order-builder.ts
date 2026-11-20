@@ -117,7 +117,7 @@ export interface StorePricedCouponContext {
 }
 
 /** A parked order's coupons, display coupon rows and post-coupon line figures, kept on a paid resume (ADR-077 d3, amended
- * 2026-11-19). They apply only while an unlocked leg is live on the parked lines; otherwise no figures, and the order is stale. */
+ * 2026-11-19). They apply only while one of the parked live legs is live on the parked lines; else no figures, and the order is stale. */
 export interface KeptCouponContext {
   kind: 'kept';
   coupons: readonly OrderCoupon[];
@@ -125,6 +125,8 @@ export interface KeptCouponContext {
   lines: ReadonlyMap<string, Pick<LineItem, 'netMinor' | 'netMicros' | 'totalMinor' | 'taxLines' | 'taxMicros'>>;
   basis: string; // couponPricingBasis of the order as restored
   linesBasis: string; // the same with no customer: a customer change goes stale but keeps the figures (#1059 R1)
+  /** The ids of the live legs the figures were kept for: a leg added later never brings them back. */
+  legIds: readonly string[];
 }
 
 /** An unlocked leg that is captured or in motion: the sale's total must not move (useSale's liveLeg). */
@@ -299,7 +301,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const replay = woo && couponCodes.length && !tagged ? woocommerceCouponReplay(displaySourceLines, couponCodes,
       couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
     // Kept figures go only on the lines they were parked for, so a line edit never meets them (it goes stale instead).
-    const keptOn = kept && couponCodes.length > 0 && payments.some(isLiveLeg)
+    const keptOn = kept && couponCodes.length > 0 && payments.some((p) => isLiveLeg(p) && kept.legIds.includes(p.id))
       && couponPricingBasis({ currency, customer: null, lineItems, discounts: orderDiscounts }) === kept.linesBasis ? kept : undefined;
     let lines = replay?.lines ?? (keptOn ? displaySourceLines.map((li) => {
       const k = keptOn.lines.get(li.id);

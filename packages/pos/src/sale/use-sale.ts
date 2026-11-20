@@ -228,6 +228,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const [couponsRepricing, setCouponsRepricing] = useState(false);
   const generation = useRef(0);
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
+  const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -254,6 +255,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         asked = b.getSnapshot();
         codes.apply(b, discountState(asked, kept));
         applied.current = kept;
+        keptCoupons.current = undefined;
         if (!kept.size) appliedWith.current = null;
         const message = messages.length ? messages.join(' ') : null;
         // A refusal only a re-price could have set goes once the codes are priced.
@@ -286,6 +288,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     taxNow.current = tax;
     applied.current.clear();
+    keptCoupons.current = undefined;
     appliedWith.current = null;
     generation.current++;
     setBuilder(next);
@@ -311,6 +314,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   function dropKept() { // kept coupons resumed with no discount codes: nothing can price them again
     builderNow.current.setCoupons([], { kind: 'store-priced', priced: new Map(), basis: '' });
     applied.current.clear();
+    keptCoupons.current = undefined;
     setError(COUPONS_UNSUPPORTED);
   }
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
@@ -875,8 +879,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
-      if (keptCodes() && !snapshot.coupons?.length) return COUPONS_REPRICING; // kept codes with no figures would park as no coupons
-      await writeOrderDraft(opts.drafts, snapshot);
+      // Kept codes with no figures (a stopped re-price) park their coupons stale, so the resume prices them (as main does).
+      const stale = keptCodes() && !snapshot.coupons?.length;
+      await writeOrderDraft(opts.drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot);
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale();
       return null;
@@ -967,6 +972,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       if (builderNow.current === builder) {
         applied.current = kept;
+        if (keep) keptCoupons.current = saved.coupons;
         appliedWith.current = kept.size ? codes : null;
         generation.current++;
       }
