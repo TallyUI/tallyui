@@ -90,7 +90,7 @@ export function StoreSettingsChoiceScreen({
   };
 
   return (
-    <View className={cn('w-full max-w-[560px] flex-1 self-center gap-6 bg-bg p-6', className)} {...viewProps}>
+    <View className={cn('w-full max-w-[560px] flex-1 self-center gap-6 bg-background p-6', className)} {...viewProps}>
       <View className="gap-2">
         <Text className="text-lg font-bold text-foreground">{title}</Text>
         <Text className="text-sm text-muted-foreground">{body}</Text>

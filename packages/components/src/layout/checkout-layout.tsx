@@ -25,7 +25,7 @@ export function CheckoutLayout({
   const layout = layoutProp ?? (width >= breakpoint ? 'split' : 'stacked');
 
   return (
-    <View className={cn('flex-1 bg-bg', className)} {...viewProps}>
+    <View className={cn('flex-1 bg-background', className)} {...viewProps}>
       {headerSlot && <View className="border-b border-border">{headerSlot}</View>}
 
       {layout === 'split' ? (

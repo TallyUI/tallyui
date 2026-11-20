@@ -86,7 +86,7 @@ export default function DemoScreen() {
     <>
       <Stack.Screen options={{ title: 'Tally UI Demo' }} />
 
-      <View className="flex-1 bg-bg">
+      <View className="flex-1 bg-background">
         {/* Test screen links */}
         <View className="mx-4 mt-4 gap-2">
           <Link href="/primitives" asChild>
