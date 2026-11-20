@@ -3,7 +3,7 @@
 // register-panel.test.tsx below. Real useRegisterSession over a real memory RxDB register, as
 // register-harness.tsx.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MoneyFormatProvider } from '@tallyui/core';
 import { I18nProvider } from '../i18n';
 import { MovementSheet } from '../register/movement-sheet';
@@ -329,4 +329,54 @@ it('a missing reason still names a valid amount', () => {
   typeAmount('5.12');
   expect(hint()).toBe('Enter a reason.');
   expect(confirmButton().textContent).toBe('Put €5.12 in');
+});
+
+// #1086: the amount is read in the store's money format; text it cannot read canonically is refused.
+describe('the amount in the store money format', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const APOS = { decimalSeparator: '.', thousandSeparator: "'" };
+  const mount = (format?: typeof COMMA, currency = 'EUR') => {
+    const sheet = (
+      <RegisterHarness db={db}>
+        {(register) => <MovementSheet register={register} type="paid_in" currency={currency} onOpenChange={vi.fn()} />}
+      </RegisterHarness>
+    );
+    render(format ? <MoneyFormatProvider format={format}>{sheet}</MoneyFormatProvider> : sheet);
+    fireEvent.change(screen.getByTestId('movement-reason'), { target: { value: 'Change' } });
+  };
+  const recorded = () => waitFor(async () => {
+    const [row] = await db.cash_movements.find().exec();
+    expect(row).toBeTruthy();
+    return row!.amountMinor;
+  });
+
+  it('MS1: COMMA records a grouped amount', async () => {
+    mount(COMMA);
+    typeAmount('1.234,50');
+    expect(confirmButton().disabled).toBe(false);
+    fireEvent.click(confirmButton());
+    expect(await recorded()).toBe(123450);
+  });
+
+  it.each([
+    ['MS2', COMMA, 'EUR', '1.234.56'],
+    ['MS3', DOT, 'KWD', '0,500'],
+    ['MS4', APOS, 'EUR', '1,5'],
+  ] as const)('%s: %j in %s refuses %j', (_id, format, currency, text) => {
+    mount(format, currency);
+    typeAmount(text);
+    expect(confirmButton().disabled).toBe(true);
+    expect(screen.getByTestId('movement-invalid').textContent).toBe('Enter a valid amount.');
+  });
+
+  it('MS5: without a provider, a keypad comma still reads and a thousands comma is still refused', async () => {
+    mount();
+    typeAmount('1,000');
+    expect(confirmButton().disabled).toBe(true);
+    typeAmount('12,5');
+    expect(confirmButton().disabled).toBe(false);
+    fireEvent.click(confirmButton());
+    expect(await recorded()).toBe(1250);
+  });
 });

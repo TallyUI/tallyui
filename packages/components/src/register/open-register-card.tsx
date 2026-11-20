@@ -3,9 +3,10 @@ import { View } from 'react-native';
 import type { useRegisterSession } from '@tallyui/pos';
 import { parseMinor, validAmount } from '@tallyui/pos';
 
-import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, useMoneyFormat, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { errorText } from '../lib/error-text';
+import { moneyInputText, readMoneyText } from '../lib/money-input';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -35,15 +36,17 @@ export interface OpenRegisterCardProps {
 export function OpenRegisterCard({ register, currency, configuredFloatMinor, className }: OpenRegisterCardProps) {
   const formatMoney = useFormatMoney();
   const currencySymbol = useCurrencySymbol();
+  const format = useMoneyFormat();
   const digits = minorUnitDigits(currency);
   const lastCountedMinor = register.lastClosure?.counted?.cash ?? null;
   const expectedFloatMinor = configuredFloatMinor ?? lastCountedMinor ?? null;
   const [enteredAmount, setEnteredAmount] = useState<string | null>(null);
-  const amount = enteredAmount ?? (expectedFloatMinor != null ? decimal(expectedFloatMinor, digits) : '');
+  const amount = enteredAmount ?? (expectedFloatMinor != null ? moneyInputText(expectedFloatMinor, currency, format) : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const valid = validAmount(amount, digits);
-  const countedMinor = valid ? parseMinor(amount, digits) : NaN;
+  const canonical = readMoneyText(amount, format);
+  const valid = canonical !== undefined && validAmount(canonical, digits);
+  const countedMinor = valid ? parseMinor(canonical, digits) : NaN;
   const open = async () => {
     if (busy || !valid) return;
     setBusy(true);
@@ -78,7 +81,7 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
           testID="open-register-chip-configured"
           variant="outline"
           className="min-h-11"
-          onPress={() => setEnteredAmount(decimal(configuredFloatMinor, digits))}
+          onPress={() => setEnteredAmount(moneyInputText(configuredFloatMinor, currency, format))}
         >
           <Text>Use the configured float ({formatMoney({ amount: configuredFloatMinor, currency })})</Text>
         </Button>
@@ -88,7 +91,7 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
           testID="open-register-chip-last"
           variant="outline"
           className="min-h-11"
-          onPress={() => setEnteredAmount(decimal(lastCountedMinor, digits))}
+          onPress={() => setEnteredAmount(moneyInputText(lastCountedMinor, currency, format))}
         >
           <Text>Use the last counted cash ({formatMoney({ amount: lastCountedMinor, currency })})</Text>
         </Button>
@@ -104,9 +107,4 @@ export function OpenRegisterCard({ register, currency, configuredFloatMinor, cla
       </Button>
     </View>
   );
-}
-
-function decimal(minor: number, digits: number): string {
-  const scale = 10 ** digits;
-  return (minor / scale).toFixed(digits);
 }
