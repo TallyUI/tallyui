@@ -11,6 +11,9 @@ export interface ChargeFormProps {
   lineTax?: { none: boolean; classes: boolean };
   taxClasses?: ReadonlyArray<{ id: string; label: string }>;
   shippingTaxFromStore?: boolean;
+  /** With `shippingTaxFromStore`, the shipping kind also shows the No tax switch, as v2's Add Shipping Tax control (#1115);
+   *  the class stays the store's shipping tax class. */
+  shippingNoTax?: boolean;
   /** Given, the form is that kind only and the kind row is not shown (v2's separate Add Fee / Add Shipping /
    * Add Miscellaneous Product entries); absent, the form opens on Fee with the row. */
   kind?: 'fee' | 'shipping' | 'custom';
@@ -35,8 +38,8 @@ const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center 
 const DEFAULT_NAME: Record<'fee' | 'shipping' | 'custom', string> = { fee: 'Fee', shipping: 'Shipping', custom: 'Product' };
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
-export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, initial, allowPercent, pricesIncludeTax,
-  onApply, onClose }: ChargeFormProps) {
+export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, shippingNoTax, kind: fixedKind, initial, allowPercent,
+  pricesIncludeTax, onApply, onClose }: ChargeFormProps) {
   const currencySymbol = useCurrencySymbol();
   const format = useMoneyFormat();
   const t = useT();
@@ -53,6 +56,7 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
   const [taxClass, setTaxClass] = useState(initial?.taxClass ?? '');
   const [error, setError] = useState<string | null>(null);
   const storeShipping = kind === 'shipping' && shippingTaxFromStore;
+  const showNoTax = storeShipping ? shippingNoTax : lineTax?.none;
   const showUnit = Boolean(allowPercent) && kind === 'fee';
   const percentMode = showUnit && unitPercent;
   // Desk ruling (#1060): a percent fee is of the cart in the store's mode, so it has no switch and no amountIncludesTax.
@@ -72,7 +76,7 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
     // so a form without allowPercent or pricesIncludeTax sends the same object as before.
     const refused = typeof parsed === 'string' ? parsed : onApply({
       kind, name: name.trim() || DEFAULT_NAME[kind], amountMinor: percentMode ? 0 : parsed,
-      taxStatus: !storeShipping && lineTax?.none ? (noTax ? 'none' : undefined) : initial?.taxStatus === 'none' ? 'none' : undefined,
+      taxStatus: showNoTax ? (noTax ? 'none' : undefined) : initial?.taxStatus === 'none' ? 'none' : undefined,
       taxClass: !storeShipping && lineTax?.classes && taxClasses?.length ? taxClass || undefined : initial?.taxClass,
       ...(percentMode ? { percent: parsed } : !showUnit && initial?.percent !== undefined ? { percent: initial.percent } : {}),
       ...(percentMode ? {} : showIncludesTax ? includesTax !== pricesIncludeTax ? { amountIncludesTax: includesTax } : {}
@@ -113,10 +117,11 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
       accessibilityState={{ checked: includesTax }} aria-checked={includesTax} onPress={() => setIncludesTax(!includesTax)}
       className={`${button} ${includesTax ? 'bg-primary' : 'bg-card'}`}>
       <Text className={includesTax ? 'text-primary-foreground' : 'text-foreground'}>{t('pos_cart.amount_includes_tax')}</Text></Pressable> : null}
-    {storeShipping ? <Text className="text-muted-foreground">Shipping is taxed at the store's shipping tax class.</Text> : <>
-      {lineTax?.none ? <Pressable accessibilityRole="switch" accessibilityLabel="No tax"
-        accessibilityState={{ checked: noTax }} aria-checked={noTax} onPress={() => setNoTax(!noTax)} className={`${button} ${noTax ? 'bg-primary' : 'bg-card'}`}>
-        <Text className={noTax ? 'text-primary-foreground' : 'text-foreground'}>No tax</Text></Pressable> : null}
+    {showNoTax ? <Pressable accessibilityRole="switch" accessibilityLabel="No tax"
+      accessibilityState={{ checked: noTax }} aria-checked={noTax} onPress={() => setNoTax(!noTax)} className={`${button} ${noTax ? 'bg-primary' : 'bg-card'}`}>
+      <Text className={noTax ? 'text-primary-foreground' : 'text-foreground'}>No tax</Text></Pressable> : null}
+    {storeShipping ? shippingNoTax && noTax ? null
+      : <Text className="text-muted-foreground">Shipping is taxed at the store's shipping tax class.</Text> : <>
       {lineTax?.classes && taxClasses?.length ? <View role="group" accessibilityLabel="Tax class" className="flex-row flex-wrap gap-2">
         {[{ id: '', label: 'No class' }, ...taxClasses].map((option) => <Pressable key={option.id} accessibilityRole="button"
           accessibilityState={{ selected: taxClass === option.id }} aria-selected={taxClass === option.id} onPress={() => setTaxClass(option.id)}

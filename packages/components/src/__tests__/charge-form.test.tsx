@@ -160,6 +160,78 @@ describe('ChargeForm', () => {
     expect(screen.queryByText("Shipping is taxed at the store's shipping tax class.")).toBeNull();
   });
 
+  describe('No tax on store-taxed shipping with shippingNoTax (#1115)', () => {
+    const STORE_NOTE = "Shipping is taxed at the store's shipping tax class.";
+    const noTax = () => screen.getByRole('switch', { name: 'No tax' });
+    const mountShipping = (props: Partial<ChargeFormProps> = {}) => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="shipping" shippingTaxFromStore shippingNoTax {...props} onApply={onApply} onClose={() => {}} />);
+      return onApply;
+    };
+
+    it('C1: shows the No tax switch and no Tax class group, and sends taxStatus none', () => {
+      const onApply = mountShipping();
+      expect(noTax()).toBeTruthy();
+      expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
+      input('Name', 'Delivery');
+      input('Amount', '2');
+      fireEvent.click(noTax());
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
+        taxStatus: 'none', taxClass: undefined });
+    });
+
+    it('C2: applied without toggling, the line stays taxable', () => {
+      const onApply = mountShipping();
+      input('Name', 'Delivery');
+      input('Amount', '2');
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
+        taxStatus: undefined, taxClass: undefined });
+    });
+
+    it('C3: an untaxed line opens with the switch on, and toggled off it applies taxable', () => {
+      const onApply = mountShipping({ initial: { name: 'Courier', amountMinor: 500, taxStatus: 'none' } });
+      expect(noTax().getAttribute('aria-checked')).toBe('true');
+      fireEvent.click(noTax());
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Courier', amountMinor: 500,
+        taxStatus: undefined, taxClass: undefined });
+    });
+
+    it('C4: the store notice shows while No tax is off and is gone once it is on', () => {
+      mountShipping();
+      expect(screen.getByText(STORE_NOTE)).toBeTruthy();
+      fireEvent.click(noTax());
+      expect(screen.queryByText(STORE_NOTE)).toBeNull();
+      fireEvent.click(noTax());
+      expect(screen.getByText(STORE_NOTE)).toBeTruthy();
+    });
+
+    it('C5: without kind the form opens on Fee with no No tax switch; Shipping shows it', () => {
+      mountShipping({ kind: undefined });
+      expect(screen.getByRole('button', { name: 'Fee' }).getAttribute('aria-selected')).toBe('true');
+      expect(screen.queryByRole('switch', { name: 'No tax' })).toBeNull();
+      click('Shipping');
+      expect(noTax()).toBeTruthy();
+    });
+
+    it("C6: turning No tax on keeps the line's own tax class", () => {
+      const onApply = mountShipping({ lineTax: { none: true, classes: true },
+        initial: { name: 'Delivery', amountMinor: 200, taxClass: 'reduced-rate' } });
+      fireEvent.click(noTax());
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
+        taxStatus: 'none', taxClass: 'reduced-rate' });
+    });
+
+    it('C7: without shippingTaxFromStore, No tax follows lineTax.none, not shippingNoTax', () => {
+      mountShipping({ shippingTaxFromStore: undefined, lineTax: { none: false, classes: true }, taxClasses });
+      expect(screen.queryByRole('switch', { name: 'No tax' })).toBeNull();
+      expect(screen.getByRole('group', { name: 'Tax class' })).toBeTruthy();
+    });
+  });
+
   it('shows a refusal inline and closes only on Cancel', () => {
     const onApply = vi.fn().mockReturnValue('This sale is being saved. Retry to finish it.');
     const onClose = vi.fn();

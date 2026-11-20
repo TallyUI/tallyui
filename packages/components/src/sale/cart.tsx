@@ -102,6 +102,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
     | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
+  // #1115: front desk 2026-11-20, a Woo store at order.create 6+ takes a No tax shipping line (stock 2.0.4 proof F2).
+  const shippingNoTax = (sale.capabilities?.orderCreate ?? 0) >= 6;
   const showOrderDiscount = order.lineItems.length > 0 && (orderActions || (orderDiscountChips && order.discounts.length > 0));
   const showCharge = orderActions && chargesOffered;
   const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
@@ -186,7 +188,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
             allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
             taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
-            onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => kind === 'fees'
+            shippingNoTax={shippingNoTax} onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => kind === 'fees'
               ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
               : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax })} /> : null}
         </View>} />)}
@@ -201,7 +203,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {showCharge ? form?.type === 'charge' ? <ChargeForm currency={order.currency} lineTax={sale.capabilities?.lineTax}
         allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
         taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
-        onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => {
+        shippingNoTax={shippingNoTax} onClose={() => setForm(null)} onApply={({ kind, name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => {
           const result = kind === 'custom' ? sale.addCustomLine({ name, priceMinor: amountMinor, taxStatus, taxClass })
             : kind === 'fee' ? sale.addFee({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
               : sale.addShipping({ name, amountMinor, taxStatus, taxClass, amountIncludesTax });
