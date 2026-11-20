@@ -17,7 +17,7 @@ export interface CustomerDisplaySettingsProps {
   /** `useTillPairing(pairing)`. */
   pairing: { phase: PairingPhase; forgetError: PairingError | null };
   /** `useTillDisplays(service)`. */
-  displays: { status: TillDisplayStatus; displays: readonly TillDisplayEntry[] };
+  displays: { status: TillDisplayStatus; displays: readonly TillDisplayEntry[]; pauseReason?: 'signed_out' | 'forbidden' | 'device_refused' | null };
   onStartPairing: () => void;
   onConfirm: (claimId: string) => void;
   onDecline: (claimId: string) => void;
@@ -81,7 +81,9 @@ export function CustomerDisplaySettings({
   else if (phase.phase !== 'confirming') lastCode.current = null;
   const shown = phase.phase === 'code' ? phase : phase.phase === 'confirming' ? lastCode.current : null;
   const busy = phase.phase === 'confirming';
-  const statusLine = STATUS_LINES[displays.status];
+  // Signing in again cannot fix a till the store does not recognise (#754).
+  const statusLine = displays.status === 'paused' && displays.pauseReason === 'device_refused'
+    ? PAIRING_ERRORS.device_refused : STATUS_LINES[displays.status];
 
   return (
     <View className={cn('gap-6', className)}>

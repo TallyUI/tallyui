@@ -145,6 +145,16 @@ describe('CustomerDisplaySettings', () => {
     expect(text('customer-display-status')).toBe(line);
   });
 
+  it('C1: paused with device_refused says the store does not recognise this till', () => {
+    show({ displays: { status: 'paused', displays: [], pauseReason: 'device_refused' } });
+    expect(text('customer-display-status')).toBe('This till is not recognised by the store. Ask an admin to reset it.');
+  });
+
+  it.each([['forbidden'], ['signed_out'], [null], [undefined]] as const)('C2: paused with pauseReason %s shows the sign-in line', (pauseReason) => {
+    show({ displays: { status: 'paused', displays: [], ...(pauseReason === undefined ? {} : { pauseReason }) } });
+    expect(text('customer-display-status')).toBe('Sign in as a cashier who can pair customer displays.');
+  });
+
   it.each(['online', 'closed'] as const)('the %s status shows no line', (status) => {
     show({ displays: { status, displays: [] } });
     expect(screen.queryByTestId('customer-display-status')).toBeNull();
