@@ -41,6 +41,7 @@ The line sits in the same columns as [CartColumnHeads](/docs/components/cart-col
 | `sku` | `string` | — | The SKU, in the SKU column and, with `columns.name.sku`, under the name |
 | `imageUrl` | `string` | — | The image in the Image column; without it the cell stays empty at its width |
 | `onSplit` | `() => void` | — | With `columns.quantity.split` and a quantity above 1, a Split link under the quantity calls this |
+| `picking` | `boolean` | `false` | Widens the quantity column for WCPOS v2's split-by-item stepper; pass the same value as CartColumnHeads' `picking`, as the [Cart](/docs/components/cart) does while its `picker` is on |
 | `locale` | `string` | — | Locale for money formatting |
 | `className` | `string` | — | Override row styles |
 

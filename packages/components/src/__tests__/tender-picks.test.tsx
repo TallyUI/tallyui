@@ -298,3 +298,50 @@ it('W17: unitMinor floors fractional picked counts without throwing', () => {
   expect(() => tender.picker!.unitMinor(id, 1.5)).not.toThrow();
   expect(tender.picker!.unitMinor(id, 1.5)).toBe(tender.picker!.unitMinor(id, 1));
 });
+
+it.each(['captured', 'failed'] as const)('W18: Split stays open with the picks while a pending leg records and settles as %s', (status) => {
+  const id = start();
+  const total = splitUnitLines(sale.order)[0].totalMinor;
+  const chipPressed = () => screen.getByTestId('tender-split-chip').getAttribute('aria-pressed');
+  press('tender-split-chip');
+  pick(id, 2);
+  act(() => { expect(sale.addTender({ method: 'external', status: 'pending', amountMinor: Math.floor(total / 2), units: { [id]: 1 } })).not.toBeNull(); });
+  expect(chipPressed()).toBe('true');
+  expect(tender.picker).toBeDefined();
+  expect(tender.state.pickedUnits).toEqual({ [id]: 1 });
+  act(() => { expect(sale.setTenderStatus(sale.order.payments[0].id, status)).toBe(true); });
+  expect(chipPressed()).toBe('true');
+  expect(tender.picker).toBeDefined();
+  expect(tender.state.pickedUnits).toEqual({ [id]: 1 });
+});
+
+it('W18: with nothing picked, recording a pending leg closes Split', () => {
+  const id = start();
+  const total = splitUnitLines(sale.order)[0].totalMinor;
+  press('tender-split-chip');
+  expect(screen.getByTestId('tender-split-chip').getAttribute('aria-pressed')).toBe('true');
+  act(() => { expect(sale.addTender({ method: 'external', status: 'pending', amountMinor: Math.floor(total / 2), units: { [id]: 1 } })).not.toBeNull(); });
+  expect(screen.getByTestId('tender-split-chip').getAttribute('aria-pressed')).toBe('false');
+  expect(tender.picker).toBeUndefined();
+});
+
+it('W19: a full cash pick with rounding up refuses an entry below the rounded due, even at or above the balance', () => {
+  const cash = paymentMethodOf('cash');
+  const methods: PaymentMethodDescriptor[] = [{ ...cash, defaults: { ...cash.defaults, rounding: { incrementMinor: 10, mode: 'up' } } }];
+  const id = start(2, methods);
+  const total = splitUnitLines(sale.order)[0].totalMinor;
+  const rounded = Math.ceil(total / 10) * 10;
+  expect(rounded).toBeGreaterThan(total);
+  expect(rounded - 1).toBeGreaterThanOrEqual(sale.order.balanceDueMinor);
+  press('tender-split-chip');
+  pick(id, 2);
+  enter(rounded - 1);
+  expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).toBe('true');
+  expect(text('tender-entry-hint')).toBe(`This payment is ${money(rounded)} for the picked items`);
+  press('tender-take');
+  expect(sale.order.payments).toEqual([]);
+  enter(rounded);
+  expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
+  press('tender-take');
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: rounded, units: { [id]: 2 } }]);
+});

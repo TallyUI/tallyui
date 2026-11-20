@@ -5,7 +5,7 @@ import { View } from 'react-native';
 import { useFormatMoney, type Money } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { Text, HStack, type HStackProps } from '../ui';
-import { CART_COLUMNS, cartColumnSlots, type CartColumnSettings } from './cart-columns';
+import { CART_COLUMNS, CART_PICKING_QUANTITY, cartColumnSlots, type CartColumnSettings } from './cart-columns';
 
 export interface CartChargeLineProps extends Omit<HStackProps, 'children'> {
   name: string;
@@ -20,20 +20,22 @@ export interface CartChargeLineProps extends Omit<HStackProps, 'children'> {
   locale?: string;
   /** A percent fee: the Price cell shows the percent, as v2's fee-price.tsx. */
   percent?: number;
+  /** As CartColumnHeads' `picking`: the quantity column takes its wider picking width (default false). */
+  picking?: boolean;
   className?: string;
   /** The line strip's press target (`CartLineStrip`): wraps the Total cell's content, or the last visible cell's when
    * Total is hidden, as v2's table does. */
   wrapTotal?: (content: ReactNode) => ReactNode;
 }
 
-export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, percent, className, wrapTotal, ...rest }: CartChargeLineProps): JSX.Element {
+export function CartChargeLine({ name, price, total, showPrice = true, columns, locale, percent, picking = false, className, wrapTotal, ...rest }: CartChargeLineProps): JSX.Element {
   const formatMoney = useFormatMoney();
   const slots = cartColumnSlots(columns, { showPrice });
   const target = slots.includes('total') ? 'total' : slots[slots.length - 1];
   const wrap = (id: (typeof slots)[number], content: ReactNode) => wrapTotal && id === target ? wrapTotal(content) : content;
   const cells: Record<(typeof slots)[number], ReactNode> = {
     fill: <View key="fill" className="flex-1">{wrap('fill', null)}</View>,
-    quantity: <View key="quantity" className={CART_COLUMNS.quantity.cell}>{wrap('quantity', null)}</View>,
+    quantity: <View key="quantity" className={(picking ? CART_PICKING_QUANTITY : CART_COLUMNS.quantity).cell}>{wrap('quantity', null)}</View>,
     image: <View key="image" className={CART_COLUMNS.image.cell}>{wrap('image', null)}</View>,
     name: <View key="name" className={CART_COLUMNS.name.cell}>
       {wrap('name', <Text className="text-sm" numberOfLines={2}>{name}</Text>)}

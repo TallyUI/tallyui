@@ -5,7 +5,7 @@ import { Image } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
 import { Text, HStack, type HStackProps } from '../ui';
-import { CART_COLUMNS, cartColumnSlots, type CartColumnSettings } from './cart-columns';
+import { CART_COLUMNS, CART_PICKING_QUANTITY, cartColumnSlots, type CartColumnSettings } from './cart-columns';
 
 export interface CartLineProps extends Omit<HStackProps, 'children'> {
   name: string;
@@ -31,6 +31,8 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
   imageUrl?: string;
   /** With `columns.quantity.split` and a quantity above 1, a Split link under the quantity calls this. */
   onSplit?: () => void;
+  /** As CartColumnHeads' `picking`: the quantity column takes its wider picking width (default false). */
+  picking?: boolean;
   locale?: string;
   className?: string;
 }
@@ -46,7 +48,7 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
  * ```
  */
 export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPrice, lineTotal, showPrice = true, quantitySlot, priceSlot,
-  columns, sku, imageUrl, onSplit, locale, className, ...props }: CartLineProps) {
+  columns, sku, imageUrl, onSplit, picking = false, locale, className, ...props }: CartLineProps) {
   const formatMoney = useFormatMoney();
   const t = useT();
   const options = Object.entries(attributes ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ');
@@ -55,7 +57,7 @@ export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPri
     ? formatMoney(regularUnitPrice, locale) ?? '—' : null;
   const cells: Record<ReturnType<typeof cartColumnSlots>[number], ReactNode> = {
     fill: <View key="fill" className="flex-1" />,
-    quantity: <View key="quantity" className={CART_COLUMNS.quantity.cell}>
+    quantity: <View key="quantity" className={(picking ? CART_PICKING_QUANTITY : CART_COLUMNS.quantity).cell}>
       {quantitySlot ?? <Text className="text-sm tabular-nums">{quantity}</Text>}
       {columns?.quantity?.split && quantity > 1 && onSplit ? <Pressable accessibilityRole="button" accessibilityLabel={t('pos_cart.split_line', { name })}
         testID="cart-line-split" onPress={onSplit} className="min-h-11 justify-center">
