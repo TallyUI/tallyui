@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { countsTowardPaid, type PaymentLegStatus } from './payment-legs';
+import { initialTenderState, tenderReducer } from './tender-state';
 import {
   paidUnitsByLine,
   pickedUnitsMinor,
@@ -59,6 +61,24 @@ describe('paidUnitsByLine', () => {
 
   it('U6: frees the units of a payment that is no longer live (p1 voided)', () => {
     expect(paidUnitsByLine(allocations, ['p2'])).toEqual({ a: 2, b: 1 });
+  });
+
+  it('B3: a live leg’s units cannot be picked again; a voided leg frees them', () => {
+    const lines: SplitUnitLine[] = [{ id: 'a', quantity: 3, totalMinor: 900 }];
+    let state = tenderReducer(initialTenderState, { type: 'set-split-units', lineId: 'a', units: 2, unpaidUnits: 3 });
+    state = tenderReducer(state, { type: 'tender-started', paymentId: 'p1' });
+    const payments: { id: string; status: PaymentLegStatus }[] = [{ id: 'p1', status: 'captured' }];
+    let paid = paidUnitsByLine(state.unitAllocations, payments.filter(countsTowardPaid).map((leg) => leg.id));
+    expect(paid).toEqual({ a: 2 });
+    const unpaid = unpaidUnitsByLine(lines, paid);
+    expect(unpaid).toEqual({ a: 1 });
+    state = tenderReducer(state, { type: 'set-split-units', lineId: 'a', units: 3, unpaidUnits: unpaid.a });
+    expect(state.pickedUnits).toEqual({ a: 1 });
+
+    payments[0].status = 'voided';
+    paid = paidUnitsByLine(state.unitAllocations, payments.filter(countsTowardPaid).map((leg) => leg.id));
+    expect(paid).toEqual({});
+    expect(unpaidUnitsByLine(lines, paid)).toEqual({ a: 3 });
   });
 });
 

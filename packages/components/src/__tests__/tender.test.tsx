@@ -1,9 +1,11 @@
+import { useCallback, useReducer } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, type useSale } from '@tallyui/pos';
+import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, initialTenderState, tenderReducer, type TenderAction, type useSale } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Tender } from '../sale/tender';
+import { TenderPane } from '../sale/tender-pane';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
 
 afterEach(() => cleanup());
@@ -171,6 +173,49 @@ describe('Tender', () => {
     expect(screen.getByTestId('tender-complete').textContent).toBe('Complete sale');
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
+});
+
+describe('a taken leg freezes its picked units (#1133)', () => {
+  const actions = vi.fn<(action: TenderAction) => void>();
+  function ObservedPane({ sale }: { sale: ReturnType<typeof useSale> }) {
+    const [state, reduce] = useReducer(tenderReducer, initialTenderState);
+    const dispatch = useCallback((action: TenderAction) => {
+      actions(action);
+      reduce(action);
+    }, [reduce]);
+    return <TenderPane sale={sale} state={state} dispatch={dispatch} />;
+  }
+  function startPane() {
+    actions.mockClear();
+    render(<SaleHarness settings={settings}>{(sale) => <ObservedPane sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 1000));
+    act(() => sale.startTender('cash'));
+    fireEvent.click(screen.getByTestId('tender-method-cash'));
+  }
+
+  it('B1: dispatches the accepted cash leg’s non-empty payment id', () => {
+    startPane();
+    fireEvent.click(screen.getByTestId('tender-take'));
+    const id = sale.order.payments[0].id;
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(0);
+    expect(actions).toHaveBeenCalledWith({ type: 'tender-started', paymentId: id });
+  }, 20_000);
+
+  it('B2: does not dispatch tender-started when a locked sale refuses the leg', async () => {
+    startPane();
+    const addTender = vi.spyOn(sale, 'addTender');
+    await act(async () => {
+      const completing = sale.complete();
+      fireEvent.click(screen.getByTestId('tender-take'));
+      await completing;
+    });
+    expect(addTender).toHaveBeenCalledTimes(1);
+    expect(addTender).toHaveReturnedWith(null);
+    expect(sale.order.payments).toEqual([]);
+    expect(actions.mock.calls.some(([action]) => action.type === 'tender-started')).toBe(false);
+  }, 20_000);
 });
 
 describe('Tender on a reopened order (ADR-090 gate 36)', () => {
