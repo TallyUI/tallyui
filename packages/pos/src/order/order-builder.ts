@@ -178,6 +178,11 @@ export interface OrderBuilder {
    */
   updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): void;
   removeItem(lineId: string): void;
+  /**
+   * Puts a removed line, fee or shipping line back as it was (#1095), at `index` clamped to its list's end, and
+   * recalculates it as an add does; never re-priced. Throws a RangeError when its id, or a line discount's, is on the order.
+   */
+  restoreItem(kind: 'line' | 'fee' | 'shipping', item: LineItem | ChargeLine, index: number): void;
   applyLineDiscount(lineId: string, discount: Discount): void;
   applyOrderDiscount(discount: Discount): void;
   removeDiscount(discountId: string): void;
@@ -748,6 +753,17 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     removeItem(lineId) {
       lineItems = lineItems.filter((li) => li.id !== lineId);
+      emit();
+    },
+
+    restoreItem(kind, item, index) {
+      for (const { id } of kind === 'line' ? [item, ...(item as LineItem).discounts] : [item]) idFor(id);
+      const at = <T>(list: T[], entry: T) => { const i = Math.min(index, list.length); return [...list.slice(0, i), entry, ...list.slice(i)]; };
+      if (kind === 'line') lineItems = at(lineItems, recalculateLine(item as LineItem));
+      else {
+        const charge = item as ShippingLine, recalculated = { ...charge, ...recalculateCharge(charge.id, charge, kind === 'shipping') };
+        if (kind === 'fee') fees = at(fees, recalculated); else shipping = at(shipping, recalculated);
+      }
       emit();
     },
 

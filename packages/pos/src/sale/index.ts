@@ -1,4 +1,4 @@
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, saleLogger } from './use-sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, RESTORE_STALE, saleLogger, type SaleRemoval } from './use-sale';
 export { openSales, isPartlyPaid } from './open-sales';
 export type { OpenSale } from './open-sales';
 export type { SaleStage } from './use-sale';
