@@ -484,6 +484,40 @@ describe('Cart', () => {
     expect(screen.queryByRole('button', { name: chip })).toBeNull();
   });
 
+  it('hides the order discount chips under the lines with orderDiscountChips false', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+    expect(within(screen.getByTestId('cart-footer')).getByText(`−${money(50)}`)).toBeTruthy();
+  });
+
+  it("keeps each line's discount chips with orderDiscountChips false", () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(sale.order.lineItems[0].id, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: `Remove discount −${money(50)}` })).toBeTruthy();
+  });
+
+  it('keeps the Order discount button with orderDiscountChips false and orderActions true', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+  });
+
+  it('lets afterSubtotal carry the order discount without a second Discount row', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false}
+      afterSubtotal={<Text testID="order-discount-row">Discount</Text>} couponDiscountMinor={sale.order.display.orderDiscountMinor} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    const footer = within(screen.getByTestId('cart-footer'));
+    expect(footer.getByTestId('order-discount-row')).toBeTruthy();
+    expect(footer.queryByText(`−${money(50)}`)).toBeNull();
+    expect(footer.getAllByText('Discount')).toHaveLength(1);
+  });
+
   it("centres the empty cart's icon and line in the cart, as v2 does", () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.getByTestId('cart-empty-text').textContent).toBe('Tap a product to start a sale');

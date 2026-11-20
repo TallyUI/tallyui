@@ -18,7 +18,7 @@ import { TenderLedger } from './tender-ledger';
 import { ShoppingCartIcon } from '../ui';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, orderDiscountChips = true, checkout, noteSheet, tenderLedger, lineEditor = 'inline',
   lineCommit = 'apply', columns, chargeTaxSwitch = true,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
   { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
@@ -33,13 +33,18 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     afterSubtotal?: ReactNode;
     /** Draws the totals' Total row. Pass `false` for v2's cart, where the total is on the Checkout button (`checkout`). Default `true`. */
     showTotal?: boolean;
-    /** The coupon amount the app itemises in `afterSubtotal` (e.g. Σ `order.display.coupons`), in integer minor units of
+    /** The coupon amount the app itemises in `afterSubtotal` (e.g. Σ `order.display.coupons` and, with
+     * `orderDiscountChips={false}`, `order.display.orderDiscountMinor`), in integer minor units of
      * the order's currency, in the display mode. When given, the Discount row shows the other discounts only (the
      * totals' discount minus this) and is hidden when they come to 0. Absent: the Discount row is the whole discount. */
     couponDiscountMinor?: number;
     /** Cart's own Order discount and Add charge controls; pass `false` when the app hosts them in its own menu (v2's
      * cart "+" menu). Applied discounts and charges still show and can be removed. */
     orderActions?: boolean;
+    /** Draws the applied order discounts as removable chips under the lines. Pass `false` when the app draws them itself,
+     * e.g. as a removable Discount row in `afterSubtotal`; add their amount (`order.display.orderDiscountMinor`) to
+     * `couponDiscountMinor` so the Discount row does not count them twice. Default `true`. */
+    orderDiscountChips?: boolean;
     /** Swaps the Cash and Card terminal row for v2's foot, `CartFoot`: "Checkout {total}" calls `onCheckout`, and the
      * ⋮ menu lists `actions`, with `note` above the buttons. Absent: the Cash and Card terminal row. */
     checkout?: { onCheckout: () => void; actions?: readonly CartFootAction[]; note?: { text: string; onPress: () => void } };
@@ -97,7 +102,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const [form, setForm] = useState<{ type: 'discount'; lineId: string | null } | { type: 'price'; lineId: string } | { type: 'charge' }
     | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
-  const showOrderDiscount = order.lineItems.length > 0 && (orderActions || order.discounts.length > 0);
+  const showOrderDiscount = order.lineItems.length > 0 && (orderActions || (orderDiscountChips && order.discounts.length > 0));
   const showCharge = orderActions && chargesOffered;
   const discountForm = (lineId: string | null, title: string) => form?.type === 'discount' && form.lineId === lineId
     ? <DiscountForm key={lineId ?? 'order'} title={title} currency={order.currency} onClose={() => setForm(null)}
@@ -187,8 +192,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
-      <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency} onRemove={sale.removeDiscount}
-        prefix="Order discount" />
+      {orderDiscountChips ? <DiscountChips discounts={order.discounts} amounts={orderAmounts} currency={order.currency}
+        onRemove={sale.removeDiscount} prefix="Order discount" /> : null}
       {!orderActions ? null : form?.type === 'discount' && form.lineId === null ? discountForm(null, 'Order discount') : <Pressable accessibilityRole="button"
         onPress={() => setForm({ type: 'discount', lineId: null })} className="self-start rounded-md border border-border bg-card px-4 py-2 min-h-11 justify-center">
         <Text className="text-foreground">Order discount</Text></Pressable>}
