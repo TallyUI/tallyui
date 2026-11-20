@@ -105,6 +105,8 @@ export interface LineItem {
   /** The names in attributes the cashier picked for the variant's "Any" option groups (#495); absent when none. */
   anyAttributes?: string[];
   sku: string;
+  /** The SKU the line was added with, set the first time the cashier edits a catalogue line's SKU (ADR-092 6b); absent means `sku` is the catalogue's. */
+  catalogueSku?: string;
   imageUrl?: string;
   unitPriceMinor: number;     // as sold, integer
   /** The catalogue's regular unit price, in the line's own tax mode like unitPriceMinor; absent on custom lines (ADR-077 d3). */

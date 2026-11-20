@@ -58,6 +58,8 @@ export { TAX_IDS_INVALID } from '../order/tax-ids';
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
 export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
+/** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
+export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -576,6 +578,22 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const held = editRefusal(); if (held) return held;
       try {
         builderNow.current.setUnitPrice(lineId, amountMinor);
+        return null;
+      } catch (error) {
+        if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
+        throw error;
+      }
+    },
+    /**
+     * ADR-092 6b/6c: edits a cart line's `name`, `sku` or `regularUnitPriceMinor` (`null` removes it); the regular price is
+     * the "was" price that receipts print and order.create 6+ sends. Cart only; returns a refusal or null: editRefusal's
+     * refusals first (SALE_SAVING, SALE_FINISHED, SALE_HAS_PAYMENT), then LINE_EDIT_REFUSED for any other stage outside the cart.
+     */
+    updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): string | null {
+      const held = editRefusal(); if (held) return held;
+      if (stageNow.current.kind !== 'cart') return LINE_EDIT_REFUSED;
+      try {
+        builderNow.current.updateLine(lineId, patch);
         return null;
       } catch (error) {
         if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
