@@ -5280,6 +5280,10 @@ interface OrderCreatePayload {
 - **Consequences:**
   - **Changes to ADR-068:** its ledger rule gains two non-blocking codes, its open gains two fields, and its conflict
     table gains `register_session_superseded`.
+  - **A closed session is finished** (Front desk, 2026-11-19). A session with a stored closure is finished: an open
+    on that register starts a fresh session and is not a take-over, and the old till's later `closed` transition
+    answers ok (vendurepos ADR 0006:85; medusapos follows). TallyUI tills send `closed` before the closure (ADR-068),
+    so no till behaviour changes.
   - **The store's half is medusapos's** (medusapos#174 item 1, a one-way plugin PR). A WooCommerce or Vendure store
     gets the same contract when it adds registers.
   - **TallyUI build order:**
@@ -6014,7 +6018,7 @@ interface OrderCreatePayload {
 ## ADR-085 The customer display on a second device: WebRTC, signalled by each backend's plugin (amends ADR-084 d3)
 
 - **Date:** 2026-11-11 · **Status:** Accepted in direction by the front desk on 2026-11-11 (one-way). The security floor and the
-  pairing rules below were added at its ruling. · **Amends:** ADR-084 decision 3
+  pairing rules below were added at its ruling. · **Amends:** ADR-084 decision 3 · **Amended:** 2026-11-20, decision 5 (the till device key, #754)
   · **Relates to:** #684, `docs/v2-parity/PLAN.md` A10, A11, Q3 and units 36-37, ADR-084 decision 4 (the plugin fork)
 - **Name:** this ADR does not say "LAN" in its title. The display page loads from the app's web origin, and STUN can
   find a route between two networks, so the display is not limited to the shop's network. "Second device" means
@@ -6113,7 +6117,7 @@ interface OrderCreatePayload {
      - **The till device id** is the till's own id, generated once and kept in a local collection that is never
        replicated (CLAUDE.md), as the #682 scanner profiles are. The display token is kept the same way on the display
        device.
-     - **Binding to the cashier's session.** The till sends its device id on every signalling call it makes, and the
+     - **Binding to the cashier's session.** The till sends its device id and key (below) on every signalling call it makes, and the
        server accepts a device id only on a request authenticated by a cashier session that holds
        `customer_display.pair`. At mint, the server records the device id and the cashier who minted the code. The
        confirmed display's registry row records the owning till device id and that cashier. When the cashier logs out,
@@ -6122,6 +6126,20 @@ interface OrderCreatePayload {
      - **One display belongs to one till.** A display whose pairing with a second till is confirmed moves to that
        till: at the confirm, the server deletes its old row and old token, then makes the new ones, in one step. The
        first till sees it gone at its next list. One till may own several displays (9).
+     - **The till device key (amended 20 Nov 2026, TallyUI#754).** A till registers once under a cashier session
+       with `customer_display.pair`; the server issues a 128-bit key, stores only its SHA-256 hash, and refuses every
+       till call without the matching key (`device_refused`). A key is re-issued only after the device is pruned (30
+       days idle, nothing owned) or reset by an admin (Front desk, 19 Nov 2026). The hash comparison is
+       constant-time. The key is never logged or returned after issue, and an admin reset revokes the old key at
+       once. The till keeps the key next to its device id, never replicated (`createTillDevice`).
+       - **Adoption, a known limit.** A device id that owned rows before the key existed adopts them once: only
+         inside `registerDevice`, under a cashier session with `customer_display.pair`, only for an id that existed
+         before the migration, and logged with the cashier id. After that adoption, or after the first keyed
+         registration, the id never adopts again. Until a pre-migration till registers, anyone holding a cashier
+         session with the capability and that till's device id can adopt its displays first.
+       - **The device id is not a credential anywhere.** The id that order data carries (`order.create`, register
+         sessions) is not a credential, and the key is what proves a till. U8 gives the display service its own
+         display id, separate from the order-data device id.
   6. **The registry lives on the server:** display id, name, owning till device id, the cashier who paired it, last
      seen and connected, as in v2. The till keeps no replicated copy.
      - **Pruning.** Unspent codes, and pending pairings that were never confirmed, are deleted when the code expires.
