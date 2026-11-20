@@ -129,7 +129,7 @@ export async function adoptRegisterResults({ commands, sessions, registerId, hos
 }
 
 export async function takeOverSession({ commands, sessions, sessionId, now, registerContract }: SessionTarget & {
-  /** The store's register contract (`capabilities.register`); take over needs 2, and a missing value counts as below 2. */
+  /** The store's register contract (`capabilities.register`); take over needs 2, and a missing value counts as below 2; 3 sends the take-over as version 3 (#1105). */
   registerContract?: number;
 }): Promise<void> {
   if ((registerContract ?? 0) < 2) throw new RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
@@ -141,7 +141,7 @@ export async function takeOverSession({ commands, sessions, sessionId, now, regi
       if (doc.syncStatus !== 'rejected' || doc.error?.code !== 'register_session_already_open'
         || typeof doc.error.data?.sessionId !== 'string') throw new RegisterSessionRequiredError();
       const { error, ...rest } = doc;
-      return { ...rest, commandId: uuidv7(), version: 2, syncStatus: 'pending',
+      return { ...rest, commandId: uuidv7(), version: (registerContract ?? 0) >= 3 ? 3 : 2, syncStatus: 'pending',
         payload: { ...doc.payload, supersedes: error.data!.sessionId }, updatedAt: now ?? new Date().toISOString() };
     });
   });

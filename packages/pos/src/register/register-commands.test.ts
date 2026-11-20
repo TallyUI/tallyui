@@ -39,6 +39,13 @@ describe('sessionOpenCommand', () => {
     expect(v2.payload).not.toHaveProperty('supersedes');
   });
 
+  it('a contract 3 open is version 3 with the v2 bytes; contract 2, or none, stays version 2 (#1105)', () => {
+    const v3 = sessionOpenCommand(session, { deviceName: '  Front till  ', registerContract: 3 });
+    expect(v3).toStrictEqual({ ...sessionOpenCommand(session, { deviceName: 'Front till' }), version: 3 });
+    expect(sessionOpenCommand(session, { deviceName: 'Front till', registerContract: 2 }).version).toBe(2);
+    expect(sessionOpenCommand(session, { deviceName: 'Front till' }).version).toBe(2);
+  });
+
   it('a v2 open with no usable device name omits it', () => {
     for (const options of [{}, { deviceName: '   ' }, { deviceName: undefined }]) {
       const command = sessionOpenCommand(session, options);
@@ -189,7 +196,7 @@ describe('register command ledger', () => {
     const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
     expect(plain(row.payload)).toStrictEqual(plain({ ...closureCommand(z).payload, approval: 'proof' }));
     for (const other of rows.filter((other) => other.key !== row.key)) {
-      expect(other.version).toBe(other.type === 'register.session.open' ? 2 : 1);
+      expect(other.version).toBe(other.type === 'register.session.open' ? 3 : 1);
     }
   });
 
@@ -204,6 +211,16 @@ describe('register command ledger', () => {
     expect(row).toStrictEqual(before);
     expect(row.version).toBe(1);
     expect(row.payload).not.toHaveProperty('approval');
+  });
+
+  it('an open queued at contract 2 stays version 2 when the store later says 3', async () => {
+    const s = await open();
+    await reconcile(undefined, undefined, { registerContract: 2, deviceName: 'Front till' });
+    const before = (await ledger()).find((row) => row.key === `session.open:${s.id}`)!;
+    await reconcile(undefined, undefined, { registerContract: 3, deviceName: 'Front till' });
+    const row = (await ledger()).find((row) => row.key === `session.open:${s.id}`)!;
+    expect(row).toStrictEqual(before);
+    expect(row.version).toBe(2);
   });
 
   it('reconcile appends nothing for an abandoned session', async () => {
@@ -224,6 +241,17 @@ describe('register command ledger', () => {
     const rows = await ledger();
     expect(rows.find((row) => row.key === `session.open:${s.id}`)).toMatchObject({
       version: 2, payload: { deviceName: 'Front till' },
+    });
+    expect(rows.find((row) => row.key === `movement.record:${movement.id}`)?.version).toBe(1);
+  });
+
+  it('a register v3 store gets a version 3 open with the device name; a movement stays version 1 (#1105)', async () => {
+    const s = await open();
+    const movement = await record(s.id);
+    await reconcile(undefined, undefined, { registerContract: 3, deviceName: 'Front till' });
+    const rows = await ledger();
+    expect(rows.find((row) => row.key === `session.open:${s.id}`)).toMatchObject({
+      version: 3, payload: { deviceName: 'Front till' },
     });
     expect(rows.find((row) => row.key === `movement.record:${movement.id}`)?.version).toBe(1);
   });
