@@ -127,6 +127,8 @@ export const MEDUSA_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'cus
 export const MEDUSA_DISPLAY_NUMBER_MAX_DIGITS = 6;
 /** The MedusaPOS plugin contract that adds GET /tally/v1/orders (medusapos versions.ts:18-19). */
 export const MEDUSA_ORDERS_PLUGIN_CONTRACT = 3;
+/** The MedusaPOS plugin contract at which GET /tally/v1/orders takes allChannels=true (medusapos/app#516); a contract-3 plugin answers the key with a 400. */
+export const MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT = 4;
 
 // The plugin sends its contract as /tally/v1/info's top-level `pluginContract`; a contract-2 plugin has no orders route.
 const hasOrdersRoute = (capabilities?: ServerCapabilities) => (capabilities?.pluginContract ?? 0) >= MEDUSA_ORDERS_PLUGIN_CONTRACT;
@@ -174,7 +176,7 @@ const DISPLAY_NUMBER = new RegExp(`^\\d{1,${MEDUSA_DISPLAY_NUMBER_MAX_DIGITS}}$`
 
 /**
  * The plugin's `GET /tally/v1/orders` picks the page's ids; the admin API reads those rows, so every order maps the same way.
- * The route takes only page, perPage, search, status, customerId, registerId, after and before; any other key is a 400 (list.ts:18, 30-34).
+ * The route takes only page, perPage, search, status, customerId, registerId, after and before (plus allChannels from contract 4); any other key is a 400 (list.ts:18, 30-34).
  */
 async function listThroughPlugin(context: SyncContext, params: URLSearchParams): Promise<StoreOrderPage> {
   const found = (await ordersRequest(context, '/tally/v1/orders', params))!;
@@ -204,7 +206,7 @@ export function createMedusaOrders(): Required<Pick<TallyConnector, 'listOrders'
      * Newest first. Filters on the server: status (verbatim; Medusa answers an unknown word with a 500, which rejects
      * as `server`), customerId (customer_id) and dateRange (created_at[$gte] / created_at[$lt]); search is Medusa's
      * `q`. Any other filter field is refused. An empty status matches no order, so it resolves an empty page without a request.
-     * Register filters and 1-6 digit searches go through the plugin's orders route at contract 3, which covers only the till's sales channel (#1125).
+     * Register filters and 1-6 digit searches go through the plugin's orders route at contract 3, which reads every sales channel from contract 4 (`allChannels=true`) and only the till's channel at contract 3 (#1125).
      */
     async listOrders(context: SyncContext, query = {}) {
       assertOrderFiltersSupported(query, medusaOrderFilters(context.capabilities));
@@ -225,6 +227,7 @@ export function createMedusaOrders(): Required<Pick<TallyConnector, 'listOrders'
         // after / before are ISO instants ending in Z, applied as created_at $gte and $lt (list.ts:53-62, 74-77).
         if (after !== undefined) params.set('after', after);
         if (before !== undefined) params.set('before', before);
+        if ((context.capabilities?.pluginContract ?? 0) >= MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT) params.set('allChannels', 'true'); // #1125: at contract 4 the route reads every sales channel, like the admin list.
         return listThroughPlugin(context, params);
       }
       const offset = (page - 1) * perPage;

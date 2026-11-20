@@ -194,6 +194,7 @@ export { medusaStoreSettings } from './store-settings';
 export { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, updateMedusaCustomer, toCustomer } from './customers';
 export {
   createMedusaOrders, toMedusaStoreOrder, MEDUSA_ORDER_FILTERS, medusaOrderFilters, MEDUSA_DISPLAY_NUMBER_MAX_DIGITS, MEDUSA_ORDERS_PLUGIN_CONTRACT,
+  MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT,
 } from './orders';
 export { withCalculatedPrices } from './pricing/calculated';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
