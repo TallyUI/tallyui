@@ -14,7 +14,7 @@ function openingMethodId(method: string, methods?: PaymentMethodDescriptor[]): s
 }
 
 function HostedPane({ sale, method, methods, ledger, back, confirmVoid }: { sale: Sale; method: string; methods?: PaymentMethodDescriptor[]; ledger?: boolean; back?: boolean; confirmVoid?: boolean }) {
-  const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor }, initTenderState);
+  const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor, payments: sale.order.payments }, initTenderState);
   return <TenderPane sale={sale} state={state} dispatch={dispatch} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} />;
 }
 

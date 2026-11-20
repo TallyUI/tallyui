@@ -2,7 +2,7 @@ import { useCallback, useReducer } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, initialTenderState, tenderReducer, type TenderAction, type useSale } from '@tallyui/pos';
+import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, initialTenderState, initTenderState, tenderReducer, type TenderAction, type useSale } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Tender } from '../sale/tender';
 import { TenderPane } from '../sale/tender-pane';
@@ -216,6 +216,38 @@ describe('a taken leg freezes its picked units (#1133)', () => {
     expect(sale.order.payments).toEqual([]);
     expect(actions.mock.calls.some(([action]) => action.type === 'tender-started')).toBe(false);
   }, 20_000);
+});
+
+describe('units survive a pane remount (#1133 prerequisite 2)', () => {
+  let state = initialTenderState;
+  let dispatch: (action: TenderAction) => void;
+  function ObservedPane({ sale }: { sale: ReturnType<typeof useSale> }) {
+    const [paneState, paneDispatch] = useReducer(tenderReducer, {
+      methodId: 'cash', balanceMinor: sale.order.balanceDueMinor, payments: sale.order.payments,
+    }, initTenderState);
+    state = paneState;
+    dispatch = paneDispatch;
+    return <TenderPane sale={sale} state={paneState} dispatch={paneDispatch} />;
+  }
+  it.each(['cash', 'external'])('P2-U5: records %s picks and rebuilds them on a pane remount during tender', (methodId) => {
+    const { rerender } = render(<SaleHarness settings={settings}>{(sale) => sale.stage.kind === 'tender' && <ObservedPane key={0} sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    const lineId = sale.order.lineItems[0].id;
+    act(() => { sale.setQuantity(lineId, 3); sale.setUnitPrice(lineId, 300); sale.startTender('cash'); });
+    act(() => {
+      dispatch({ type: 'pick-method', methodId, prefillMinor: 600, readerId: null });
+      dispatch({ type: 'set-split-units', lineId, units: 2, unpaidUnits: 3 });
+    });
+    fireEvent.click(screen.getByTestId('tender-take'));
+    const payment = sale.order.payments[0];
+    expect(payment.units).toEqual({ [lineId]: 2 });
+    expect(state.unitAllocations).toEqual({ [payment.id]: { [lineId]: 2 } });
+    rerender(<SaleHarness settings={settings}>{(sale) => sale.stage.kind === 'tender' && <ObservedPane key={1} sale={sale} />}</SaleHarness>);
+    expect(sale.stage.kind).toBe('tender');
+    expect(sale.order.payments).toEqual([payment]);
+    expect(state.pickedUnits).toEqual({});
+    expect(state.unitAllocations).toEqual({ [payment.id]: { [lineId]: 2 } });
+  });
 });
 
 describe('a plan keys its legs by payment id (#1133 prerequisite 1)', () => {

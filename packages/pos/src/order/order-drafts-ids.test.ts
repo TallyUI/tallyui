@@ -35,6 +35,17 @@ function sale(): OrderBuilder {
 }
 
 describe('restoreOrderDraft keeps every id and createdAt (#742)', () => {
+  it('P2-U4: keeps payment units and their line ids through a JSON draft round trip', () => {
+    const builder = sale();
+    const units = Object.fromEntries(builder.getSnapshot().lineItems.map((line) => [line.id, 1]));
+    const id = builder.addPayment({ method: 'cash', amountMinor: 300, units });
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot())) as Order;
+    const restored = restoreOrderDraft(saved, { currency: 'EUR', taxContext }).getSnapshot();
+    const payment = restored.payments.find((leg) => leg.id === id);
+    expect(payment?.units).toEqual(units);
+    expect(Object.keys(payment!.units!)).toEqual(restored.lineItems.map((line) => line.id));
+  });
+
   it('T3a: keeps the ids of every line, discount, fee, shipping line and payment, and createdAt', async () => {
     const saved = sale().getSnapshot();
     expect(new Set(allIds(saved)).size).toBe(7);

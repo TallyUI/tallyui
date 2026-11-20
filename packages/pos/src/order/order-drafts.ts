@@ -146,6 +146,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
       ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
+      ...(payment.units !== undefined ? { units: payment.units } : {}),
     });
   }
   // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).

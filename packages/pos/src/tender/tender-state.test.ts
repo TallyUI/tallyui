@@ -119,6 +119,16 @@ describe('tenderReducer', () => {
 });
 
 describe('initTenderState', () => {
+  it('P2-U2: rebuilds allocations from payments and keeps the default without payments', () => {
+    const payments = [{ id: 'p1', method: 'cash', amountMinor: 300, units: { l1: 2 } }];
+    const before = { ...initialTenderState, view: 'amount', methodId: 'cash', entryMinor: 500 };
+    expect(initTenderState({ methodId: 'cash', balanceMinor: 500, payments })).toEqual({
+      ...before, unitAllocations: { p1: { l1: 2 } },
+    });
+    expect(initTenderState({ methodId: 'cash', balanceMinor: 500 })).toEqual(before);
+    expect(initTenderState({ methodId: null, balanceMinor: 500, payments }).unitAllocations).toEqual({ p1: { l1: 2 } });
+  });
+
   it('starts from scratch without a stored method', () => {
     expect(initTenderState({ methodId: null, balanceMinor: 1234 })).toBe(initialTenderState);
   });

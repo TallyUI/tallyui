@@ -12,6 +12,7 @@ import { isLiveLeg } from '../order/order-builder';
 import { posOrderCollection } from '../pos-order';
 import { COUPONS_NEED_CONNECTION, COUPONS_UNSUPPORTED } from './discount-codes';
 import { createTaxContext, TaxProvider } from '../tax';
+import { initTenderState } from '../tender';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
 import { COUPONS_REPRICING, SALE_FINISHED, SALE_HAS_PAYMENT, useSale } from './use-sale';
@@ -540,6 +541,34 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     await settle();
     expect(result.current.order.payments).toEqual([cash]);
     expect(result.current.order.payments.some((payment) => payment.method === 'external')).toBe(false);
+  });
+
+  it('P2-U8: a kept parked leg retains its units after Back and refuses taking them again', async () => {
+    const shop = store();
+    const { result } = renderSale({ discountCodes: shop.codes });
+    await apply(result, 'a');
+    const line = result.current.order.lineItems[0];
+    const units = { [String(line.id)]: line.quantity };
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500, units })).toEqual(expect.any(String)); });
+    const [leg] = result.current.order.payments;
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    shop.perUnit.a = 300;
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([leg]);
+    expect(result.current.order.payments[0].units).toEqual(units);
+    expect(initTenderState({ methodId: 'cash', balanceMinor: result.current.order.balanceDueMinor, payments: result.current.order.payments }).unitAllocations)
+      .toEqual({ [leg.id]: units });
+    act(() => { result.current.startTender('cash'); });
+    await settle();
+    const payments = result.current.order.payments;
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500, units })).toBeNull(); });
+    expect(result.current.order.payments).toEqual(payments);
   });
 
   it('T28: a resumed pending-leg draft keeps the pending leg on Pay by card and tenders only the balance', async () => {
