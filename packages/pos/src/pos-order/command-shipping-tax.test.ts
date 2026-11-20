@@ -54,4 +54,18 @@ describe('order.create shipping taxMinor in WooCommerce mode (#1120)', () => {
     const { charge, sent } = order(false, 460);
     expect(sent.taxMinor).toBe(roundMicrosToMinor(BigInt(charge.taxMicros)));
   });
+
+  // One rate carrying tax 0.335, a tie: 20% inside 2.01, and 10% on 3.35.
+  it.each([[true, 201, 200000, 33], [false, 335, 100000, 34]])(
+    'S7: a 0.335 tie, prices include tax %s, rounds through the envelope to the store mode', (pricesIncludeTax, amountMinor, ppm, taxMinor) => {
+      const rate = { id: 1, code: 'VAT', label: 'VAT', rate: (ppm / 10000).toFixed(4), priority: 1, compound: false, shipping: true };
+      const builder = createOrderBuilder({ currency: 'USD', taxContext: { pricesIncludeTax, getTaxRatePpm: () => ppm,
+        rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRates: () => [rate] } });
+      builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1999, currency: 'USD' } });
+      builder.addShipping({ name: 'Shipping', amountMinor, methodId: 'flat_rate' });
+      builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+      const finalized = finalizeOrder(builder.getSnapshot(), options);
+      expect(micros(finalized.shipping![0])).toStrictEqual(['33500000']);
+      expect(toOrderCreateEnvelope(finalized, 'till').payload.shipping![0].taxMinor).toBe(taxMinor);
+    });
 });
