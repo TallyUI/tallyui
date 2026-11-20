@@ -72,6 +72,7 @@ describe('CustomerDisplaySettings', () => {
     ['limit', 'Too many pairing attempts. Try again in a few minutes.'],
     ['expired', 'The code expired. Start again for a new code.'],
     ['not_found', 'That display is no longer waiting. Ask it to enter the code again.'],
+    ['device_refused', 'This till is not recognised by the store. Ask an admin to reset it.'],
     ['network', "Can't reach the store. Check the connection and try again."],
     ['server', "The store couldn't finish that. Try again."],
   ] as const)('idle with %s shows its message, and the button starts pairing', (error, message) => {

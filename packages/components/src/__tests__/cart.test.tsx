@@ -484,6 +484,40 @@ describe('Cart', () => {
     expect(screen.queryByRole('button', { name: chip })).toBeNull();
   });
 
+  it('hides the order discount chips under the lines with orderDiscountChips false', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+    expect(within(screen.getByTestId('cart-footer')).getByText(`−${money(50)}`)).toBeTruthy();
+  });
+
+  it("keeps each line's discount chips with orderDiscountChips false", () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(sale.order.lineItems[0].id, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: `Remove discount −${money(50)}` })).toBeTruthy();
+  });
+
+  it('keeps the Order discount button with orderDiscountChips false and orderActions true', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+  });
+
+  it('lets afterSubtotal carry the order discount without a second Discount row', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false}
+      afterSubtotal={<Text testID="order-discount-row">Discount</Text>} couponDiscountMinor={sale.order.display.orderDiscountMinor} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    const footer = within(screen.getByTestId('cart-footer'));
+    expect(footer.getByTestId('order-discount-row')).toBeTruthy();
+    expect(footer.queryByText(`−${money(50)}`)).toBeNull();
+    expect(footer.getAllByText('Discount')).toHaveLength(1);
+  });
+
   it("centres the empty cart's icon and line in the cart, as v2 does", () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.getByTestId('cart-empty-text').textContent).toBe('Tap a product to start a sale');
@@ -899,6 +933,47 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       click('Apply');
       expect(fees()[0].percent).toBe(10);
       expect(fees()[0].amountIncludesTax).toBeUndefined();
+    });
+
+    it('H1: chargeTaxSwitch={false} hides the switch and a new fee takes the store\'s tax mode', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      click('Cancel');
+      addFee('Service', '5');
+      expect(fees()).toHaveLength(1);
+      expect('amountIncludesTax' in fees()[0]).toBe(false);
+    });
+
+    it('H2: chargeTaxSwitch={false} keeps an existing fee\'s own tax mode through an edit', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const own = !sale.order.pricesIncludeTax;
+      act(() => { sale.addFee({ name: 'Service', amountMinor: 500, amountIncludesTax: own }); });
+      click('Edit total of Service');
+      click('Edit Service');
+      const form = chargeForm('Edit Service');
+      expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '7.00' } });
+      click('Apply');
+      expect(fees()[0].amountMinor).toBe(700);
+      expect(fees()[0].amountIncludesTax).toBe(own);
+    });
+
+    it('H3: without chargeTaxSwitch the Add charge form shows the switch', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').getByRole('switch', { name: 'Amount Includes Tax' })).toBeTruthy();
+    });
+
+    it('P1: a fractional percent shows unrounded in the Price cell', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '12.5', { percent: true });
+      expect(fees()[0].percent).toBe(12.5);
+      expect(price(0)).toBe('12.5%');
     });
   });
 });

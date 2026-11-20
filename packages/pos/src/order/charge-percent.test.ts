@@ -232,6 +232,31 @@ describe('vendurepos gap 2.10: a fee as a percentage of the cart, store-priced c
   });
 });
 
+describe('vendurepos gap 2.10: a fee as a percentage of the cart, WooCommerce rounding with store-priced coupons', () => {
+  it.each([['an exclusive store', false, 1000, 70], ['an inclusive store', true, 1100, 80]])(
+    'C3: %s takes the fee after the store\'s coupon, in the store\'s mode, and prices as with the same fixed fee', (_, inclusive, amount, expected) => {
+      const taxContext = context({ standard: [rate(1, '10.0000')] }, inclusive);
+      const build = (charge: { name: string; amountMinor: number; percent?: number }) => {
+        const builder = createOrderBuilder({ currency: 'GBP', taxContext });
+        const line = builder.addLine({ productId: 'p1', name: 'p1', unitPrice: { amount, currency: 'GBP' } });
+        const priced: StorePricedCouponContext = { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
+          priced: new Map([['save', { couponId: 'c1', lines: [{ lineId: line, amountMinor: 300 }] }]]) };
+        builder.addFee(charge);
+        builder.setCoupons(['save'], priced);
+        return builder.getSnapshot();
+      };
+      const order = build(percentFee(10));
+      // Exclusive: the line's net after the coupon (700). Inclusive: its total after the coupon (800).
+      const basis = order.lineItems.reduce((sum, li) => sum + (inclusive ? li.totalMinor! : li.netMinor), 0);
+      expect(basis).toBe(inclusive ? 800 : 700);
+      expect(order.fees![0].amountMinor).toBe(expected);
+      const fixed = build({ name: 'Fee', amountMinor: expected });
+      const figures = (o: Order) => o.coupons!.map(({ discountMinor, discountTaxMinor }) => ({ discountMinor, discountTaxMinor }));
+      expect(figures(order)).toEqual(figures(fixed));
+      displayIdentity(order);
+    });
+});
+
 describe('vendurepos gap 2.10: a fee as a percentage of the cart, generic', () => {
   it('G1: an exclusive store takes 10% of the net', () => {
     const builder = makeGeneric(false);

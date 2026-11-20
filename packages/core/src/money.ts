@@ -151,6 +151,32 @@ function formatMoneyWith(money: Money, format: MoneyFormat, locale?: string): st
 }
 
 /**
+ * A typed amount in the store's separators as plain decimal text ('1.234,50' → '1234.50'); ported from WCPOS v2 typed-field.tsx parseNumber.
+ * Without a format the text is untouched; it never rounds, so too many places stay the caller's refusal (#672).
+ */
+export function normalizeMoneyText(text: string, format?: MoneyFormat): string {
+  if (format === undefined || (!format.decimalSeparator && !format.thousandSeparator)) return text;
+  const decimal = format.decimalSeparator || '.';
+  const thousands = format.thousandSeparator === decimal ? '' : format.thousandSeparator || '';
+  const trimmed = text.trim();
+  // An ambiguous amount is refused, never guessed up: the text comes back unchanged for the caller to refuse.
+  if (['.', ','].some((sep) => sep !== decimal && sep !== thousands && trimmed.includes(sep))) return text;
+  const [whole = '', fraction, ...more] = trimmed.split(decimal);
+  if (more.length > 0 || (fraction !== undefined && /\D/.test(fraction))) return text;
+  let integer = whole;
+  if (thousands && whole.includes(thousands)) {
+    const groups = whole.split(thousands);
+    if (/^-?[1-9]\d{0,2}$/.test(groups[0] ?? '') && groups.slice(1).every((g) => /^\d{3}$/.test(g))) integer = groups.join('');
+    // A lone '.' or ',' separator not followed by exactly 3 digits cannot be grouping, so it is the decimal point ('1,5').
+    else if (fraction === undefined && groups.length === 2 && (thousands === '.' || thousands === ',') && !/^\d{3}$/.test(groups[1] ?? '')) integer = groups.join('.');
+    else return text;
+  }
+  const t = fraction === undefined ? integer : `${integer}.${fraction}`;
+  if (!/^-?(\d+(?:\.\d*)?|\.\d+)$/.test(t)) return text;
+  return t.replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.$/, '');
+}
+
+/**
  * Picks the price to charge from a price list, in `currency` if given, else in
  * the first currency listed. A sale entry wins over the base entry.
  */

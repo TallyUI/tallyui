@@ -25,6 +25,8 @@ export type DisplaySignallingErrorCode =
   | 'collect_refused'
   /** Till side: an id this device does not own, or one that is unknown or expired. */
   | 'not_found'
+  /** Till side: a missing, wrong or unknown device key, or `registerDevice` for an id that already holds a key or has already adopted. One code for all of them. */
+  | 'device_refused'
   /** Display side: a token that is unknown, forgotten or pruned. */
   | 'token_refused'
   /** A snapshot whose JSON is over 200 KiB. */
@@ -69,6 +71,9 @@ export interface DisplayRecord {
   connected: boolean;
 }
 
+/** The till's credential on every till-side call: its device id and the key `registerDevice` issued for it. Core treats `deviceKey` as opaque. */
+export interface TillDevice { deviceId: string; deviceKey: string }
+
 /** One WebRTC signalling message; `payload` is opaque to the server. */
 export interface SignalMessage { type: 'offer' | 'answer' | 'ice'; payload: string }
 
@@ -76,37 +81,45 @@ export interface SignalMessage { type: 'offer' | 'answer' | 'ice'; payload: stri
  * The platform-neutral signalling seam for a second-device customer display (ADR-085 d2). Each backend's plugin
  * implements the routes its own way; every implementation meets this floor (d4–d6, d8, #705), which
  * `displaySignallingContract` in `@tallyui/core/server` tests. A plugin may be stricter.
- * Till side: every call takes a cashier session and the till's device id; a session without `customer_display.pair`
- * gets `forbidden`, and an id this device does not own gets `not_found`. Display side: no login; calls are gated by the
- * display's token (`token_refused`), and each successful token call updates `lastSeenAt`. Every refusal is a
- * `DisplaySignallingError`.
- * The till's `deviceId` is a bearer secret on some backends (ADR-085, TallyUI#753; until #754's server-issued key):
- * whoever holds it can act as that till. An implementation never logs it, never puts it in an error message, a
- * response body or a display's view, and never returns it to another device.
+ * Till side: every call takes a cashier session and the till's `TillDevice`; the refusal order is `forbidden` (a
+ * session without `customer_display.pair`), then `device_refused` (the device key), then `not_found` (an id this device
+ * does not own), and a refused call has no effect. Display side: no login; calls are gated by the display's token
+ * (`token_refused`), and each successful token call updates `lastSeenAt`. Every refusal is a `DisplaySignallingError`.
+ * The device key is the till's credential (TallyUI#754). An implementation compares key hashes in constant time, never
+ * logs the key, never puts it in an error or a response body, and never returns it after issue. The device id is an
+ * identifier, not a credential, anywhere, including the device id in order data (`order.create`).
  */
 export interface DisplaySignalling {
+  /**
+   * Issues the device key for `deviceId`, needing `customer_display.pair`: 128 bits, base64url, stored only as SHA-256
+   * hex, and returned once, by this call only. An id that already holds a key gives `device_refused`. A pre-migration id
+   * (rows from before device keys, no key hash) adopts them once, logged with the cashier id. An admin reset deletes the
+   * device record with every display, code and pending pairing it owns, so the id registers as new; a reset never returns
+   * an id to the keyless pre-migration state.
+   */
+  registerDevice(ctx: SyncContext, deviceId: string): Promise<{ deviceKey: string }>;
   /** A pairing code: 6+ digits from `crypto.getRandomValues`, single use, live at most 10 minutes; a 6th unspent code per device gives `limit`. */
-  mint(ctx: SyncContext, deviceId: string): Promise<{ code: string; expiresAt: string }>;
+  mint(ctx: SyncContext, device: TillDevice): Promise<{ code: string; expiresAt: string }>;
   /** The live claims on codes this device minted, each with its check code. */
-  pending(ctx: SyncContext, deviceId: string): Promise<PendingPairing[]>;
+  pending(ctx: SyncContext, device: TillDevice): Promise<PendingPairing[]>;
   /**
    * Confirms a claim on a code this device minted, recording the display as owned by this device and cashier. The
    * display then collects its token: 128 bits, base64url, stored only as SHA-256 hex. A claim that carried a valid
    * token moves that display: its old row, token and snapshot go in the same step, and this device owns the same id.
    */
-  confirm(ctx: SyncContext, deviceId: string, claimId: string): Promise<void>;
+  confirm(ctx: SyncContext, device: TillDevice, claimId: string): Promise<void>;
   /** Declines a claim on a code this device minted: the pending pairing is deleted, and nothing is issued. */
-  decline(ctx: SyncContext, deviceId: string, claimId: string): Promise<void>;
+  decline(ctx: SyncContext, device: TillDevice, claimId: string): Promise<void>;
   /** The displays this device owns. A display unseen for 30 days is pruned with its token and snapshot. */
-  list(ctx: SyncContext, deviceId: string): Promise<DisplayRecord[]>;
+  list(ctx: SyncContext, device: TillDevice): Promise<DisplayRecord[]>;
   /** Deletes the display's row, token hash and snapshot at once; the token is refused on its next call. */
-  forget(ctx: SyncContext, deviceId: string, displayId: string): Promise<void>;
+  forget(ctx: SyncContext, device: TillDevice, displayId: string): Promise<void>;
   /** Queues a message in an owned display's inbox. */
-  sendSignal(ctx: SyncContext, deviceId: string, displayId: string, message: SignalMessage): Promise<void>;
+  sendSignal(ctx: SyncContext, device: TillDevice, displayId: string, message: SignalMessage): Promise<void>;
   /** Drains this device's inbox: each message once, in send order, only from displays it owns. */
-  receiveSignals(ctx: SyncContext, deviceId: string): Promise<Array<SignalMessage & { displayId: string }>>;
+  receiveSignals(ctx: SyncContext, device: TillDevice): Promise<Array<SignalMessage & { displayId: string }>>;
   /** Keeps `body` as the display's only snapshot for at most 60 s; over 204 800 UTF-8 bytes of JSON gives `too_large` and keeps the old one. */
-  postSnapshot(ctx: SyncContext, deviceId: string, displayId: string, body: unknown): Promise<void>;
+  postSnapshot(ctx: SyncContext, device: TillDevice, displayId: string, body: unknown): Promise<void>;
   /**
    * Claims a live code: the first claim spends it and records a pending pairing with `displayName` and a fresh 4-digit
    * check code, unique among that till's live pending pairings, and returns a claim secret (128 bits, base64url, stored only as a

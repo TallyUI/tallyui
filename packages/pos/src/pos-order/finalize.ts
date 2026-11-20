@@ -1,6 +1,7 @@
 import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
   type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import type { ChargeLine, Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -250,7 +251,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
       ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
-    name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    name: line.name, sku: line.sku, ...(line.catalogueSku !== undefined && !line.custom ? { catalogueSku: line.catalogueSku } : {}),
+    quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
     ...(line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
     ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
@@ -331,6 +333,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const taxAddress = used === 'billing' || used === 'shipping' ? used : undefined;
   const addresses = { billing: orderAddress(order.customer?.billing), shipping: orderAddress(order.customer?.shipping) };
   if (taxAddress && !addresses[taxAddress]?.country) throw new Error(`finalize: the sale was taxed on the customer's ${taxAddress} address, which it does not have`);
+  // #1064: the backstop for a list no setter checked; the stored list is always a clean copy.
+  const taxIds = order.customer?.taxIds && cleanTaxIds(order.customer.taxIds);
+  if (taxIds === null) throw new Error(TAX_IDS_INVALID);
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
@@ -351,7 +356,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
       ...(addresses.billing ? { billing: addresses.billing } : {}),
-      ...(addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
+      ...(addresses.shipping ? { shipping: addresses.shipping } : {}),
+      ...(taxIds?.length ? { taxIds } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
     ...(order.meta?.length ? { meta: order.meta.map((m) => ({ ...m })) } : {}),
     ...(taxAddress ? { taxAddress } : {}),

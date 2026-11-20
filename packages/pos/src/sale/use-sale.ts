@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -51,10 +52,15 @@ export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ra
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
+/** ADR-092 6a: setTaxIds' refusal once the sale left the cart or money is live; the tax ids change only in the cart. */
+export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
+export { TAX_IDS_INVALID } from '../order/tax-ids';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
 export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
+/** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
+export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -389,8 +395,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return paymentId;
   }
 
+  /** #1064: a customer's tax ids cleanTaxIds would refuse (a defaultCustomer, a restored draft) start no tender. */
+  function taxIdsRefusal(): string | null {
+    const taxIds = builderNow.current.getSnapshot().customer?.taxIds;
+    return taxIds && cleanTaxIds(taxIds) === null ? TAX_IDS_INVALID : null;
+  }
+
   function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a finished sale's tender stays
     if (locked()) return;
+    const taxIdsRefused = tender && taxIdsRefusal();
+    if (taxIdsRefused) return setError(taxIdsRefused);
     const builder = builderNow.current;
     for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
     droppedReferences.current.clear();
@@ -582,6 +597,22 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         throw error;
       }
     },
+    /**
+     * ADR-092 6b/6c: edits a cart line's `name`, `sku` or `regularUnitPriceMinor` (`null` removes it); the regular price is
+     * the "was" price that receipts print and order.create 6+ sends. Cart only; returns a refusal or null: editRefusal's
+     * refusals first (SALE_SAVING, SALE_FINISHED, SALE_HAS_PAYMENT), then LINE_EDIT_REFUSED for any other stage outside the cart.
+     */
+    updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): string | null {
+      const held = editRefusal(); if (held) return held;
+      if (stageNow.current.kind !== 'cart') return LINE_EDIT_REFUSED;
+      try {
+        builderNow.current.updateLine(lineId, patch);
+        return null;
+      } catch (error) {
+        if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
+        throw error;
+      }
+    },
     remove(lineId: string) { if (!editRefusal()) builderNow.current.removeItem(lineId); },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
     applyDiscount(lineId: string | null, discount: Discount): string | null {
@@ -646,13 +677,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return reprice();
     },
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
-    setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
+    setNote(note: string) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
+      if (!locked()) builderNow.current.setNote(note);
+    },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
-    setCustomer(customer: CustomerSummary | null) {
+    setCustomer(picked: CustomerSummary | null) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
-      const refused = customer && customerRefusal(customer);
+      const refused = picked && customerRefusal(picked);
       if (refused) return setError(refused);
+      // #1064: so do tax ids setTaxIds would refuse; the clean list is the one stored.
+      const taxIds = picked?.taxIds?.length ? cleanTaxIds(picked.taxIds) : undefined;
+      if (taxIds === null) return setError(TAX_IDS_INVALID);
+      const customer = picked && taxIds ? { ...picked, taxIds } : picked;
       // #722: the sale's rates and its customer always agree, so a customer with other rates is refused once they are fixed.
       if (!retaxFor(customer)) {
         const same = opts.taxContextFor?.(customer);
@@ -661,7 +700,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (same) taxNow.current = same;
         builderNow.current.setCustomer(customer);
       }
-      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED) ? null : current); // any other error stays
+      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED || current === TAX_IDS_INVALID) ? null : current); // any other error stays
     },
     /**
      * Replaces both addresses on the picked customer (`undefined` removes one) and re-taxes like `setCustomer`. Does
@@ -685,6 +724,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         builderNow.current.setCustomer(next);
       }
       setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
+      return true;
+    },
+    /** Replaces the picked customer's tax ids on this sale (`[]` removes them). Returns false for a guest sale, as `setAddresses`
+     *  does; refuses once the sale left the cart, and refuses an invalid list (ADR-092 6a). It does not re-tax, and it does
+     *  not save them to the customer (the customer editor does). */
+    setTaxIds(taxIds: CustomerTaxId[]): boolean {
+      if (locked()) return false;
+      const { customer, payments } = builderNow.current.getSnapshot();
+      if (customer === null) return false;
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) { setError(TAX_IDS_CHANGE_REFUSED); return false; }
+      const cleaned = cleanTaxIds(taxIds);
+      if (!cleaned) { setError(TAX_IDS_INVALID); return false; }
+      const { taxIds: _taxIds, ...rest } = customer;
+      builderNow.current.setCustomer(cleaned.length ? { ...rest, taxIds: cleaned } : rest);
+      setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
       return true;
     },
     /**
@@ -718,6 +772,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) return setError(taxIdsRefused);
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -737,7 +793,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     setTender,
     /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) { setError(taxIdsRefused); return null; }
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();
@@ -750,6 +809,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return addOne(tender);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
       const changed = builderNow.current.setPaymentStatus(paymentId, status);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.

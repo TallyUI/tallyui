@@ -43,7 +43,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     const display = order.display && !converted ? order.display : undefined;
     for (const [i, line] of order.lines.entries()) {
       const lineId = builder.addLine({
-        productId: line.productId, variantId: line.variantId, name: line.name, sku: line.sku,
+        productId: line.productId, variantId: line.variantId, name: line.name, sku: (line.custom ? undefined : line.catalogueSku) ?? line.sku,
         unitPrice: { amount: line.unitPriceMinor, currency: order.currency, taxInclusive: line.taxInclusive },
         ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
         ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
@@ -53,6 +53,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
         ...(line.custom ? { custom: true, taxClass: line.custom.taxClass, taxStatus: line.custom.taxStatus }
           : { taxClass: deps.taxClassOf?.(line.productId, line.variantId) ?? 'standard', taxStatus: line.taxStatus }),
       });
+      // A catalogue line comes back with its catalogue SKU, then its edit, as restoreOrderDraft does (ADR-092 6b).
+      if (line.catalogueSku !== undefined && !line.custom) builder.updateLine(lineId, { sku: line.sku });
       if (display) {
         for (const row of display.lines[i].discounts) builder.applyLineDiscount(lineId, {
           type: 'fixed', value: row.amountMinor, ...(row.label !== undefined ? { label: row.label } : {}),
@@ -84,7 +86,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,
         ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
         ...(order.customer.billing !== undefined ? { billing: order.customer.billing } : {}),
-        ...(order.customer.shipping !== undefined ? { shipping: order.customer.shipping } : {}) });
+        ...(order.customer.shipping !== undefined ? { shipping: order.customer.shipping } : {}),
+        ...(order.customer.taxIds?.length ? { taxIds: order.customer.taxIds.map((taxId) => ({ ...taxId })) } : {}) });
     }
     // ADR-083 condition 1: the note holds only the cashier's own note, since order.create 7 sends it. The refusal stays
     // on this refused row (`error`), the till's record of it; the draft's id is this row's id.

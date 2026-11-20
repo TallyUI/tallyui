@@ -33,7 +33,7 @@ export type {
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
-  PendingPairing, DisplayRecord, SignalMessage,
+  PendingPairing, DisplayRecord, SignalMessage, TillDevice,
 } from './types';
 export { DisplaySignallingError, DISPLAY_PAIR_CAPABILITY } from './types/display-signalling';
 export { DEFAULT_ICE_SERVERS, parseDisplayAdvertisement, rateLimitSource } from './customer-display';
@@ -88,7 +88,7 @@ export {
 } from './commands';
 
 // Money helpers
-export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
+export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, normalizeMoneyText, resolvePrice, resolvePriceRange } from './money';
 export { minorToMajor } from './server/money';
 export { findVariantByCode } from './variants';
 export { knownWarnings } from './known-warnings';
@@ -111,7 +111,7 @@ export {
   useStockOverlayAsOf,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
-export { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, type MoneyFormatProviderProps } from './context/money-format-context';
+export { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, useMoneyFormat, type MoneyFormatProviderProps } from './context/money-format-context';
 export * as woocommerceTax from './tax/woocommerce';
 export * as woocommerceCoupons from './coupons/woocommerce';
 

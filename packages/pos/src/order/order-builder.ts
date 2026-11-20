@@ -171,6 +171,12 @@ export interface OrderBuilder {
   splitLine(lineId: string): string[];
   /** Sets a line's unit price (a till price edit), in minor units of the order's currency and the line's own tax mode; its discounts and tax are recomputed. */
   setUnitPrice(lineId: string, amountMinor: number): void;
+  /**
+   * Edits a line's name, SKU or regular unit price (ADR-092 6b/6c); `regularUnitPriceMinor: null` removes it. Name and SKU
+   * are trimmed and may not be empty. A catalogue line's first SKU edit keeps the SKU it was added with as `catalogueSku`.
+   * A custom line refuses a regular price (ADR-077 d3). The whole patch is checked first, so a patch that throws changes nothing.
+   */
+  updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): void;
   removeItem(lineId: string): void;
   applyLineDiscount(lineId: string, discount: Discount): void;
   applyOrderDiscount(discount: Discount): void;
@@ -570,6 +576,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         && (!woo || li.taxClass === input.taxClass && (li.taxStatus === 'none') === (input.taxStatus === 'none'))
         && (li.taxFromClass === true) === fromClass
         && li.regularUnitPriceMinor === input.regularUnitPriceMinor && samePicks(li, input)
+        // An edited name or SKU never merges (ADR-092 6b), so a later scan adds a new line.
+        && li.name === input.name && li.sku === (input.sku ?? '')
         && li.unitPriceMinor === unitPrice.amount && li.taxLines.length === taxRates.length
         && li.taxLines.every((tax, index) => tax.code === taxRates[index].code && tax.ratePpm === taxRates[index].ratePpm),
     );
@@ -716,6 +724,25 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       lineItems = lineItems.map((li) =>
         li.id === lineId ? recalculateLine({ ...li, unitPriceMinor: amountMinor }) : li,
       );
+      emit();
+    },
+
+    updateLine(lineId, patch) {
+      const name = patch.name?.trim();
+      if (name === '') throw new RangeError('A line needs a name');
+      const sku = patch.sku?.trim();
+      if (sku === '') throw new RangeError('A line needs a SKU');
+      const regular = patch.regularUnitPriceMinor;
+      if (regular != null && (!Number.isInteger(regular) || regular < 0)) throw new RangeError('Regular price must be integer minor units >= 0');
+      const li = lineItems.find((line) => line.id === lineId);
+      if (!li) throw new Error(`Unknown line ${lineId}`);
+      // ADR-077 d3: a custom line has no regular price; addLine drops one too.
+      if (li.custom && regular != null) throw new RangeError('A custom line has no regular price');
+      const { regularUnitPriceMinor: _regular, ...unpriced } = li;
+      const changes = { ...(name !== undefined ? { name } : {}),
+        ...(sku !== undefined ? { sku, ...(!li.custom && li.catalogueSku === undefined ? { catalogueSku: li.sku } : {}) } : {}),
+        ...(regular != null ? { regularUnitPriceMinor: regular } : {}) };
+      lineItems = lineItems.map((line) => line.id === lineId ? recalculateLine({ ...(regular === null ? unpriced : li), ...changes }) : line);
       emit();
     },
 

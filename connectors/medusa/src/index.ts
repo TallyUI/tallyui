@@ -12,6 +12,7 @@ import { fetchByIds, fetchPages, MAX_IDS_PER_REQUEST, variantIds } from './recon
 import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 import { fetchPages as fetchCalculatedPricePages, fingerprint as calculatedPriceFingerprint } from './reconcile/calculated-prices';
 import { medusaStoreSettings } from './store-settings';
+import { createMedusaOrders, MEDUSA_ORDER_FILTERS } from './orders';
 
 export const medusaSecretKeyAuth: ConnectorAuth = {
   type: 'Medusa Admin API',
@@ -167,6 +168,7 @@ const medusaConnectorParts = {
 export const createMedusaAdminUserConnector = (): TallyConnector => ({
   ...createMedusaConnector(), auth: medusaAdminUserAuth, capabilities: medusaCapabilities,
   searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer, updateCustomer: medusaUpdateCustomer,
+  ...createMedusaOrders(), orderFilters: MEDUSA_ORDER_FILTERS,
 });
 
 /**
@@ -190,6 +192,7 @@ export { createMedusaVariantFeedReplication } from './replication/variant-feed';
 export { medusaStockReconcile } from './reconcile/stock';
 export { medusaStoreSettings } from './store-settings';
 export { searchMedusaCustomers, createMedusaCustomer, getMedusaCustomer, updateMedusaCustomer, toCustomer } from './customers';
+export { createMedusaOrders, toMedusaStoreOrder, MEDUSA_ORDER_FILTERS } from './orders';
 export { withCalculatedPrices } from './pricing/calculated';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
 export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';

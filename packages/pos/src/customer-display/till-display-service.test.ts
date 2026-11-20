@@ -9,6 +9,7 @@ import { SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS } from './snapshot-fallbac
 import {
   CONNECT_TIMEOUT_MS, LIST_POLL_MS, SIGNAL_POLL_MS, createTillDisplayService, type TillDisplayService,
 } from './till-display-service';
+import { createTillDevice } from './till-device';
 import { FakeNetwork } from './webrtc/fake-peer.test-helper';
 import { createDisplayPeerLink, type PeerLink } from './webrtc';
 
@@ -24,6 +25,11 @@ const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 /** Long enough for the offer, the answer at the next inbox poll, and the channel to open. */
 const OPEN_MS = SIGNAL_POLL_MS * 2;
 
+/** A till device whose key is already stored, so no call registers. */
+const storedDevice = (signalling: FakeSignalling) => {
+  let key: string | null = 'key-1';
+  return createTillDevice({ signalling, deviceId: 'till-1', keys: { load: async () => key, save: async (next) => void (key = next), clear: async () => void (key = null) } });
+};
 let services: TillDisplayService[] = [];
 function setup(options: { displays?: DisplayRecord[]; snapshot?: boolean; context?: SyncContext | null; sides?: string[] } = {}) {
   const { displays = [record('d1'), record('d2')], snapshot = false, sides = displays.map((d) => d.displayId) } = options;
@@ -42,7 +48,7 @@ function setup(options: { displays?: DisplayRecord[]; snapshot?: boolean; contex
   };
   const sideOf = Object.fromEntries(sides.map((id) => [id, side(id)]));
   const service = createTillDisplayService({
-    signalling, deviceId: 'till-1', context: () => context, advertisement: { iceServers: [], snapshot },
+    signalling, device: storedDevice(signalling), context: () => context, advertisement: { iceServers: [], snapshot },
     configFor: (r) => ({ ...base, display: { id: r.displayId, name: r.name } }),
     createPeer: network.createPeer, onError: (error) => errors.push(error),
   });
