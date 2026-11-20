@@ -4844,6 +4844,7 @@ interface OrderCreatePayload {
     - **Drafts keep coupons.** A parked sale's draft now stores `Order.coupons`. Restoring a draft does not apply
       them: (d3c)'s sale re-applies the codes with fresh coupon data, so an expired or changed coupon is refused
       then, not replayed from the draft.
+      - **Amended 2026-11-19 (Front desk):** a draft with a live or captured leg keeps its parked coupon amounts on resume, as it keeps its parked prices; no re-price until the legs are voided, after which the normal automatic re-price applies. A reopened draft whose legs are all locked re-prices on resume as before.
     - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
       `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
       exactly as before.
