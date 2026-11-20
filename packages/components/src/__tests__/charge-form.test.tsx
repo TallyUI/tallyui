@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MoneyFormatProvider } from '@tallyui/core';
 import { I18nProvider } from '../i18n';
-import { ChargeForm } from '../sale/charge-form';
+import { ChargeForm, type ChargeFormProps } from '../sale/charge-form';
 
 afterEach(() => cleanup());
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
@@ -317,5 +318,65 @@ describe('ChargeForm', () => {
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 5 });
       expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
     });
+  });
+});
+
+describe('ChargeForm reads the store money format (#1086)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const mount = (format?: typeof COMMA, props: Partial<ChargeFormProps> = {}) => {
+    const onApply = vi.fn().mockReturnValue(null);
+    const form = <ChargeForm currency="EUR" {...props} onApply={onApply} onClose={() => {}} />;
+    render(format ? <MoneyFormatProvider format={format}>{form}</MoneyFormatProvider> : form);
+    return onApply;
+  };
+  const amount = () => screen.getByRole('textbox', { name: 'Amount' }) as HTMLInputElement;
+
+  it('CF1: COMMA reads a grouped fee', () => {
+    const onApply = mount(COMMA);
+    input('Amount', '1.234,50');
+    click('Apply');
+    expect(onApply.mock.lastCall![0]).toMatchObject({ kind: 'fee', amountMinor: 123450 });
+  });
+
+  it.each([
+    ['CF2', COMMA, 'EUR', '1.234.56'],
+    ['CF3', DOT, 'KWD', '0,500'],
+  ] as const)('%s: refuses %j in %j %s', (_id, format, currency, text) => {
+    const onApply = mount(format, { currency });
+    input('Amount', text);
+    click('Apply');
+    expect(screen.getByRole('alert').textContent).toBe('Enter a number.');
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("CF4: without a provider '1,5' is 150 and '1.234,50' is refused", () => {
+    const onApply = mount();
+    input('Amount', '1,5');
+    click('Apply');
+    expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 150 });
+    cleanup();
+    const refused = mount();
+    input('Amount', '1.234,50');
+    click('Apply');
+    expect(screen.getByRole('alert').textContent).toBe('Enter a number.');
+    expect(refused).not.toHaveBeenCalled();
+  });
+
+  it('CF5: COMMA prefills an edited amount in its separator, so a typed digit is a third decimal place', () => {
+    const onApply = mount(COMMA, { initial: { name: 'Wrap', amountMinor: 1250 } });
+    expect(amount().value).toBe('12,50');
+    input('Amount', amount().value + '5');
+    click('Apply');
+    expect(screen.getByRole('alert').textContent).toBe('Use at most 2 decimal places.');
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('CF6: COMMA reads a grouped negative fee as negative', () => {
+    const onApply = mount(COMMA);
+    input('Amount', '-1.234,50');
+    click('Apply');
+    expect(screen.getByRole('alert').textContent).toBe('A fee cannot be negative. Use Add Discount instead.');
+    expect(onApply).not.toHaveBeenCalled();
   });
 });

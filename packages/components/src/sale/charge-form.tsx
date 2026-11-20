@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { minorUnitDigits, useCurrencySymbol } from '@tallyui/core';
+import { normalizeMoneyText, useCurrencySymbol, useMoneyFormat } from '@tallyui/core';
 import { useT } from '../i18n';
+import { moneyInputText } from '../lib/money-input';
 import { Label } from '../ui/label';
 import { parsePrice } from './price-form';
 
@@ -37,16 +38,16 @@ const DEFAULT_NAME: Record<'fee' | 'shipping' | 'custom', string> = { fee: 'Fee'
 export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, kind: fixedKind, initial, allowPercent, pricesIncludeTax,
   onApply, onClose }: ChargeFormProps) {
   const currencySymbol = useCurrencySymbol();
+  const format = useMoneyFormat();
   const t = useT();
   const [stateKind, setKind] = useState<'fee' | 'shipping' | 'custom'>('fee');
   const kind = fixedKind ?? stateKind;
   const title = initial ? `Edit ${initial.name}` : fixedKind === undefined ? 'Add charge'
     : fixedKind === 'fee' ? 'Add fee' : fixedKind === 'shipping' ? 'Add shipping' : 'Add custom item';
-  const digits = minorUnitDigits(currency);
   const [name, setName] = useState(initial?.name ?? '');
   const [unitPercent, setUnitPercent] = useState(Boolean(allowPercent) && initial?.percent !== undefined);
   const [text, setText] = useState(allowPercent && initial?.percent !== undefined ? String(initial.percent)
-    : initial ? (initial.amountMinor / 10 ** digits).toFixed(digits) : '');
+    : initial ? moneyInputText(initial.amountMinor, currency, format) : '');
   const [noTax, setNoTax] = useState(initial?.taxStatus === 'none');
   const [includesTax, setIncludesTax] = useState(initial?.amountIncludesTax ?? pricesIncludeTax ?? false);
   const [taxClass, setTaxClass] = useState(initial?.taxClass ?? '');
@@ -62,8 +63,10 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
     // The negative check comes first, so a fee never shows parsePrice's "0 or more".
     // A percent's range and decimal places are the builder's to refuse, shown inline as its other refusals.
     const number = Number(text.trim().replace(',', '.'));
-    const price = percentMode ? (Number.isNaN(number) ? 0 : number) : parsePrice(text, currency);
-    const parsed = kind === 'fee' && number < 0 ? 'A fee cannot be negative. Use Add Discount instead.'
+    // The money amount is read in the store format first, so a COMMA '-1.234,50' is a negative fee too.
+    const negative = (percentMode ? number : Number(normalizeMoneyText(text, format).trim().replace(',', '.'))) < 0;
+    const price = percentMode ? (Number.isNaN(number) ? 0 : number) : parsePrice(text, currency, format);
+    const parsed = kind === 'fee' && negative ? 'A fee cannot be negative. Use Add Discount instead.'
       : kind === 'fee' && price === 0 ? 'Enter an amount greater than zero' : price;
     // A control that is not shown keeps the edited charge's own value. The new keys go only when they carry a value,
     // so a form without allowPercent or pricesIncludeTax sends the same object as before.
