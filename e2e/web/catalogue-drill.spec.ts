@@ -13,6 +13,14 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
     for (const id of ['81', '82', '83']) await expect(page.getByTestId(`variation-tile-${id}`)).toBeVisible();
     await expect(page.getByTestId('product-tile-Mug')).toHaveCount(0);
 
+    // The "Products › name" crumb (v2 drill-in.tsx:44-68); at phone width the shared Breadcrumb, as v2's
+    // (breadcrumb/index.tsx:52-84), drops the separator but still draws the name.
+    const crumb = page.getByTestId('products-breadcrumb');
+    await expect(crumb).toBeVisible();
+    await expect(page.getByTestId('products-breadcrumb-back')).toHaveText('Products');
+    await expect(page.getByTestId('products-breadcrumb-here')).toHaveText('Tee');
+    await expect(crumb.getByTestId('products-breadcrumb-sep-0')).toHaveCount(width === 390 ? 0 : 1);
+
     for (const id of ['81', '82', '83']) {
       const tile = await page.getByTestId(`variation-tile-${id}`).boundingBox();
       const chips = await page.getByTestId(`variation-tile-${id}-chips`).boundingBox();
@@ -23,7 +31,7 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
       console.log(`chips ${width} ${id}: tile right ${tile!.x + tile!.width}, row right ${chips!.x + chips!.width}, chip rights ${rights.join(' ')}`);
       for (const right of [chips!.x + chips!.width, ...rights]) expect(right).toBeLessThanOrEqual(tile!.x + tile!.width + 0.5);
     }
-    if (width === 390) await page.screenshot({ path: testInfo.outputPath('catalogue-drill-390.png') });
+    await page.screenshot({ path: testInfo.outputPath(`catalogue-drill-${width}.png`) });
 
     const cart = page.getByTestId('catalogue-drill-cart');
     await page.getByTestId('variation-tile-81').click();
@@ -31,6 +39,18 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
     await expect(page.getByTestId('variation-tile-81')).toBeVisible();
 
     await page.getByTestId('variations-parent-tile').click();
+    await expect(page.getByTestId('product-tile-Mug')).toBeVisible();
+    await expect(page.getByTestId('variations-parent-tile')).toHaveCount(0);
+
+    // On web, Escape inside the drill goes back (v2 level-back.tsx:41-49); so does the Products crumb.
+    await page.getByTestId('product-tile-Tee').click();
+    await expect(page.getByTestId('products-breadcrumb')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('product-tile-Mug')).toBeVisible();
+    await expect(page.getByTestId('products-breadcrumb')).toHaveCount(0);
+
+    await page.getByTestId('product-tile-Tee').click();
+    await page.getByTestId('products-breadcrumb-back').click();
     await expect(page.getByTestId('product-tile-Mug')).toBeVisible();
     await expect(page.getByTestId('variations-parent-tile')).toHaveCount(0);
   });

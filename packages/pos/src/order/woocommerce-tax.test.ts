@@ -198,16 +198,37 @@ describe('ADR-076 WooCommerce builder strategy', () => {
     displayIdentity(builder.getSnapshot());
   });
 
-  it.each([false, true])('ignores shipping tax class and status on a standard cart (custom: %s)', (custom) => {
-    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
-      ...context({ standard: [rate(1, '20.0000')], 'reduced-rate': [rate(2, '5.0000')] }), shippingTaxClass: 'inherit',
-    } });
-    builder.addLine({ productId: 'p', name: 'Item', ...(custom ? { custom: true as const } : {}), unitPrice: { amount: 1000, currency: 'GBP' } });
-    const id = builder.addShipping({ name: 'Post', amountMinor: 100, taxClass: 'reduced-rate', taxStatus: 'none' });
-    expect(builder.getSnapshot().shipping?.[0]).toMatchObject({ taxClass: 'reduced-rate', taxStatus: 'none', taxMicros: '20000000' });
+  it.each([false, true])('ignores the shipping tax class on a standard cart; a none status leaves it untaxed (custom: %s)', (custom) => {
+    const fresh = () => {
+      const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+        ...context({ standard: [rate(1, '20.0000')], 'reduced-rate': [rate(2, '5.0000')] }), shippingTaxClass: 'inherit',
+      } });
+      builder.addLine({ productId: 'p', name: 'Item', ...(custom ? { custom: true as const } : {}), unitPrice: { amount: 1000, currency: 'GBP' } });
+      return builder;
+    };
+    const builder = fresh();
+    const id = builder.addShipping({ name: 'Post', amountMinor: 100, taxClass: 'reduced-rate' });
+    expect(builder.getSnapshot().shipping?.[0]).toMatchObject({ taxClass: 'reduced-rate', taxStatus: 'taxable', taxMicros: '20000000' });
     builder.updateShipping(id, { amountMinor: 200 });
     expect(builder.getSnapshot().shipping?.[0].taxMicros).toBe('40000000');
     expect(builder.getSnapshot().totalMinor).toBe(1440);
+    const untaxed = fresh();
+    const none = untaxed.addShipping({ name: 'Post', amountMinor: 100, taxClass: 'reduced-rate', taxStatus: 'none' });
+    untaxed.updateShipping(none, { amountMinor: 200 });
+    expect(untaxed.getSnapshot().shipping?.[0]).toMatchObject({ taxClass: 'reduced-rate', taxStatus: 'none', taxLines: [], taxMicros: '0' });
+    expect(untaxed.getSnapshot().totalMinor).toBe(1400);
+  });
+
+  it.each([false, true])('leaves a none shipping line untaxed on an inclusive standard cart (custom: %s)', (custom) => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      ...context({ standard: [rate(1, '20.0000')], 'reduced-rate': [rate(2, '5.0000')] }, true), shippingTaxClass: 'inherit',
+    } });
+    builder.addLine({ productId: 'p', name: 'Item', ...(custom ? { custom: true as const } : {}), unitPrice: { amount: 1000, currency: 'GBP' } });
+    const none = builder.addShipping({ name: 'Post', amountMinor: 100, taxClass: 'reduced-rate', taxStatus: 'none' });
+    builder.updateShipping(none, { amountMinor: 200 });
+    expect(builder.getSnapshot().shipping?.[0]).toMatchObject({ taxClass: 'reduced-rate', taxStatus: 'none', taxLines: [], taxMicros: '0' });
+    // Inclusive: the 10.00 item already carries its 20% (1.67 of it), the untaxed 2.00 post adds only itself.
+    expect(builder.getSnapshot()).toMatchObject({ taxMinor: 167, totalMinor: 1200 });
   });
 
   it('leaves inherited shipping untaxed when all product and custom lines are non-taxable', () => {

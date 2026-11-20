@@ -6,17 +6,17 @@ import {
   countVariance,
   denominationTotal,
   denominations,
-  minorToDecimal,
   parseMinor,
   validAmount,
   varianceText,
 } from '@tallyui/pos';
 
-import { useCurrencySymbol, useFormatMoney, minorUnitDigits } from '@tallyui/core';
+import { useCurrencySymbol, useFormatMoney, useMoneyFormat, minorUnitDigits } from '@tallyui/core';
 import { cn } from '@tallyui/theme';
 import { decimalRows, typeDecimal } from '../input/decimal-entry';
 import { Keypad } from '../input/keypad';
 import { errorText } from '../lib/error-text';
+import { moneyInputText, readMoneyText } from '../lib/money-input';
 import { Button } from '../ui/button';
 import { ChevronDownIcon } from '../ui/icon/chevron-down-icon';
 import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
@@ -132,7 +132,21 @@ export interface RegisterCountProps {
   } | null>;
   /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it after a successful close; a print failure is the host's to show. */
   onPrint?: () => void | Promise<void>;
+  /** Shown instead of the store's message when closing the register or going back to selling fails; the host's `approve` and `onPrint` failures, and the approval-required and sale-in-progress refusals, keep their own text. */
+  failureText?: string;
   className?: string;
+}
+
+/** A store call's rejection, marked so `attempt` can show `failureText` for it and not for the host's own. */
+class StoreCallFailed { constructor(readonly cause: unknown) {} }
+async function saving(call: () => Promise<unknown>) {
+  try {
+    await call();
+  } catch (e) {
+    // The hook's own refusals keep their text (by name: components import no class from pos, ADR-064).
+    const own = e instanceof Error && (e.name === 'RegisterApprovalRequiredError' || e.name === 'RegisterTenderInProgressError');
+    throw own ? e : new StoreCallFailed(e);
+  }
 }
 
 /**
@@ -145,10 +159,12 @@ export interface RegisterCountProps {
  * (registers c2) — `approve` is the host's own gate, and it runs regardless of `blind`: dropping
  * the server flag would otherwise leave a blind count with no gate at all over threshold.
  */
-export function RegisterCount({ register, currency, approve, onPrint, className }: RegisterCountProps) {
+export function RegisterCount({ register, currency, approve, onPrint, failureText, className }: RegisterCountProps) {
   const formatMoney = useFormatMoney();
   const currencySymbol = useCurrencySymbol();
   const { session, expected, blind, varianceThreshold, actions } = register;
+  const format = useMoneyFormat();
+  const separator = format?.decimalSeparator || '.';
   const digits = minorUnitDigits(currency);
   const faces = denominations[currency] ?? denominations.default;
   // Below 480px, a note's full label ('€500') and its count badge collide across 4 columns; 3
@@ -158,13 +174,13 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
   const [pieces, setPieces] = useState<Record<number, number>>({});
   // Resumes an interrupted close's persisted count (LEDGER 59); ordinary counting starts blank.
   const [cashText, setCashText] = useState(() =>
-    session?.counted?.cash != null ? minorToDecimal(session.counted.cash, digits) : '',
+    session?.counted?.cash != null ? moneyInputText(session.counted.cash, currency, format) : '',
   );
   const [others, setOthers] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       Object.entries(session?.counted ?? {})
         .filter(([method]) => method !== 'cash')
-        .map(([method, minor]) => [method, minorToDecimal(minor, digits)]),
+        .map(([method, minor]) => [method, moneyInputText(minor, currency, format)]),
     ),
   );
   const [busy, setBusy] = useState(false);
@@ -177,9 +193,10 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
 
   const usingTiles = Object.keys(pieces).length > 0;
   const tilesTotal = denominationTotal(pieces);
-  const displayAmount = usingTiles ? minorToDecimal(tilesTotal, digits) : cashText;
-  const valid = usingTiles || validAmount(cashText, digits);
-  const amountMinor = usingTiles ? tilesTotal : valid ? parseMinor(cashText, digits) : NaN;
+  const displayAmount = usingTiles ? moneyInputText(tilesTotal, currency, format) : cashText;
+  const cashCanonical = readMoneyText(cashText, format);
+  const valid = usingTiles || (cashCanonical !== undefined && validAmount(cashCanonical, digits));
+  const amountMinor = usingTiles ? tilesTotal : valid && cashCanonical !== undefined ? parseMinor(cashCanonical, digits) : NaN;
   const variance = countVariance(amountMinor, expected.cash ?? 0);
   const needsApproval = valid && closeNeedsApproval(amountMinor, expected.cash ?? 0, varianceThreshold);
 
@@ -187,10 +204,11 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
   const otherCounted = otherMethods
     .map((method) => [method, others[method] ?? ''] as const)
     .filter(([, value]) => value !== '');
-  const otherTendersInvalid = otherCounted.some(([, value]) => !validAmount(value, digits));
+  const otherCanonical = otherCounted.map(([method, value]) => [method, readMoneyText(value, format)] as const);
+  const otherTendersInvalid = otherCanonical.some(([, value]) => value === undefined || !validAmount(value, digits));
   const counted: Record<string, number> = {
     cash: amountMinor,
-    ...Object.fromEntries(otherCounted.map(([method, value]) => [method, parseMinor(value, digits)])),
+    ...Object.fromEntries(otherCanonical.map(([method, value]) => [method, value === undefined ? NaN : parseMinor(value, digits)])),
   };
   // The count on screen now, for an approval that resolves after the cashier edited it.
   const shownCount = useRef('');
@@ -228,9 +246,9 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
     const fresh = usingTiles;
     setPieces({});
     setCashText((previous) => {
-      const point = previous.indexOf('.');
-      const fullZero = Number(previous) === 0 && point >= 0 && previous.length - point - 1 >= digits;
-      return typeDecimal(fresh || fullZero ? '' : previous, key, digits);
+      const point = previous.indexOf(separator);
+      const fullZero = Number(previous.replace(separator, '.')) === 0 && point >= 0 && previous.length - point - 1 >= digits;
+      return typeDecimal(fresh || fullZero ? '' : previous, key, digits, separator);
     });
   };
 
@@ -242,6 +260,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
     } catch (e) {
       // The hook's own gate (by name: components import no class from pos, ADR-064).
       if (e instanceof Error && e.name === 'RegisterApprovalRequiredError') setRefusal(APPROVAL_REQUIRED_TEXT);
+      else if (e instanceof StoreCallFailed) setError(failureText ?? errorText(e.cause));
       else setError(errorText(e));
     } finally {
       setBusy(false);
@@ -273,16 +292,16 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           return;
         }
         const { approvedBy, approvedByName, approval, approvedVariance } = result;
-        await actions.closeSession({
+        await saving(() => actions.closeSession({
           counted, approvedBy, approvedByName, ...(note ? { note } : {}),
           ...(approval ? { approval } : {}), ...(approvedVariance ? { approvedVariance } : {}),
-        });
+        }));
         await onPrint?.();
       });
       return;
     }
     void attempt(async () => {
-      await actions.closeSession({ counted, ...(note ? { note } : {}) });
+      await saving(() => actions.closeSession({ counted, ...(note ? { note } : {}) }));
       await onPrint?.();
     });
   };
@@ -309,7 +328,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           <Input.Field
             testID="count-amount"
             className="text-4xl font-bold tabular-nums pl-1.5"
-            placeholder={minorToDecimal(0, digits)}
+            placeholder={moneyInputText(0, currency, format)}
             value={displayAmount}
             onChangeText={(value) => {
               // Typing clears the tiles, and a later tile tap replaces the typed amount (LEDGER 65).
@@ -326,7 +345,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
         </Input>
         {keypadOpen ? (
           <View testID="count-keypad">
-            <Keypad testID="count" rows={decimalRows(digits)} onPress={pressKey} />
+            <Keypad testID="count" rows={decimalRows(digits, separator)} onPress={pressKey} />
           </View>
         ) : (
           <Text testID="count-tap-to-change" className="text-muted-foreground">Tap the amount to edit it</Text>
@@ -389,7 +408,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
             className="min-h-11 self-end"
             onPress={() => {
               setPieces({});
-              setCashText(minorToDecimal(0, digits));
+              setCashText(moneyInputText(0, currency, format));
             }}
           >
             <Text>Clear</Text>
@@ -449,7 +468,7 @@ export function RegisterCount({ register, currency, approve, onPrint, className 
           variant="outline"
           className="min-h-11"
           disabled={busy}
-          onPress={() => attempt(actions.backToSelling)}
+          onPress={() => attempt(() => saving(actions.backToSelling))}
         >
           <Text>Back to selling</Text>
         </Button>

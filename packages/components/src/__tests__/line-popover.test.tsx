@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi, type Mock } from 'vitest';
-import { formatMoney } from '@tallyui/core';
+import { formatMoney, MoneyFormatProvider } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
 import { LinePopover, type LinePopoverProps } from '../sale/line-popover';
 
@@ -218,4 +218,14 @@ it('price commit="close": a refusal on a press outside goes to onCloseRefused; o
 it('price commit="close": the regular price above the value still shows struck through', () => {
   open({ kind: 'price', commit: 'close', value: 1000, regularValue: 1250 });
   expect(within(screen.getByRole('dialog')).getByLabelText(`Regular price ${formatMoney({ amount: 1250, currency: 'EUR' })}`)).toBeTruthy();
+});
+
+it('LP1: under a COMMA store, the keypad price stays canonical (1.500 KWD is 1500 minor)', () => {
+  const onApply = vi.fn(() => null);
+  render(<MoneyFormatProvider format={{ decimalSeparator: ',', thousandSeparator: '.' }}>
+    <LinePopover kind="price" lineName="Shirt" currency="KWD" value={1250} onApply={onApply} /><PortalHost />
+  </MoneyFormatProvider>);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit price of Shirt' }));
+  keys('1', 'Decimal point', '5', '0', '0', 'Apply');
+  expect(onApply).toHaveBeenCalledExactlyOnceWith(1500);
 });

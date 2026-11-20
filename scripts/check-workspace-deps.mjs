@@ -53,13 +53,25 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'refundableLines', 'priceRefund',
   // the sale note (ADR-083 condition 2): the one pure test of whether a till order's note reached the store, never a hook or the store.
   'noteDelivery',
+  // the sale's extras (ADR-092 condition 1): the one pure test of which tax ids, meta and edited SKUs a downgrade did not send, never a hook or the store.
+  'extrasNotSent',
   // ADR-090 W4e and gates 36/36c: the pure refund-due figures and refused till legs the orders list and the tender pane show.
   'refundDueOf', 'lockedRefundDueMinor', 'tillLegsTheStoreRefuses',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
   'UI_SCALES', 'UI_THEMES',
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
-  'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
-  'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
+  // initialTenderState is a pure constant that useTender resets to.
+  'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
+  // inMotionMinor is pure, and the tender pane's pick target needs it.
+  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg',
+  // the tender picker (#1133 11c): the pure charged line figures used to price a unit pick.
+  'splitUnitLines',
+  // the tender picker (#1133 11c): the pure count of units captured or held by an in-motion leg.
+  'heldUnitsByLine',
+  // the tender picker (#1133 11c): the pure money calculation for the selected units.
+  'pickedUnitsMinor',
+  // the tender picker (#1133 11c): the pure count of units still available to pick.
+  'unpaidUnitsByLine',
   // the Sales room (plan unit 25): the pure store-day date presets its filters bar offers, never a hook or the store.
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
@@ -78,6 +90,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'listTermGroups', 'hasTerm',
   // Settings › Printing's Auto label (9.5b): the pure printer pick a template's Auto choice names, never a hook or the store.
   'resolvePrinter',
+  // customer editor (10.1d): pure form-values-to-store-call functions (10.1c), never a hook or the store.
+  'toCustomerInput', 'toCustomerPatch', 'shipsToBilling',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

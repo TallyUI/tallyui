@@ -1,0 +1,33 @@
+<receipt paper-width="48">
+  <align mode="center">
+    <size width="2" height="2"><bold><text>Corner Cafe</text></bold></size>
+    <text>12 High Street, Leeds</text>
+  </align>
+  <line />
+  <text>Plain <bold>bold</bold>, <underline>under</underline>, <invert>inv</invert> end</text>
+  <text>  Oat milk, extra hot, no foam, in a takeaway cup</text>
+  <align mode="right"><text>Right side</text></align>
+  <row><col width="10">Order</col><col width="*" align="right">#1001</col></row>
+  <line style="dashed" />
+  <text>Flat White</text>
+  <row><col width="*">  2 × 3.50</col><col width="12" align="right">7.00</col></row>
+  <row><col width="*">  Loyalty discount for regular customers</col><col width="12" align="right">−1.00</col></row>
+  <line style="dotted" />
+  <bold><row><col width="10">Total</col><col width="*" align="right">6.00</col></row></bold>
+  <line style="double" />
+  <row><col width="6">Cash</col><col width="*">tendered</col><col width="12" align="right">10.00</col></row>
+  <feed lines="2" />
+  <image src="https://example.invalid/logo.png" width="200" />
+  <text>Note one
+Note two</text>
+  <align mode="center">
+    <text>Thanks again</text>
+    <barcode type="code128" height="50">ORDER-1001</barcode>
+    <barcode type="ean13">4006381333932</barcode>
+    <barcode type="upca">012345678905</barcode>
+    <qrcode size="4">https://example.invalid/r/1001</qrcode>
+  </align>
+  <feed lines="3" />
+  <drawer />
+  <cut />
+</receipt>

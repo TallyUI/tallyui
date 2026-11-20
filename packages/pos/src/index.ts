@@ -99,9 +99,11 @@ export type { SignalPort, PeerLink, PeerLinkState, PeerLinkOptions, PeerFactory,
 export { createDisplayClient, COLLECT_POLL_MS, DISPLAY_SIGNAL_POLL_MS, OPEN_SIGNAL_POLL_MS, SNAPSHOT_POLL_MS, useDisplayClient } from './customer-display';
 export type { DisplayClient, DisplayClientOptions, DisplayClientPhase, DisplayClientError, DisplayTokenStore, DisplayClientView } from './customer-display';
 export { createTillDisplayService, SIGNAL_POLL_MS, LIST_POLL_MS, CONNECT_TIMEOUT_MS, createSnapshotSender, SNAPSHOT_MIN_INTERVAL_MS, SNAPSHOT_RESEND_MS, SNAPSHOT_LIFETIME_MS } from './customer-display';
-export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
+export type { TillDisplayService, TillDisplayServiceOptions, TillDisplayStatus, TillDisplayPauseReason, TillDisplayEntry, ServiceClock, SnapshotSender, SnapshotSenderOptions, SnapshotBody } from './customer-display';
 export { createTillPairing, PENDING_POLL_MS, useTillPairing, useTillDisplays } from './customer-display';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError, TillPairingView, TillDisplaysView } from './customer-display';
+export { createTillDevice } from './customer-display';
+export type { TillDeviceHandle, TillDeviceKeyStore, TillDeviceOptions } from './customer-display';
 
 // Customer form values to a create input or an update patch
 export { shipsToBilling, toCustomerInput, toCustomerPatch } from './customer/customer-patch';
@@ -135,25 +137,26 @@ export {
   PrintError, toPrintError, createPrintQueue, SYSTEM_PRINTER_ID, PRINTER_PROFILES_COLLECTION, printerProfileSchema,
   printerProfileCollection, addPrinterProfileCollection, createSystemPrintTransport, SYSTEM_PRINT_TIMING,
   escpos, encodeEscPos, createEscPosTransport, createEpsonEposSink, createStarWebPrntSink, networkSinkFor, canOpenDrawer,
-  openDrawerJob, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns,
+  openDrawerJob, ESCPOS_CODE_PAGES, resolvePrinter, templateColumns, renderEscpos, encodeThermalTemplate,
 } from './print';
 export type {
   PrintJob, PrintJobKind, PrintErrorCode, PrintTransport, PrintQueue, PrintQueueOptions, PrintQueueState,
   PrinterProfile, PrinterProfileCollection, SystemPrintTransportOptions,
-  EscPosBuilder, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions,
+  EscPosBuilder, EscPosBarcodeOptions, EscPosQrOptions, EncodeEscPosOptions, EscPosSink, EscPosTransportOptions, NetworkSinkOptions, ResolvePrinterOptions, RenderEscposOptions,
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
-export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
+export { uuidv7, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED } from './sale/use-sale';
-export { TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
+export { ADDRESS_CHANGE_REFUSED, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, type SaleRemoval } from './sale/use-sale';
+export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';
@@ -166,8 +169,9 @@ export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOu
 export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
 export { sendOrderReopen, isOrderReopenInFlight, isReopenOffered, type OrderReopenOutcome, storeOrderForReopen, ReopenEntryError, REOPEN_REFUSED_STATUSES, type ReopenEntryReason, reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE, type ReopenStoreOrderOutcome } from './reopen';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
-export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './tender';
-export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures } from './tender';
+export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg, splitUnitLines, unitsMinor, unitAllocationsFromLegs, paidUnitsByLine, unpaidUnitsByLine, pickedUnitsMinor } from './tender';
+export { heldUnitsByLine } from './tender';
+export type { PaymentTransport, TenderView, TenderLineId, TenderPlan, SplitTab, TenderState, TenderKey, TenderAction, PlanLeg, TenderVoid, PaymentLegStatus, TenderFacts, TenderFigures, SplitUnitLine, UnitAllocations } from './tender';
 
 // Register
 export { normalizeAmount, isServerDecimal, movementFieldError, deriveExpected, deriveDrawerTerms, takingsByMethod, parseMinor, validAmount, countVariance, overThreshold, closeNeedsApproval, closureVariance, denominationTotal, varianceText, denominations } from './register';

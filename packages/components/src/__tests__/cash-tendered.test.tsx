@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MoneyFormatProvider } from '@tallyui/core';
 import { CashTendered } from '../checkout/cash-tendered';
 
 const total = { amount: 3451, currency: 'EUR' };
@@ -113,5 +114,81 @@ describe('CashTendered', () => {
     expect(screen.getByText('¥105')).toBeDefined();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '1.5' } });
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('101');
+  });
+});
+
+describe('CashTendered with the store separators (#672)', () => {
+  it('CT1: keeps a comma amount inside a COMMA provider, and not without one', () => {
+    const onChange = vi.fn();
+    const { unmount } = render(<MoneyFormatProvider format={{ decimalSeparator: ',', thousandSeparator: '.' }}>
+      <CashTendered total={total} locale="en" onChangeAmount={onChange} />
+    </MoneyFormatProvider>);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '12,5' } });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('12,5');
+    expect(onChange).toHaveBeenLastCalledWith({ amount: 1250, currency: 'EUR' });
+    unmount();
+    const bare = vi.fn();
+    render(<CashTendered total={total} locale="en" onChangeAmount={bare} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '12,5' } });
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('34.51');
+    expect(bare).not.toHaveBeenCalled();
+  });
+});
+
+describe('CashTendered refuses an ambiguous amount (#1073)', () => {
+  const DOT = { decimalSeparator: '.', thousandSeparator: ',' };
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+
+  it.each([
+    ['1..50', DOT], ['9.99.', DOT], ['12..5', DOT], ['0.5.0', DOT], ['1,234,56', DOT], ['1.234.56', DOT],
+    ['1.234.56', COMMA], ['1,23.45', DOT],
+  ] as const)('C1: emits no amount for %j in %j, so no change due shows', (text, format) => {
+    const onChange = vi.fn();
+    render(<MoneyFormatProvider format={format}>
+      <CashTendered total={total} locale="en" onChangeAmount={onChange} />
+    </MoneyFormatProvider>);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: text } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(format.decimalSeparator === ',' ? '34,51' : '34.51');
+  });
+});
+
+describe('CashTendered prefills in the store decimal separator (#1086)', () => {
+  const COMMA = { decimalSeparator: ',', thousandSeparator: '.' };
+  const eur = { amount: 1250, currency: 'EUR' };
+  const mount = (format?: typeof COMMA, money = eur) => {
+    const onChange = vi.fn();
+    const field = () => screen.getByRole('textbox') as HTMLInputElement;
+    render(format ? <MoneyFormatProvider format={format}><CashTendered total={money} locale="en" onChangeAmount={onChange} /></MoneyFormatProvider>
+      : <CashTendered total={money} locale="en" onChangeAmount={onChange} />);
+    return { onChange, field };
+  };
+
+  it('CT0: the prefill with a digit typed after it is never read as a thousands group', () => {
+    const { onChange, field } = mount(COMMA);
+    fireEvent.change(field(), { target: { value: field().value + '5' } });
+    expect(onChange).not.toHaveBeenCalledWith({ amount: 1250500, currency: 'EUR' });
+  });
+
+  it('CT1: the field reads the total in the COMMA separator', () => {
+    expect(mount(COMMA).field().value).toBe('12,50');
+  });
+
+  it('CT2: a third decimal place leaves the tendered amount unchanged', () => {
+    const { onChange, field } = mount(COMMA);
+    fireEvent.change(field(), { target: { value: '12,505' } });
+    expect(field().value).toBe('12,50');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalledWith({ amount: 1250500, currency: 'EUR' });
+  });
+
+  it('CT3: a trailing COMMA separator is kept as typed', () => {
+    const { field } = mount(COMMA);
+    fireEvent.change(field(), { target: { value: '12,' } });
+    expect(field().value).toBe('12,');
+  });
+
+  it('CT4: without a provider the field reads the canonical text', () => {
+    expect(mount(undefined, { amount: 1250, currency: 'USD' }).field().value).toBe('12.50');
   });
 });

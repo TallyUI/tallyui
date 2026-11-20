@@ -25,6 +25,11 @@ const eur = (amount: number) => formatMoney({ amount, currency: 'EUR' });
 const PLATFORM_ERROR = "The online store refused this sale. Ask the store owner to look at the till's sync log.";
 const NOTE_NOT_SENT = "The customer note couldn't be sent to the store.";
 const noteNotSent = { note: 'Deliver after 5', sentVersion: 6, syncStatus: 'applied' } as const;
+const TAX_IDS_NOT_SENT = "The customer's tax IDs couldn't be sent to the store.";
+const META_NOT_SENT = "The order's custom fields couldn't be sent to the store.";
+const edited = (id: string, name = 'Blue shirt') => ({ id, productId: 'shirt', variantId: id, name, sku: `${id}-NEW`, catalogueSku: id,
+  quantity: 1, unitPriceMinor: 600, discountMinor: 0, netMinor: 600, taxLines: [] });
+const extras = { customer: { taxIds: [{ type: 'eu_vat', value: 'DE123456789' }] }, meta: [{ key: 'gift', value: 'yes' }], lines: [edited('l1')] };
 
 describe('OrderSyncNotices refusals', () => {
   it.each([
@@ -103,6 +108,30 @@ describe('OrderSyncNotices notes', () => {
   });
 });
 
+describe('OrderSyncNotices extras not sent (ADR-092 condition 1)', () => {
+  it('N1 says each extra was not sent at 11', () => {
+    render(<OrderSyncNotices order={order('e', { ...extras, sentVersion: 11, syncStatus: 'applied' })} />);
+    expect(screen.getByTestId('order-tax-ids-not-sent-e').textContent).toBe(TAX_IDS_NOT_SENT);
+    expect(screen.getByTestId('order-meta-not-sent-e').textContent).toBe(META_NOT_SENT);
+    expect(screen.getByTestId('order-sku-not-sent-e').textContent).toBe("The edited SKU of Blue shirt couldn't be sent to the store.");
+  });
+
+  it('N2 names two edited lines in the plural', () => {
+    render(<OrderSyncNotices order={order('e', { lines: [edited('l1'), edited('l2', 'Red hat')], sentVersion: 11 })} />);
+    expect(screen.getByTestId('order-sku-not-sent-e').textContent).toBe("The edited SKUs of Blue shirt, Red hat couldn't be sent to the store.");
+  });
+
+  it('N3 says none of them at 12', () => {
+    const { container } = render(<OrderSyncNotices order={order('e', { ...extras, sentVersion: 12, syncStatus: 'applied' })} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('N4 shows no SKU row for an unedited SKU', () => {
+    render(<OrderSyncNotices order={order('e', { sentVersion: 11 })} />);
+    expect(screen.queryByTestId('order-sku-not-sent-e')).toBeNull();
+  });
+});
+
 describe('OrderSyncNotices store warnings', () => {
   it.each<[string, NonNullable<PosOrder['warnings']>, string]>([
     ['insufficient_stock', [{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }], '1 sold without stock: Blue shirt'],
@@ -129,10 +158,15 @@ describe('OrderSyncNotices store warnings', () => {
 
 describe('OrderSyncNotices children', () => {
   it('renders children after the note-not-sent notice and before the store warnings', () => {
-    const warned = order('n', { ...noteNotSent, warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] });
+    const warned = order('n', { ...noteNotSent, ...extras, warnings: [{ code: 'total_mismatch', serverMinor: 1000, expectedMinor: 1200 }] });
     render(<OrderSyncNotices order={warned}><Text testID="slot">Slot</Text></OrderSyncNotices>);
     const slot = screen.getByTestId('slot');
+    const rows = ['note', 'tax-ids', 'meta', 'sku'].map((kind) => screen.getByTestId(`order-${kind}-not-sent-n`));
+    for (const [before, after] of rows.slice(1).map((row, i) => [rows[i], row])) {
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(screen.getByTestId('order-note-not-sent-n').compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rows[3].compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(slot.compareDocumentPosition(screen.getByText(`Store total ${eur(1000)} vs POS ${eur(1200)}`)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

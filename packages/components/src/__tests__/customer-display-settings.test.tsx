@@ -72,6 +72,7 @@ describe('CustomerDisplaySettings', () => {
     ['limit', 'Too many pairing attempts. Try again in a few minutes.'],
     ['expired', 'The code expired. Start again for a new code.'],
     ['not_found', 'That display is no longer waiting. Ask it to enter the code again.'],
+    ['device_refused', 'This till is not recognised by the store. Ask an admin to reset it.'],
     ['network', "Can't reach the store. Check the connection and try again."],
     ['server', "The store couldn't finish that. Try again."],
   ] as const)('idle with %s shows its message, and the button starts pairing', (error, message) => {
@@ -142,6 +143,16 @@ describe('CustomerDisplaySettings', () => {
   ] as const)('the %s status shows its line', (status, line) => {
     show({ displays: { status, displays: [] } });
     expect(text('customer-display-status')).toBe(line);
+  });
+
+  it('C1: paused with device_refused says the store does not recognise this till', () => {
+    show({ displays: { status: 'paused', displays: [], pauseReason: 'device_refused' } });
+    expect(text('customer-display-status')).toBe('This till is not recognised by the store. Ask an admin to reset it.');
+  });
+
+  it.each([['forbidden'], ['signed_out'], [null], [undefined]] as const)('C2: paused with pauseReason %s shows the sign-in line', (pauseReason) => {
+    show({ displays: { status: 'paused', displays: [], ...(pauseReason === undefined ? {} : { pauseReason }) } });
+    expect(text('customer-display-status')).toBe('Sign in as a cashier who can pair customer displays.');
   });
 
   it.each(['online', 'closed'] as const)('the %s status shows no line', (status) => {

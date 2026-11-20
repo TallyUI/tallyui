@@ -4407,6 +4407,33 @@ interface OrderCreatePayload {
 - **Not decided here:** coupons (G6); several rates per class, compound tax, and WooCommerce's shipping tax class
   from store settings (G5). Fees and shipping use the single rate per class that `TaxContext` has today, and G5
   replaces that for every line kind alike.
+- **Amendment 2 (2026-11-20): the WooCommerce order-lines gate gets a version fallback** (the front desk's rulings,
+  2026-11-20, on the tally-woo lane's stock-store proofs; TallyUI #1107 and #1117):
+  - **What it supersedes.** The 6 Oct ruling behind TallyUI #470 made `orderCreate` above 3 capability-only: a store
+    got the order-lines versions only when `/status` listed `order_create_v5` (the TallyUI fork). This amendment
+    supersedes that ruling for stock WCPOS on the 1.10 line from 1.10.20 and on the 2.0 line from 2.0.4. Everywhere
+    else it stands.
+  - **Why.** On 20 Nov the tally-woo lane pushed to throwaway stock stores:
+    - stock 1.10.20 took `order.create` v3 to v7 to the cent (128 of 128 figures);
+    - stock 2.0.4, proved on TallyUI main, matched 103 of 103.
+    A version number cannot tell stock from the fork, but these proofs show the stock releases take those versions.
+  - **The gate** (`connectors/woocommerce/src/store-settings.ts`):
+    - When `/status` lists `order_create_v5`, the flag decides as before.
+    - When `/status` cannot be read, the store gets 3.
+    - Otherwise the `/site` `wcpos_version` is a fallback:
+      - **1.10 line (#1107):** a plain `1.10.N` with N ≥ 20 (`WOO_ORDER_LINES_FLOOR`) gets the order-lines version,
+        capped at 7 (`WOO_ORDER_LINES_VERSION_CAP`). Version 8's tax address is unproven there: stock `/stores`
+        answers `base`. This route applies only when `/status` sent no capabilities list.
+      - **2.0 line (#1117):** a plain `2.0.N` with N ≥ 4 (`WOO_ORDER_LINES_20_FLOOR`) gets the order-lines version,
+        capped at 6 (`WOO_ORDER_LINES_20_CAP`), the highest version the 2.0.4 proof shows to the cent. This applies
+        with or without a capabilities list, as long as `order_create_v5` is not in it.
+      - Anything else (a prerelease, another line, no `/site` version) gets 3.
+  - **Not on this route.** Split tender still needs `order_payments_list`. Nothing is added to the WCPOS plugin.
+  - **Shipping lines with tax status `none`** (#1107): the connector sends the line's tax status to the store, and in
+    WooCommerce mode the till leaves the line untaxed, as the store saves it. The 1.10.20 and 2.0.4 plugin code both
+    clear a `none` shipping line's tax from its meta. Whether stock 2.0.4 saves that
+    line with 0.00 tax on the wire (case B) is still open; the front desk dispatches that check.
+  - **Undo:** restore the capability-only gate by reverting #1107 and #1117.
 
 ## ADR-076 WooCommerce tax: the WCPOS engine ported into core, several rates per class, Woo rounding
 
@@ -4844,6 +4871,7 @@ interface OrderCreatePayload {
     - **Drafts keep coupons.** A parked sale's draft now stores `Order.coupons`. Restoring a draft does not apply
       them: (d3c)'s sale re-applies the codes with fresh coupon data, so an expired or changed coupon is refused
       then, not replayed from the draft.
+      - **Amended 2026-11-19 (Front desk):** a draft with a live or captured leg keeps its parked coupon amounts on resume, as it keeps its parked prices; no re-price until the legs are voided, after which the normal automatic re-price applies. A reopened draft whose legs are all locked re-prices on resume as before.
     - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
       `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
       exactly as before.
@@ -5280,6 +5308,10 @@ interface OrderCreatePayload {
 - **Consequences:**
   - **Changes to ADR-068:** its ledger rule gains two non-blocking codes, its open gains two fields, and its conflict
     table gains `register_session_superseded`.
+  - **A closed session is finished** (Front desk, 2026-11-19). A session with a stored closure is finished: an open
+    on that register starts a fresh session and is not a take-over, and the old till's later `closed` transition
+    answers ok (vendurepos ADR 0006:85; medusapos follows). TallyUI tills send `closed` before the closure (ADR-068),
+    so no till behaviour changes.
   - **The store's half is medusapos's** (medusapos#174 item 1, a one-way plugin PR). A WooCommerce or Vendure store
     gets the same contract when it adds registers.
   - **TallyUI build order:**
@@ -5837,6 +5869,18 @@ interface OrderCreatePayload {
   - **Changes to ADR-078:** the non-blocking rule gains two codes, and the walk holds the next closure behind them.
   - **A till whose capabilities are unknown when it closes** queues a version 1 closure. The store records it as
     unverified. A store that wants every close verified sets `minRegisterContract: 3` (ADR 0023, line 114).
+  - **A renumbered closure keeps its approval (#661, 2026-11-19).** A #657 renumber gives a closure a new number and
+    a new command id. No store binds the approval to either, so the proof stays valid and the contract is unchanged.
+    The store lanes answered:
+    - **medusapos** binds the approval to the register session and the exact variance per tender. The approval is
+      single-use and expires. It records the closure id and the command id only when the approval is used
+      (`service.ts:255-260`, `:283-284`).
+    - **vendurepos** has no server check yet. Its lane is adding one on the medusapos shape.
+    - **WooCommerce.** TallyUI's fork has no register commands. Core woocommerce-pos 2.0.2 checks a recount approval
+      on each request, by manager credentials and a capability for the `closure_id` in the URL
+      (`Closures_Controller.php:134-147`), not by number or command id.
+    - So a store that later binds the approval to the closure number or the command id breaks the renumber. That is a
+      contract change and comes back here first.
   - **Units 2, 3 and 4 below ship in one TallyUI release.** The plugin already advertises contract 3. A release with
     unit 2 alone would send version 3 closures whose refusals block the register.
   - **Door: one-way.**
@@ -6002,7 +6046,7 @@ interface OrderCreatePayload {
 ## ADR-085 The customer display on a second device: WebRTC, signalled by each backend's plugin (amends ADR-084 d3)
 
 - **Date:** 2026-11-11 · **Status:** Accepted in direction by the front desk on 2026-11-11 (one-way). The security floor and the
-  pairing rules below were added at its ruling. · **Amends:** ADR-084 decision 3
+  pairing rules below were added at its ruling. · **Amends:** ADR-084 decision 3 · **Amended:** 2026-11-20, decision 5 (the till device key, #754)
   · **Relates to:** #684, `docs/v2-parity/PLAN.md` A10, A11, Q3 and units 36-37, ADR-084 decision 4 (the plugin fork)
 - **Name:** this ADR does not say "LAN" in its title. The display page loads from the app's web origin, and STUN can
   find a route between two networks, so the display is not limited to the shop's network. "Second device" means
@@ -6101,7 +6145,7 @@ interface OrderCreatePayload {
      - **The till device id** is the till's own id, generated once and kept in a local collection that is never
        replicated (CLAUDE.md), as the #682 scanner profiles are. The display token is kept the same way on the display
        device.
-     - **Binding to the cashier's session.** The till sends its device id on every signalling call it makes, and the
+     - **Binding to the cashier's session.** The till sends its device id and key (below) on every signalling call it makes, and the
        server accepts a device id only on a request authenticated by a cashier session that holds
        `customer_display.pair`. At mint, the server records the device id and the cashier who minted the code. The
        confirmed display's registry row records the owning till device id and that cashier. When the cashier logs out,
@@ -6110,6 +6154,23 @@ interface OrderCreatePayload {
      - **One display belongs to one till.** A display whose pairing with a second till is confirmed moves to that
        till: at the confirm, the server deletes its old row and old token, then makes the new ones, in one step. The
        first till sees it gone at its next list. One till may own several displays (9).
+     - **The till device key (amended 20 Nov 2026, TallyUI#754).** A till registers once under a cashier session
+       with `customer_display.pair`; the server issues a 128-bit key, stores only its SHA-256 hash, and refuses every
+       till call without the matching key (`device_refused`). A key is re-issued only after the device is pruned (30
+       days idle, nothing owned) or reset by an admin (Front desk, 19 Nov 2026). The hash comparison is
+       constant-time. The key is never logged or returned after issue, and an admin reset revokes the old key at
+       once. An admin reset deletes the device record with every display, code and pending pairing it owns, so the
+       id registers as new; a reset never returns an id to the keyless pre-migration state. The till keeps the key
+       next to its device id, never replicated (`createTillDevice`); a key that fails to save is held only in memory,
+       so after a restart that till is refused until an admin resets it.
+       - **Adoption, a known limit.** A device id that owned rows before the key existed adopts them once: only
+         inside `registerDevice`, under a cashier session with `customer_display.pair`, only for an id that existed
+         before the migration, and logged with the cashier id. After that adoption, or after the first keyed
+         registration, the id never adopts again. Until a pre-migration till registers, anyone holding a cashier
+         session with the capability and that till's device id can adopt its displays first.
+       - **The device id is not a credential anywhere.** The id that order data carries (`order.create`, register
+         sessions) is not a credential, and the key is what proves a till. U8 gives the display service its own
+         display id, separate from the order-data device id.
   6. **The registry lives on the server:** display id, name, owning till device id, the cashier who paired it, last
      seen and connected, as in v2. The till keeps no replicated copy.
      - **Pruning.** Unspent codes, and pending pairings that were never confirmed, are deleted when the code expires.
@@ -6716,3 +6777,36 @@ interface OrderCreatePayload {
 - **Evidence to come with the PRs:** a v12 golden fixture, and the v3–v11 fixtures unchanged; server prechecks that
   refuse each field below 12; the bounds at their limits and one past them; an identity migration test 17→18; a
   requeued order that comes back into `needsAttention` after it was stamped.
+
+## ADR-093 Store closures as an optional, online `TallyConnector.closures?` surface
+
+- **Date:** 2026-11-20 · **Status:** Accepted (front desk, 2026-11-20: the tally-woo 24 group declares `Correction`
+  and `ApproverCredentials` in core within a 40-line cap, and this entry lands before any code) · **Relates to:**
+  ADR-081 (optional, online `listOrders`/`getOrders`, the model for this surface), ADR-068 and ADR-082 (closures
+  are submitted through the register outbox), ADR-032 amendment 1 (the pos `settled-figures` port, whose
+  `Correction` shape this keeps). The tally-woo spec 24 (`woo-closures-read-recount`) is the source. WCPOS v2 is
+  the reference for features and taste.
+- **Context:**
+  - WCPOS v2's closure room reads the store's Z closures, shows each one's corrections, records a reprint and sends
+    a late recount. TallyUI had no closure read on `TallyConnector`: a till saw only its own local closures.
+  - `Correction` is declared in `@tallyui/pos` (`register/settled-figures.ts`), so a connector cannot return one
+    without importing pos.
+  - A recount by a cashier without the right to manage closures carries a manager's sign-in. Register contract 3
+    (ADR-082) needs the same credentials for its approval, so the type is shared.
+- **Decision:**
+  1. **Optional and online.** `closures?` is an optional, read-through member of `TallyConnector`, with no
+     collection, no cache and no replication: a local copy of server closures would be a second source of truth
+     (ADR-081 decision 1). A connector without it is unchanged, and the app hides its server-closure features, as
+     it hides order history without `listOrders`. Medusa and Vendure are untouched until they implement it.
+  2. **Reads and appended corrections only.** Closures are still submitted through the register outbox (ADR-068,
+     ADR-082). This surface reads them (`list`, `get`, `last`), appends a recount as a correction (`recount`) and
+     records a reprint (`markPrinted`). It never edits a closure's recorded figures.
+  3. **Shared types in core.** `Correction` moves from pos to core, and pos re-exports it, so nothing that imports it
+     from `@tallyui/pos` changes. Its `type` union is widened with `'late_refund'` (WCPOS v2.0.4 appends one), and
+     `deriveSettled` treats a late refund as a late sale on the refund side (front desk, 2026-11-20). `ApproverCredentials` (`{username, password}`) lives in core, used by
+     the register approval and the recount alike.
+  4. **Credentials.** `ApproverCredentials` go straight to the store, once per call. A connector never logs them,
+     keeps them or puts them in an error.
+  5. **Blind figures.** Figures a store withholds from the signed-in user are absent, never zero.
+  6. **Money.** Every amount is in integer minor units, as elsewhere in core; a connector converts the store's
+     decimals both ways.

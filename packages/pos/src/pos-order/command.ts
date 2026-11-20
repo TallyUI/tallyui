@@ -1,13 +1,17 @@
-import type { OrderCreateEnvelope, OrderCreatePayload, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderCreateMeta, OrderCreatePayload, OrderCreateTaxId, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
+import { woocommerceChargeTaxMinor } from '../order/woocommerce-tax';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 11 as const;
+export const ORDER_CREATE_MAX_VERSION = 12 as const;
 /** order.create 10 (ruling A, 2026-11-18) is 9 plus each payment's `methodId`, the payment method's own id on the platform. */
 export const PAYMENT_METHOD_ID_ORDER_CREATE_VERSION = 10 as const;
 /** order.create 11 (ADR-086 d2, amended 2026-11-19) is 10 plus the customer's addresses on a sale not taxed by address, as informational fields. */
 export const UNTAXED_ADDRESS_ORDER_CREATE_VERSION = 11 as const;
+/** order.create 12 (ADR-092) is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields. */
+export const INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION = 12 as const;
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
@@ -55,6 +59,25 @@ export function cutText(text: string, max: number): string {
   const high = clean.charCodeAt(max - 2);
   return `${clean.slice(0, high >= 0xd800 && high <= 0xdbff ? max - 2 : max - 1)}…`;
 }
+
+// What order.create 12's shape check accepts (order-payload-shape.ts); a bad entry is dropped, not sent, so one bad extra never holds the sale (desk, F1054-1).
+export function sendableTaxIds(taxIds: readonly OrderCreateTaxId[] | undefined): OrderCreateTaxId[] {
+  return (taxIds ?? []).flatMap(({ type, value, country }) => {
+    const id = { type: cutText(type, ORDER_TAX_ID_TYPE_MAX), value: cutText(value, ORDER_TAX_ID_VALUE_MAX) };
+    const code = country?.toUpperCase();
+    return id.type && id.value ? [{ ...id, ...(code !== undefined && /^[A-Z]{2}$/.test(code) ? { country: code } : {}) }] : [];
+  }).slice(0, ORDER_TAX_IDS_MAX);
+}
+export function sendableMeta(meta: readonly OrderCreateMeta[] | undefined): OrderCreateMeta[] {
+  const kept = new Set<string>();
+  return (meta ?? []).flatMap((entry) => {
+    const key = cutText(entry.key, ORDER_META_KEY_MAX);
+    if (!key || key.startsWith('_') || kept.has(key)) return [];
+    kept.add(key);
+    return [{ key, value: cutText(entry.value, ORDER_NOTE_MAX) }];
+  }).slice(0, ORDER_META_MAX);
+}
+export const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueSku !== undefined && line.sku !== '' && line.sku !== line.catalogueSku;
 
 /**
  * Version 4 (#286): a line's discount made tax-exclusive. An exclusive line's is unchanged; an inclusive line's
@@ -110,6 +133,7 @@ function wireNote(note: string | undefined): string | undefined {
  * Version 9 sends every coupon's stored line shares when the cap allows it, keeping notes and any tax address.
  * Version 10 is 9 plus each payment's `methodId`: only at a cap of 10 or more, for an order with figures (4+) whose coupons all have lines and a leg with an id.
  * Version 11 is 10 plus the customer's addresses on a sale with no `taxAddress`: only at a cap of 11 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
+ * Version 12 is 11 plus the customer's tax ids (without `label`), order meta and a catalogue line's edited `sku` (ADR-092): only at a cap of 12 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  * A reopened sale (`storeOrderId`) throws: it goes as `order.update` (`toOrderUpdateEnvelope`).
  */
@@ -147,10 +171,15 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   // only when the cap allows 11 and the payload meets 10's own requirements; otherwise the addresses are dropped and the bytes are today's.
   const untaxedAddresses = !taxAddress && !!(order.customer?.billing || order.customer?.shipping)
     && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
-  const version = (untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+  // Version 12 is 11 plus tax ids, meta and a catalogue line's edited SKU (ADR-092), on the same terms; otherwise none of them is sent.
+  const sentTaxIds = sendableTaxIds(order.customer?.taxIds), sentMeta = sendableMeta(order.meta);
+  const extras = !!(sentTaxIds.length || sentMeta.length || order.lines.some(editedSku))
+    && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
+  const version = (extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
-  const withAddresses = withTaxAddress || version === UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
+  const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
+  const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentTaxIds.length ? { taxIds: sentTaxIds } : undefined;
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
@@ -168,6 +197,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       clientOrderId: order.id, createdAt: order.createdAt, currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
       lines: order.lines.map((line, i) => ({
         clientLineId: line.id, ...(line.custom ? { custom: { ...line.custom } } : { variantId: line.variantId ?? line.productId }), title: line.name,
+        ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && editedSku(line) ? { sku: line.sku } : {}),
         quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
         ...(line.taxInclusive !== undefined ? { taxInclusive: line.taxInclusive } : {}),
         ...(lineDiscounts[i] > 0 ? { discountMinor: lineDiscounts[i] } : {}),
@@ -177,12 +207,20 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       })),
       ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
         clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
-        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(fee.taxMicros)),
+        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
+        // #1131: WooCommerce totals a fee line's tax per rate, as its own order totals do.
+        taxMinor: order.taxRounding?.granularity === 'woocommerce'
+          ? woocommerceChargeTaxMinor(fee, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+          : roundMicrosToMinor(BigInt(fee.taxMicros)),
       })) } : {}),
       ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
         clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
         amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
-        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(charge.taxMicros)),
+        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}),
+        // #1120: WooCommerce totals a shipping line's tax per rate, as its own order totals do.
+        taxMinor: order.taxRounding?.granularity === 'woocommerce'
+          ? woocommerceChargeTaxMinor(charge, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+          : roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
       ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
@@ -212,13 +250,14 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
         })),
       } : {}),
       customer: base >= 3
-        ? (email || customerId || withAddresses ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses } : null)
+        ? (email || customerId || withAddresses || taxIds ? { ...(email ? { email } : {}), ...(customerId ? { customerId } : {}), ...addresses, ...taxIds } : null)
         : (email ? { email } : null),
       ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
       ...(order.cashierRef !== undefined ? { cashierRef: order.cashierRef } : {}),
       ...(base >= 3 && typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= 36 ? { sessionId } : {}),
       ...(version >= 7 && note ? { note } : {}),
       ...(withTaxAddress ? { taxAddress } : {}),
+      ...(version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentMeta.length ? { meta: sentMeta } : {}),
     },
   };
 }

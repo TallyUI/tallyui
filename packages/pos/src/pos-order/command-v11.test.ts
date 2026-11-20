@@ -5,9 +5,8 @@ import { describe, expect, it } from 'vitest';
 import type { CustomerAddress } from '@tallyui/core';
 import { payloadBoundErrors, payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
-import { ORDER_CREATE_MAX_VERSION, toOrderCreateEnvelope, toOrderUpdateEnvelope, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './command';
+import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './command';
 import { finalizeOrder } from './finalize';
-import { posOrderCollection } from './schema';
 import type { PosOrder } from './types';
 
 const fixturePath = fileURLToPath(new URL('./__fixtures__/order-create-v11.json', import.meta.url));
@@ -68,13 +67,9 @@ describe('order.create v11: the customer\'s addresses on a sale not taxed by add
     expect(payloadBoundErrors(sent.payload)).toEqual([]);
   });
 
-  it('pins the stored maxima and golden version to the till maximum of 11', () => {
-    const { properties } = posOrderCollection().schema;
-    expect(ORDER_CREATE_MAX_VERSION).toBe(11);
-    expect(UNTAXED_ADDRESS_ORDER_CREATE_VERSION).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
+  it('keeps its golden at version 11 (the till maximum is pinned in command-v12.test.ts)', () => {
+    expect(UNTAXED_ADDRESS_ORDER_CREATE_VERSION).toBe(11);
+    expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(11);
   });
 
   it.each([[4, 4, 4], [8, 4, 7], [9, 4, 7], [10, 4, 10]])('V2 at cap %i sends a sale with addresses byte-identical to one without (v8-only backend and cap 4): version %i, %i with a note and a methodId',

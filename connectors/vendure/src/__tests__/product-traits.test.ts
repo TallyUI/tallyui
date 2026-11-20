@@ -641,6 +641,11 @@ describe('variant option groups (vendurepos gap 2.5)', () => {
     expect(vendureProductTraits.getVariants!(doc)[0].options).toEqual({ Size: '32' });
   });
 
+  it('V2b: a variant whose only option names a group the product does not have gives options undefined', () => {
+    const doc = { ...product, variants: [{ ...product.variants[0], options: [{ id: '900', code: 'x', name: 'Stray', groupId: '99' }] }] };
+    expect(vendureProductTraits.getVariants!(doc)[0].options).toBeUndefined();
+  });
+
   it('V3: a v2-shaped product (no optionGroups) gives options undefined and getVariantOptions []', () => {
     const { optionGroups: _, ...v2 } = product;
     const doc = { ...v2, variants: v2.variants.map((v) => ({ ...v, options: v.options.map(({ groupId: __, ...o }) => o) })) };

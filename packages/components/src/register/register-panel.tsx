@@ -51,6 +51,8 @@ export interface RegisterPanelProps {
    * initials) sits under the drawer figure. Without it, the header reads "Cashier" and there is no line.
    */
   openedBy?: { name: string; avatar?: string };
+  /** Replaces MovementSheet's default reason chips per movement type (`MovementSheet.reasons`); a type left out keeps v2's defaults. */
+  movementReasons?: Partial<Record<MovementType, readonly string[]>>;
 }
 
 /**
@@ -63,7 +65,7 @@ export interface RegisterPanelProps {
  * Z, reprint and the print sheet, the last-closure badge, and the Reports deep link.
  */
 export function RegisterPanel({
-  register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now, openedBy,
+  register, currency, registerName, open, onOpenChange, reapprove, className, presentation = 'dialog', storeName, onPrintXReport, now, openedBy, movementReasons,
 }: RegisterPanelProps) {
   const formatMoney = useFormatMoney();
   const { session, expected, salesCount, blind, movements, lastClosure, approvalNeeded, actions, terms } = register;
@@ -233,6 +235,7 @@ export function RegisterPanel({
             register={register}
             type={movementType}
             currency={currency}
+            reasons={movementReasons?.[movementType]}
             onOpenChange={(value) => {
               if (!value) setMovementType(null);
             }}

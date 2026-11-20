@@ -1,10 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { CustomerAddress, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { paymentMethodOf } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
-import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
+import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
+import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
+import { isLiveLeg } from '../order/order-builder';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -28,11 +31,19 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
- * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every leg, and `resume`
- * re-checks coupons: so the sale stays on the till until it is paid or its paid legs are voided.
+ * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a kept
+ * paid draft's parked legs, and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
+ * sale stays on the till until it is paid or its paid legs are voided.
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
+/**
+ * Line and total changes refuse with this while a till leg is live, as v2's resolveStage stills the cart (tally-woo 11c).
+ * "Cancel the payment" names the leg's button, `pos_checkout.cancel_payment` ("Cancel payment") in packages/components.
+ */
+export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the payment before changing the sale.';
+/** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
+export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
 /** startTender refuses with this when the app's tenderGate rejects instead of answering. */
@@ -43,10 +54,26 @@ export const TENDER_SALE_CHANGED = 'The sale changed while the checkout check ra
 export const CUSTOMER_RETAX_REFUSED = 'This customer would change the tax on this sale. To use them, cancel the payment and change the customer in the cart, or start a new order.';
 /** Desk Q7.4 (19 Nov): setAddresses' refusal once the sale left the cart or money is live; the address changes only in the cart. */
 export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. Cancel the payment to change it, or start a new order.';
+/** ADR-092 6a: setTaxIds' refusal once the sale left the cart or money is live; the tax ids change only in the cart. */
+export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
+export { TAX_IDS_INVALID } from '../order/tax-ids';
+/** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
+export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
+/** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
+export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
+/** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
+export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
+/** #1095: restore()'s refusal of a removal whose sale moved on (reset, parked, finished) or that is already back. */
+export const RESTORE_STALE = 'This item can no longer be put back. Add it again.';
+/** Taken by `removal()` before a remove; pass it to `restore()`. Hosts never build one. */
+export type SaleRemoval = { readonly kind: 'line' | 'fee' | 'shipping'; readonly id: string; readonly item: LineItem | ChargeLine;
+  readonly index: number; readonly orderId: string; readonly taxContext: TaxContext; readonly epoch: number };
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
 const REFERENCE_DROPPED = "The terminal's payment reference couldn't be kept";
+// A paid draft's code in `applied`, kept as parked with no `find` at resume: never passed to codes.apply; a re-price replaces it.
+const KEPT = Symbol('kept coupon');
 /**
  * How often a hung save re-asks `isStored`, while the order is built and its save is still in flight
  * and unconfirmed: an app whose tender has no New sale control while saving (the Front desk,
@@ -197,12 +224,27 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   /** locked() without its error. */
   function busy() { return !!(inFlight.current || pending.current); }
+  /** Line and total changes' guard: SALE_SAVING while busy, SALE_FINISHED on the receipt, SALE_HAS_PAYMENT while an unlocked leg is captured or in motion; sets it as the error. */
+  function editRefusal(): string | null {
+    const refusal = busy() ? SALE_SAVING : stageNow.current.kind === 'receipt' ? SALE_FINISHED : liveLeg() ? SALE_HAS_PAYMENT : null;
+    if (refusal) setError(refusal);
+    return refusal;
+  }
+  /** An unlocked leg on the live sale is captured or in motion: its total must not move. */
+  function liveLeg() {
+    return builderNow.current.getSnapshot().payments.some(isLiveLeg);
+  }
+  function keptCodes() { return [...applied.current.values()].includes(KEPT); } // apply, remove and re-tax wait for the re-price
   // TallyUI#710: the coupon re-price in flight (at most one), the count of coupon changes that discards its result,
   // and the order snapshot a transient refusal or a throw stopped it on, with that reason.
   const repricing = useRef<Promise<string | null> | null>(null);
   const [couponsRepricing, setCouponsRepricing] = useState(false);
   const generation = useRef(0);
+  const saleEpoch = useRef(0); // #1095: bumped by every resetSale (new sale, park, resume, switch); a removal from an older epoch is stale.
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
+  const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
+  const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
+  function heldLeg(p: Order['payments'][number]) { return !!p.locked || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -229,6 +271,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         asked = b.getSnapshot();
         codes.apply(b, discountState(asked, kept));
         applied.current = kept;
+        keptCoupons.current = undefined; keptLegIds.current = [];
         if (!kept.size) appliedWith.current = null;
         const message = messages.length ? messages.join(' ') : null;
         // A refusal only a re-price could have set goes once the codes are priced.
@@ -261,8 +304,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     taxNow.current = tax;
     applied.current.clear();
+    keptCoupons.current = undefined; keptLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
+    saleEpoch.current++;
     setBuilder(next);
     setOrder(next.getSnapshot());
     // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
@@ -276,10 +321,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }, [rendered]);
   // TallyUI#710: a rendered order whose store-priced coupons went stale prices them again, one re-price at a time. Checked
   // on every render, so it runs again when one ends (the sale may have changed meanwhile), never on a snapshot one stopped on.
+  // #1059 review: never while a leg is live, as a re-price moves the total. The coupons then stay stale, so startTender and
+  // complete() keep refusing with COUPONS_REPRICING (couponsUnpriced) and finalize's stale check stays the backstop, until
+  // the leg is voided, removed or fails; that changes the order, and this effect prices them again.
   useEffect(() => {
-    if (order.couponPricesStale && appliedWith.current && applied.current.size > 0 && !repricing.current
-      && stageNow.current.kind !== 'receipt' && !busy() && stopped.current?.order !== order) void reprice();
+    if (order.couponPricesStale && applied.current.size > 0 && !repricing.current
+      && stageNow.current.kind !== 'receipt' && !busy() && !liveLeg() && stopped.current?.order !== order) void (appliedWith.current ? reprice() : dropKept());
   });
+  function dropKept() { // kept coupons resumed with no discount codes: nothing can price them again
+    builderNow.current.setCoupons([], { kind: 'store-priced', priced: new Map(), basis: '' });
+    applied.current.clear();
+    keptCoupons.current = undefined; keptLegIds.current = [];
+    setError(COUPONS_UNSUPPORTED);
+  }
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
   // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
   const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
@@ -316,7 +370,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const next = opts.taxContextFor?.(customer);
     const { payments } = builderNow.current.getSnapshot();
     if (!next || next.taxContext === taxNow.current.taxContext || stageNow.current.kind !== 'cart' || busy()
-      || capturedMinor(payments) !== 0 || payments.some(isInMotion)) return false;
+      || capturedMinor(payments) !== 0 || payments.some(isInMotion) || keptCodes()) return false;
     retax(customer, next);
     return true;
   }
@@ -332,16 +386,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
   }, []);
 
-  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string {
+  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor,
+      ...(tender.tenderedMinor !== undefined ? { tenderedMinor: tender.tenderedMinor } : {}),
+      ...(tender.changeMinor !== undefined ? { changeMinor: tender.changeMinor } : {}),
+      ...(tender.units !== undefined ? { units: tender.units } : {}),
       ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : tender;
     const builder = builderNow.current;
-    const paymentId = builder.addPayment(kept);
+    const { units, ...payment } = kept;
+    const paymentId = builder.addPayment({ ...payment, ...(units && Object.keys(units).length ? { units } : {}) });
     if (dropped) {
       droppedReferences.current.add(paymentId);
       setError(`${REFERENCE_DROPPED} (${dropped}); the payment is recorded without it.`);
@@ -352,10 +410,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return paymentId;
   }
 
+  /** #1064: a customer's tax ids cleanTaxIds would refuse (a defaultCustomer, a restored draft) start no tender. */
+  function taxIdsRefusal(): string | null {
+    const taxIds = builderNow.current.getSnapshot().customer?.taxIds;
+    return taxIds && cleanTaxIds(taxIds) === null ? TAX_IDS_INVALID : null;
+  }
+
   function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a finished sale's tender stays
     if (locked()) return;
+    const taxIdsRefused = tender && taxIdsRefusal();
+    if (taxIdsRefused) return setError(taxIdsRefused);
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
+    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
     droppedReferences.current.clear();
     setError(null);
     if (tender) addOne(tender);
@@ -413,7 +480,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     droppedReferences.current.clear();
     confirm(null);
     setSaving(false);
-    setError(null);
+    setError(null); // every error goes, SALE_HAS_PAYMENT too: it is never shown on the receipt (#1059 review)
     stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
     setStage(stageNow.current);
   }
@@ -432,18 +499,25 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
 
   function begin(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+    if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a tender gate that answers after complete()
     if (locked()) return;
     const current = builderNow.current.getSnapshot();
     if (!current.lineItems.length) return;
     if (couponsUnpriced()) return setError(COUPONS_REPRICING);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-    const lockedMinor = current.payments.reduce((sum, payment) => sum + (payment.locked ? payment.amountMinor : 0), 0);
-    if (lockedMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
-    else setTender(method === 'external' && current.totalMinor - lockedMinor > 0 ? { method, amountMinor: current.totalMinor - lockedMinor } : null);
+    const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
+    if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    else setTender(method === 'external' && current.totalMinor - heldMinor > 0 ? { method, amountMinor: current.totalMinor - heldMinor } : null);
     stageNow.current = { kind: 'tender', method }; // 5.2 backlog F4: a same-tick setCustomer/setAddresses sees the tender
     setStage(stageNow.current);
   }
 
+  /** park()'s and switchSale()'s draft write: kept codes with no figures (a stopped re-price) park their coupons stale, so the resume prices them (as main does). */
+  async function writeParked(drafts: NonNullable<typeof opts.drafts>, snapshot: Order): Promise<string | null> {
+    const stale = keptCodes() && !snapshot.coupons?.length;
+    if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
+    return writeOrderDraft(drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot).then(() => null);
+  }
   const result = {
     order, stage, error, idle,
     /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
@@ -455,9 +529,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     saving,
     /** The failed save's order is confirmed stored (see `isStored`): the UI also offers Continue (`continueSale()`). */
     canContinue,
-    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. */
+    /** Adds the entry, as a new line or one more on its line; returns that line's id, or the refusal `error` now shows. On the receipt it starts the next sale first (v2 #2861). */
     add(entry: CatalogueEntry<any>, traits: ProductTraits<any>): { lineId: string } | string {
-      if (locked()) return SALE_SAVING;
+      if (stageNow.current.kind === 'receipt') {
+        resetSale();
+        if (stageNow.current.kind === 'receipt') return SALE_SAVING; // resetSale refused, with this as its error
+      }
+      const held = editRefusal(); if (held) return held;
       const builder = builderNow.current;
       try {
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
@@ -484,54 +562,54 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return error.message;
       }
     },
-    setQuantity(lineId: string, quantity: number) { if (!locked()) builderNow.current.updateQuantity(lineId, quantity); },
+    setQuantity(lineId: string, quantity: number) { if (!editRefusal()) builderNow.current.updateQuantity(lineId, quantity); },
     /** v2's cart Split: a line of quantity N becomes N lines of 1. Returns the refusal to show (SPLIT_FIXED_DISCOUNT), or null. */
     splitLine(lineId: string): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       try { builderNow.current.splitLine(lineId); return null; }
       catch (error) { if (error instanceof RangeError) return error.message; throw error; }
     },
     /** ADR-075: adds a fee; returns its id or the builder's refusal. */
     addFee(input: ChargeInput): { id: string } | string {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       const { storeLineId: _storeLineId, ...charge } = input;
       return refusalOf(() => ({ id: builderNow.current.addFee(charge) }));
     },
     /** ADR-075: updates a fee; returns a refusal or null. */
     updateFee(id: string, patch: Partial<ChargeInput>): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       return refusalOf(() => { builderNow.current.updateFee(id, patch); return null; });
     },
     /** ADR-075: removes a fee; returns a refusal or null. */
     removeFee(id: string): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       return refusalOf(() => { builderNow.current.removeFee(id); return null; });
     },
     /** ADR-075: adds shipping; returns its id or the builder's refusal. */
     addShipping(input: ChargeInput & { methodId?: string }): { id: string } | string {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       const { storeLineId: _storeLineId, ...charge } = input;
       return refusalOf(() => ({ id: builderNow.current.addShipping(charge) }));
     },
     /** ADR-075: updates shipping; returns a refusal or null. */
     updateShipping(id: string, patch: Partial<ChargeInput & { methodId?: string }>): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       return refusalOf(() => { builderNow.current.updateShipping(id, patch); return null; });
     },
     /** ADR-075: removes shipping; returns a refusal or null. */
     removeShipping(id: string): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       return refusalOf(() => { builderNow.current.removeShipping(id); return null; });
     },
     /** ADR-075: adds a distinct custom product line; returns its id or the builder's refusal. */
     addCustomLine(input: { name: string; priceMinor: number; quantity?: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; sku?: string }): { id: string } | string {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       return refusalOf(() => ({ id: builderNow.current.addLine({ ...input, custom: true, productId: `custom:${uuidv7()}`,
         unitPrice: { amount: input.priceMinor, currency: madeWith.current.currency.toUpperCase() } }) }));
     },
     /** Sets a line's unit price in minor units of its own tax mode, recomputing discounts and tax; returns a refusal or null. */
     setUnitPrice(lineId: string, amountMinor: number): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       try {
         builderNow.current.setUnitPrice(lineId, amountMinor);
         return null;
@@ -540,10 +618,47 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         throw error;
       }
     },
-    remove(lineId: string) { if (!locked()) builderNow.current.removeItem(lineId); },
+    /**
+     * ADR-092 6b/6c: edits a cart line's `name`, `sku` or `regularUnitPriceMinor` (`null` removes it); the regular price is
+     * the "was" price that receipts print and order.create 6+ sends. Cart only; returns a refusal or null: editRefusal's
+     * refusals first (SALE_SAVING, SALE_FINISHED, SALE_HAS_PAYMENT), then LINE_EDIT_REFUSED for any other stage outside the cart.
+     */
+    updateLine(lineId: string, patch: { name?: string; sku?: string; regularUnitPriceMinor?: number | null }): string | null {
+      const held = editRefusal(); if (held) return held;
+      if (stageNow.current.kind !== 'cart') return LINE_EDIT_REFUSED;
+      try {
+        builderNow.current.updateLine(lineId, patch);
+        return null;
+      } catch (error) {
+        if (error instanceof RangeError || (error instanceof Error && error.message === `Unknown line ${lineId}`)) return error.message;
+        throw error;
+      }
+    },
+    remove(lineId: string) { if (!editRefusal()) builderNow.current.removeItem(lineId); },
+    /** #1095: the line, fee or shipping line `id` as it is now, taken before a remove for `restore()`; null when it is not there. */
+    removal(kind: SaleRemoval['kind'], id: string): SaleRemoval | null {
+      const order = builderNow.current.getSnapshot();
+      const list: readonly (LineItem | ChargeLine)[] = kind === 'line' ? order.lineItems : kind === 'fee' ? order.fees ?? [] : order.shipping ?? [];
+      const index = list.findIndex((item) => item.id === id);
+      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext, epoch: saleEpoch.current };
+    },
+    /** #1095, v2's Undo: puts a removal back at its old index (clamped), re-taxed when the sale's rates moved since; returns a refusal or null. */
+    restore(removal: SaleRemoval): string | null {
+      const held = editRefusal(); if (held) return held;
+      const order = builderNow.current.getSnapshot(), moved = removal.taxContext !== taxNow.current.taxContext;
+      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id || removal.epoch !== saleEpoch.current) return RESTORE_STALE;
+      const ids = [removal.item, ...(removal.kind === 'line' ? (removal.item as LineItem).discounts : [])].map((entry) => entry.id);
+      if ([...order.lineItems.flatMap((li) => [li, ...li.discounts]), ...order.fees ?? [], ...order.shipping ?? [], ...order.discounts, ...order.payments]
+        .some((entry) => ids.includes(entry.id))) return RESTORE_STALE; // already back
+      // A re-tax runs only as retaxFor allows it (stage and busy are refused above).
+      if (moved && (capturedMinor(order.payments) !== 0 || order.payments.some(isInMotion) || keptCodes())) return RESTORE_STALE;
+      builderNow.current.restoreItem(removal.kind, removal.item, removal.index);
+      if (moved) retax(builderNow.current.getSnapshot().customer, taxNow.current);
+      return null;
+    },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
     applyDiscount(lineId: string | null, discount: Discount): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
       if ((opts.capabilities?.orderCreate ?? 1) < 2) return DISCOUNTS_UNSUPPORTED;
       const builder = builderNow.current;
       const applied = (snapshot: Order) => lineId === null ? snapshot.discounts
@@ -559,17 +674,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       }
       return null;
     },
-    removeDiscount(id: string) { if (!locked()) builderNow.current.removeDiscount(id); },
+    removeDiscount(id: string) { if (!editRefusal()) builderNow.current.removeDiscount(id); },
     /** ADR-077: looks up, checks and applies a discount code through the platform's discount codes; resolves to the refusal to show, or null once applied. */
     async applyCoupon(code: string): Promise<string | null> {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
+      if (keptCodes()) return COUPONS_REPRICING;
       const codes = codesFor();
       if (!codes) return COUPONS_UNSUPPORTED;
       const builder = builderNow.current, normalized = code.trim().toLowerCase();
       if (!normalized) return 'Enter a coupon code';
       const result = await codes.find(normalized, discountState(builder.getSnapshot(), applied.current));
       if ('refusal' in result) return result.refusal;
-      if (locked()) return SALE_SAVING;
+      const heldNow = editRefusal(); if (heldNow) return heldNow;
       if (builderNow.current !== builder || stageNow.current.kind === 'receipt') return 'The sale changed while the coupon was being checked; apply it again';
       const refusal = codes.check(normalized, result.found, discountState(builder.getSnapshot(), applied.current));
       if (refusal !== null) return refusal;
@@ -584,7 +700,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     /** Removes an applied coupon; returns the refusal to show, or null once removed. */
     removeCoupon(code: string): string | null {
-      if (locked()) return SALE_SAVING;
+      const held = editRefusal(); if (held) return held;
+      if (keptCodes()) return COUPONS_REPRICING;
       const normalized = code.trim().toLowerCase();
       if (!applied.current.has(normalized)) return null;
       const remaining = new Map(applied.current); remaining.delete(normalized);
@@ -597,18 +714,26 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     couponsRepricing,
     /** Prices the sale's coupons again now, as Retry after a transient refusal; resolves to the refusal or error it set, or null. */
     async repriceCoupons(): Promise<string | null> {
-      if (locked()) return SALE_SAVING;
-      if (!appliedWith.current || !applied.current.size || stageNow.current.kind === 'receipt') return null;
+      const held = editRefusal(); if (held) return held; // a re-price moves the total
+      if (!appliedWith.current || !applied.current.size) return null;
       return reprice();
     },
     /** The sale's note, kept on the open sale (parked and resumed with it, cleared by newSale) and sent as order.create v7's note (ADR-083). */
-    setNote(note: string) { if (!locked()) builderNow.current.setNote(note); },
+    setNote(note: string) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
+      if (!locked()) builderNow.current.setNote(note);
+    },
     /** the picked customer reaches the server as order.create v3's customer.customerId */
-    setCustomer(customer: CustomerSummary | null) {
+    setCustomer(picked: CustomerSummary | null) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       // A searched customer's email or id the server would refuse never reaches the sale; the customer stays as it was.
-      const refused = customer && customerRefusal(customer);
+      const refused = picked && customerRefusal(picked);
       if (refused) return setError(refused);
+      // #1064: so do tax ids setTaxIds would refuse; the clean list is the one stored.
+      const taxIds = picked?.taxIds?.length ? cleanTaxIds(picked.taxIds) : undefined;
+      if (taxIds === null) return setError(TAX_IDS_INVALID);
+      const customer = picked && taxIds ? { ...picked, taxIds } : picked;
       // #722: the sale's rates and its customer always agree, so a customer with other rates is refused once they are fixed.
       if (!retaxFor(customer)) {
         const same = opts.taxContextFor?.(customer);
@@ -617,7 +742,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (same) taxNow.current = same;
         builderNow.current.setCustomer(customer);
       }
-      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED) ? null : current); // any other error stays
+      setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED || current === TAX_IDS_INVALID) ? null : current); // any other error stays
     },
     /**
      * Replaces both addresses on the picked customer (`undefined` removes one) and re-taxes like `setCustomer`. Does
@@ -643,12 +768,54 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
       return true;
     },
+    /** Replaces the picked customer's tax ids on this sale (`[]` removes them). Returns false for a guest sale, as `setAddresses`
+     *  does; refuses once the sale left the cart, and refuses an invalid list (ADR-092 6a). It does not re-tax, and it does
+     *  not save them to the customer (the customer editor does). */
+    setTaxIds(taxIds: CustomerTaxId[]): boolean {
+      if (locked()) return false;
+      const { customer, payments } = builderNow.current.getSnapshot();
+      if (customer === null) return false;
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) { setError(TAX_IDS_CHANGE_REFUSED); return false; }
+      const cleaned = cleanTaxIds(taxIds);
+      if (!cleaned) { setError(TAX_IDS_INVALID); return false; }
+      const { taxIds: _taxIds, ...rest } = customer;
+      builderNow.current.setCustomer(cleaned.length ? { ...rest, taxIds: cleaned } : rest);
+      setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
+      return true;
+    },
+    /**
+     * Sets one custom field on this sale (ADR-092 4 and 6d). It replaces the value when the key is there, and removes the
+     * field when `value` is null. It refuses once the sale has left the cart, and it refuses an invalid key. The value is
+     * cut to its bound when the order is frozen, as the note is.
+     */
+    setMeta(key: string, value: string | null): boolean {
+      if (locked()) return false;
+      const { meta = [], payments } = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+        setError(META_CHANGE_REFUSED);
+        return false;
+      }
+      const name = key.trim();
+      const known = meta.some((m) => m.key === name);
+      if (!name || name.length > ORDER_META_KEY_MAX || name.startsWith('_') || (value !== null && !known && meta.length >= ORDER_META_MAX)) {
+        setError(META_INVALID);
+        return false;
+      }
+      const next = value === null ? meta.filter((m) => m.key !== name)
+        : known ? meta.map((m) => m.key === name ? { key: name, value } : m) : [...meta, { key: name, value }];
+      builderNow.current.setMeta(next);
+      setError((current) => current === META_CHANGE_REFUSED || current === META_INVALID ? null : current); // any other error stays
+      return true;
+    },
     /**
      * Pins `options.session` for this tender when given, else the rendered `session` option. Pass the
      * session `useRegisterSession`'s `requireSaleSession()` returned: the rendered one can lag a session
      * opened just before (#170 race). A repeat call mid-tender keeps the first pin.
      */
     startTender(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) return setError(taxIdsRefused);
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -666,10 +833,25 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. */
-    addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
+    addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      const taxIdsRefused = taxIdsRefusal();
+      if (taxIdsRefused) { setError(taxIdsRefused); return null; }
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
+      if (tender.units) {
+        const { lineItems, payments } = builderNow.current.getSnapshot();
+        // unpaidUnitsByLine reads only id and quantity, so totalMinor can be 0.
+        const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
+        if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
+      }
+      if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
+        || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < tender.amountMinor)) return null;
+      if (tender.tenderedMinor !== undefined) {
+        const snapshot = builderNow.current.getSnapshot();
+        if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
+      }
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
@@ -678,14 +860,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
       }
       clearStaleError();
-      return addOne(tender);
+      return addOne({ ...tender, ...(tender.tenderedMinor !== undefined ? { changeMinor: tender.tenderedMinor - tender.amountMinor } : {}) });
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
-      return builderNow.current.setPaymentStatus(paymentId, status);
+      const changed = builderNow.current.setPaymentStatus(paymentId, status);
+      // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
+      if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
+      return changed;
     },
-    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. */
+    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. Refused on the receipt. */
     voidTender(paymentId: string): boolean {
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment?.locked) return false;
       if (locked()) return false;
@@ -695,8 +882,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       clearStaleError();
       return true;
     },
-    /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. */
+    /** ADR-072: remove one tender and its dropped-reference warning. An id not among the payments changes nothing. Refused on the receipt. */
     removeTender(paymentId: string): void {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment?.locked) return;
       if (locked()) return;
@@ -706,6 +894,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       clearStaleError();
     },
     cancelTender() {
+      if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;
       setTender(null);
       tenderSession.current = null;
@@ -804,7 +993,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
-      await writeOrderDraft(opts.drafts, snapshot);
+      const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale();
       return null;
@@ -849,12 +1038,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // Taxed for the customer the draft restores (a refused one isn't).
       const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
       // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
+      // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
+      const keep = !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
-        keepTaxRates: capturedMinor(saved.payments ?? []) !== 0 });
+        keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
       let n = 0;
-      // A draft whose legs took money keeps the prices it was paid against (u19).
+      // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
       // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
-      if (opts.currentPrice && !options?.keepParkedPrices && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
+      if (opts.currentPrice && !options?.keepParkedPrices && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
         for (const line of builder.getSnapshot().lineItems) {
           if (!line.variantId) continue;
           const price = opts.currentPrice(line.variantId);
@@ -870,7 +1061,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (saved.coupons?.length) {
         const supported = codes !== null;
         if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
-        for (const { code } of saved.coupons) {
+        if (keep) for (const { code } of saved.coupons) kept.set(code, KEPT);
+        else for (const { code } of saved.coupons) {
           let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
           if (supported) {
             const result = await codes.find(code, discountState(builder.getSnapshot(), kept));
@@ -892,6 +1084,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       if (builderNow.current === builder) {
         applied.current = kept;
+        if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
         generation.current++;
       }
@@ -914,7 +1107,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
       if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
-        await writeOrderDraft(opts.drafts, snapshot);
+        const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
         if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       }
       resetSale();

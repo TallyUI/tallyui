@@ -33,7 +33,7 @@ export type {
 export type { SignInResult, ServerCapabilities, TaxRounding } from './types/connector';
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
-  PendingPairing, DisplayRecord, SignalMessage,
+  PendingPairing, DisplayRecord, SignalMessage, TillDevice,
 } from './types';
 export { DisplaySignallingError, DISPLAY_PAIR_CAPABILITY } from './types/display-signalling';
 export { DEFAULT_ICE_SERVERS, parseDisplayAdvertisement, rateLimitSource } from './customer-display';
@@ -58,6 +58,7 @@ export type {
 } from './types/orders';
 export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
 export type { RegisterInfo } from './types/registers';
+export type { ApproverCredentials, Correction, StoreClosure, ClosureReads } from './types/closures';
 export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
@@ -69,7 +70,7 @@ export type {
   OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
   OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
   OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
-  CommandWarning, CommandError, CommandResult, OrderCreateLine,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateMeta,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
@@ -83,11 +84,12 @@ export type { OrderAddress, OrderCreateCouponLine } from './types/commands';
 
 export {
   COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH, ORDER_NOTE_MAX,
+  ORDER_TAX_IDS_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_META_MAX, ORDER_META_KEY_MAX, ORDER_LINE_SKU_MAX,
   isCommandBatchResponse,
 } from './commands';
 
 // Money helpers
-export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, resolvePrice, resolvePriceRange } from './money';
+export { currencySymbol, formatMoney, type MoneyFormat, minorUnitDigits, moneyFromDecimalString, moneyFromMajor, moneyToMajor, normalizeMoneyText, resolvePrice, resolvePriceRange } from './money';
 export { minorToMajor } from './server/money';
 export { findVariantByCode } from './variants';
 export { knownWarnings } from './known-warnings';
@@ -110,7 +112,7 @@ export {
   useStockOverlayAsOf,
 } from './context/connector-context';
 export type { ConnectorProviderProps } from './context/connector-context';
-export { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, type MoneyFormatProviderProps } from './context/money-format-context';
+export { MoneyFormatProvider, useCurrencySymbol, useFormatMoney, useMoneyFormat, type MoneyFormatProviderProps } from './context/money-format-context';
 export * as woocommerceTax from './tax/woocommerce';
 export * as woocommerceCoupons from './coupons/woocommerce';
 

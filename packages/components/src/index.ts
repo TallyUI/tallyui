@@ -115,6 +115,8 @@ export {
   CustomerForm,
   type CustomerFormProps,
   type CustomerFormValues,
+  CustomerEditor,
+  type CustomerEditorProps,
   CustomerOrderHistory,
   type CustomerOrderHistoryProps,
   CustomerDropdown,
@@ -253,6 +255,7 @@ export {
   ProductFilterBar, DEFAULT_PRODUCT_FILTERS, PRODUCT_FILTER_CHIPS, type ProductFilterBarProps, type ProductFilterChip, type ProductFilters, type ProductTermFilter, type FilterOption,
 } from './sale';
 export type { DiscountCoupon } from './sale/discount-form';
+export { useTender, pickFigure, type TenderPicker } from './sale/use-tender';
 
 // Layout components
 export {

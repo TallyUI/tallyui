@@ -232,6 +232,31 @@ describe('vendurepos gap 2.10: a fee as a percentage of the cart, store-priced c
   });
 });
 
+describe('vendurepos gap 2.10: a fee as a percentage of the cart, WooCommerce rounding with store-priced coupons', () => {
+  it.each([['an exclusive store', false, 1000, 70], ['an inclusive store', true, 1100, 80]])(
+    'C3: %s takes the fee after the store\'s coupon, in the store\'s mode, and prices as with the same fixed fee', (_, inclusive, amount, expected) => {
+      const taxContext = context({ standard: [rate(1, '10.0000')] }, inclusive);
+      const build = (charge: { name: string; amountMinor: number; percent?: number }) => {
+        const builder = createOrderBuilder({ currency: 'GBP', taxContext });
+        const line = builder.addLine({ productId: 'p1', name: 'p1', unitPrice: { amount, currency: 'GBP' } });
+        const priced: StorePricedCouponContext = { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
+          priced: new Map([['save', { couponId: 'c1', lines: [{ lineId: line, amountMinor: 300 }] }]]) };
+        builder.addFee(charge);
+        builder.setCoupons(['save'], priced);
+        return builder.getSnapshot();
+      };
+      const order = build(percentFee(10));
+      // Exclusive: the line's net after the coupon (700). Inclusive: its total after the coupon (800).
+      const basis = order.lineItems.reduce((sum, li) => sum + (inclusive ? li.totalMinor! : li.netMinor), 0);
+      expect(basis).toBe(inclusive ? 800 : 700);
+      expect(order.fees![0].amountMinor).toBe(expected);
+      const fixed = build({ name: 'Fee', amountMinor: expected });
+      const figures = (o: Order) => o.coupons!.map(({ discountMinor, discountTaxMinor }) => ({ discountMinor, discountTaxMinor }));
+      expect(figures(order)).toEqual(figures(fixed));
+      displayIdentity(order);
+    });
+});
+
 describe('vendurepos gap 2.10: a fee as a percentage of the cart, generic', () => {
   it('G1: an exclusive store takes 10% of the net', () => {
     const builder = makeGeneric(false);
@@ -275,5 +300,31 @@ describe('vendurepos gap 2.10: a percent fee finalized', () => {
     expect(stored).not.toHaveProperty('percent');
     expect(stored).not.toHaveProperty('amountIncludesTax');
     expect(stored.amountMinor).toBe(242);
+  });
+});
+
+describe('vendurepos gap 2.10: a return line and a percent fee (ADR-063 caps the return line at 0)', () => {
+  const cart = (inclusive: boolean, returnAmount?: number) => {
+    const builder = make([rate(1, '10.0000')], inclusive);
+    add(builder, 1000);
+    if (returnAmount !== undefined) add(builder, returnAmount, 'r');
+    builder.addFee(percentFee(10));
+    return builder.getSnapshot();
+  };
+
+  it.each([['P1: an exclusive store', false], ['P2: an inclusive store', true]])('%s: a return line of -3000 leaves the fee at 100', (_, inclusive) => {
+    // ADR-063: a return line settles at 0 today, so the fee's basis is the sale lines; if refunds change that, the percent block needs a floor (front desk, 2026-11-19).
+    const order = cart(inclusive, -3000);
+    expect(order.fees![0].amountMinor).toBe(100);
+    expect(order.lineItems[1].netMinor).toBe(0);
+    expect(order.totalMinor).toBe(cart(inclusive).totalMinor);
+    displayIdentity(order);
+  });
+
+  it('P3: a return line of -1000 leaves the fee at 100', () => {
+    // ADR-063: a return line settles at 0 today, so the fee's basis is the sale lines; if refunds change that, the percent block needs a floor (front desk, 2026-11-19).
+    const order = cart(false, -1000);
+    expect(order.fees![0].amountMinor).toBe(100);
+    displayIdentity(order);
   });
 });

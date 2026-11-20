@@ -42,6 +42,8 @@ export interface PosOrderLine {
   taxStatus?: 'taxable' | 'none';
   name: string;
   sku: string;
+  /** The SKU the line was added with, recorded only when the cashier edits the line's `sku` (pos_orders v18, ADR-092); absent means `sku` is the catalogue's. */
+  catalogueSku?: string;
   quantity: number;
   unitPriceMinor: number;
   /** The chosen variation attributes, name to value (pos_orders v9, #495). */
@@ -102,11 +104,15 @@ export interface PosOrder {
   refundDueMinor?: number;
   payments: PosOrderPayment[];
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
-  customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress } | null;
+  customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress;
+    /** The sale's tax ids (pos_orders v18, ADR-092), sent at order.create 12; `label` is kept on the till and is not sent. */
+    taxIds?: Array<{ type: string; value: string; country?: string; label?: string }> } | null;
   /** The customer address the sale was taxed on (#722), sent as order.create 8's `taxAddress`; absent: the store's base. */
   taxAddress?: 'billing' | 'shipping';
   /** The sale's note; sent as order.create version 7's `note` (ADR-083), cut to ORDER_NOTE_MAX when frozen. */
   note?: string;
+  /** The order's custom fields (pos_orders v18, ADR-092), sent at order.create 12 in this order. */
+  meta?: Array<{ key: string; value: string }>;
   registerId?: string;
   /**
    * The register session the sale was taken in (ADR-032): its closure counts this order.
@@ -123,9 +129,9 @@ export interface PosOrder {
    * The order.create version every attempt under this `commandId` goes out at: the outbox records it before the first
    * send, and lowers it only on a downgrade (ADR-065 amendment). Absent means not sent yet (or requeued).
    */
-  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  sentVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   /** The version first tried, before the downgrade (the order's audit). */
-  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+  downgradedFrom?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
   /** ADR-065: the receipt's display figures, in integer minor units of `currency` at `exponent`. */
   display?: DisplayTotals & { currency: string; exponent: number };
   /** ADR-065: tax by rate, named as `taxLinesByRate` names them (`amountMinor` is the tax). */
@@ -146,4 +152,6 @@ export interface PosOrder {
   updatedAt: string;
   /** When the till reopened this refused order as a parked sale (ADR-077 d4b). Needs attention hides it, and it stays as the record of the refusal. */
   reopenedAt?: string;
+  /** The commandId whose refusal the cashier marked handled (tally-woo 03, ADR-092 6f); the logic comes in a later PR. */
+  attentionHandledFor?: string;
 }

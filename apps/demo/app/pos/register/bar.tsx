@@ -27,7 +27,7 @@ function seedFor(state: BarState) {
     if (state === 'choose' || state === 'closed') return; // no session: unbound, or sessions never opened
     const session = await openSession(db.register_sessions, {
       registerId: 'demo-register', expectedFloatMinor: 20000, countedFloatMinor: 20000,
-      openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 },
+      openedBy: 'demo-cashier', businessDay: { year: 2026, month: 9, day: 20 }, storeKey: 'store',
     });
     if (state === 'counting') await startCounting(db.register_sessions, session.id);
     if (state === 'approval') {

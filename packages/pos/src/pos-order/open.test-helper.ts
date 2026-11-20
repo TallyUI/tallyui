@@ -18,9 +18,21 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
+/** The version-17 schema: before order.create version 12's tax ids, meta and line SKU, and attentionHandledFor (ADR-092). */
+export function versionSeventeen(): RxJsonSchema<PosOrder> {
+  const schema = structuredClone(posOrderSchema);
+  const properties = schema.properties as Record<string, unknown>;
+  delete properties.meta;
+  delete properties.attentionHandledFor;
+  delete (schema.properties.customer as { properties: Record<string, unknown> }).properties.taxIds;
+  delete (schema.properties.lines.items as { properties: Record<string, unknown> }).properties.catalogueSku;
+  schema.properties.sentVersion.maximum = schema.properties.downgradedFrom.maximum = 11;
+  return { ...schema, version: 17 };
+}
+
 /** The version-16 schema: before order.create version 11 (ADR-086 d2 amended 2026-11-19). */
 export function versionSixteen(): RxJsonSchema<PosOrder> {
-  const schema = structuredClone(posOrderSchema);
+  const schema = versionSeventeen();
   schema.properties.sentVersion.maximum = schema.properties.downgradedFrom.maximum = 10;
   return { ...schema, version: 16 };
 }
@@ -162,12 +174,13 @@ export function versionZero(): RxJsonSchema<PosOrder> {
 }
 
 /** A stored older `pos_orders` version, which `addPosOrderCollection` migrates to the current one. */
-export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16;
+export type Origin = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17;
 
 /** `pos_orders` as the shipped app at `from` added it: version 1 came with its identity strategy. */
 export function olderCollection(from: Origin): RxCollectionCreator<PosOrder> {
   addRxPlugin(RxDBMigrationSchemaPlugin);
   const identity = (doc: PosOrder) => doc;
+  if (from === 17) return { schema: versionSeventeen(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity } };
   if (from === 16) return { schema: versionSixteen(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity } };
   if (from === 15) return { schema: versionFifteen(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity } };
   if (from === 14) return { schema: versionFourteen(), migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: identity, 6: identity, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity } };

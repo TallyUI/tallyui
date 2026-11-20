@@ -1,12 +1,13 @@
-import { DisplaySignallingError, type DisplaySignalling, type PendingPairing, type SyncContext } from '@tallyui/core';
+import { DisplaySignallingError, type DisplaySignalling, type PendingPairing, type SyncContext, type TillDevice } from '@tallyui/core';
 import { quietly, systemClock, type ServiceClock } from './snapshot-fallback';
 import type { TillDisplayService } from './till-display-service';
+import { withTillDevice, type TillDeviceHandle } from './till-device';
 
 /** How often the till lists the claims on its code while it shows one; TallyUI's choice.
  * @deprecated Internal tuning value, not supported API; leaves the public entry at the next major. */
 export const PENDING_POLL_MS = 2000;
 
-export type PairingError = 'forbidden' | 'limit' | 'expired' | 'not_found' | 'network' | 'server';
+export type PairingError = 'forbidden' | 'limit' | 'expired' | 'not_found' | 'device_refused' | 'network' | 'server';
 export type PairingPhase =
   | { phase: 'idle'; error?: PairingError }
   | { phase: 'minting' }
@@ -16,8 +17,8 @@ export interface TillPairingOptions {
   signalling: DisplaySignalling;
   /** The cashier session; null while nobody is logged in, which refuses every call as `forbidden` (d5). */
   context: () => SyncContext | null;
-  /** The till's own device id (d5). */
-  deviceId: string;
+  /** The till's device (d5, TallyUI#754), from `createTillDevice`; its key is never logged or reported. */
+  device: TillDeviceHandle;
   /** U4's service, refreshed after a confirm or a forget. */
   service?: Pick<TillDisplayService, 'refresh'>;
   clock?: ServiceClock;
@@ -39,7 +40,7 @@ export interface TillPairing {
   close(): void;
 }
 
-const NAMED: ReadonlySet<string> = new Set<PairingError>(['forbidden', 'limit', 'expired', 'not_found', 'network', 'server']);
+const NAMED: ReadonlySet<string> = new Set<PairingError>(['forbidden', 'limit', 'expired', 'not_found', 'device_refused', 'network', 'server']);
 /** A signalling refusal keeps its code; anything else is `server`. */
 const nameOf = (error: unknown): PairingError =>
   error instanceof DisplaySignallingError && NAMED.has(error.code) ? (error.code as PairingError) : 'server';
@@ -49,7 +50,7 @@ const nameOf = (error: unknown): PairingError =>
  * confirm or decline one, and forget a paired display. Framework-free; `useTillPairing` renders it.
  */
 export function createTillPairing(options: TillPairingOptions): TillPairing {
-  const { signalling, deviceId, service, clock = systemClock } = options;
+  const { signalling, device, service, clock = systemClock } = options;
   const listeners = new Set<() => void>();
   let phase: PairingPhase = { phase: 'idle' };
   let forgetError: PairingError | null = null;
@@ -70,10 +71,10 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
     emit();
   };
   const idle = (error?: PairingError) => setPhase(error ? { phase: 'idle', error } : { phase: 'idle' });
-  /** Runs one signalling call with the cashier session; a missing session is a `forbidden` refusal, with no call. */
-  const run = <T>(work: (ctx: SyncContext) => Promise<T>): Promise<T> => {
+  /** Runs one signalling call with the cashier session and the device; a missing session is a `forbidden` refusal, with no call. */
+  const run = <T>(work: (ctx: SyncContext, till: TillDevice) => Promise<T>): Promise<T> => {
     const ctx = options.context();
-    return ctx ? work(ctx) : Promise.reject(new DisplaySignallingError('forbidden', 'no cashier session'));
+    return ctx ? withTillDevice(device, ctx, (till) => work(ctx, till)) : Promise.reject(new DisplaySignallingError('forbidden', 'no cashier session'));
   };
   const refresh = async () => {
     if (!closed) await (async () => service?.refresh())().catch(report);
@@ -89,11 +90,12 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
   const poll = async (mine: number) => {
     timer = null;
     try {
-      const claims = await run((ctx) => signalling.pending(ctx, deviceId));
+      const claims = await run((ctx, till) => signalling.pending(ctx, till));
       if (mine === epoch && phase.phase === 'code') setPhase({ ...phase, claims });
     } catch (error) {
       report(error);
-      if (mine === epoch && phase.phase === 'code' && nameOf(error) === 'forbidden') idle('forbidden');
+      const named = nameOf(error);
+      if (mine === epoch && phase.phase === 'code' && (named === 'forbidden' || named === 'device_refused')) idle(named);
     }
     tick(mine);
   };
@@ -110,7 +112,7 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
       const mine = ++epoch;
       setPhase({ phase: 'minting' });
       try {
-        const { code, expiresAt } = await run((ctx) => signalling.mint(ctx, deviceId));
+        const { code, expiresAt } = await run((ctx, till) => signalling.mint(ctx, till));
         if (mine !== epoch) return;
         setPhase({ phase: 'code', code, expiresAt, claims: [] });
         tick(mine);
@@ -124,7 +126,7 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
       const mine = ++epoch;
       setPhase({ phase: 'confirming', claimId });
       try {
-        await run((ctx) => signalling.confirm(ctx, deviceId, claimId));
+        await run((ctx, till) => signalling.confirm(ctx, till, claimId));
       } catch (error) {
         report(error);
         if (mine === epoch) idle(nameOf(error));
@@ -137,7 +139,7 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
       if (closed || phase.phase !== 'code') return;
       const mine = epoch;
       try {
-        await run((ctx) => signalling.decline(ctx, deviceId, claimId));
+        await run((ctx, till) => signalling.decline(ctx, till, claimId));
       } catch (error) {
         return report(error);
       }
@@ -152,7 +154,7 @@ export function createTillPairing(options: TillPairingOptions): TillPairing {
       if (closed) return;
       if (forgetError !== null) { forgetError = null; emit(); }
       try {
-        await run((ctx) => signalling.forget(ctx, deviceId, displayId));
+        await run((ctx, till) => signalling.forget(ctx, till, displayId));
       } catch (error) {
         report(error);
         if (closed) return;

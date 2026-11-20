@@ -9,7 +9,7 @@
 
 `auth.getHeaders({ token })` sends the WCPOS access token as `Authorization: Bearer <token>`, together with the POS marker `X-WCPOS: 1`. Without a token it throws `WooMissingTokenError`. WooCommerce consumer keys are not supported.
 
-It also sends `X-WCPOS-Protocol: 2`, which WCPOS 2.0 requires of POS requests, and `X-WCPOS-Client: tallyui/<connector version>` (lowercase `[a-z0-9._-]`, at most 32 characters), which WCPOS uses only for consent-gated telemetry.
+It also sends `X-WCPOS-Protocol: 3`, which WCPOS 2.0.4 requires of POS requests (a lower value gets HTTP 426 `wcpos_update_required`), and `X-WCPOS-Client: tallyui/<connector version>` (lowercase `[a-z0-9._-]`, at most 32 characters), which WCPOS uses only for consent-gated telemetry.
 
 ## Product pull
 
@@ -40,12 +40,16 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 `readWooCapabilities` (the connector's `capabilities`) runs when the till signs in or restores a session. The app keeps the result with the session.
 - **`GET wcpos/v2/stores`** gives the tax rounding (`tax_round_at_subtotal`). A failed or malformed read returns `undefined`: nothing new is known, and the stored capabilities stay.
 - **`GET wcpos/v2/status`.** The strings in its `capabilities` decide two fields:
-  - `order_create_v5` sets `orderCreate` to 5; without it, `orderCreate` is 3. Only the TallyUI fork of the plugin advertises it, and the site version never decides it.
+  - `order_create_v5` makes `orderCreate` 8 when the coupons gate passes, else 5; with a `capabilities` list that lacks it, `orderCreate` is 3. Only the TallyUI fork of the plugin advertises it. When `/status` answers with no `capabilities` list at all (stock WCPOS 1.10.x), the `/site` version decides instead: a plain `1.10.N` with N ≥ 20 gives 7 (never 8: no tax address), anything else gives 3. A plain `2.0.N` with N ≥ 4 whose `capabilities` list lacks `order_create_v5` (or that has no list) gets 6 (never 7 or 8: no note or tax address proven). A failed `/status` read gives 3.
   - `order_payments_list` sets `multiplePayments`.
-- **`GET wcpos/v2/site`.** Its `wcpos_version` decides `coupons` (ADR-077, ruling R3). It is true only for woocommerce-pos 1.9.0 or later; a 1.9.0 pre-release does not count. Any failed or unclear read gives false, and the till then refuses to apply a coupon.
+- **`GET wcpos/v2/site`.** Its `wcpos_version` decides `coupons` (ADR-077, ruling R3). It is true only for woocommerce-pos 1.9.0 or later; a 1.9.0 pre-release does not count. Any failed or unclear read gives false, and the till then refuses to apply a coupon. On a store with no `capabilities` list it also decides `orderCreate` (above).
 - **`lineTax`** is always `{ none: true, classes: true }`.
 - **Unauthorised reads.** A 401 or 403 from `/stores` or `/status` throws `ConnectorUnauthorizedError`. A 401 or 403 from `/site` only closes the coupon gate.
 - **`products_id_fast_path`** is read by the reconcile pass, not here (see Reconciliation).
+
+## Order push on WCPOS 2.0
+
+On a 2.0.x store (`ledgerPayments`, or `/site` `wcpos_version` 2 or later, read once per transport) the sale is pushed `pending` with no money keys, then paid with one `POST orders/<id>/payments` per payment (`pos_cash` with `tendered`, or `pos_card`), each sent with the revision the last answer gave; a free sale is closed with `POST orders/<id>/close`. The sale counts as applied only after the last of those calls succeeds. A retry replays the push by its mutation id and each payment by its id. A money call the store refuses is rejected with a message naming the order it created, since that order now exists unpaid. On 1.10.x and the fork, the push body is unchanged.
 
 ## Customers
 

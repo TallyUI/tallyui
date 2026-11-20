@@ -3,7 +3,7 @@ import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
 import { capturedMinor } from '../tender/payment-legs';
-import { createOrderBuilder, type OrderBuilder } from './order-builder';
+import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import type { Order } from './types';
 
 /** Apps create their drafts collection with this schema. */
@@ -61,14 +61,16 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
 /**
  * Rebuilds a saved order on `taxContext`. Fees and shipping re-derive their rates; under woo granularity lines re-derive
  * from their class too. Outside woo, a line marked taxFromClass re-derives from its class unless `keepTaxRates` is set;
- * every other line (given rates, a draft from before the marker) keeps its stored rates.
+ * every other line (given rates, a draft from before the marker) keeps its stored rates. `keepCoupons` puts the saved
+ * coupons back as parked, figures and all, while an unlocked leg is live (ADR-077 d3, amended 2026-11-19); otherwise none.
  */
-export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean }): OrderBuilder {
+export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean; keepCoupons?: boolean }): OrderBuilder {
   const { currency, taxContext } = options;
   const builder = createOrderBuilder({
     currency,
     taxContext,
     id: saved.id,
+    ...(saved.createdAt ? { createdAt: saved.createdAt } : {}), // #742: with every id below (fees and shipping replay whole)
     ...(saved.storeOrder !== undefined ? { storeOrder: saved.storeOrder } : {}),
   });
 
@@ -80,11 +82,13 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   if (saved.note) {
     builder.setNote(saved.note);
   }
+  if (saved.meta?.length) builder.setMeta(saved.meta);
 
   // Restore line items and their discounts
   for (const line of saved.lineItems) {
     const rederive = line.taxFromClass === true && !options.keepTaxRates;
     const lineId = builder.addLine({
+      id: line.id,
       productId: line.productId,
       separate: true,
       ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}),
@@ -95,15 +99,17 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       name: line.name,
       ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
       ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
-      sku: line.sku,
+      sku: line.catalogueSku ?? line.sku,
       imageUrl: line.imageUrl,
       unitPrice: { amount: line.unitPriceMinor, currency, taxInclusive: line.taxInclusive },
       ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
       quantity: line.quantity,
       ...(rederive ? {} : { taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })) }),
     });
+    if (line.catalogueSku !== undefined) builder.updateLine(lineId, { sku: line.sku });
     for (const discount of line.discounts) {
       builder.applyLineDiscount(lineId, {
+        id: discount.id,
         type: discount.type,
         value: discount.value,
         label: discount.label,
@@ -118,6 +124,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   // Restore order-level discounts
   for (const discount of saved.discounts) {
     builder.applyOrderDiscount({
+      id: discount.id,
       type: discount.type,
       value: discount.value,
       label: discount.label,
@@ -125,10 +132,11 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
   }
 
-  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3), never restored from the draft.
+  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3); only keepCoupons, below, restores them from the draft.
   // Restore payments
   for (const payment of saved.payments) {
     builder.addPayment({
+      id: payment.id,
       method: payment.method,
       amountMinor: payment.amountMinor,
       tenderedMinor: payment.tenderedMinor,
@@ -138,7 +146,16 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
       ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
+      ...(payment.units !== undefined ? { units: payment.units } : {}),
     });
+  }
+  // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).
+  if (options.keepCoupons && saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length) {
+    const restored = builder.getSnapshot();
+    builder.setCoupons(saved.coupons.map((coupon) => coupon.code), { kind: 'kept', coupons: saved.coupons,
+      displayRows: saved.display.coupons.map((row) => row.amountMinor), lines: new Map(saved.lineItems.map((li) => [li.id, li])),
+      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }),
+      legIds: saved.payments.filter(isLiveLeg).map((p) => p.id) });
   }
   return builder;
 }

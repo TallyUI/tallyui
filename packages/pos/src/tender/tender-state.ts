@@ -1,3 +1,6 @@
+import type { Payment } from '../order/types';
+import { unitAllocationsFromLegs, type UnitAllocations } from './split-units';
+
 /** The transport a payment terminal is reached over: hardware-neutral, not tied to any backend. */
 export type PaymentTransport = 'bluetooth' | 'usb' | 'network' | 'tap_to_pay';
 
@@ -5,16 +8,31 @@ export type TenderView = 'select' | 'amount' | 'cancel';
 export type TenderLineId = string | number;
 
 export type TenderPlan =
-  | { kind: 'even'; ways: number; from: number }
+  | {
+      kind: 'even'; ways: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
+      from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
+    }
   | {
       kind: 'fixed';
       firstMinor: number;
       title: string | null;
       /** Equal shares the rest is split into after the first payment; absent means 1. */
       thenWays?: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
       from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
     }
-  | { kind: 'items'; lineIds: TenderLineId[]; firstMinor: number; ways: number; from: number };
+  | {
+      kind: 'items'; lineIds: TenderLineId[]; firstMinor: number; ways: number;
+      /** @deprecated The captured-leg count when the plan was set; read only when `before` is absent (#1133). */
+      from: number;
+      /** Every payment id on the order when the plan was set; the plan's legs are the captured legs not in it (#1133). */
+      before?: readonly string[];
+    };
 /** @deprecated The split sub-view retired in WCPOS v2 split V1; kept for existing callers. */
 export type SplitTab = 'even' | 'amount' | 'percent' | 'item';
 
@@ -35,6 +53,10 @@ export interface TenderState {
   splitTab: SplitTab;
   pickedLineIds: TenderLineId[];
   linesPaidBy: Record<TenderLineId, string[]>;
+  /** THIS payment's picked units per line (`String(line id)`); cleared when the payment is pressed. */
+  pickedUnits: Record<string, number>;
+  /** Each pressed payment's units, frozen at its press (`tender-started` with `paymentId`). Read paid units with `paidUnitsByLine`. */
+  unitAllocations: UnitAllocations;
 }
 
 /** '0'..'9' plus the two edit keys. There is deliberately no decimal key: digits shift in from the right. */
@@ -51,7 +73,7 @@ export type TenderAction =
     }
   | { type: 'pick-transport'; transport: PaymentTransport }
   | { type: 'pick-reader'; readerId: string | null }
-  | { type: 'tender-started' }
+  | { type: 'tender-started'; paymentId?: string }
   | { type: 'key'; key: TenderKey }
   | { type: 'set-entry'; minor: number }
   | { type: 'set-entry-mode'; mode: 'money' | 'percent' }
@@ -66,6 +88,7 @@ export type TenderAction =
   | { type: 'close-split' }
   | { type: 'set-split-tab'; tab: SplitTab }
   | { type: 'toggle-split-line'; lineId: TenderLineId }
+  | { type: 'set-split-units'; lineId: TenderLineId; units: number; unpaidUnits: number }
   | { type: 'set-plan'; plan: TenderPlan; balanceMinor: number }
   | { type: 'clear-plan'; balanceMinor: number }
   | { type: 'arm-custom' }
@@ -86,6 +109,8 @@ export const initialTenderState: TenderState = {
   splitTab: 'even',
   pickedLineIds: [],
   linesPaidBy: {},
+  pickedUnits: {},
+  unitAllocations: {},
 };
 
 /**
@@ -96,12 +121,15 @@ export const initialTenderState: TenderState = {
 export function initTenderState({
   methodId,
   balanceMinor,
+  payments,
 }: {
   methodId: string | null;
   balanceMinor: number;
+  payments?: readonly Payment[];
 }): TenderState {
-  if (!methodId) return initialTenderState;
-  return { ...initialTenderState, view: 'amount', methodId, entryMinor: balanceMinor };
+  const state = payments ? { ...initialTenderState, unitAllocations: unitAllocationsFromLegs(payments ?? []) } : initialTenderState;
+  if (!methodId) return state;
+  return { ...state, view: 'amount', methodId, entryMinor: balanceMinor };
 }
 
 export function tenderReducer(state: TenderState, action: TenderAction): TenderState {
@@ -145,10 +173,16 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
       };
     case 'set-entry-mode':
       return { ...state, entryMode: action.mode, entryMinor: 0, entryDirty: false };
-    case 'tender-started':
+    case 'tender-started': {
       // A leg is being recorded: the method stays chosen for the next one; the entry
-      // clears until `tender-recorded` pre-types the next planned leg.
-      return { ...state, entryMinor: 0, entryDirty: false, entryMode: 'money', splitView: false };
+      // clears until `tender-recorded` pre-types the next planned leg. Picked units freeze
+      // to the pressed payment's id, so a void of that payment later frees them.
+      const freeze = action.paymentId !== undefined && Object.keys(state.pickedUnits).length > 0;
+      const units = freeze
+        ? { unitAllocations: { ...state.unitAllocations, [String(action.paymentId)]: state.pickedUnits }, pickedUnits: {} }
+        : {};
+      return { ...state, entryMinor: 0, entryDirty: false, entryMode: 'money', splitView: false, ...units };
+    }
     case 'back':
       return {
         ...state,
@@ -169,6 +203,10 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         for (const id of state.plan.lineIds) {
           // Preserve the group's original methods when subsequently taking the rest.
           linesPaidBy[id] ??= [...new Set(action.rowsSinceFrom.map((row) => row.title))];
+        }
+      } else if (state.plan?.kind === 'items') {
+        for (const id of state.plan.lineIds) {
+          delete linesPaidBy[id];
         }
       }
       // The method stays chosen for the next leg (the selector is always on screen now);
@@ -213,6 +251,14 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
           ? state.pickedLineIds.filter((id) => id !== action.lineId)
           : [...state.pickedLineIds, action.lineId],
       };
+    case 'set-split-units': {
+      // A fractional or negative count is refused outright: such a line cannot be split by units.
+      if (!Number.isInteger(action.units) || action.units < 0) return state;
+      if (!Number.isInteger(action.unpaidUnits) || action.unpaidUnits < 0) return state;
+      const units = Math.min(action.units, action.unpaidUnits);
+      const next = { ...state.pickedUnits, [String(action.lineId)]: units };
+      return { ...state, pickedUnits: Object.fromEntries(Object.entries(next).filter(([, n]) => n > 0)) };
+    }
     case 'set-plan':
       return {
         ...state,

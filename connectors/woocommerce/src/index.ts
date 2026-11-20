@@ -11,6 +11,8 @@ import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { createWooOrders, WOO_ORDER_FILTERS } from './orders';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
+import { wooListRegisters } from './registers';
+import { wooClosures } from './closures';
 import { wooPaymentMethods } from './payment-methods';
 import { wooReceiptTemplates } from './receipt-templates';
 import { version } from '../package.json';
@@ -81,6 +83,8 @@ const wooConnectorParts = {
   storeSettings: wooStoreSettings,
   paymentMethods: wooPaymentMethods,
   capabilities: readWooCapabilities,
+  listRegisters: wooListRegisters,
+  closures: wooClosures,
   receiptTemplates: wooReceiptTemplates,
 
   auth: {
@@ -107,8 +111,8 @@ const wooConnectorParts = {
       return {
         Authorization: `Bearer ${credentials.token}`,
         'X-WCPOS': '1',
-        // WCPOS 2.0 refuses a POS request below protocol 2 (HTTP 426); the connector already speaks 2.
-        'X-WCPOS-Protocol': '2',
+        // WCPOS 2.0.4 refuses a POS request below protocol 3 with HTTP 426 (Services/Protocol_Gate.php:15-17).
+        'X-WCPOS-Protocol': '3',
         // For WCPOS's consent-gated telemetry only.
         'X-WCPOS-Client': `tallyui/${wcposClientPart(version)}`,
       };
@@ -140,6 +144,8 @@ export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION, WOO_NO
 export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooOrders, toWooStoreOrder } from './orders';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
+export { createWooRegisterTransport, wooApproveSession, type WooRegisterTransportOptions } from './commands/register-transport';
+export type { ApproverCredentials } from '@tallyui/core';
 export { ConnectorUnauthorizedError } from '@tallyui/core';
 export { wooProductSchema } from './schemas/products';
 export { wooCouponSchema } from './schemas/coupons';

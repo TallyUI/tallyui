@@ -1,6 +1,7 @@
-import { minorUnitDigits, ORDER_NOTE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
+import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
   type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
+import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import type { ChargeLine, Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -75,10 +76,12 @@ export function freezeSentForm(order: PosOrder): PosOrder {
   changed ||= note !== order.note;
   const lines = order.lines.map((line) => {
     const name = cutText(line.name, PAYLOAD_STRING_MAX);
-    changed ||= name !== line.name;
+    const sku = cutText(line.sku, ORDER_LINE_SKU_MAX);
+    const catalogueSku = line.catalogueSku === undefined ? undefined : cutText(line.catalogueSku, ORDER_LINE_SKU_MAX);
+    changed ||= name !== line.name || sku !== line.sku || catalogueSku !== line.catalogueSku;
     const custom = line.custom && { ...line.custom, name: cutText(line.custom.name, PAYLOAD_STRING_MAX) };
     changed ||= custom !== undefined && custom.name !== line.custom!.name;
-    return { ...line, name, ...(custom ? { custom } : {}) };
+    return { ...line, name, sku, ...(catalogueSku !== undefined ? { catalogueSku } : {}), ...(custom ? { custom } : {}) };
   });
   const charges = { fees: order.fees, shipping: order.shipping };
   for (const field of ['fees', 'shipping'] as const) if (charges[field]) charges[field] = charges[field]!.map((charge) => {
@@ -111,6 +114,18 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     changed ||= Object.entries(address).some(([key, value]) => value !== customer[kind]![key as keyof OrderAddress]);
     customer[kind] = address;
   }
+  // Version 12 (ADR-092): tax ids and meta are cut to their bounds like the other text.
+  if (customer?.taxIds) customer.taxIds = customer.taxIds.map((taxId) => {
+    const cut = { ...taxId, type: cutText(taxId.type, ORDER_TAX_ID_TYPE_MAX), value: cutText(taxId.value, ORDER_TAX_ID_VALUE_MAX),
+      ...(taxId.label !== undefined ? { label: cutText(taxId.label, PAYLOAD_STRING_MAX) } : {}) };
+    changed ||= cut.type !== taxId.type || cut.value !== taxId.value || cut.label !== taxId.label;
+    return cut;
+  });
+  const meta = order.meta?.map((entry) => {
+    const cut = { key: cutText(entry.key, ORDER_META_KEY_MAX), value: cutText(entry.value, ORDER_NOTE_MAX) };
+    changed ||= cut.key !== entry.key || cut.value !== entry.value;
+    return cut;
+  });
   const localWarnings = [...(order.localWarnings ?? [])];
   for (const [field, max] of [['email', 254], ['id', 64]] as const) {
     if (customer && field in customer && !sendable(customer[field], max)) {
@@ -119,7 +134,7 @@ export function freezeSentForm(order: PosOrder): PosOrder {
     }
   }
   return changed ? { ...order, lines, payments, customer, ...(note !== undefined ? { note } : {}), ...(charges.fees ? { fees: charges.fees } : {}),
-    ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
+    ...(charges.shipping ? { shipping: charges.shipping } : {}), ...(display ? { display } : {}), ...(meta ? { meta } : {}), ...(localWarnings.length ? { localWarnings } : {}) } : order;
 }
 
 /**
@@ -211,7 +226,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const refundDue = heldByStore ? lockedMinor - order.totalMinor : 0;
   if (order.paidMinor < order.totalMinor) throw new Error('finalize: underpaid');
   let change = heldByStore ? 0 : order.paidMinor - order.totalMinor;
-  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' && !p.locked ? p.amountMinor : 0), 0);
+  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' && !p.locked && p.tenderedMinor === undefined ? p.amountMinor : 0), 0);
   if (change > cash) throw new Error('finalize: change exceeds cash');
   // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
   // v3 also sends each line discount's id and each tax code (as taxByRate's codes); an id is never clamped.
@@ -236,7 +251,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
       ...(line.taxClass !== undefined ? { taxClass: line.taxClass } : {}), taxStatus: line.taxStatus ?? 'taxable' } } : {}),
     ...(line.taxStatus !== undefined ? { taxStatus: line.taxStatus } : {}),
-    name: line.name, sku: line.sku, quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
+    name: line.name, sku: line.sku, ...(line.catalogueSku !== undefined && !line.custom ? { catalogueSku: line.catalogueSku } : {}),
+    quantity: line.quantity, unitPriceMinor: line.unitPriceMinor,
     ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
     ...(line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
     ...(line.regularUnitPriceMinor !== undefined ? { regularUnitPriceMinor: line.regularUnitPriceMinor } : {}),
@@ -252,6 +268,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     method: payment.method as PosOrderPayment['method'],
     ...(payment.methodId !== undefined && sendable(payment.methodId, 64) ? { methodId: payment.methodId } : {}),
     amountMinor: payment.amountMinor,
+    ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
+    ...(payment.changeMinor !== undefined ? { changeMinor: payment.changeMinor } : {}),
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
@@ -268,7 +286,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   });
   for (let i = payments.length - 1; i >= 0; i--) {
     const payment = payments[i];
-    if (payment.method !== 'cash') continue;
+    if (payment.method !== 'cash' || order.payments[i].tenderedMinor !== undefined) continue;
     payment.tenderedMinor = payment.amountMinor;
     payment.changeMinor = Math.min(change, payment.tenderedMinor);
     payment.amountMinor -= payment.changeMinor;
@@ -317,6 +335,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const taxAddress = used === 'billing' || used === 'shipping' ? used : undefined;
   const addresses = { billing: orderAddress(order.customer?.billing), shipping: orderAddress(order.customer?.shipping) };
   if (taxAddress && !addresses[taxAddress]?.country) throw new Error(`finalize: the sale was taxed on the customer's ${taxAddress} address, which it does not have`);
+  // #1064: the backstop for a list no setter checked; the stored list is always a clean copy.
+  const taxIds = order.customer?.taxIds && cleanTaxIds(order.customer.taxIds);
+  if (taxIds === null) throw new Error(TAX_IDS_INVALID);
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
     id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
@@ -337,8 +358,10 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     customer: order.customer ? { id: order.customer.id, name: order.customer.name,
       ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),
       ...(addresses.billing ? { billing: addresses.billing } : {}),
-      ...(addresses.shipping ? { shipping: addresses.shipping } : {}) } : null,
+      ...(addresses.shipping ? { shipping: addresses.shipping } : {}),
+      ...(taxIds?.length ? { taxIds } : {}) } : null,
     ...(order.note ? { note: order.note } : {}),
+    ...(order.meta?.length ? { meta: order.meta.map((m) => ({ ...m })) } : {}),
     ...(taxAddress ? { taxAddress } : {}),
     ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),

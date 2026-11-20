@@ -355,6 +355,14 @@ it('keeps the stored customer addresses on the reopened draft (vendurepos gap 5.
     email: 'buyer@example.com', billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
 });
 
+it("R1: keeps the stored customer's tax ids on the reopened draft (#1064)", async () => {
+  const stored = storedOrder();
+  const taxIds = [{ type: 'eu_vat', value: 'DE123', country: 'DE', label: 'VAT' }, { type: 'us_ein', value: '12-3' }];
+  await db.pos_orders.insert({ ...stored, customer: { ...stored.customer!, taxIds } });
+  expect((await draft(await reopenRefusedOrder(stored.id, deps()))).customer).toEqual({ id: '42', name: 'Buyer',
+    email: 'buyer@example.com', taxIds });
+});
+
 it("reopens an untaxed refused sale with the customer's addresses (order.create 11 stores them)", async () => {
   const order = storedOrder(false, { billing: { country: 'NZ', city: 'Auckland' }, shipping: { country: 'NZ', postcode: '1010' } });
   expect(order.taxAddress).toBeUndefined();
@@ -379,6 +387,30 @@ it.each([
   const sent = edited ?? note;
   expect(envelope.version === 7).toBe(sent !== undefined);
   expect((envelope.payload as { note?: string }).note).toBe(sent);
+});
+
+it("RK1 keeps a catalogue line's edited SKU on the reopened sale and in its order.create (ADR-092 6b)", async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+  const line = builder.addLine({ productId: '11', variantId: '12', name: 'Shirt', sku: 'SHIRT', taxClass: 'standard',
+    unitPrice: { amount: 1200, currency: 'EUR' } });
+  builder.updateLine(line, { sku: 'SHIRT-RED' });
+  builder.addLine({ productId: 'custom', name: 'Alteration', sku: 'ALTER', custom: true, taxClass: 'reduced',
+    taxStatus: 'taxable', unitPrice: { amount: 700, currency: 'EUR' } });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const order: PosOrder = { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12 } }), syncStatus: 'rejected', error };
+  expect(order.lines[0]).toMatchObject({ sku: 'SHIRT-RED', catalogueSku: 'SHIRT' });
+  await db.pos_orders.insert(order);
+  const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+  expect(saved.lineItems[0]).toMatchObject({ sku: 'SHIRT-RED', catalogueSku: 'SHIRT' });
+  expect(saved.lineItems[1]).toMatchObject({ custom: true, sku: 'ALTER' });
+  expect(saved.lineItems[1]).not.toHaveProperty('catalogueSku');
+  const restored = restoreOrderDraft(saved, { currency: order.currency, taxContext });
+  expect(restored.getSnapshot().lineItems[0]).toMatchObject({ sku: 'SHIRT-RED', catalogueSku: 'SHIRT' });
+  const envelope = toOrderCreateEnvelope(finalizeOrder(restored.getSnapshot(), { capabilities: { orderCreate: 12 } }),
+    'device', 1, { maxVersion: 12 });
+  expect(envelope.version).toBe(12);
+  expect(envelope.payload.lines[0].sku).toBe('SHIRT-RED');
+  expect(envelope.payload.lines[1]).not.toHaveProperty('sku');
 });
 
 it('exports only the two reopenable refusal codes', () => {

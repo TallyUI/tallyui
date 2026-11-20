@@ -77,6 +77,7 @@ export class FakeDisplaySignalling implements DisplaySignalling {
     return this.snapshot;
   }
 
+  registerDevice = tillOnly;
   mint = tillOnly;
   pending = tillOnly;
   confirm = tillOnly;

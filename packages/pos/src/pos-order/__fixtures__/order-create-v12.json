@@ -1,0 +1,95 @@
+{
+  "id": "019f8f66-7800-7000-8000-000000000004",
+  "type": "order.create",
+  "version": 12,
+  "createdAt": "2026-11-19T10:00:00.000Z",
+  "deviceId": "device_golden",
+  "attempt": 1,
+  "payload": {
+    "clientOrderId": "019f8f66-7800-7000-8000-000000000001",
+    "createdAt": "2026-11-19T10:00:00.000Z",
+    "currency": "EUR",
+    "pricesIncludeTax": true,
+    "lines": [
+      {
+        "clientLineId": "019f8f66-7800-7000-8000-000000000002",
+        "variantId": "p",
+        "title": "Coffee",
+        "sku": "COF-1-EDIT",
+        "quantity": 1,
+        "unitPriceMinor": 1190
+      }
+    ],
+    "payments": [
+      {
+        "clientPaymentId": "019f8f66-7800-7000-8000-000000000003",
+        "method": "cash",
+        "amountMinor": 1190,
+        "tenderedMinor": 1190,
+        "changeMinor": 0
+      }
+    ],
+    "subtotalMinor": 1000,
+    "taxMinor": 190,
+    "totalMinor": 1190,
+    "display": {
+      "currency": "EUR",
+      "exponent": 2,
+      "taxInclusive": true,
+      "subtotalMinor": 1190,
+      "discountMinor": 0,
+      "taxMinor": 190,
+      "totalMinor": 1190,
+      "lines": [
+        {
+          "clientLineId": "019f8f66-7800-7000-8000-000000000002",
+          "amountMinor": 1190,
+          "discounts": []
+        }
+      ],
+      "orderDiscountMinor": 0
+    },
+    "taxByRate": [
+      {
+        "ratePpm": 190000,
+        "netMinor": 1000,
+        "taxMinor": 190,
+        "grossMinor": 1190
+      }
+    ],
+    "customer": {
+      "email": "ann@example.com",
+      "customerId": "42",
+      "billing": {
+        "firstName": "Ann",
+        "lastName": "Lee",
+        "address1": "1 State St",
+        "city": "Albany",
+        "state": "NY",
+        "postcode": "12207",
+        "country": "US"
+      },
+      "taxIds": [
+        {
+          "type": "eu_vat",
+          "value": "DE123456789",
+          "country": "DE"
+        },
+        {
+          "type": "us_ein",
+          "value": "12-3456789"
+        }
+      ]
+    },
+    "meta": [
+      {
+        "key": "po_number",
+        "value": "PO-1"
+      },
+      {
+        "key": "gift_message",
+        "value": ""
+      }
+    ]
+  }
+}

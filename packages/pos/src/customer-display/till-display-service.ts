@@ -1,10 +1,11 @@
 import {
   DisplaySignallingError, type DisplayAdvertisement, type DisplayRecord, type DisplaySignalling, type SignalMessage,
-  type SyncContext,
+  type SyncContext, type TillDevice,
 } from '@tallyui/core';
 import { createDisplayLink, callDisplay, type DisplayCall, type DisplayLink } from './display-link';
 import type { DisplayConfig, DisplayEnvelope } from './protocol';
 import { createSnapshotSender, quietly, systemClock, SALE_ACTIONS, type ServiceClock, type SnapshotSender } from './snapshot-fallback';
+import { withTillDevice, type TillDeviceHandle } from './till-device';
 import type { DisplayTransport } from './transport';
 import { createTillPeerLink, type PeerFactory, type PeerLink, type PeerLinkState, type SignalPort } from './webrtc';
 
@@ -24,8 +25,8 @@ export interface TillDisplayServiceOptions {
   signalling: DisplaySignalling;
   /** The cashier session; null while nobody is logged in, which stops every server call (d5). */
   context: () => SyncContext | null;
-  /** The till's own device id (d5); U8 stores it. */
-  deviceId: string;
+  /** The till's device (d5, TallyUI#754), from `createTillDevice`; its key is never logged or reported. */
+  device: TillDeviceHandle;
   advertisement: DisplayAdvertisement;
   /** One display's config: the store, i18n and idle settings, with `display` from its record. */
   configFor: (display: DisplayRecord) => DisplayConfig;
@@ -35,9 +36,12 @@ export interface TillDisplayServiceOptions {
   onError?: (error: unknown) => void;
 }
 export type TillDisplayStatus = 'online' | 'offline' | 'paused' | 'closed';
+export type TillDisplayPauseReason = 'signed_out' | 'forbidden' | 'device_refused';
 export interface TillDisplayEntry { display: DisplayRecord; link: PeerLinkState }
 export interface TillDisplayService extends DisplayLink {
   readonly status: TillDisplayStatus;
+  /** Why the service is `paused`; null in every other status. */
+  readonly pauseReason: TillDisplayPauseReason | null;
   /** The owned displays from the last successful list, each with its current link's state. */
   readonly displays: readonly TillDisplayEntry[];
   /** Called after any change to `status` or `displays`; returns the unsubscribe. */
@@ -72,13 +76,14 @@ interface Slot {
  * server is lost. It is a `DisplayLink`, so `createSaleDisplayPublisher` drives it.
  */
 export function createTillDisplayService(options: TillDisplayServiceOptions): TillDisplayService {
-  const { signalling, deviceId, advertisement, configFor, createPeer, clock = systemClock } = options;
+  const { signalling, device, advertisement, configFor, createPeer, clock = systemClock } = options;
   const slots = new Map<string, Slot>();
   const listeners = new Set<() => void>();
   let status: TillDisplayStatus = 'online';
-  // A `forbidden` pause stops every call until refresh(); a null context pauses without one, and the list timer
+  // A `forbidden` or `device_refused` pause stops every call until refresh(); a null context pauses without one, and the list timer
   // keeps reading context() so the till picks its displays up again when a cashier logs in (d5).
   let forbidden = false;
+  let pauseReason: TillDisplayPauseReason | null = null;
   let latest: DisplayCall | null = null;
   let entries: readonly TillDisplayEntry[] = [];
   const timers: { list: unknown; signal: unknown } = { list: null, signal: null };
@@ -98,11 +103,16 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
     active: advertisement.snapshot && status === 'online' && slot.record.connected && slot.link?.state !== 'open',
     seq: slot.seq, config: slot.config, event: slot.event,
   });
-  const setStatus = (next: TillDisplayStatus) => {
-    if (status === next || status === 'closed') return;
-    status = next;
-    slots.forEach(push);
-    if (next === 'online') ensureSignalPoll();
+  const setStatus = (next: TillDisplayStatus, reason: TillDisplayPauseReason | null = null) => {
+    const nextReason = next === 'paused' ? reason : null;
+    if (status === 'closed' || (status === next && pauseReason === nextReason)) return;
+    pauseReason = nextReason;
+    // A same-status pause with a new reason only emits; the slots and the signal poll stay as they are.
+    if (status !== next) {
+      status = next;
+      slots.forEach(push);
+      if (next === 'online') ensureSignalPoll();
+    }
     emit();
   };
 
@@ -110,7 +120,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   const contextNow = (): SyncContext | null => {
     if (status === 'closed' || forbidden) return null;
     const ctx = options.context();
-    if (!ctx) setStatus('paused');
+    if (!ctx) setStatus('paused', 'signed_out');
     return ctx;
   };
   /** The service's reading of a failed call: d11 for a lost server, a pause, or a display that is gone. */
@@ -118,20 +128,20 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
     if (status === 'closed' || !(error instanceof DisplaySignallingError)) return;
     if (error.code === 'network' || error.code === 'server') {
       if (!forbidden) setStatus('offline');
-    } else if (error.code === 'forbidden') {
+    } else if (error.code === 'forbidden' || error.code === 'device_refused') {
       forbidden = true;
       stopTimer('list');
-      setStatus('paused');
+      setStatus('paused', error.code);
     } else if (error.code === 'not_found' && displayId !== undefined) {
       remove(displayId);
       emit();
     }
   };
   /** A server call whose failure is logged and handled, never thrown; `null` when it failed or was not made. */
-  const call = async <T>(work: (ctx: SyncContext) => Promise<T>, displayId?: string): Promise<{ value: T } | null> => {
+  const call = async <T>(work: (ctx: SyncContext, till: TillDevice) => Promise<T>, displayId?: string): Promise<{ value: T } | null> => {
     try {
       const ctx = contextNow();
-      return ctx ? { value: await work(ctx) } : null;
+      return ctx ? { value: await withTillDevice(device, ctx, (till) => work(ctx, till)) } : null;
     } catch (error) {
       report(error);
       handle(error, displayId);
@@ -145,7 +155,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
     timers.signal = clock.setTimeout(async () => {
       timers.signal = null;
       signalBusy = true;
-      const result = await call((ctx) => signalling.receiveSignals(ctx, deviceId));
+      const result = await call((ctx, till) => signalling.receiveSignals(ctx, till));
       signalBusy = false;
       for (const { displayId, type, payload } of result?.value ?? []) slots.get(displayId)?.deliver?.({ type, payload });
       ensureSignalPoll();
@@ -173,7 +183,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
     if (status !== 'online' || slot.link) return;
     slot.seq += 1;
     const port: SignalPort = {
-      send: (message) => void call((ctx) => signalling.sendSignal(ctx, deviceId, slot.id, message), slot.id),
+      send: (message) => void call((ctx, till) => signalling.sendSignal(ctx, till, slot.id, message), slot.id),
       onSignal: (listener) => {
         slot.deliver = listener;
         return () => void (slot.deliver === listener && (slot.deliver = null));
@@ -215,7 +225,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       post: async (body) => {
         const ctx = status === 'online' ? contextNow() : null;
         if (!ctx) throw NOT_SENT;
-        await signalling.postSnapshot(ctx, deviceId, id, body).catch((error: unknown) => {
+        await withTillDevice(device, ctx, (till) => signalling.postSnapshot(ctx, till, id, body)).catch((error: unknown) => {
           handle(error, id);
           throw error;
         });
@@ -244,7 +254,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   async function listNow(): Promise<void> {
     stopTimer('list');
     const generation = ++listGeneration;
-    const result = await call((ctx) => signalling.list(ctx, deviceId));
+    const result = await call((ctx, till) => signalling.list(ctx, till));
     if (status === 'closed' || generation !== listGeneration) return;
     if (result) {
       setStatus('online');
@@ -269,6 +279,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
 
   return {
     get status() { return status; },
+    get pauseReason() { return pauseReason; },
     get displays() { return entries; },
     onChange(listener) {
       listeners.add(listener);
@@ -287,6 +298,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       stopTimer('signal');
       for (const id of [...slots.keys()]) remove(id);
       status = 'closed';
+      pauseReason = null;
       emit();
       listeners.clear();
     },

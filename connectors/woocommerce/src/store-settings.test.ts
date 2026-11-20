@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, formatMoney, type SyncContext } from '@tallyui/core';
-import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
+import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, wooOnOrderLinesLine, wooOnOrderLines20Line, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
   WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
@@ -243,6 +243,13 @@ describe('wooStoreSettings', () => {
     ]);
   });
 
+  // #673: `rules` is a Medusa field; WooCommerce has no rate rules, so its rows never carry the key.
+  it('T6: lists no rate with a rules key', async () => {
+    const { allTaxRates } = await wooStoreSettings(context);
+    expect(allTaxRates!.length).toBeGreaterThan(0);
+    for (const row of allTaxRates!) expect('rules' in row).toBe(false);
+  });
+
   it('keeps the filtered rates the cart reads byte-identical', async () => {
     taxesBody = listedRates;
     const { taxRates, taxRatesPpm } = await wooStoreSettings(context);
@@ -413,6 +420,7 @@ describe('readWooCapabilities', () => {
     { capabilities: { order_create_v5: true } },
     { order_create_v5: true },
   ])('uses order version 3 when the v5 capability list is missing in %j', async (body) => {
+    siteBody = { wcpos_version: '1.10.19' };
     statusBody = body;
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
@@ -467,6 +475,7 @@ describe('readWooCapabilities', () => {
     [{ capabilities: ['products_id_fast_path'] }, false],
     [{ capabilities: 'order_payments_list' }, false],
   ])('reads the payment list advertisement from %j', async (body, multiplePayments) => {
+    siteBody = { wcpos_version: '1.10.19' };
     fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json(body));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
@@ -585,10 +594,129 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toBeUndefined();
   });
 
+  it.each([
+    ['20.00', 'USD', 2000],
+    ['0', 'USD', 0],
+    ['20.005', 'USD', 2000],
+    ['5', 'JPY', 5],
+  ])('T5: reads variance_threshold %j in %s as registerApproval %i, truncated', async (variance_threshold, currency, thresholdMinor) => {
+    storesBody = [{ ...stores[0], currency, variance_threshold }];
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
+      lineTax: { none: true, classes: true },
+      registerApproval: { thresholdMinor },
+    });
+  });
+
+  it.each([[''], [undefined], ['abc']])('T5: leaves registerApproval out for variance_threshold %j', async (variance_threshold) => {
+    storesBody = [{ ...stores[0], variance_threshold }];
+    expect(await readWooCapabilities(context)).not.toHaveProperty('registerApproval');
+  });
+
+  // Woo 16: stock WCPOS 1.10.20+ sends no capabilities array; its version is the fallback, capped at 7.
+  it.each(['1.10.20', '1.10.27'])('G1: takes order version 7 and coupons from stock site version %s with no capabilities key', async (wcpos_version) => {
+    statusBody = {};
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 7, coupons: true });
+  });
+
+  it.each([
+    { wcpos_version: '1.10.19' }, { wcpos_version: '1.10.0' }, { wcpos_version: '1.10.20-beta.1' }, { wcpos_version: '1.10.21-beta.1' },
+    { wcpos_version: '1.11.0' }, {}, { wcpos_version: 'latest' },
+  ])('G2: uses order version 3 with no capabilities key and site %j', async (body) => {
+    statusBody = {};
+    siteBody = body;
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3 });
+  });
+
+  it.each([
+    [['order_create_v5'], '1.10.20', 8], [['order_create_v5'], '1.10.19', 8], [['order_create_v5'], '2.0.4', 8],
+    [['order_create_v5'], '1.8.99', 5], [['products_id_fast_path'], '2.0.4', 6], [[], '1.10.20', 3],
+  ])('G3: lets the capabilities %j decide over site version %s, giving %i', async (capabilities, wcpos_version, orderCreate) => {
+    statusBody = { capabilities };
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate });
+  });
+
+  it('G4: keeps order version 3 when status answers HTTP 500 on a 1.10.20 site', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: true });
+  });
+
+  it.each(['HTTP 500', 'network'])('G4: keeps order version 3 when site fails (%s) with no capabilities key', async (failure) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json({}));
+    if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('network'));
+    else fetchMock.mockResolvedValueOnce(Response.json({ wcpos_version: '1.10.20' }, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: false });
+  });
+
+  // Woo 16b: stock WCPOS 2.0.4+ (2.0 line) sends ['products_id_fast_path'] or no array; its version is the fallback, capped at 6.
+  // Coupons-off cases are not tested: only the /site version gates coupons (1.9.0+), so a 2.0.4 store always has them.
+  it.each([
+    [['products_id_fast_path'], '2.0.9', 6], [undefined, '2.0.4', 6], [['order_create_v5'], '2.0.4', 8],
+  ])('H1/H3: with capabilities %j, stock site version %s gives order version %i', async (capabilities, wcpos_version, orderCreate) => {
+    statusBody = capabilities === undefined ? {} : { capabilities };
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate, coupons: true });
+  });
+
+  it.each([
+    { wcpos_version: '2.0.3' }, { wcpos_version: '2.0.0' }, { wcpos_version: '2.0.4-beta.1' }, { wcpos_version: '2.0.5-beta.1' },
+    { wcpos_version: '2.1.0' }, { wcpos_version: '3.0.0' }, { wcpos_version: 'x' }, {},
+  ])('H2: uses order version 3 with capabilities [products_id_fast_path] and site %j', async (body) => {
+    statusBody = { capabilities: ['products_id_fast_path'] };
+    siteBody = body;
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3 });
+  });
+
+  it('H5: keeps order version 3 when status answers HTTP 500 on a 2.0.4 site', async () => {
+    siteBody = { wcpos_version: '2.0.4' };
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: true });
+  });
+
+  it('H5: keeps order version 3 when site answers HTTP 500 with capabilities [products_id_fast_path]', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json({ capabilities: ['products_id_fast_path'] }))
+      .mockResolvedValueOnce(Response.json({ wcpos_version: '2.0.4' }, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: false });
+  });
+
+  it.each([
+    ['2.0.4', true], ['2.0.9', true], [' 2.0.4 ', true], ['2.0.3', false], ['2.0.4-beta.1', false], ['2.0.4+build.1', false],
+    ['2.1.0', false], ['3.0.0', false], ['1.10.20', false], ['2.0', false], [undefined, false],
+  ])('wooOnOrderLines20Line(%j) is %s', (version, expected) => {
+    expect(wooOnOrderLines20Line(version)).toBe(expected);
+  });
+
+  it.each([
+    ['1.10.20', true], ['1.10.99', true], [' 1.10.20 ', true], ['1.10.19', false], ['1.10.20+build.1', false],
+    ['1.10.21-rc.1', false], ['1.10', false], ['1.11.0', false], [undefined, false],
+  ])('wooOnOrderLinesLine(%j) is %s', (version, expected) => {
+    expect(wooOnOrderLinesLine(version)).toBe(expected);
+  });
+
   it('wires both readers into the connector', () => {
     const connector = createWooCommerceConnector();
     expect(connector.storeSettings).toBe(wooStoreSettings);
     expect(connector.capabilities).toBe(readWooCapabilities);
+  });
+
+  // Woo 23: WCPOS 2.0.4's per-store register_sessions setting (Abstracts/Store.php:76,179).
+  it('T9: reads register_sessions true as register 3 from the one /stores read', async () => {
+    storesBody = [{ ...stores[0], register_sessions: true }];
+    expect(await readWooCapabilities(context)).toStrictEqual({
+      orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
+      coupons: true,
+      lineTax: { none: true, classes: true },
+      register: 3,
+    });
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/stores'))).toHaveLength(1);
+  });
+
+  it.each([[false], ['yes'], [undefined]])('T9: leaves register out for register_sessions %j', async (register_sessions) => {
+    storesBody = [{ ...stores[0], register_sessions }];
+    expect(await readWooCapabilities(context)).not.toHaveProperty('register');
   });
 });
 

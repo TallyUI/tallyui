@@ -97,3 +97,35 @@ describe('order outbox downgrade from order.create 11 (ADR-086 d2, amended 2026-
     } finally { await db.remove(); }
   }, 10_000);
 });
+
+describe('order outbox downgrade from order.create 12 (ADR-092)', () => {
+  it("M4 resends a sale lifted to 12 at 11 for a store capped at 11, without tax ids or meta, and nothing throws", async () => {
+    pick.above = 0;
+    const db = await createRxDatabase({ name: `downgradebound${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }) });
+    try {
+      const { pos_orders: collection } = await db.addCollections({ pos_orders: posOrderCollection() });
+      // The same sale, not taxed on its billing, with tax ids and meta: 12 with them, 11 (its addresses) below.
+      const { taxAddress: _taxAddress, ...untaxed } = sale();
+      const order = { ...untaxed, customer: { ...untaxed.customer!, taxIds: [{ type: 'eu_vat', value: 'DE123456789', label: 'VAT' }] },
+        meta: [{ key: 'po_number', value: 'PO-1' }] };
+      await collection.insert(order);
+      const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>(async (batch) => ({ kind: 'results',
+        results: batch.map((command): CommandResult => command.version > 11
+          ? { id: command.id, status: 'rejected', error: { code: 'unsupported_version', message: 'Maximum 11', data: { orderCreate: 11 } } }
+          : { id: command.id, status: 'applied', serverRefs: { orderId: 'server-1', totalMinor: command.payload.totalMinor } }) }));
+      const outbox = createOrderOutbox({ collection, transport: { send }, deviceId: 'device', random: () => 0.5,
+        getMaxOrderCreateVersion: () => 12 });
+      try { await outbox.flush(); } finally { outbox.stop(); }
+      const sent = send.mock.calls.map(([batch]) => batch[0]);
+      expect(sent.map((command) => command.version)).toEqual([12, 11]);
+      expect(sent[0].payload.customer?.taxIds).toStrictEqual([{ type: 'eu_vat', value: 'DE123456789' }]);
+      expect(sent[0].payload.meta).toStrictEqual([{ key: 'po_number', value: 'PO-1' }]);
+      expect(sent[1].payload.customer).toStrictEqual({ email: 'ann@example.com', customerId: '42',
+        billing: { city: 'Albany', state: 'NY', postcode: '12207', country: 'US' } });
+      expect(sent[1].payload).not.toHaveProperty('meta');
+      expect((await collection.findOne(order.id).exec())!.toJSON())
+        .toMatchObject({ syncStatus: 'applied', sentVersion: 11, downgradedFrom: 12 });
+    } finally { await db.remove(); }
+  }, 10_000);
+});

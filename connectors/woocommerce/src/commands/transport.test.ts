@@ -26,7 +26,7 @@ function setup(...answers: Array<Response | Error>) {
     if (answer instanceof Error) fetch.mockRejectedValueOnce(answer);
     else fetch.mockResolvedValueOnce(answer);
   }
-  return { fetch, transport: createWooCommandTransport({ baseUrl, fetch,
+  return { fetch, transport: createWooCommandTransport({ baseUrl, fetch, ledgerPayments: false,
     getHeaders: async () => ({ Authorization: 'Bearer token', 'X-WCPOS': '1' }),
   }) };
 }
@@ -107,7 +107,7 @@ describe('createWooCommandTransport', () => {
         envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 2250;
       }
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: shipping ? '22.50' : '17.50' } }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons: true });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       await transport.send([envelope]);
       expect(fetch).toHaveBeenCalledTimes(1);
       const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
@@ -131,7 +131,7 @@ describe('createWooCommandTransport', () => {
       envelope.payload.subtotalMinor = 1000;
       envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 750;
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: '7.50' } }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons: true });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       await transport.send([envelope]);
       expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
         { product_id: 0, name: 'Gift wrap', quantity: 1, subtotal: '10.00', total: '10.00', tax_class: '', meta_data: [
@@ -190,7 +190,7 @@ describe('createWooCommandTransport', () => {
         .map((code) => ({ ...couponEnvelope.payload.coupons![0], code }));
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(400, { code: 'woocommerce_rest_invalid_coupon', message,
         data: { status: 400, new_draft_order_id: 293 } }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons: true });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       const result = await transport.send([envelope]);
       expect(result).toEqual({ kind: 'results', results: [{ id: envelope.id, status: 'rejected', error: {
         code: 'coupon_invalid', message: decoded,
@@ -204,7 +204,7 @@ describe('createWooCommandTransport', () => {
     it.each([[400, 'another_code'], [422, 'woocommerce_rest_invalid_coupon']])('keeps the raw rejection for HTTP %i and %s', async (status, code) => {
       const message = '<b>Coupon &quot;ten&quot;</b>';
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(status, { code, message }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons: true });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
         id: couponEnvelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
       }] });
@@ -212,7 +212,7 @@ describe('createWooCommandTransport', () => {
 
     it('keeps a created coupon order applied with its server refs and total mismatch warning', async () => {
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, number: '115', total: '18.00' } }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons: true });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
         id: couponEnvelope.id, status: 'applied', serverRefs: { orderId: '115', displayId: '115', totalMinor: 1800 },
         warnings: [{ code: 'total_mismatch', expectedMinor: 1750, serverMinor: 1800 }],
@@ -222,7 +222,7 @@ describe('createWooCommandTransport', () => {
 
     it.each([undefined, false, () => false, async () => false])('refuses a coupon sale without a request when the coupon gate is closed: %s', async (acceptsCoupons) => {
       const fetch = vi.fn<typeof globalThis.fetch>();
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
         id: couponEnvelope.id, status: 'rejected', error: { code: 'coupon_invalid',
           message: "This store's WooCommerce POS plugin does not accept coupons (1.9.0 or later is needed). Remove the coupon and complete the sale again.",
@@ -234,7 +234,7 @@ describe('createWooCommandTransport', () => {
     it('posts a sale without coupons without reading the closed coupon gate', async () => {
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response());
       const acceptsCoupons = vi.fn(() => false);
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons });
       expect(await transport.send([order()])).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(acceptsCoupons).not.toHaveBeenCalled();
@@ -243,7 +243,7 @@ describe('createWooCommandTransport', () => {
     it('resolves coupon support once for a batch with two coupon envelopes', async () => {
       const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
       const acceptsCoupons = vi.fn(async () => true);
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsCoupons });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons });
       expect(await transport.send([couponEnvelope, { ...couponEnvelope, id: 'second' }])).toMatchObject({
         kind: 'results', results: [{ status: 'applied' }, { status: 'applied' }],
       });
@@ -377,7 +377,7 @@ describe('createWooCommandTransport', () => {
       { clientPaymentId: 'cash', method: 'cash', amountMinor: 1291, tenderedMinor: 2000, changeMinor: 709 },
     ];
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: '42.91' } }));
-    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
     expect(await transport.send([envelope])).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
     expect(fetch).toHaveBeenCalledTimes(1);
     const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
@@ -416,7 +416,7 @@ describe('createWooCommandTransport', () => {
     envelope.payload.payments[0].amountMinor = 150;
     envelope.payload.payments.push({ ...envelope.payload.payments[0], clientPaymentId: 'second' });
     const fetch = vi.fn<typeof globalThis.fetch>();
-    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
     expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{
       id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' },
     }] });
@@ -426,7 +426,7 @@ describe('createWooCommandTransport', () => {
   it('posts byte-identical one-payment bodies with list support on and off', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
     for (const acceptsPaymentsList of [undefined, false, true]) {
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
       await transport.send([order()]);
     }
     expect(fetch).toHaveBeenCalledTimes(3);
@@ -448,7 +448,7 @@ describe('createWooCommandTransport', () => {
       ...envelope.payload.payments[0], clientPaymentId: String(i),
     }));
     const fetch = vi.fn<typeof globalThis.fetch>();
-    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList: true });
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList: true });
     expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{
       id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
     }] });
@@ -458,7 +458,7 @@ describe('createWooCommandTransport', () => {
   it('resolves list support once per send call', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
     const acceptsPaymentsList = vi.fn(async () => true);
-    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, acceptsPaymentsList });
+    const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
     await transport.send([order(), order()]);
     expect(acceptsPaymentsList).toHaveBeenCalledTimes(1);
     await transport.send([order()]);
@@ -532,6 +532,55 @@ describe('createWooCommandTransport', () => {
     }
   });
 
+  describe('exclusive store, a charge entered including tax (2.10 PR4)', () => {
+    function charged() {
+      const envelope = order();
+      envelope.version = 5;
+      envelope.payload.fees = [{ clientFeeId: 'bag', name: 'Bag', amountMinor: 955, taxStatus: 'taxable', taxMinor: 95 }];
+      envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 909, taxStatus: 'taxable', taxMinor: 91 }];
+      return envelope;
+    }
+    const totals = (local?: WooLocalOrder) => {
+      const result = toWooOrderPayload(charged(), local);
+      if ('error' in result) throw new Error(result.error.message);
+      const payload = result.payload as { fee_lines: { total: string }[]; shipping_lines: { total: string }[] };
+      return { fee: payload.fee_lines[0].total, shipping: payload.shipping_lines[0].total, bytes: JSON.stringify(payload) };
+    };
+
+    it('T2: sends major(amountMinor), byte for byte, when the stored net is a whole cent', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }],
+        shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+      const sent = totals(local);
+      expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
+      expect(sent.bytes).toBe(totals().bytes);
+    });
+
+    it.each([
+      ['no local order', undefined],
+      ['no charge arrays', { lines: [] }],
+      ['other charge ids', { lines: [], fees: [{ id: 'other', netMicros: '1' }], shipping: [{ id: 'other', netMicros: '1' }] }],
+      ['no stored nets', { lines: [], fees: [{ id: 'bag' }], shipping: [{ id: 'delivery' }] }],
+    ] as const)('T3: sends major(amountMinor) with %s', (_name, local) => {
+      expect(totals(local as WooLocalOrder | undefined)).toMatchObject({ fee: '9.55', shipping: '9.09' });
+    });
+
+    it('T4: sends the 6-dp net when the stored net is not a whole cent', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '954545500' }],
+        shipping: [{ id: 'delivery', netMicros: '909090900' }] };
+      expect(totals(local)).toMatchObject({ fee: '9.545455', shipping: '9.090909' });
+    });
+
+    it.each(['fees', 'shipping'] as const)('T4: refuses a negative or too-fine stored %s net like the inclusive branch', (kind) => {
+      const id = kind === 'fees' ? 'bag' : 'delivery';
+      for (const [netMicros, message] of [['-100', `Line ${id} has a negative net.`], ['101', `Line ${id} has a net finer than 6 decimals.`]]) {
+        const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }],
+          shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+        local[kind] = [{ id, netMicros }];
+        expect(toWooOrderPayload(charged(), local)).toEqual({ error: { code: 'invalid_payload', message } });
+      }
+    });
+  });
+
   it('maps custom SKU, tax class and exclusive discounts like a product line', () => {
     const envelope = order();
     envelope.version = 5;
@@ -584,7 +633,7 @@ describe('createWooCommandTransport', () => {
 
   it('removes every trailing slash from the base URL', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response());
-    const transport = createWooCommandTransport({
+    const transport = createWooCommandTransport({ ledgerPayments: false,
       baseUrl: 'https://shop.test/wp-json/wcpos/v2//', getHeaders: () => ({}), fetch,
     });
     await transport.send([order()]);
@@ -749,7 +798,7 @@ describe('createWooCommandTransport', () => {
       const fetch = vi.fn<typeof globalThis.fetch>((_url, init) => new Promise((_resolve, reject) => {
         init!.signal!.addEventListener('abort', () => reject(new Error('aborted')));
       }));
-      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, timeoutMs: 20 });
+      const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, timeoutMs: 20 });
       const sending = transport.send([order()]);
       await vi.advanceTimersByTimeAsync(20);
       expect(await sending).toEqual({ kind: 'retry', reason: 'timeout' });
@@ -898,5 +947,28 @@ describe('the tax address as WCPOS meta with billing and shipping (#722, order.c
     expect(bytes).toContain('"meta_data":[{"key":"_woocommerce_pos_uuid","value":"019965af-0000-7000-8000-000000000003"}],'
       + '"customer_id":7,"billing":{"email":"ann@example.com"},"customer_note":"Hi"}');
     expect(bytes).not.toContain('"shipping":');
+  });
+});
+
+describe('shipping tax status as WCPOS meta (Woo 16)', () => {
+  function shippingLine(taxStatus: 'none' | 'taxable') {
+    const envelope = order();
+    envelope.version = 7;
+    envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', methodId: 'flat_rate', amountMinor: 500, taxStatus, taxMinor: 0 }];
+    envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 800;
+    const result = toWooOrderPayload(envelope);
+    if (!('payload' in result)) throw new Error(result.error.message);
+    return (result.payload.shipping_lines as unknown[])[0];
+  }
+
+  it('S1: pushes a none shipping line with its tax status in _woocommerce_pos_data', () => {
+    expect(shippingLine('none')).toStrictEqual({ method_id: 'flat_rate', method_title: 'Delivery', total: '5.00',
+      meta_data: [{ key: '_woocommerce_pos_data', value: '{"tax_status":"none"}' }] });
+  });
+
+  it('S2: pushes a taxable shipping line with no meta_data key', () => {
+    const line = shippingLine('taxable');
+    expect(line).toStrictEqual({ method_id: 'flat_rate', method_title: 'Delivery', total: '5.00' });
+    expect(line).not.toHaveProperty('meta_data');
   });
 });

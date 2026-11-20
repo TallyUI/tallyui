@@ -124,7 +124,17 @@ jobs:
         run: pnpm build
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        shell: bash
+        timeout-minutes: 35
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 600 pnpm exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Playwright browser install attempt $attempt failed, retrying"
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
 
       - name: Test the e2e port and server-identity checks
         run: node --test e2e/port-free.test.mjs e2e/server-identity.test.mjs

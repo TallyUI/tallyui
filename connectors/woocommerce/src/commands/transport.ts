@@ -1,6 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
+import { createWooCall, type Answer } from './http';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -19,7 +20,20 @@ export interface WooCommandTransportOptions {
   /** True when the store passes the coupons gate (`ServerCapabilities.coupons`, ADR-077 R2/R3). Read at push time;
    * absent means closed, so a sale still carrying coupons is refused with `coupon_invalid` and no request is made. */
   acceptsCoupons?: boolean | (() => boolean | Promise<boolean>);
+  /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
+   * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`. */
+  ledgerPayments?: boolean | (() => boolean | Promise<boolean>);
 }
+
+// Any-version 8-4-4-4-12 uuid, as WCPOS checks a payment id (v2.0.4 includes/Sync/Pos_Uuid.php:46-48, Ledger.php:1645).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A sale's minor amount as Woo's decimal string, at the display exponent else the currency's: one rule for bodies and messages.
+const wooDigits = (p: OrderCreateEnvelope['payload']) => p.display?.exponent ?? minorUnitDigits(p.currency);
+const wooMajor = (minor: number, digits: number) => (minor / 10 ** digits).toFixed(digits);
+
+/** A money command for the ledger, sent with the order revision it was built against. */
+export interface WooMoneyCommand { path: 'payments' | 'close'; body: Record<string, unknown> }
 
 export function wooMinorFromDecimal(text: string, currency: string): number | undefined {
   const trimmed = text.trim();
@@ -85,10 +99,20 @@ function wooAddress(address: OrderAddress | undefined): Record<string, string> {
   return Object.fromEntries(WOO_ADDRESS_KEYS.flatMap(([ours, theirs]) => typeof address?.[ours] === 'string' ? [[theirs, address[ours]]] : []));
 }
 
-export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean }): { payload: Record<string, unknown> } | { error: { code: string; message: string } } {
+export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLocalOrder, options?: { paymentsList?: boolean; ledger?: boolean }): { payload: Record<string, unknown>; money?: WooMoneyCommand[] } | { error: { code: string; message: string } } {
   const p = envelope.payload;
   if (p.payments.length === 0 || (p.payments.length > 1 && !options?.paymentsList)) {
     return { error: { code: 'invalid_payload', message: 'WooCommerce orders take one payment.' } };
+  }
+  const ledger = options?.ledger === true;
+  const closes = p.totalMinor === 0 && !p.payments.some((payment) => payment.amountMinor > 0);
+  if (ledger && p.payments.some((payment) => !UUID.test(payment.clientPaymentId))) {
+    return { error: { code: 'invalid_payload', message: 'WooCommerce POS 2.0 records each payment by a UUID; this sale has a payment without one.' } };
+  }
+  if (ledger && closes && !UUID.test(envelope.id)) return { error: { code: 'invalid_payload', message: "WooCommerce POS 2.0 closes a free sale by a UUID command id; this sale's id is not one." } };
+  // Ledger::validate_input refuses an amount that is not positive (v2.0.4 Ledger.php:1648-1654).
+  if (ledger && !closes && p.payments.some((payment) => payment.amountMinor <= 0)) {
+    return { error: { code: 'invalid_payload', message: 'Every payment on a WooCommerce POS 2.0 sale must be more than zero.' } };
   }
   if (p.payments.length > 20) {
     return { error: { code: 'invalid_payload', message: 'WooCommerce records at most 20 payments.' } };
@@ -101,8 +125,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
       return { error: { code: 'invalid_payload', message: `Line ${line.clientLineId} has no WooCommerce product id.` } };
     }
   }
-  const digits = p.display?.exponent ?? minorUnitDigits(p.currency);
-  const major = (minor: number) => (minor / 10 ** digits).toFixed(digits);
+  const digits = wooDigits(p);
+  const major = (minor: number) => wooMajor(minor, digits);
   const inclusiveNet = (netMicros: string | undefined, id: string) => {
     if (netMicros === undefined) {
       return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
@@ -117,6 +141,10 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     const micros = net / divisor;
     return `${micros / 1000000n}.${(micros % 1000000n).toString().padStart(6, '0')}`;
   };
+  // 2.10 PR4: an exclusive store gets a charge's 6-dp net when it is not a whole cent.
+  const chargeTotal = (amountMinor: number, netMicros: string | undefined, id: string) =>
+    p.pricesIncludeTax || (netMicros !== undefined && BigInt(netMicros) !== BigInt(amountMinor) * 1000000n)
+      ? inclusiveNet(netMicros, id) : major(amountMinor);
   const line_items = [];
   for (const line of p.lines) {
     const inclusive = line.taxInclusive ?? p.pricesIncludeTax;
@@ -160,21 +188,22 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
-    const total = p.pricesIncludeTax
-      ? inclusiveNet(local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId) : major(fee.amountMinor);
+    const total = chargeTotal(fee.amountMinor, local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId);
     if (typeof total !== 'string') return total;
     fee_lines.push({ name: fee.name, total, tax_status: fee.taxStatus, tax_class: fee.taxClass ?? '' });
   }
   for (const shipping of p.shipping ?? []) {
-    const total = p.pricesIncludeTax
-      ? inclusiveNet(local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId) : major(shipping.amountMinor);
+    const total = chargeTotal(shipping.amountMinor,
+      local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId);
     if (typeof total !== 'string') return total;
-    shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total });
+    // WCPOS (1.10.20 and 2.0.4 Orders.php) clears a shipping line's taxes when this meta says `none`.
+    shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total,
+      ...(shipping.taxStatus === 'none' ? { meta_data: [{ key: '_woocommerce_pos_data', value: JSON.stringify({ tax_status: 'none' }) }] } : {}) });
   }
   const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
   const cash = primary.method === 'cash';
   const meta_data = [{ key: WCPOS_UUID_META_KEY, value: p.clientOrderId }];
-  if (p.payments.length > 1) {
+  if (p.payments.length > 1 && !ledger) {
     meta_data.push({ key: '_woocommerce_pos_payments', value: JSON.stringify(p.payments.map((payment) => ({
       method: payment.method === 'cash' ? 'pos_cash' : 'pos_card',
       title: payment.method === 'cash' ? 'Cash' : 'Card', amount: major(payment.amountMinor),
@@ -187,9 +216,23 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   if (p.taxAddress) meta_data.push({ key: '_woocommerce_pos_tax_based_on', value: p.taxAddress });
   const billing = { ...(p.customer?.email ? { email: p.customer.email } : {}), ...(p.taxAddress ? wooAddress(p.customer?.billing) : {}) };
   const shipping = p.taxAddress && p.customer?.shipping ? wooAddress(p.customer.shipping) : undefined;
-  return { payload: {
-    status: 'completed', set_paid: true, currency: p.currency,
-    payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
+  // WCPOS 2.0 pushes only open statuses and strips money keys (v2.0.4 Writers/Pushable_Document.php:36,68-70; Services/
+  // Pos_Order_Audit.php:72): a ledger sale is pushed pending, then one `record` per payment (API/V2/Payments_Controller.php:
+  // 62-75,138-163; id, method_id, positive amount, matching currency, cash-only tendered: Ledger.php:603-636,1644-1661), or a
+  // free sale closed (Payments_Controller.php:69,172-179) with the envelope id at version nibble 8 as its uuid command_id
+  // (Money_Command.php:70-72): the same on every retry, never equal to a till's v7 id.
+  const money: WooMoneyCommand[] | undefined = !ledger ? undefined : closes
+    ? [{ path: 'close', body: { command_id: `${envelope.id.slice(0, 14)}8${envelope.id.slice(15)}` } }]
+    : p.payments.map((payment) => ({ path: 'payments', body: { payment: {
+      id: payment.clientPaymentId, method_id: payment.method === 'cash' ? 'pos_cash' : 'pos_card',
+      amount: major(payment.amountMinor), currency: p.currency,
+      ...(payment.method === 'cash' && payment.tenderedMinor !== undefined ? { tendered: major(payment.tenderedMinor) } : {}),
+    } } }));
+  return { ...(money ? { money } : {}), payload: {
+    ...(ledger ? { status: 'pending', currency: p.currency } : {
+      status: 'completed', set_paid: true, currency: p.currency,
+      payment_method: cash ? 'pos_cash' : 'pos_card', payment_method_title: cash ? 'Cash' : 'Card',
+    }),
     line_items,
     ...(fee_lines.length ? { fee_lines } : {}),
     ...(shipping_lines.length ? { shipping_lines } : {}),
@@ -211,11 +254,23 @@ function capability(flag: boolean | (() => boolean | Promise<boolean>) | undefin
 export function createWooCommandTransport(options: WooCommandTransportOptions): {
   send(batch: OrderCreateEnvelope[], context?: { local?: { orders?: ReadonlyMap<string, WooLocalOrder> } }): Promise<WooTransportOutcome>;
 } {
-  const fetch = options.fetch ?? globalThis.fetch;
-  let baseUrl = options.baseUrl;
-  while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  const { call, retry } = createWooCall(options);
+  // WCPOS 2.0.0 and later (its pre-releases too) take money only through the ledger; 1.10.x and the fork have none.
+  let siteLedger: boolean | undefined;
+  const ledgerStore = async (): Promise<boolean | undefined> => {
+    if (options.ledgerPayments !== undefined) return capability(options.ledgerPayments);
+    if (siteLedger === undefined) {
+      const version = (await call('site', { method: 'GET' })).body?.wcpos_version;
+      const major = typeof version === 'string' ? /^(\d+)\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.trim())?.[1] : undefined;
+      if (major !== undefined) siteLedger = Number(major) >= 2;
+    }
+    return siteLedger;
+  };
   return {
     async send(batch, context) {
+      if (batch.length === 0) return { kind: 'results', results: [] };
+      const ledger = await ledgerStore();
+      if (ledger === undefined) return { kind: 'retry', reason: 'store_version_unknown' };
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const results: CommandResult[] = [];
@@ -226,66 +281,98 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
             data: { storeCode: 'coupons_unsupported' } } });
           continue;
         }
-        const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList });
+        const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList, ledger });
         if ('error' in mapped) {
           results.push({ id: envelope.id, status: 'rejected', error: mapped.error });
           continue;
         }
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30000);
         let outcome: WooTransportOutcome;
-        try {
-          const response = await fetch(`${baseUrl}/push/orders`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...await options.getHeaders() },
-            body: JSON.stringify({ mutationId: envelope.id, operation: 'create', collection: 'orders',
-              recordId: envelope.payload.clientOrderId, baseRevision: null, payload: mapped.payload }),
-            signal: controller.signal,
-          });
-          const status = response.status;
-          const retryAfter = response.headers.get('Retry-After');
-          const seconds = retryAfter === null ? NaN : Number(retryAfter);
-          const retry = (reason: string): WooTransportOutcome => ({ kind: 'retry', reason,
-            ...(Number.isFinite(seconds) && seconds >= 0 ? { retryAfterMs: seconds * 1000 } : {}),
-          });
-          if (status === 401) outcome = { kind: 'unauthorized' };
-          else if (![200, 201, 400, 422, 403, 413, 415].includes(status)) outcome = retry(`status_${status}`);
-          else {
-            let body;
-            try { body = await response.json(); } catch {}
-            if (status === 200 || status === 201) {
-              const doc = body?.document;
-              const totalMinor = wooMinorFromDecimal(String(doc?.total), envelope.payload.currency);
-              if (doc?.id == null || totalMinor === undefined) {
-                outcome = retry(controller.signal.aborted ? 'timeout' : 'bad_body');
-              } else {
-                results.push({ id: envelope.id, status: 'applied', serverRefs: {
-                  orderId: String(doc.id), displayId: String(doc.number ?? doc.id), totalMinor,
-                }, ...(totalMinor !== envelope.payload.totalMinor ? { warnings: [{
-                  code: 'total_mismatch' as const, expectedMinor: envelope.payload.totalMinor, serverMinor: totalMinor,
-                }] } : {}) });
+        const pushed = await call('push/orders', { method: 'POST', body: { mutationId: envelope.id, operation: 'create', collection: 'orders',
+          recordId: envelope.payload.clientOrderId, baseRevision: null, payload: mapped.payload } });
+        const { status, body } = pushed;
+        if (status === 0) outcome = retry(pushed, 'network');
+        else if (status === 401) outcome = { kind: 'unauthorized' };
+        // WCPOS 2.0.4 refuses a till below its protocol: 426 wcpos_update_required (Services/Protocol_Gate.php:15-17).
+        else if (status === 426 && body?.code === 'wcpos_update_required') outcome = { kind: 'refused', status, reason: body?.message ?? body.code };
+        // A 2.0 store refuses a legacy `completed` push (API/V2/Writers/Pushable_Document.php:100-105): it was upgraded under this transport.
+        else if (!ledger && status === 422 && body?.code === 'wcpos_status_not_pushable' && options.ledgerPayments === undefined) { siteLedger = undefined; outcome = retry(pushed, 'ledger_store_detected'); }
+        else if (![200, 201, 400, 422, 403, 413, 415].includes(status)) outcome = retry(pushed, `status_${status}`);
+        else if (status === 200 || status === 201) {
+          const doc = body?.document;
+          const totalMinor = wooMinorFromDecimal(String(doc?.total), envelope.payload.currency);
+          // The push answers { document, currentRevision } (v2.0.4 API/V2/Write_Controller.php:767-783).
+          let revision = body?.currentRevision;
+          if (doc?.id == null || totalMinor === undefined || (mapped.money && (typeof revision !== 'string' || !revision))) {
+            outcome = retry(pushed, pushed.aborted ? 'timeout' : 'bad_body');
+          } else {
+            const orderId = String(doc.id), displayId = String(doc.number ?? doc.id);
+            // v2.0.4 leaves an under-covered order pos-partial (Projection.php:72-78) and refuses an over-covering record (Ledger.php:662-699).
+            if (ledger && totalMinor !== envelope.payload.totalMinor) {
+              const tillMinor = envelope.payload.totalMinor, digits = wooDigits(envelope.payload);
+              results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: `WooCommerce order #${displayId} totals ${wooMajor(totalMinor, digits)} but the till charged ${wooMajor(tillMinor, digits)}; no payment was recorded on it.`,
+                data: { orderId, storeCode: 'total_mismatch', tillMinor, serverMinor: totalMinor } } });
+              continue;
+            }
+            let failed: Answer | undefined;
+            let recorded = 0;
+            for (const command of mapped.money ?? []) {
+              const path = `orders/${orderId}/${command.path}`;
+              let answer = await call(path, { method: 'POST', body: { ...command.body, revision } });
+              // A stale revision is resent once, same body, with the server's (Command_Log.php:256-275); the
+              // fingerprint leaves out command_id and revision (Command_Log.php:47-48), so the resend is the same command.
+              const stale = answer.status === 409 && answer.body?.code === 'wcpos_revision_stale' ? answer.body?.data?.currentRevision : undefined;
+              if (typeof stale === 'string' && stale) answer = await call(path, { method: 'POST', body: { ...command.body, revision: stale } });
+              // Every 2xx money answer carries the revision after it (Payments_Controller.php:376-405); a refused row is
+              // never a 2xx (Payments_Controller.php:154-161, Ledger.php:698).
+              if (answer.status >= 200 && answer.status < 300 && typeof answer.body?.revision === 'string' && answer.body.revision) {
+                revision = answer.body.revision;
+                recorded += 1;
                 continue;
               }
-            } else if (status === 400 && body?.code === 'woocommerce_rest_invalid_coupon') {
-              const message = decodeCouponMessage(body?.message), quoted = /"([^"]*)"/.exec(message)?.[1];
-              const couponCode = envelope.payload.coupons?.find(({ code }) => code.toLowerCase() === quoted?.toLowerCase())?.code;
-              results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid', message,
-                data: { storeCode: body.code, ...(couponCode ? { couponCode } : {}) } } });
+              failed = answer;
+              break;
+            }
+            const code = failed?.body?.code;
+            const terminal = typeof code === 'string' && (code.startsWith('wcpos_') || code === 'rest_invalid_param' || code === 'rest_forbidden');
+            if (!failed) {
+              results.push({ id: envelope.id, status: 'applied', serverRefs: { orderId, displayId, totalMinor },
+                ...(totalMinor !== envelope.payload.totalMinor ? { warnings: [{
+                  code: 'total_mismatch' as const, expectedMinor: envelope.payload.totalMinor, serverMinor: totalMinor,
+                }] } : {}) });
               continue;
-            } else if (status === 400 || status === 422) {
-              results.push({ id: envelope.id, status: 'rejected', error: {
-                code: status === 400 && body?.code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
-                message: body?.message ?? `status_${status}`,
-              } });
-              continue;
+            } else if (failed.status === 401) outcome = { kind: 'unauthorized' };
+            // The store was rolled back below 2.0 under this transport: /site is read again.
+            else if (failed.status === 404 && code === 'rest_no_route') { siteLedger = undefined; outcome = retry(failed, 'ledger_route_missing'); }
+            // A retry resends the whole envelope: the push replays by mutationId (Write_Controller.php:153-157,219-240)
+            // and a recorded payment by its id, whatever revision it carries (Ledger.php:585-595, Command_Log.php:93-112).
+            // Lock busy: Order_Lock.php:136-147, Payments_Controller.php:103-105.
+            // Only known refusals are terminal: `Payments_Controller.php:394-398` answers a failed re-read after the effect stood as a plain 4xx; a replay answers the stored outcome.
+            else if (failed.status < 400 || failed.status >= 500 || (failed.status === 409
+              && ['wcpos_revision_stale', 'wcpos_payment_locked', 'woo_rxdb_sync_record_locked'].includes(code)) || !terminal) {
+              outcome = retry(failed, failed.status >= 200 && failed.status < 300 ? (failed.aborted ? 'timeout' : 'bad_body') : code ?? `status_${failed.status}`);
             } else {
-              outcome = { kind: 'refused', status, reason: body?.message ?? body?.code ?? `status_${status}` };
+              // Stock is held on record and close (Ledger.php:701-705,1848-1852; Services/Stock_Validator.php:382-392).
+              results.push({ id: envelope.id, status: 'rejected', error: {
+                code: failed.status === 400 && code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
+                message: `WooCommerce order #${displayId} was ${recorded === 0 ? 'created but not paid' : `created and part paid (${recorded} of ${mapped.money!.length} payments recorded)`}: ${failed.body?.message ?? code ?? `status_${failed.status}`}`,
+                data: { orderId, storeCode: code ?? `status_${failed.status}`, ...(recorded ? { recorded } : {}) } } });
+              continue;
             }
           }
-        } catch {
-          outcome = { kind: 'retry', reason: controller.signal.aborted ? 'timeout' : 'network' };
-        } finally {
-          clearTimeout(timeout);
+        } else if (status === 400 && body?.code === 'woocommerce_rest_invalid_coupon') {
+          const message = decodeCouponMessage(body?.message), quoted = /"([^"]*)"/.exec(message)?.[1];
+          const couponCode = envelope.payload.coupons?.find(({ code }) => code.toLowerCase() === quoted?.toLowerCase())?.code;
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid', message,
+            data: { storeCode: body.code, ...(couponCode ? { couponCode } : {}) } } });
+          continue;
+        } else if (status === 400 || status === 422) {
+          results.push({ id: envelope.id, status: 'rejected', error: {
+            code: status === 400 && body?.code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
+            message: body?.message ?? `status_${status}`,
+          } });
+          continue;
+        } else {
+          outcome = { kind: 'refused', status, reason: body?.message ?? body?.code ?? `status_${status}` };
         }
         return results.length ? { kind: 'results', results } : outcome;
       }

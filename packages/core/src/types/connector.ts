@@ -10,6 +10,7 @@ import type { ListOrdersQuery, OrderFilterField, StoreOrder, StoreOrderPage } fr
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
+import type { ClosureReads } from './closures';
 import type { Cashier } from './cashier';
 import type { FailureClass } from '../connectivity';
 import type { DisplayAdvertisement, DisplaySignalling } from './display-signalling';
@@ -86,6 +87,8 @@ export interface ServerCapabilities {
   /** The receipt-email version a store's `/tally/v1/info` advertises as `receiptEmail: { v: n }` (vendurepos gap 12.1b).
    * Absent means the store does not email receipts. */
   receiptEmail?: number;
+  /** The platform plugin's own contract version, from `/tally/v1/info`'s top-level `pluginContract` (#1114). Absent when not sent or malformed; each connector says what a version adds. */
+  pluginContract?: number;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */
@@ -175,6 +178,7 @@ const maxVersion = (list: unknown): number | undefined => {
  * `orderUpdate` is the max of `contracts["order.update"]` when valid, otherwise absent (ADR-090).
  * `customerDisplay` is present only when `parseDisplayAdvertisement` accepts it; a malformed one warns (ADR-085).
  * `receiptEmail` is `v` of `receiptEmail: { v }` when `v` is a safe integer above 0; a malformed one is left out and warns.
+ * `pluginContract` is the top-level `pluginContract` when it is a safe integer of 1 or more; a malformed one is left out and warns (#1114).
  * Absent `taxRounding` uses the default; a present malformed value is unknown, so settings wait.
  * A non-object body is also unknown, not a statement of the store's defaults.
  */
@@ -183,7 +187,7 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     warn?.('non-object info body: capabilities unknown');
     return undefined;
   }
-  const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay, receiptEmail } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown; receiptEmail?: unknown };
+  const { contracts, taxRounding, lineTax, registerApproval, coupons, customerDisplay, receiptEmail, pluginContract } = body as { contracts?: Record<string, unknown> | null; taxRounding?: unknown; lineTax?: unknown; registerApproval?: unknown; coupons?: unknown; customerDisplay?: unknown; receiptEmail?: unknown; pluginContract?: unknown };
   const register = maxVersion(contracts?.register);
   const orderRefund = maxVersion(contracts?.['order.refund']);
   const orderReopen = maxVersion(contracts?.['order.reopen']);
@@ -197,6 +201,8 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
   const parsed = parseRegisterApproval(registerApproval, warn);
   const display = parseDisplayAdvertisement(customerDisplay, warn);
   const emailVersion = parseReceiptEmail(receiptEmail, warn);
+  const contractOk = typeof pluginContract === 'number' && Number.isSafeInteger(pluginContract) && pluginContract >= 1;
+  if (pluginContract !== undefined && !contractOk) warn?.(`malformed pluginContract: ${JSON.stringify(pluginContract)}`);
   return { orderCreate: maxVersion(contracts?.['order.create']) ?? 1,
     ...(orderRefund !== undefined ? { orderRefund } : {}),
     ...(orderReopen !== undefined ? { orderReopen } : {}),
@@ -204,7 +210,8 @@ export function parseInfoCapabilities(body: unknown, warn?: (reason: string) => 
     ...(register !== undefined ? { register } : {}), ...(rounding ? { taxRounding: rounding } : {}),
     ...(parsedLineTax ? { lineTax: parsedLineTax } : {}),
     ...(parsed ? { registerApproval: parsed } : {}), ...(coupons === true ? { coupons: true } : {}),
-    ...(display ? { customerDisplay: display } : {}), ...(emailVersion !== undefined ? { receiptEmail: emailVersion } : {}) };
+    ...(display ? { customerDisplay: display } : {}), ...(emailVersion !== undefined ? { receiptEmail: emailVersion } : {}),
+    ...(contractOk ? { pluginContract } : {}) };
 }
 
 export interface AuthField {
@@ -420,6 +427,8 @@ export interface TallyConnector {
    * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
    */
   listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
+  /** The store's Z closures (ADR-093): online only. `undefined` when the connector has none: the app hides its server-closure features. */
+  closures?: ClosureReads;
   /**
    * The signed-in cashier and their neutral POS permissions (v2 parity A12), mapped from the platform's own roles or
    * capabilities. Read-only. `null` when the connector has no cashier to describe; `undefined` (no method) when the

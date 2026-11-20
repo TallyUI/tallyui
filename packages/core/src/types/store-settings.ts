@@ -30,7 +30,7 @@ export interface StoreSettings {
   calcDiscountsSequentially?: boolean;
   /** WCPOS's "prevent overselling" store setting: WCPOS v2's stock guard runs only when it is on. Absent: the connector did not read it; treat it as off. */
   preventOverselling?: boolean;
-  /** The store's own money format, for `@tallyui/pos`'s `CurrencyProvider` `format`. Display only: amounts, rounding and orders never read it. Absent: the connector did not read one; money reads through Intl as before. */
+  /** The store's own money format, for `@tallyui/pos`'s `CurrencyProvider` `format`, and how typed amounts are read (#672); rounding and orders never read it. Absent: the connector did not read one; money reads through Intl as before. */
   moneyFormat?: MoneyFormat;
   shippingTaxClass?: string;
   taxClassSlugs?: string[];
@@ -75,6 +75,8 @@ export interface StoreTaxRate {
   compound?: boolean;
   /** Whether the rate also applies to shipping. */
   shipping?: boolean;
+  /** The backend's conditions for an override rate (Medusa: a rate that applies only to the listed records), as `reference` (the kind, e.g. `product_type`) and `referenceId`. Absent for a rate with none, and from a backend without rules. */
+  rules?: { reference: string; referenceId: string }[];
 }
 
 /**

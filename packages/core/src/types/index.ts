@@ -13,7 +13,7 @@ export type { ReplicationAdapter } from './replication';
 
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
-  PendingPairing, DisplayRecord, SignalMessage,
+  PendingPairing, DisplayRecord, SignalMessage, TillDevice,
 } from './display-signalling';
 
 export type { FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
@@ -36,7 +36,7 @@ export type {
   OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
   OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
   OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
-  CommandWarning, CommandError, CommandResult, OrderCreateLine,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateMeta,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,

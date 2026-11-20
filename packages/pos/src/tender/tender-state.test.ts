@@ -13,6 +13,7 @@ import {
   tenderReducer,
   type TenderAction,
 } from './tender-state';
+import { paidUnitsByLine } from './split-units';
 
 it.each([
   [18250, 25, 4563],
@@ -118,6 +119,16 @@ describe('tenderReducer', () => {
 });
 
 describe('initTenderState', () => {
+  it('P2-U2: rebuilds allocations from payments and keeps the default without payments', () => {
+    const payments = [{ id: 'p1', method: 'cash', amountMinor: 300, units: { l1: 2 } }];
+    const before = { ...initialTenderState, view: 'amount', methodId: 'cash', entryMinor: 500 };
+    expect(initTenderState({ methodId: 'cash', balanceMinor: 500, payments })).toEqual({
+      ...before, unitAllocations: { p1: { l1: 2 } },
+    });
+    expect(initTenderState({ methodId: 'cash', balanceMinor: 500 })).toEqual(before);
+    expect(initTenderState({ methodId: null, balanceMinor: 500, payments }).unitAllocations).toEqual({ p1: { l1: 2 } });
+  });
+
   it('starts from scratch without a stored method', () => {
     expect(initTenderState({ methodId: null, balanceMinor: 1234 })).toBe(initialTenderState);
   });
@@ -308,4 +319,149 @@ it('loops item groups, preserves their paying methods, and only marks covered gr
   });
   expect(next.linesPaidBy).toEqual(done.linesPaidBy);
   expect(planLegs(plan, [...rows, ...rows, ...rows], 1300).thisPaymentMinor).toBe(700);
+});
+
+describe('a voided leg frees its plan\'s lines (#1133)', () => {
+  const plan = { kind: 'items' as const, lineIds: [1, 2], firstMinor: 1000, ways: 3, from: 0 };
+  const record = (state: typeof initialTenderState, rows: { title: string; amountMinor: number }[]) =>
+    tenderReducer(state, {
+      type: 'tender-recorded',
+      rowsSinceFrom: rows,
+      balanceMinor: 1500 - rows.reduce((sum, row) => sum + row.amountMinor, 0),
+    });
+
+  it('CL1: a void below firstMinor frees the lines', () => {
+    const paid = record({ ...initialTenderState, plan }, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const voided = record(paid, []);
+    expect(voided.linesPaidBy).toEqual({});
+    expect(tenderReducer(voided, { type: 'open-split' }).pickedLineIds).toEqual([1, 2]);
+    expect(tenderReducer(voided, { type: 'toggle-split-line', lineId: 1 }).pickedLineIds).toEqual([1]);
+  });
+
+  it('CL2: a void that leaves the sum covered keeps the lines and their first titles', () => {
+    const paid = record({ ...initialTenderState, plan }, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const extra = record(paid, [
+      { title: 'Cash', amountMinor: 1000 },
+      { title: 'Card', amountMinor: 200 },
+    ]);
+    expect(extra.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const voided = record(extra, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(voided.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+  });
+
+  it('CL3: lines of an earlier plan survive a void in the current plan', () => {
+    const paid = record(
+      { ...initialTenderState, plan, linesPaidBy: { 9: ['Card'] } },
+      [{ title: 'Cash', amountMinor: 1000 }],
+    );
+    expect(paid.linesPaidBy).toEqual({ 9: ['Card'], 1: ['Cash'], 2: ['Cash'] });
+    expect(record(paid, []).linesPaidBy).toEqual({ 9: ['Card'] });
+  });
+
+  it('CL4: a partial void, then a later leg covers the plan again with the new titles', () => {
+    const paid = record({ ...initialTenderState, plan }, [
+      { title: 'Cash', amountMinor: 600 },
+      { title: 'Card', amountMinor: 400 },
+    ]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash', 'Card'], 2: ['Cash', 'Card'] });
+    const voided = record(paid, [{ title: 'Cash', amountMinor: 600 }]);
+    expect(voided.linesPaidBy).toEqual({});
+    const covered = record(voided, [
+      { title: 'Cash', amountMinor: 600 },
+      { title: 'SumUp', amountMinor: 400 },
+    ]);
+    expect(covered.linesPaidBy).toEqual({ 1: ['Cash', 'SumUp'], 2: ['Cash', 'SumUp'] });
+  });
+});
+
+describe('split by units', () => {
+  const pick = (state: typeof initialTenderState, units: number, unpaidUnits = 3) =>
+    tenderReducer(state, { type: 'set-split-units', lineId: 'a', units, unpaidUnits });
+
+  it('S1: starts with no picked units and no allocations', () => {
+    expect(initialTenderState.pickedUnits).toEqual({});
+    expect(initialTenderState.unitAllocations).toEqual({});
+  });
+
+  it('S2: picks units into a new object, clamps to the unpaid units, and deletes a zero pick', () => {
+    const before = initialTenderState;
+    const two = pick(before, 2);
+    expect(two.pickedUnits).toEqual({ a: 2 });
+    expect(before.pickedUnits).toEqual({});
+    const five = pick(two, 5);
+    expect(five.pickedUnits).toEqual({ a: 3 });
+    expect(two.pickedUnits).toEqual({ a: 2 });
+    expect(pick(five, 0).pickedUnits).toEqual({});
+  });
+
+  it('S3: refuses a fractional or negative count with the same state object', () => {
+    const state = pick(initialTenderState, 1);
+    expect(pick(state, 1.5)).toBe(state);
+    expect(pick(state, -1)).toBe(state);
+    expect(pick(state, 1, 2.5)).toBe(state);
+  });
+
+  const pressed = () => {
+    const p1 = tenderReducer(pick(initialTenderState, 1), { type: 'tender-started', paymentId: 'p1' });
+    return { p1, p2: tenderReducer(pick(p1, 1), { type: 'tender-started', paymentId: 'p2' }) };
+  };
+
+  it('S4: freezes the picks to the pressed payment id and clears them', () => {
+    const { p1, p2 } = pressed();
+    expect(p1.unitAllocations).toEqual({ p1: { a: 1 } });
+    expect(p1.pickedUnits).toEqual({});
+    expect(p2.unitAllocations).toEqual({ p1: { a: 1 }, p2: { a: 1 } });
+  });
+
+  it('S5: keeps both fields without a payment id, or with no picks', () => {
+    const picked = pick(initialTenderState, 1);
+    const started = tenderReducer(picked, { type: 'tender-started' });
+    expect(started.pickedUnits).toEqual({ a: 1 });
+    expect(started.unitAllocations).toBe(picked.unitAllocations);
+    expect(started.unitAllocations).toEqual({});
+    const { p1 } = pressed();
+    const empty = tenderReducer(p1, { type: 'tender-started', paymentId: 'p2' });
+    expect(empty.unitAllocations).toBe(p1.unitAllocations);
+    expect(empty.unitAllocations).toEqual({ p1: { a: 1 } });
+  });
+
+  it('S6: keeps allocations through tender-recorded, set-plan and clear-plan; reset clears both', () => {
+    const { p2 } = pressed();
+    const allocations = { p1: { a: 1 }, p2: { a: 1 } };
+    const recorded = tenderReducer(p2, {
+      type: 'tender-recorded',
+      rowsSinceFrom: [{ title: 'Cash', amountMinor: 100 }],
+      balanceMinor: 100,
+    });
+    expect(recorded.unitAllocations).toEqual(allocations);
+    const planned = tenderReducer(recorded, {
+      type: 'set-plan',
+      plan: { kind: 'even', ways: 2, from: 0 },
+      balanceMinor: 100,
+    });
+    expect(planned.unitAllocations).toEqual(allocations);
+    const cleared = tenderReducer(planned, { type: 'clear-plan', balanceMinor: 100 });
+    expect(cleared.unitAllocations).toEqual(allocations);
+    const reset = tenderReducer(cleared, { type: 'reset' });
+    expect(reset.pickedUnits).toEqual({});
+    expect(reset.unitAllocations).toEqual({});
+  });
+
+  it('S7: keys allocations by payment id, so two Cash payments never collide', () => {
+    let state = initialTenderState;
+    for (const paymentId of ['p1', 'p2']) {
+      state = tenderReducer(state, { type: 'pick-method', methodId: 'cash', prefillMinor: 0, readerId: null });
+      state = pick(state, 1, 2);
+      state = tenderReducer(state, { type: 'tender-started', paymentId });
+      state = tenderReducer(state, {
+        type: 'tender-recorded',
+        rowsSinceFrom: [{ title: 'Cash', amountMinor: 100 }],
+        balanceMinor: 100,
+      });
+    }
+    expect(paidUnitsByLine(state.unitAllocations, ['p1', 'p2'])).toEqual({ a: 2 });
+    expect(paidUnitsByLine(state.unitAllocations, ['p2'])).toEqual({ a: 1 });
+  });
 });

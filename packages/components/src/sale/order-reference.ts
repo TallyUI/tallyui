@@ -7,3 +7,6 @@ export function orderReference(order: { id: string; serverRefs?: { displayId?: s
 
 /** The receipt and Orders say this under a note that went below order.create 7 (ADR-083 condition 2). */
 export const NOTE_NOT_SENT = "The customer note couldn't be sent to the store.";
+/** Orders says these when a sale's tax ids or custom fields went below order.create 12 (ADR-092 condition 1). */
+export const TAX_IDS_NOT_SENT = "The customer's tax IDs couldn't be sent to the store.";
+export const META_NOT_SENT = "The order's custom fields couldn't be sent to the store.";

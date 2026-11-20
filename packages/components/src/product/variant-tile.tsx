@@ -2,6 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { StockStatus } from '@tallyui/core';
 import { DEFAULT_TILE_FIELDS, type TileFields } from '@tallyui/pos';
 import { VStack } from '../ui';
+import { InCartBadge } from './in-cart-badge';
 import { PressVeil } from './press-veil';
 import { ProductImage } from './product-image';
 import { ProductTitle } from './product-title';
@@ -11,9 +12,11 @@ import { STOCK_STATUS_LABELS } from './product-stock-badge';
 // (P/option-chips.tsx:7-23), then price and stock. The chips are labels; a tap on the tile adds the variant.
 // Its words follow the grid's Tile Fields as v2's gridFields (variation-tile.tsx:136,180): name off keeps name and
 // chips as the label, SKU then barcode after the price, and out of stock still shows while the price does.
-export function VariantTile({ name, chips, price, stockStatus, onPress, testID, fields: tileFields, sku, barcode }: {
+export function VariantTile({ name, chips, price, stockStatus, onPress, testID, fields: tileFields, sku, barcode, inCart }: {
   name: string; chips: string[]; price?: string; stockStatus: StockStatus; onPress: () => void; testID: string;
   fields?: Partial<TileFields>; sku?: string; barcode?: string;
+  /** How many of this variant the cart holds, top-right as v2's per-variation InCartCount (variation-tile.tsx:176-177). */
+  inCart?: number;
 }) {
   const fields: TileFields = { ...DEFAULT_TILE_FIELDS, ...tileFields };
   const facts = [fields.sku && sku ? `SKU ${sku}` : '', fields.barcode ? barcode ?? '' : ''].filter(Boolean);
@@ -38,6 +41,7 @@ export function VariantTile({ name, chips, price, stockStatus, onPress, testID, 
             : null}
         </VStack>
         <PressVeil pressed={pressed} className="rounded-lg" />
+        <InCartBadge count={inCart ?? 0} className="absolute right-2 top-2" testID={`${testID}-in-cart`} />
       </>}
     </Pressable>
   );

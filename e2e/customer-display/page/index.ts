@@ -8,6 +8,7 @@ import { createDisplayClient, type DisplayClient, type DisplayClientPhase } from
 import { line, receiptWith } from '../../../packages/pos/src/customer-display/fixture.test-helper';
 import type { DisplayConfig } from '../../../packages/pos/src/customer-display/protocol';
 import { createTillDisplayService, type TillDisplayService } from '../../../packages/pos/src/customer-display/till-display-service';
+import { createTillDevice } from '../../../packages/pos/src/customer-display/till-device';
 import { createTillPairing, type TillPairing } from '../../../packages/pos/src/customer-display/till-pairing';
 import type { PeerLinkState } from '../../../packages/pos/src/customer-display/webrtc';
 
@@ -16,7 +17,7 @@ type BridgeResult = { ok: unknown } | { error: DisplaySignallingErrorCode };
 
 /** Every method on the seam; the record type makes the compiler refuse a missing one. */
 const METHODS: Record<Method, true> = {
-  mint: true, pending: true, confirm: true, decline: true, list: true, forget: true, sendSignal: true,
+  registerDevice: true, mint: true, pending: true, confirm: true, decline: true, list: true, forget: true, sendSignal: true,
   receiveSignals: true, postSnapshot: true, claim: true, collect: true, displaySendSignal: true,
   displayReceiveSignals: true, readSnapshot: true,
 };
@@ -51,12 +52,15 @@ const configFor = (display: { displayId: string; name: string }): DisplayConfig 
 });
 
 function startTill(): void {
-  service = createTillDisplayService({
-    signalling, context: () => tillContext, deviceId: 'till-1', advertisement, configFor, onError,
+  let key: string | null = null;
+  const device = createTillDevice({
+    signalling, deviceId: 'till-1', onError,
+    keys: { load: async () => key, save: async (next) => void (key = next), clear: async () => void (key = null) },
   });
+  service = createTillDisplayService({ signalling, context: () => tillContext, device, advertisement, configFor, onError });
   const own = service;
   own.onChange(() => own.displays.forEach((entry) => linkStates.push(entry.link)));
-  pairing = createTillPairing({ signalling, context: () => tillContext, deviceId: 'till-1', service, onError });
+  pairing = createTillPairing({ signalling, context: () => tillContext, device, service, onError });
 }
 
 /** Mints a code and resolves it once the pairing shows it. */

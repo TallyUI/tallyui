@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import { formatMoney, useFormatMoney, minorUnitDigits, moneyFromDecimalString, type Money } from '@tallyui/core';
+import { formatMoney, useFormatMoney, useMoneyFormat, minorUnitDigits, moneyFromDecimalString, normalizeMoneyText, type Money, type MoneyFormat } from '@tallyui/core';
 import type { AppliedDiscount, Discount } from '@tallyui/pos';
 import { DiscountBadge } from '../cart';
 import { DialogFooter } from '../ui/dialog';
@@ -11,10 +11,10 @@ import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList, C
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
 /** The cashier's entry as a TallyUI Discount (a percent, or integer minor units), or the inline error to show. */
-export function parseDiscount(type: Discount['type'], text: string, currency: string): Discount | string {
+export function parseDiscount(type: Discount['type'], text: string, currency: string, format?: MoneyFormat): Discount | string {
   // A comma-locale keypad (inputMode="decimal") types "1,50": a single comma is the decimal separator.
-  const raw = text.trim();
-  const trimmed = raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
+  const raw = normalizeMoneyText(text, format).trim();
+  const trimmed = !format?.decimalSeparator && !format?.thousandSeparator && raw.split(',').length === 2 ? raw.replace(',', '.') : raw;
   if (!trimmed) return 'Enter a discount.';
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return 'Enter a number.';
   const value = Number(trimmed);
@@ -123,8 +123,9 @@ export function DiscountForm({ title, currency, onApply, onClose, layout = 'inli
   const [type, setType] = useState<Discount['type']>(dialog ? 'fixed' : 'percentage'); // v2 add-discount.tsx:44 opens at Amount.
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const format = useMoneyFormat();
   function apply() {
-    const parsed = parseDiscount(type, text, currency);
+    const parsed = parseDiscount(type, text, currency, format);
     const refused = typeof parsed === 'string' ? parsed : onApply(parsed);
     setError(refused);
     if (refused === null) onClose();

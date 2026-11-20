@@ -193,6 +193,39 @@ describe('Cart', () => {
     expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
   });
 
+  it('K1: at order.create 6 a WooCommerce store offers No tax on shipping, and sends it (#1115)', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 6, lineTax: { none: true, classes: true },
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click('Shipping');
+    expect(screen.getByRole('switch', { name: 'No tax' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Tax class' })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).toBe('none');
+  });
+
+  it("K2: at order.create 6 a WooCommerce shipping line's edit form offers No tax, and sends it (#1115)", { timeout: 20_000 }, () => {
+    render(<SaleHarness capabilities={{ orderCreate: 6, lineTax: { none: true, classes: true },
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click('Shipping');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).not.toBe('none');
+    click('Edit total of Delivery');
+    click('Edit Delivery');
+    const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
+    fireEvent.click(shippingForm.getByRole('switch', { name: 'No tax' }));
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).toBe('none');
+  });
+
   it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
@@ -482,6 +515,40 @@ describe('Cart', () => {
     click(chip);
     expect(sale.order.discounts).toEqual([]);
     expect(screen.queryByRole('button', { name: chip })).toBeNull();
+  });
+
+  it('hides the order discount chips under the lines with orderDiscountChips false', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+    expect(within(screen.getByTestId('cart-footer')).getByText(`−${money(50)}`)).toBeTruthy();
+  });
+
+  it("keeps each line's discount chips with orderDiscountChips false", () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(sale.order.lineItems[0].id, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: `Remove discount −${money(50)}` })).toBeTruthy();
+  });
+
+  it('keeps the Order discount button with orderDiscountChips false and orderActions true', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderDiscountChips={false} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    expect(screen.getByRole('button', { name: 'Order discount' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `Remove discount Order discount −${money(50)}` })).toBeNull();
+  });
+
+  it('lets afterSubtotal carry the order discount without a second Discount row', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} orderActions={false} orderDiscountChips={false}
+      afterSubtotal={<Text testID="order-discount-row">Discount</Text>} couponDiscountMinor={sale.order.display.orderDiscountMinor} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => { sale.applyDiscount(null, { type: 'fixed', value: 50 }); });
+    const footer = within(screen.getByTestId('cart-footer'));
+    expect(footer.getByTestId('order-discount-row')).toBeTruthy();
+    expect(footer.queryByText(`−${money(50)}`)).toBeNull();
+    expect(footer.getAllByText('Discount')).toHaveLength(1);
   });
 
   it("centres the empty cart's icon and line in the cart, as v2 does", () => {
@@ -794,5 +861,152 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
     act(() => sale.add(blue, traits));
     expect(screen.getByTestId('cart-line-sku').textContent).toBe('BLUE');
     expect(columnHeads()).toEqual(['Qty', '', 'Item', 'Price', 'Total']);
+  });
+
+  describe('percent fees and Amount Includes Tax (vendurepos gap 2.10)', () => {
+    const chargeForm = (name: string) => within(screen.getByRole('group', { name }));
+    const fees = () => sale.order.fees ?? [];
+    function addFee(name: string, amount: string, { percent = false, toggleTax = false } = {}) {
+      click('Add charge');
+      const form = chargeForm('Add charge');
+      fireEvent.change(form.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
+      if (percent) fireEvent.click(form.getByTestId('charge-form-unit-percent'));
+      if (toggleTax) fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
+      click('Apply');
+    }
+    const price = (index: number) => within(screen.getByTestId(`cart-fee-${index}`)).getByTestId('cart-charge-price').textContent;
+
+    it('C1: adds a fee at %, shows the percent in the Price cell, and follows the cart', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '10', { percent: true });
+      expect(sale.order.fees).toMatchObject([{ name: 'Service', percent: 10 }]);
+      expect(price(0)).toBe('10%');
+      const before = fees()[0].amountMinor;
+      expect(before).toBeGreaterThan(0);
+      act(() => sale.add(blue, traits));
+      expect(fees()[0].amountMinor).not.toBe(before);
+      expect(price(0)).toBe('10%');
+    });
+
+    it('C2: editing a percent fee back to an amount clears its percent', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '10', { percent: true });
+      click('Edit total of Service');
+      click('Edit Service');
+      const form = chargeForm('Edit Service');
+      fireEvent.click(form.getByTestId('charge-form-unit-amount'));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+      click('Apply');
+      expect(sale.order.fees).toHaveLength(1);
+      expect(fees()[0].percent).toBeUndefined();
+      expect(fees()[0].amountMinor).toBe(200);
+      expect(price(0)).toBe(money(200));
+    });
+
+    it("C3: a fee's own tax mode is set only when it differs from the store's, and clears", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const store = sale.order.pricesIncludeTax;
+      addFee('Bag', '1.00');
+      expect(Object.keys(fees()[0])).not.toContain('amountIncludesTax');
+      addFee('Wrap', '1.00', { toggleTax: true });
+      expect(fees()[1].amountIncludesTax).toBe(!store);
+      click('Edit total of Wrap');
+      click('Edit Wrap');
+      const form = chargeForm('Edit Wrap');
+      expect(form.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
+      fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      click('Apply');
+      expect(fees()[1].amountIncludesTax).toBeUndefined();
+    });
+
+    it("C4: a percent over 100 shows the builder's refusal inline and adds no fee", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '150', { percent: true });
+      expect(chargeForm('Add charge').getByRole('alert').textContent).toMatch(/Percent must be > 0 and <= 100/);
+      expect(fees()).toHaveLength(0);
+    });
+
+    it("C5: a Shipping charge's own tax mode is set by the switch and cleared on edit", { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const store = sale.order.pricesIncludeTax;
+      click('Add charge');
+      click('Shipping');
+      const form = chargeForm('Add charge');
+      fireEvent.change(form.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
+      fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
+      click('Apply');
+      expect(sale.order.shipping![0].amountIncludesTax).toBe(!store);
+      click('Edit total of Courier');
+      click('Edit Courier');
+      const edit = chargeForm('Edit Courier');
+      expect(edit.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
+      fireEvent.click(edit.getByRole('switch', { name: 'Amount Includes Tax' }));
+      click('Apply');
+      expect(sale.order.shipping![0].amountIncludesTax).toBeUndefined();
+    });
+
+    it('C6: editing a fee with its own tax mode to % hides the switch and clears the mode', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Wrap', '1.00', { toggleTax: true });
+      expect(fees()[0].amountIncludesTax).toBe(!sale.order.pricesIncludeTax);
+      click('Edit total of Wrap');
+      click('Edit Wrap');
+      const form = chargeForm('Edit Wrap');
+      fireEvent.click(form.getByTestId('charge-form-unit-percent'));
+      expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '10' } });
+      click('Apply');
+      expect(fees()[0].percent).toBe(10);
+      expect(fees()[0].amountIncludesTax).toBeUndefined();
+    });
+
+    it('H1: chargeTaxSwitch={false} hides the switch and a new fee takes the store\'s tax mode', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      click('Cancel');
+      addFee('Service', '5');
+      expect(fees()).toHaveLength(1);
+      expect('amountIncludesTax' in fees()[0]).toBe(false);
+    });
+
+    it('H2: chargeTaxSwitch={false} keeps an existing fee\'s own tax mode through an edit', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} chargeTaxSwitch={false} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      const own = !sale.order.pricesIncludeTax;
+      act(() => { sale.addFee({ name: 'Service', amountMinor: 500, amountIncludesTax: own }); });
+      click('Edit total of Service');
+      click('Edit Service');
+      const form = chargeForm('Edit Service');
+      expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
+      fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '7.00' } });
+      click('Apply');
+      expect(fees()[0].amountMinor).toBe(700);
+      expect(fees()[0].amountIncludesTax).toBe(own);
+    });
+
+    it('H3: without chargeTaxSwitch the Add charge form shows the switch', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      click('Add charge');
+      expect(chargeForm('Add charge').getByRole('switch', { name: 'Amount Includes Tax' })).toBeTruthy();
+    });
+
+    it('P1: a fractional percent shows unrounded in the Price cell', { timeout: 20_000 }, () => {
+      render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      addFee('Service', '12.5', { percent: true });
+      expect(fees()[0].percent).toBe(12.5);
+      expect(price(0)).toBe('12.5%');
+    });
   });
 });

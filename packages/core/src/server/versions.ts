@@ -8,8 +8,9 @@
  * 7 (ADR-083) adds the sale note; 8 (#722) adds `taxAddress` and the customer's addresses; 9 (#790) adds each coupon's per-line amounts.
  * 10 adds each payment's methodId (ruling A, 2026-11-18).
  * 11 is 10 plus the customer's billing and shipping on a sale not taxed by address (ADR-086 d2 as amended 2026-11-19).
+ * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092).
  */
-export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 /** The till's capability for the contract versions shared by all five register commands; a server passes its own. */
 export const SUPPORTED_REGISTER_VERSIONS: readonly number[] = [1]
 /** The till's capability for order.refund versions (ADR-080); a server passes its own. */

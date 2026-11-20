@@ -1,4 +1,4 @@
-import type { CustomerAddress, Money, TaxRounding } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, Money, OrderCreateMeta, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
 /** A store-priced coupon's share of one line (#790, docs/contract/order-create-v9.md), tax-exclusive, in integer minor units. */
@@ -36,6 +36,9 @@ export interface Order {
   payments: Payment[];
   customer: CustomerSummary | null;
   note: string;
+  /** The sale's order meta, WooCommerce's custom fields (ADR-092 6d). Set with `useSale().setMeta`, parked with the draft,
+   *  stored on the order, and sent at order.create 12. Keys are unique; none starts with `_`. Absent when there is none. */
+  meta?: OrderCreateMeta[];
   currency: string;
   pricesIncludeTax: boolean;
   /** The store's tax rounding strategy the figures were computed with (#287), from the sale's tax context; absent is per_order. */
@@ -102,6 +105,8 @@ export interface LineItem {
   /** The names in attributes the cashier picked for the variant's "Any" option groups (#495); absent when none. */
   anyAttributes?: string[];
   sku: string;
+  /** The SKU the line was added with, set the first time the cashier edits a catalogue line's SKU (ADR-092 6b); absent means `sku` is the catalogue's. */
+  catalogueSku?: string;
   imageUrl?: string;
   unitPriceMinor: number;     // as sold, integer
   /** The catalogue's regular unit price, in the line's own tax mode like unitPriceMinor; absent on custom lines (ADR-077 d3). */
@@ -138,7 +143,7 @@ export interface ChargeLine {
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
+export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
 
 export interface LineTaxLine {
   code?: string;
@@ -149,6 +154,7 @@ export interface LineTaxLine {
 }
 
 export interface Discount {
+  id?: string; // as an input, a restored discount's own (#742); a taken id throws
   type: 'percentage' | 'fixed';
   value: number;              // percentage: percent (e.g. 10); fixed: integer minor units
   label?: string;
@@ -171,12 +177,14 @@ export interface Payment {
   methodId?: string;
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
-  // For cash, record the full amount tendered here, not the capped amount: `finalizeOrder`
-  // caps it at the balance due and writes out `tenderedMinor`/`changeMinor` itself.
+  // Cash records the full tendered amount, except a leg taken for picked units with `tenderedMinor`:
+  // it records the pick's money here and keeps the amount handed over and the change.
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;
   reference?: string;
+  /** The units of each line (`String(line id)`) this leg paid for, set when it was taken with unit picks (#1133). Absent for a leg taken by amount. */
+  units?: Readonly<Record<string, number>>;
 }
 
 export interface CustomerSummary {
@@ -187,6 +195,9 @@ export interface CustomerSummary {
    *  order.create 8 when the sale was taxed on one of them (#722). */
   billing?: CustomerAddress;
   shipping?: CustomerAddress;
+  /** The sale's tax ids (ADR-092 6a): set with `useSale().setTaxIds`, parked with the draft, stored on the order and sent
+   *  at order.create 12 without `label`. A picked customer's own (`Customer.taxIds`) may be passed in `setCustomer`, which refuses a list `setTaxIds` would refuse. */
+  taxIds?: CustomerTaxId[];
 }
 
 export interface PaymentMethod {
@@ -197,6 +208,7 @@ export interface PaymentMethod {
 }
 
 export interface AddLineInput {
+  id?: string; // a restored line's own (#742), used when the line does not merge; a taken id throws
   productId: string;
   /** A kept store line: never merged */
   storeLineId?: string;

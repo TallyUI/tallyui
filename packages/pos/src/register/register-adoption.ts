@@ -25,7 +25,8 @@ const counted = (number: unknown, sales: unknown, refunds: unknown): Counted | u
  * consecutively from the store's counter, the truth, with chained totals. Only the refused closure spends its retry
  * (`number_retried`). The register document, the closure rows and the command rows are rewritten in that order, the
  * refused closure's last, and each changed command is requeued under a new command id (ADR-068 d6). Any other
- * refusal, a second refusal of a renumbered closure, or malformed counters writes nothing.
+ * refusal, a second refusal of a renumbered closure, or malformed counters writes nothing. A closure with no store_key
+ * counts as this store's (#665).
  */
 async function renumberRefused(commands: RegisterCommandCollection, closures: ClosureCollection, host: RegisterHost,
   storeKey: string, registerId: string) {
@@ -34,12 +35,12 @@ async function renumberRefused(commands: RegisterCommandCollection, closures: Cl
     readFresh(closures, { selector: { register_id: registerId } }),
   ]);
   const refused = submits.find((submit) => submit.syncStatus === 'rejected' && !NON_BLOCKING_REJECTIONS.has(submit.error?.code ?? ''));
-  const row = local.find(({ id, store_key }) => id === refused?.payload.closureId && (store_key ?? null) === storeKey);
+  const row = local.find(({ id, store_key }) => id === refused?.payload.closureId && (store_key ?? storeKey) === storeKey);
   if (refused?.error?.code !== 'register_closure_number_invalid' || !row) return;
   const sent = new Map(submits.map((submit) => [submit.payload.closureId, submit]));
   const unsent = (closure: Closure) => {
     const submit = sent.get(closure.id);
-    return (closure.store_key ?? null) === storeKey && closure.closed_at >= row.closed_at && (!submit || submit.syncStatus === 'pending'
+    return (closure.store_key ?? storeKey) === storeKey && closure.closed_at >= row.closed_at && (!submit || submit.syncStatus === 'pending'
       || (submit.syncStatus === 'rejected' && submit.error?.code === 'register_closure_number_invalid'));
   };
   let queued = local.filter(unsent).sort((a, b) => a.closed_at.localeCompare(b.closed_at) || a.id.localeCompare(b.id));
@@ -128,7 +129,7 @@ export async function adoptRegisterResults({ commands, sessions, registerId, hos
 }
 
 export async function takeOverSession({ commands, sessions, sessionId, now, registerContract }: SessionTarget & {
-  /** The store's register contract (`capabilities.register`); take over needs 2, and a missing value counts as below 2. */
+  /** The store's register contract (`capabilities.register`); take over needs 2, and a missing value counts as below 2; 3 sends the take-over as version 3 (#1105). */
   registerContract?: number;
 }): Promise<void> {
   if ((registerContract ?? 0) < 2) throw new RegisterTakeOverError('REGISTER_TAKEOVER_UNSUPPORTED');
@@ -140,7 +141,7 @@ export async function takeOverSession({ commands, sessions, sessionId, now, regi
       if (doc.syncStatus !== 'rejected' || doc.error?.code !== 'register_session_already_open'
         || typeof doc.error.data?.sessionId !== 'string') throw new RegisterSessionRequiredError();
       const { error, ...rest } = doc;
-      return { ...rest, commandId: uuidv7(), version: 2, syncStatus: 'pending',
+      return { ...rest, commandId: uuidv7(), version: (registerContract ?? 0) >= 3 ? 3 : 2, syncStatus: 'pending',
         payload: { ...doc.payload, supersedes: error.data!.sessionId }, updatedAt: now ?? new Date().toISOString() };
     });
   });

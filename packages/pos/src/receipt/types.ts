@@ -54,7 +54,7 @@ export interface ReceiptData {
     taxMinor: number;           // order.display.taxMinor
     totalMinor: number;         // order.display.totalMinor
   };
-  payments: { method: string; amountMinor: number; reference?: string }[];
+  payments: { method: string; amountMinor: number; changeMinor?: number; reference?: string }[];
   changeDueMinor: number;
   /** What the store owes back on a reopened sale (ADR-090); present only when above 0. Never part of changeDueMinor. */
   refundDueMinor?: number;

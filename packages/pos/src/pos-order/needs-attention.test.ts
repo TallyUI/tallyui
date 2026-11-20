@@ -99,3 +99,28 @@ describe('needsAttention', () => {
     expect(needsAttention([base, rejected])).toEqual([rejected]);
   });
 });
+
+describe('attention handled (ADR-092 6f)', () => {
+  it.each<[string, Partial<PosOrder>]>([
+    ['rejected', { syncStatus: 'rejected' }],
+    ['applied with a known warning', { syncStatus: 'applied', warnings: [{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }] }],
+    ['late (lateSessionId)', { lateSessionId: 'closed' }],
+    ['with local warnings', { localWarnings: [{ code: 'customer_omitted', field: 'email' }] }],
+  ])('N1 leaves out a %s order stamped for its commandId, and keeps it stamped for another or unstamped', (_reason, extra) => {
+    const order: PosOrder = { ...sale(), ...extra };
+    expect(needsAttention([{ ...order, attentionHandledFor: order.commandId }])).toEqual([]);
+    const other: PosOrder = { ...order, attentionHandledFor: 'another-command' };
+    expect(needsAttention([other])).toEqual([other]);
+    expect(needsAttention([order])).toEqual([order]);
+  });
+
+  it('N2 returns only the unstamped rejected order, newest first as before', () => {
+    const base = sale();
+    const stamped: PosOrder = { ...base, id: 'stamped', syncStatus: 'rejected', createdAt: '2026-01-03T00:00:00Z', attentionHandledFor: base.commandId };
+    const older: PosOrder = { ...base, id: 'older', commandId: 'command-older', syncStatus: 'rejected', createdAt: '2026-01-01T00:00:00Z' };
+    const newer: PosOrder = { ...base, id: 'newer', commandId: 'command-newer', syncStatus: 'applied', createdAt: '2026-01-02T00:00:00Z',
+      warnings: [{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }] };
+    expect(needsAttention([stamped, older])).toEqual([older]);
+    expect(needsAttention([older, stamped, newer])).toEqual([newer, older]);
+  });
+});
