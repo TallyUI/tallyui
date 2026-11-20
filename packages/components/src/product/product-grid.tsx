@@ -30,6 +30,8 @@ export interface ProductGridProps extends Omit<VStackProps, 'children'> {
    * unless `showUnsellable`.
    */
   showUnsellable?: boolean;
+  /** Rendered after the last tile, inside the list (for example a paging spinner); not shown with `emptyState`. */
+  footerSlot?: ReactNode;
   className?: string;
 }
 
@@ -55,6 +57,7 @@ export function ProductGrid({
   filterSlot,
   emptyState,
   showUnsellable = false,
+  footerSlot,
   className,
   ...viewProps
 }: ProductGridProps) {
@@ -78,6 +81,7 @@ export function ProductGrid({
       {hasItems ? (
         <FlatList
           key={numColumns}
+          testID="product-grid-list"
           data={visibleItems}
           numColumns={numColumns}
           keyExtractor={(item, index) => String(item.id ?? index)}
@@ -90,6 +94,7 @@ export function ProductGrid({
               {renderItem(item, index)}
             </View>
           )}
+          ListFooterComponent={footerSlot}
         />
       ) : (
         emptyState ?? null
