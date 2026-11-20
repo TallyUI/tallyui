@@ -252,3 +252,32 @@ describe('dismiss on web', () => {
     }
   });
 });
+
+it('R1: a closed force-mounted popover does not take Escape or outside presses from an open one', () => {
+  const dismissals = [
+    () => fireEvent.keyDown(document, { key: 'Escape' }),
+    () => fireEvent.pointerDown(screen.getByTestId('outside')),
+  ];
+  for (const dismiss of dismissals) {
+    const onA = vi.fn();
+    const { unmount } = render(
+      <>
+        <PortalHost />
+        <button data-testid="outside">Outside</button>
+        <Popover.Root open onOpenChange={onA}>
+          <Popover.Portal>
+            <Popover.Content testID="a" />
+          </Popover.Portal>
+        </Popover.Root>
+        <Popover.Root open={false} onOpenChange={() => {}}>
+          <Popover.Portal forceMount>
+            <Popover.Content forceMount testID="b" />
+          </Popover.Portal>
+        </Popover.Root>
+      </>,
+    );
+    dismiss();
+    expect(onA).toHaveBeenCalledWith(false);
+    unmount();
+  }
+});
