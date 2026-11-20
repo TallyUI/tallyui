@@ -75,6 +75,8 @@ export interface StoreTaxRate {
   compound?: boolean;
   /** Whether the rate also applies to shipping. */
   shipping?: boolean;
+  /** The backend's conditions for an override rate (Medusa: a rate that applies only to the listed records), as `reference` (the kind, e.g. `product_type`) and `referenceId`. Absent for a rate with none, and from a backend without rules. */
+  rules?: { reference: string; referenceId: string }[];
 }
 
 /**

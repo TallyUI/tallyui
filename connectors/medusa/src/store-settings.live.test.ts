@@ -5,6 +5,11 @@ import { medusaStoreSettings } from './store-settings';
 
 const { MEDUSA_DEV_URL: baseUrl, MEDUSA_DEV_EMAIL: email, MEDUSA_DEV_PASSWORD: password } = process.env;
 
+// What L-A1 reads from the unfiltered tax-regions list; every field is checked at run time, so each is `unknown`.
+type LiveRule = { reference: unknown; reference_id: unknown };
+type LiveRate = { id: unknown; name: unknown; rate: unknown; rules: LiveRule[] };
+type LiveRegion = { country_code: unknown; province_code: unknown; tax_rates: LiveRate[] };
+
 // Read-only (ADR-048): sign-in, the admin reads store-settings.ts itself sends, and one
 // GET /store/products with the resulting pricingContext. The reviewer runs this against
 // medusa-dev; it is skipped elsewhere.
@@ -54,9 +59,9 @@ describe.skipIf(!baseUrl || !email || !password)('live Medusa store settings', (
 
     expect(Array.isArray(body.tax_regions)).toBe(true);
     expect(typeof body.count).toBe('number');
-    const regions: any[] = body.tax_regions;
-    const rates: any[] = regions.flatMap((region) => region.tax_rates ?? []);
-    const rules: any[] = rates.flatMap((rate) => (Array.isArray(rate.rules) ? rate.rules : []));
+    const regions: LiveRegion[] = body.tax_regions;
+    const rates: LiveRate[] = regions.flatMap((region) => region.tax_rates ?? []);
+    const rules: LiveRule[] = rates.flatMap((rate) => (Array.isArray(rate.rules) ? rate.rules : []));
     console.info(
       `L-A1: ${regions.length} regions (count ${body.count}), ${regions.filter((r) => r.province_code !== null).length} province regions, ${rates.length} rates, ${rates.filter((r) => r.rules?.length > 0).length} with rules, references ${JSON.stringify([...new Set(rules.map((r) => r.reference))])}, rule keys ${JSON.stringify([...new Set(rules.flatMap((r) => Object.keys(r)))])}`,
     );
@@ -76,6 +81,29 @@ describe.skipIf(!baseUrl || !email || !password)('live Medusa store settings', (
     for (const rule of rules) {
       expect(typeof rule.reference).toBe('string');
       expect(typeof rule.reference_id).toBe('string');
+    }
+  }, 30000);
+
+  // L-B1 (#673): the connector maps that list into allTaxRates.
+  it('lists every tax region rate as allTaxRates, with rate rules', async () => {
+    const { token } = await medusaAdminUserAuth.signIn!(url, { email: email!, password: password! });
+    const context = { connectorId: 'medusa', baseUrl: url, headers: medusaAdminUserAuth.getHeaders({ token }) };
+
+    const { allTaxRates } = await medusaStoreSettings(context, { country: 'de' });
+    expect(Array.isArray(allTaxRates)).toBe(true);
+    console.info(`L-B1: ${allTaxRates!.length} rows, ${allTaxRates!.filter((row) => row.rules).length} with rules`);
+    for (const row of allTaxRates!) {
+      expect(typeof row.id).toBe('string');
+      expect(typeof row.name).toBe('string');
+      expect(typeof row.rate).toBe('string');
+      expect(Number.isFinite(Number(row.rate))).toBe(true);
+      expect(typeof row.location.country).toBe('string');
+    }
+    const withRules = allTaxRates!.filter((row) => row.rules);
+    expect(withRules.length).toBeGreaterThan(0);
+    for (const rule of withRules.flatMap((row) => row.rules!)) {
+      expect(typeof rule.reference).toBe('string');
+      expect(typeof rule.referenceId).toBe('string');
     }
   }, 30000);
 });
