@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { splitUnitLines } from '@tallyui/pos';
+import { createOrderBuilder, splitUnitLines } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { pickFigure, useTender } from '../sale/use-tender';
 import { blue, SaleHarness, sale, traits } from './sale-harness';
@@ -231,4 +231,70 @@ it.each([true, false])('W12: with a pending card leg, cash takes the pick capped
   expect(sale.order.payments[1]).toMatchObject({ method: 'cash', amountMinor: target, tenderedMinor: target,
     units: Object.fromEntries(pickedLines.map((line) => [line.id, line.quantity])) });
   expect(sale.order.balanceDueMinor).toBe(balance - target);
+});
+
+it.each(['external', 'cash'] as const)('W13: a full %s pick refuses a short entry and takes the due', (method) => {
+  const id = start(); // Default EUR cash has no rounding.
+  const balance = sale.order.balanceDueMinor;
+  press(`tender-method-${method}`);
+  press('tender-split-chip');
+  pick(id, 2);
+  expect(pickFigure(sale.order, tender.state.pickedUnits)!.minor).toBe(balance);
+  enter(balance - 1);
+  expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).toBe('true');
+  expect(text('tender-entry-hint')).toBe(`This payment is ${money(balance)} for the picked items`);
+  press('tender-take');
+  expect(sale.order.payments).toEqual([]);
+  enter(balance);
+  expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(sale.order.payments).toMatchObject([{ method, amountMinor: balance, units: { [id]: 2 } }]);
+});
+
+it('W14: closing Split clears picks, hides the picker and restores the balance figure', () => {
+  const id = start();
+  const balance = sale.order.balanceDueMinor;
+  press('tender-split-chip');
+  pick(id, 1);
+  expect(text('tender-entry-amount')).toBe(money(tender.picker!.unitMinor(id, 1)));
+  press('tender-split-chip');
+  expect(tender.state.pickedUnits).toEqual({});
+  expect(tender.picker).toBeUndefined();
+  expect(text('tender-entry-amount')).toBe(money(balance));
+  expect(text('tender-quick-exact')).toBe(`Exact ${money(balance)}`);
+});
+
+it('W15: voiding a cash pick removes its change from the headline', () => {
+  const id = start();
+  press('tender-split-chip');
+  pick(id, 1);
+  const target = tender.picker!.unitMinor(id, 1);
+  enter(target + 1500);
+  press('tender-take');
+  expect(sale.order.payments[0].changeMinor).toBe(1500);
+  expect(text('tender-change')).toBe(`Change ${money(1500)}`);
+  press(`tender-leg-${sale.order.payments[0].id}-void`);
+  expect(sale.order.payments[0].status).toBe('voided');
+  expect(sale.order.changeDueMinor).toBe(0);
+  expect(screen.queryByTestId('tender-change')).toBeNull();
+});
+
+it('W16: a locked leg does not contribute its change to the headline', () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 250000, pricesIncludeTax: false }, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
+  builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
+  builder.addPayment({ method: 'cash', amountMinor: 500, storePaymentId: 'p1', locked: true, changeMinor: 1500 });
+  render(<SaleHarness>{() => <SharedTender />}</SaleHarness>);
+  act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+  act(() => sale.startTender('cash'));
+  expect(sale.order.payments).toMatchObject([{ locked: true, changeMinor: 1500 }]);
+  expect(sale.order.changeDueMinor).toBe(0);
+  expect(screen.queryByTestId('tender-change')).toBeNull();
+});
+
+it('W17: unitMinor floors fractional picked counts without throwing', () => {
+  const id = start();
+  press('tender-split-chip');
+  expect(() => tender.picker!.unitMinor(id, 1.5)).not.toThrow();
+  expect(tender.picker!.unitMinor(id, 1.5)).toBe(tender.picker!.unitMinor(id, 1));
 });

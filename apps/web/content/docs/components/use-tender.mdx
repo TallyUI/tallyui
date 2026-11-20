@@ -19,6 +19,10 @@ Cart's `picker` prop lands with #1055.
 
 The hook returns `state: TenderState`, `dispatch: (action: TenderAction) => void`, and `picker: TenderPicker | undefined`. The picker exposes `picked`, `paid` (including units held by pending payments), `unitMinor(lineId, units)`, and `onPick(lineId, units)`. It is available in tender after opening Split or picking units, unless a split plan is active. Back clears the picks.
 
+Closing Split clears the picks.
+
 `pickFigure(order, picked)` returns the remaining valid `picks` and their `minor` amount, or `null` when none remain. Unknown lines are dropped and counts are clamped to unpaid units.
 
 A part pick sets this payment's amount. Non-cash entries must match it; cash may exceed it and records the tendered amount and change. Cash below it is refused. A full pick keeps the normal tender behaviour, including cash rounding.
+
+A full pick refuses an amount below the due.

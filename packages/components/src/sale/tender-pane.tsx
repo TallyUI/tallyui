@@ -82,7 +82,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const partPick = pick !== null && target < balance;
   const entry = state.entryDirty ? state.entryMinor : target;
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, method);
-  const pickRefused = partPick && entry > 0 && (givesChange ? entry < target : entry !== target);
+  const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
+    || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   const entryChange = changeMinor(figures.entryMinor, figures.appliedMinor, givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
@@ -107,6 +108,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
   const hint = partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
+    : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
     : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
@@ -140,7 +142,12 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           {balanceInCaption ? <>{' '}<Text testID="tender-balance">{money(balance)}</Text></> : null}
         </Text>
         {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
-          onPress={() => dispatch(splitOn ? { type: 'clear-plan', balanceMinor: balance } : { type: 'open-split' })}>
+          onPress={() => {
+            if (splitOn) {
+              dispatch({ type: 'clear-plan', balanceMinor: balance });
+              for (const lineId of Object.keys(state.pickedUnits)) dispatch({ type: 'set-split-units', lineId, units: 0, unpaidUnits: 0 });
+            } else dispatch({ type: 'open-split' });
+          }}>
           <Text className="font-semibold text-foreground">{t('pos_checkout.split')}</Text>
         </Pressable> : null}
       </View>
