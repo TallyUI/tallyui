@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, formatMoney, type SyncContext } from '@tallyui/core';
-import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, wooOnOrderLinesLine, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
+import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, wooOnOrderLinesLine, wooOnOrderLines20Line, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
   WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
@@ -603,7 +603,7 @@ describe('readWooCapabilities', () => {
 
   it.each([
     { wcpos_version: '1.10.19' }, { wcpos_version: '1.10.0' }, { wcpos_version: '1.10.20-beta.1' }, { wcpos_version: '1.10.21-beta.1' },
-    { wcpos_version: '1.11.0' }, { wcpos_version: '2.0.4' }, {}, { wcpos_version: 'latest' },
+    { wcpos_version: '1.11.0' }, {}, { wcpos_version: 'latest' },
   ])('G2: uses order version 3 with no capabilities key and site %j', async (body) => {
     statusBody = {};
     siteBody = body;
@@ -612,7 +612,7 @@ describe('readWooCapabilities', () => {
 
   it.each([
     [['order_create_v5'], '1.10.20', 8], [['order_create_v5'], '1.10.19', 8], [['order_create_v5'], '2.0.4', 8],
-    [['order_create_v5'], '1.8.99', 5], [['products_id_fast_path'], '2.0.4', 3], [[], '1.10.20', 3],
+    [['order_create_v5'], '1.8.99', 5], [['products_id_fast_path'], '2.0.4', 6], [[], '1.10.20', 3],
   ])('G3: lets the capabilities %j decide over site version %s, giving %i', async (capabilities, wcpos_version, orderCreate) => {
     statusBody = { capabilities };
     siteBody = { wcpos_version };
@@ -629,6 +629,44 @@ describe('readWooCapabilities', () => {
     if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('network'));
     else fetchMock.mockResolvedValueOnce(Response.json({ wcpos_version: '1.10.20' }, { status: 500 }));
     expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: false });
+  });
+
+  // Woo 16b: stock WCPOS 2.0.4+ (2.0 line) sends ['products_id_fast_path'] or no array; its version is the fallback, capped at 6.
+  // Coupons-off cases are not tested: only the /site version gates coupons (1.9.0+), so a 2.0.4 store always has them.
+  it.each([
+    [['products_id_fast_path'], '2.0.9', 6], [undefined, '2.0.4', 6], [['order_create_v5'], '2.0.4', 8],
+  ])('H1/H3: with capabilities %j, stock site version %s gives order version %i', async (capabilities, wcpos_version, orderCreate) => {
+    statusBody = capabilities === undefined ? {} : { capabilities };
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate, coupons: true });
+  });
+
+  it.each([
+    { wcpos_version: '2.0.3' }, { wcpos_version: '2.0.0' }, { wcpos_version: '2.0.4-beta.1' }, { wcpos_version: '2.0.5-beta.1' },
+    { wcpos_version: '2.1.0' }, { wcpos_version: '3.0.0' }, { wcpos_version: 'x' }, {},
+  ])('H2: uses order version 3 with capabilities [products_id_fast_path] and site %j', async (body) => {
+    statusBody = { capabilities: ['products_id_fast_path'] };
+    siteBody = body;
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3 });
+  });
+
+  it('H5: keeps order version 3 when status answers HTTP 500 on a 2.0.4 site', async () => {
+    siteBody = { wcpos_version: '2.0.4' };
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: true });
+  });
+
+  it('H5: keeps order version 3 when site answers HTTP 500 with capabilities [products_id_fast_path]', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores)).mockResolvedValueOnce(Response.json({ capabilities: ['products_id_fast_path'] }))
+      .mockResolvedValueOnce(Response.json({ wcpos_version: '2.0.4' }, { status: 500 }));
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 3, coupons: false });
+  });
+
+  it.each([
+    ['2.0.4', true], ['2.0.9', true], [' 2.0.4 ', true], ['2.0.3', false], ['2.0.4-beta.1', false], ['2.0.4+build.1', false],
+    ['2.1.0', false], ['3.0.0', false], ['1.10.20', false], ['2.0', false], [undefined, false],
+  ])('wooOnOrderLines20Line(%j) is %s', (version, expected) => {
+    expect(wooOnOrderLines20Line(version)).toBe(expected);
   });
 
   it.each([
