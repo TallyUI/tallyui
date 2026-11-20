@@ -94,7 +94,7 @@ export function ProductGrid({
               {renderItem(item, index)}
             </View>
           )}
-          ListFooterComponent={footerSlot}
+          ListFooterComponent={footerSlot == null ? null : <>{footerSlot}</>}
         />
       ) : (
         emptyState ?? null
