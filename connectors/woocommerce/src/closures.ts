@@ -94,14 +94,14 @@ async function read(context: SyncContext, path: string): Promise<unknown> {
   return response.json().catch(() => { throw unexpected(); });
 }
 
-async function getClosure(context: SyncContext, id: string, currency: string): Promise<StoreClosure | null> {
+// The route is read before `stores`, so a store without it never needs `stores`; recount passes the currency it holds.
+async function getClosure(context: SyncContext, id: string, currency?: string): Promise<StoreClosure | null> {
   const body = await read(context, `closures/${encodeURIComponent(id)}`);
-  return body === null ? null : toClosure(body, currency);
+  return body === null ? null : toClosure(body, currency ?? await wooStoreCurrency(context));
 }
 
 export const wooClosures: ClosureReads = {
   async list(context, query = {}) {
-    const currency = await wooStoreCurrency(context);
     // per_page defaults to 50 and anything above 100 is a 400 (list_args :381, Closure_Store.php:23).
     const perPage = Math.min(query.perPage ?? 50, 100);
     const params = new URLSearchParams();
@@ -114,20 +114,20 @@ export const wooClosures: ClosureReads = {
     const body = await read(context, `closures?${params}`);
     if (body === null) return { items: [], hasMore: false };
     if (!Array.isArray(body)) throw unexpected();
+    const currency = await wooStoreCurrency(context);
     // The list sends no paging header (Closures_Controller.php:209), so a full page means there may be more.
     return { items: body.map((row) => toClosure(row, currency)), hasMore: body.length === perPage };
   },
 
   async get(context, id) {
     // Only GET closures/{id} carries `corrections` (Closures_Controller.php:173-175).
-    return getClosure(context, id, await wooStoreCurrency(context));
+    return getClosure(context, id);
   },
 
   async last(context, registerId) {
-    const currency = await wooStoreCurrency(context);
     // Needs register_id; with no closure the store answers 200 with `null` (Closures_Controller.php:187-207).
     const body = await read(context, `closures/last?${new URLSearchParams({ register_id: registerId })}`);
-    return body === null ? null : toClosure(body, currency);
+    return body === null ? null : toClosure(body, await wooStoreCurrency(context));
   },
 
   async recount(context, id, input) {
@@ -137,6 +137,7 @@ export const wooClosures: ClosureReads = {
       || !Object.entries(counted).every(([tender, minor]) => TENDER_KEY.test(tender) && Number.isInteger(minor) && minor >= 0)) {
       throw new Error('WooCommerce closure recount: invalid counted');
     }
+    // Unlike the reads, `stores` comes first here: `counted` is encoded with the currency's digits before the POST.
     const currency = await wooStoreCurrency(context);
     const digits = minorUnitDigits(currency);
     const response = await request(context, `closures/${encodeURIComponent(id)}/recount`, {
@@ -168,10 +169,9 @@ export const wooClosures: ClosureReads = {
   },
 
   async markPrinted(context, id) {
-    const currency = await wooStoreCurrency(context);
     // Answers with the closure row after recording the print (Closures_Controller.php:156-165).
     const response = await request(context, `closures/${encodeURIComponent(id)}/print`, {});
-    if (response.status === 200) return toClosure(await response.json().catch(() => { throw unexpected(); }), currency);
+    if (response.status === 200) return toClosure(await response.json().catch(() => { throw unexpected(); }), await wooStoreCurrency(context));
     const code = await errorCode(response);
     // A print needs manage_woocommerce_pos_cash and view_woocommerce_pos_reports (Closures_Controller.php:77-86).
     if (response.status === 403 && code === 'rest_forbidden') return { refused: 'forbidden' };

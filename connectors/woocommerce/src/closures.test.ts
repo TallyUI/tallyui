@@ -54,7 +54,7 @@ beforeEach(() => {
     const path = `${url.pathname.slice(new URL(baseUrl).pathname.length + 1)}${url.search}`;
     const method = init?.method ?? 'GET';
     sent.push({ method, path, ...(typeof init?.body === 'string' ? { body: JSON.parse(init.body) } : {}) });
-    if (path === 'stores') return Response.json([store]);
+    if (path === 'stores') return routes['GET stores'] ? routes['GET stores']() : Response.json([store]);
     const answer = routes[`${method} ${url.pathname.slice(new URL(baseUrl).pathname.length + 1)}`];
     if (!answer) throw new Error(`Unexpected request: ${method} ${url}`);
     return answer();
@@ -77,7 +77,12 @@ describe('wooClosures', () => {
       const page = await wooClosures.list(ctx());
       expect(page).toEqual({ items: [fullClosure], hasMore: false });
       expect(page.items[0]).not.toHaveProperty('printedAt');
-      expect(sent[0]).toEqual({ method: 'GET', path: 'stores' });
+      expect(sent).toEqual([{ method: 'GET', path: 'closures?per_page=50' }, { method: 'GET', path: 'stores' }]);
+    });
+
+    it('P1: reads printed_at_gmt as a UTC instant', async () => {
+      routes['GET closures'] = () => Response.json([{ ...fullRow(), printed_at_gmt: '2026-11-20 17:06:00' }]);
+      expect((await wooClosures.list(ctx())).items[0].printedAt).toBe('2026-11-20T17:06:00Z');
     });
 
     it('sends the given filters and per_page', async () => {
@@ -85,7 +90,7 @@ describe('wooClosures', () => {
       await wooClosures.list(ctx(), { registerId, after: '2026-11-01', before: '2026-11-20', page: 3, perPage: 20 });
       const query = new URLSearchParams(closureRequests()[0].path.split('?')[1]);
       expect(Object.fromEntries(query)).toEqual({ register_id: registerId, after: '2026-11-01', before: '2026-11-20', page: '3', per_page: '20' });
-      expect(fetchMock.mock.calls[1][1]).toEqual({ method: 'GET', headers: context.headers, signal: undefined });
+      expect(fetchMock.mock.calls[0][1]).toEqual({ method: 'GET', headers: context.headers, signal: undefined });
     });
 
     it('sends per_page=50 by default and caps it at 100', async () => {
@@ -111,6 +116,13 @@ describe('wooClosures', () => {
     it('returns an empty page when the store has no closures route (404)', async () => {
       routes['GET closures'] = refusal(404, 'rest_no_route');
       expect(await wooClosures.list(ctx())).toEqual({ items: [], hasMore: false });
+    });
+
+    it('R1: a 404 needs no stores answer', async () => {
+      routes['GET closures'] = refusal(404, 'rest_no_route');
+      routes['GET stores'] = () => new Response(null, { status: 500 });
+      expect(await wooClosures.list(ctx())).toEqual({ items: [], hasMore: false });
+      expect(sent).toEqual([{ method: 'GET', path: 'closures?per_page=50' }]);
     });
   });
 
@@ -169,6 +181,13 @@ describe('wooClosures', () => {
       expect(await wooClosures.get(ctx(), closureId)).toBeNull();
     });
 
+    it('R2: a 404 needs no stores answer', async () => {
+      routes[`GET closures/${closureId}`] = refusal(404, 'wcpos_closure_not_found');
+      routes['GET stores'] = () => new Response(null, { status: 500 });
+      expect(await wooClosures.get(ctx(), closureId)).toBeNull();
+      expect(sent).toEqual([{ method: 'GET', path: `closures/${closureId}` }]);
+    });
+
     it('rejects with ConnectorUnauthorizedError for a 403', async () => {
       routes[`GET closures/${closureId}`] = refusal(403, 'rest_forbidden');
       await expect(wooClosures.get(ctx(), closureId)).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
@@ -190,6 +209,13 @@ describe('wooClosures', () => {
     it('returns null for a 200 null body', async () => {
       routes['GET closures/last'] = () => Response.json(null);
       expect(await wooClosures.last(ctx(), registerId)).toBeNull();
+    });
+
+    it('R2: a 404 needs no stores answer', async () => {
+      routes['GET closures/last'] = refusal(404, 'rest_no_route');
+      routes['GET stores'] = () => new Response(null, { status: 500 });
+      expect(await wooClosures.last(ctx(), registerId)).toBeNull();
+      expect(sent).toEqual([{ method: 'GET', path: `closures/last?register_id=${registerId}` }]);
     });
   });
 
@@ -252,6 +278,14 @@ describe('wooClosures', () => {
       expect('closure' in result).toBe(false);
     });
 
+    it('A2: rejects rest_forbidden with an approval as unauthorized, without the password', async () => {
+      routes[recountPath] = refusal(403, 'rest_forbidden');
+      const error = await wooClosures.recount(ctx(), closureId, { ...input, approval }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConnectorUnauthorizedError);
+      expect(error).toMatchObject({ status: 403 });
+      expect((error as Error).message).not.toContain(approval.password);
+    });
+
     it('rejects a 500 without the approver credentials anywhere', async () => {
       const spies = [vi.spyOn(console, 'log'), vi.spyOn(console, 'warn'), vi.spyOn(console, 'error')];
       routes[recountPath] = refusal(500, 'wcpos_closure_write_failed');
@@ -282,6 +316,29 @@ describe('wooClosures', () => {
     it('maps a 404 to not_found', async () => {
       routes[printPath] = refusal(404, 'wcpos_closure_not_found');
       expect(await wooClosures.markPrinted(ctx(), closureId)).toEqual({ refused: 'not_found' });
+    });
+
+    it('R3: a 404 needs no stores answer', async () => {
+      routes[printPath] = refusal(404, 'rest_no_route');
+      routes['GET stores'] = () => new Response(null, { status: 500 });
+      expect(await wooClosures.markPrinted(ctx(), closureId)).toEqual({ refused: 'not_found' });
+      expect(sent).toEqual([{ method: 'POST', path: `closures/${closureId}/print`, body: {} }]);
+    });
+  });
+
+  describe('A1 unauthorized', () => {
+    const unauthorized = () => new Response(null, { status: 401 });
+    it.each([
+      ['list', 'GET closures', () => wooClosures.list(ctx())],
+      ['get', `GET closures/${closureId}`, () => wooClosures.get(ctx(), closureId)],
+      ['last', 'GET closures/last', () => wooClosures.last(ctx(), registerId)],
+      ['recount', `POST closures/${closureId}/recount`, () => wooClosures.recount(ctx(), closureId, { correctionId, counted: { cash: 0 }, reason: '' })],
+      ['markPrinted', `POST closures/${closureId}/print`, () => wooClosures.markPrinted(ctx(), closureId)],
+    ] as const)('%s rejects a 401 as unauthorized', async (_name, route, call) => {
+      routes[route] = unauthorized;
+      const error = await call().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConnectorUnauthorizedError);
+      expect(error).toMatchObject({ status: 401 });
     });
   });
 });
