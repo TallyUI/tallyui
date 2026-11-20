@@ -143,8 +143,10 @@ export function wcposSourceFromSentOrder(order: SentOrder, config: ReceiptConfig
     id: order.id, number: order.id, createdAt: order.createdAt, customerNote: order.note, ...tillSource(order, receipt, lines),
     // Cash records the full tender; the change is the order's.
     payments: order.payments.map((p) => ({
-      methodId: p.method, methodTitle: methodTitle(p.method), amountMinor: p.amountMinor,
+      methodId: p.method, methodTitle: methodTitle(p.method), amountMinor: p.tenderedMinor ?? p.amountMinor,
       ...(p.reference !== undefined ? { transactionId: p.reference } : {}),
+      ...(p.tenderedMinor !== undefined ? { tenderedMinor: p.tenderedMinor } : {}),
+      ...(p.changeMinor !== undefined ? { changeMinor: p.changeMinor } : {}),
     })),
     changeMinor: receipt.changeDueMinor,
     ...(receipt.refundDueMinor ? { refundDueMinor: receipt.refundDueMinor } : {}),

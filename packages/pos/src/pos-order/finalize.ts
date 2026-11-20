@@ -226,7 +226,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const refundDue = heldByStore ? lockedMinor - order.totalMinor : 0;
   if (order.paidMinor < order.totalMinor) throw new Error('finalize: underpaid');
   let change = heldByStore ? 0 : order.paidMinor - order.totalMinor;
-  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' && !p.locked ? p.amountMinor : 0), 0);
+  const cash = order.payments.reduce((sum, p) => sum + (p.method === 'cash' && !p.locked && p.tenderedMinor === undefined ? p.amountMinor : 0), 0);
   if (change > cash) throw new Error('finalize: change exceeds cash');
   // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
   // v3 also sends each line discount's id and each tax code (as taxByRate's codes); an id is never clamped.
@@ -268,6 +268,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     method: payment.method as PosOrderPayment['method'],
     ...(payment.methodId !== undefined && sendable(payment.methodId, 64) ? { methodId: payment.methodId } : {}),
     amountMinor: payment.amountMinor,
+    ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
+    ...(payment.changeMinor !== undefined ? { changeMinor: payment.changeMinor } : {}),
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
@@ -284,7 +286,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   });
   for (let i = payments.length - 1; i >= 0; i--) {
     const payment = payments[i];
-    if (payment.method !== 'cash') continue;
+    if (payment.method !== 'cash' || order.payments[i].tenderedMinor !== undefined) continue;
     payment.tenderedMinor = payment.amountMinor;
     payment.changeMinor = Math.min(change, payment.tenderedMinor);
     payment.amountMinor -= payment.changeMinor;
