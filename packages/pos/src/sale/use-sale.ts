@@ -881,6 +881,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
       // Kept codes with no figures (a stopped re-price) park their coupons stale, so the resume prices them (as main does).
       const stale = keptCodes() && !snapshot.coupons?.length;
+      if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
       await writeOrderDraft(opts.drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot);
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale();

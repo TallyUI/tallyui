@@ -410,6 +410,22 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(amounts(result)).toEqual([['a', 300]]);
   });
 
+  it('T20: park refuses a stale sale that holds a live leg; nothing is written and the sale is unchanged', async () => {
+    const { result, parked } = await voidedOffline();
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
+    await settle();
+    expect(result.current.order.couponPricesStale).toBe(true);
+    expect(result.current.order.totalMinor).toBe(1200);
+    let refusal: unknown;
+    await act(async () => { refusal = await result.current.park(); });
+    expect(refusal).toBe(COUPONS_REPRICING);
+    expect(await db.pos_drafts.findOne(parked.id).exec()).toBeNull();
+    expect(await db.pos_drafts.count().exec()).toBe(0);
+    expect(result.current.order.id).toBe(parked.id);
+    expect(result.current.order.totalMinor).toBe(1200);
+    expect(result.current.order.paidMinor).toBe(500);
+  });
+
   /** A one-line sale paid by a captured cash leg and completed: the receipt stage, with the finished builder still live. */
   async function saleOnReceipt() {
     const onSaleCompleted = vi.fn();
