@@ -240,8 +240,9 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
             ? state.plan.lineIds.filter((id) => !state.linesPaidBy[id])
             : state.pickedLineIds,
       };
+    // Split closed means no picks: every action that closes Split clears pickedUnits, except tender-recorded (above) and tender-started without a payment id (S5); allocations stay.
     case 'close-split':
-      return { ...state, splitView: false };
+      return { ...state, splitView: false, pickedUnits: {} };
     case 'set-split-tab':
       return { ...state, splitTab: action.tab };
     case 'toggle-split-line':
@@ -256,6 +257,8 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
       // A fractional or negative count is refused outright: such a line cannot be split by units.
       if (!Number.isInteger(action.units) || action.units < 0) return state;
       if (!Number.isInteger(action.unpaidUnits) || action.unpaidUnits < 0) return state;
+      // No picks under a plan: the planned leg is paid by money, so a pick would freeze into its allocations.
+      if (state.plan && action.units > 0) return state;
       const units = Math.min(action.units, action.unpaidUnits);
       const next = { ...state.pickedUnits, [String(action.lineId)]: units };
       return { ...state, pickedUnits: Object.fromEntries(Object.entries(next).filter(([, n]) => n > 0)) };
@@ -265,6 +268,7 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         ...state,
         plan: action.plan,
         splitView: false,
+        pickedUnits: {},
         pickedLineIds: [],
         entryMinor:
           state.view === 'amount'
@@ -279,13 +283,14 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         ...state,
         plan: null,
         splitView: false,
+        pickedUnits: {},
         view: action.type === 'arm-custom' ? 'amount' : state.view,
         entryMinor: action.type === 'clear-plan' ? action.balanceMinor : 0,
         entryDirty: false,
         entryMode: 'money',
       };
     case 'request-cancel':
-      return { ...state, view: 'cancel', splitView: false };
+      return { ...state, view: 'cancel', splitView: false, pickedUnits: {} };
     case 'reset':
       return initialTenderState;
   }

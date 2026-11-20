@@ -481,4 +481,31 @@ describe('split by units', () => {
     expect(closed.splitView).toBe(false);
     expect(closed.pickedUnits).toEqual({ a: 1 });
   });
+
+  it.each<TenderAction>([
+    { type: 'close-split' },
+    { type: 'set-plan', plan: { kind: 'even', ways: 2, from: 0 }, balanceMinor: 100 },
+    { type: 'clear-plan', balanceMinor: 100 },
+    { type: 'arm-custom' },
+    { type: 'request-cancel' },
+  ])('T2: %s closes Split and clears picked units, keeping allocations', (action) => {
+    const state = {
+      ...initialTenderState, view: 'amount' as const, methodId: 'cash', entryMinor: 100,
+      splitView: true, pickedUnits: { a: 1 }, unitAllocations: { p1: { b: 1 } },
+    };
+    const closed = tenderReducer(state, action);
+    expect(closed.splitView).toBe(false);
+    expect(closed.pickedUnits).toEqual({});
+    expect(closed.unitAllocations).toEqual({ p1: { b: 1 } });
+  });
+
+  it('T3: under a plan, set-split-units refuses a count above 0 and still accepts 0', () => {
+    const state = { ...initialTenderState, plan: { kind: 'even' as const, ways: 2, from: 0 }, pickedUnits: {} };
+    expect(tenderReducer(state, { type: 'set-split-units', lineId: 'a', units: 1, unpaidUnits: 2 })).toBe(state);
+    const cleared = tenderReducer(
+      { ...state, pickedUnits: { a: 1 } },
+      { type: 'set-split-units', lineId: 'a', units: 0, unpaidUnits: 2 },
+    );
+    expect(cleared.pickedUnits).toEqual({});
+  });
 });

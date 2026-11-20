@@ -124,7 +124,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   function take() {
     if (!method || pickRefused) return;
     const tender = tenderOf(method);
-    const units = partPick ? { units: pick.picks } : Object.keys(state.pickedUnits).length ? { units: state.pickedUnits } : {};
+    // No pick stands (a plan is set, or nothing is picked): the leg carries no units.
+    const units = pick === null ? {} : partPick ? { units: pick.picks } : { units: state.pickedUnits };
     const id = tender.method === 'cash'
       ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}) })
       : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
