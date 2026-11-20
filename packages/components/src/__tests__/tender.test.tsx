@@ -218,6 +218,51 @@ describe('a taken leg freezes its picked units (#1133)', () => {
   }, 20_000);
 });
 
+describe('a plan keys its legs by payment id (#1133 prerequisite 1)', () => {
+  let state = initialTenderState;
+  let dispatch: (action: TenderAction) => void;
+  function ObservedPane({ sale }: { sale: ReturnType<typeof useSale> }) {
+    const [paneState, paneDispatch] = useReducer(tenderReducer, initialTenderState);
+    state = paneState;
+    dispatch = paneDispatch;
+    return <TenderPane sale={sale} state={paneState} dispatch={paneDispatch} />;
+  }
+  function startPane() {
+    render(<SaleHarness settings={settings}>{(sale) => <ObservedPane sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
+    act(() => sale.startTender('cash'));
+  }
+
+  it('D1: keeps an items plan’s paid line when a leg before the plan is voided', () => {
+    startPane();
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500 }); });
+    const A = sale.order.payments[0];
+    const lineId = sale.order.lineItems[0].id;
+    act(() => {
+      dispatch({ type: 'set-plan', balanceMinor: 1500, plan: { kind: 'items', lineIds: [lineId], firstMinor: 1000, ways: 1, from: 1 } });
+    });
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
+    expect(state.linesPaidBy[lineId]).toEqual(['cash']);
+    fireEvent.click(screen.getByTestId(`tender-leg-${A.id}-void`));
+    expect(text(`tender-leg-${A.id}-status`)).toBe('Cancelled');
+    expect(state.linesPaidBy[lineId]).toEqual(['cash']);
+  }, 20_000);
+
+  it('D2: keeps an even plan’s progress when a leg before the plan is voided', () => {
+    startPane();
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500 }); });
+    const A = sale.order.payments[0];
+    fireEvent.click(screen.getByTestId('tender-split-chip'));
+    fireEvent.click(screen.getByTestId('tender-split-even-3'));
+    expect(text('tender-plan')).toBe('1 of 3');
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    expect(text('tender-plan')).toBe('2 of 3');
+    fireEvent.click(screen.getByTestId(`tender-leg-${A.id}-void`));
+    expect(text('tender-plan')).toBe('2 of 3');
+  }, 20_000);
+});
+
 describe('Tender on a reopened order (ADR-090 gate 36)', () => {
   /** use-sale-locked-legs.test.tsx's reopenedBuilder: one kept line at €10 and a locked leg the store already holds. */
   function reopen(lockedMinor: number, capabilities?: { orderCreate: number }) {
