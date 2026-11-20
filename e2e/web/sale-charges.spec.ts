@@ -20,7 +20,7 @@ async function addCharge(page: Page, kind: 'Fee' | 'Shipping' | 'Custom item', n
   await form.getByRole('textbox', { name: 'Name' }).fill(name);
   await form.getByRole('textbox', { name: 'Amount' }).fill(amount);
   if (noTax) await form.getByRole('switch', { name: 'No tax' }).click();
-  await form.getByRole('button', { name: 'Apply' }).click();
+  await form.getByRole('button', { name: 'Add to Cart' }).click();
   await expect(form).toHaveCount(0);
 }
 

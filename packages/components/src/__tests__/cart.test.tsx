@@ -45,7 +45,7 @@ describe('Cart', () => {
       click(kind);
       fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
       fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
-      click('Apply');
+      click('Add to Cart');
       expect(screen.queryByTestId('charge-form')).toBeNull();
     }
     expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 120 }]);
@@ -94,7 +94,7 @@ describe('Cart', () => {
       click(kind);
       fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
       fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
-      click('Apply');
+      click('Add to Cart');
     }
     const fee = screen.getByTestId('cart-fee-0');
     const shipping = screen.getByTestId('cart-shipping-0');
@@ -115,7 +115,7 @@ describe('Cart', () => {
       click(kind);
       fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: name } });
       fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
-      click('Apply');
+      click('Add to Cart');
     }
     click('Edit total of Bag');
     click('Edit Bag');
@@ -123,7 +123,7 @@ describe('Cart', () => {
     expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Name' }).value).toBe('Bag');
     expect(feeForm.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('1.20');
     fireEvent.change(feeForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
-    click('Apply');
+    click('Save');
     expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
     expect(sale.order.shipping).toMatchObject([{ name: 'Delivery', amountMinor: 240 }]);
     expect(within(screen.getByTestId('cart-fee-0')).getByTestId('cart-charge-price').textContent).toBe(money(200));
@@ -132,7 +132,7 @@ describe('Cart', () => {
     const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
     fireEvent.change(shippingForm.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
     fireEvent.change(shippingForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '3.00' } });
-    click('Apply');
+    click('Save');
     expect(sale.order.shipping).toMatchObject([{ name: 'Courier', amountMinor: 300 }]);
     expect(sale.order.fees).toMatchObject([{ name: 'Bag', amountMinor: 200 }]);
   });
@@ -145,7 +145,7 @@ describe('Cart', () => {
     click('Fee');
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Bag' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1.20' } });
-    click('Apply');
+    click('Add to Cart');
     expect(screen.queryByRole('columnheader', { name: 'Price' })).toBeNull();
     const fee = within(screen.getByTestId('cart-fee-0'));
     expect(fee.queryByTestId('cart-charge-price')).toBeNull();
@@ -176,7 +176,7 @@ describe('Cart', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
     click('Reduced');
     fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
-    click('Apply');
+    click('Add to Cart');
     const charge = kind === 'Fee' ? sale.order.fees![0] : kind === 'Shipping' ? sale.order.shipping![0] : sale.order.lineItems[0];
     expect(charge).toMatchObject({ name: 'Extra', taxStatus: 'none', taxClass: 'reduced' });
     expect(sale.order.totalMinor).toBe(100);
@@ -204,7 +204,7 @@ describe('Cart', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
-    click('Apply');
+    click('Add to Cart');
     expect(sale.order.shipping![0].taxStatus).toBe('none');
   });
 
@@ -216,13 +216,13 @@ describe('Cart', () => {
     click('Shipping');
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
-    click('Apply');
+    click('Add to Cart');
     expect(sale.order.shipping![0].taxStatus).not.toBe('none');
     click('Edit total of Delivery');
     click('Edit Delivery');
     const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
     fireEvent.click(shippingForm.getByRole('switch', { name: 'No tax' }));
-    click('Apply');
+    click('Save');
     expect(sale.order.shipping![0].taxStatus).toBe('none');
   });
 
@@ -818,7 +818,7 @@ describe('Cart empty state (v2)', () => {
     click(kind);
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Extra' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
-    click('Apply');
+    click('Add to Cart');
     expect(sale.order.lineItems).toEqual([]);
     expectFull();
     expect(screen.queryByText('Tap a product to start a sale')).toBeNull();
@@ -873,7 +873,7 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       if (percent) fireEvent.click(form.getByTestId('charge-form-unit-percent'));
       if (toggleTax) fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
       fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: amount } });
-      click('Apply');
+      click('Add to Cart');
     }
     const price = (index: number) => within(screen.getByTestId(`cart-fee-${index}`)).getByTestId('cart-charge-price').textContent;
 
@@ -899,7 +899,7 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       const form = chargeForm('Edit Service');
       fireEvent.click(form.getByTestId('charge-form-unit-amount'));
       fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
-      click('Apply');
+      click('Save');
       expect(sale.order.fees).toHaveLength(1);
       expect(fees()[0].percent).toBeUndefined();
       expect(fees()[0].amountMinor).toBe(200);
@@ -919,7 +919,7 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       const form = chargeForm('Edit Wrap');
       expect(form.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
       fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
-      click('Apply');
+      click('Save');
       expect(fees()[1].amountIncludesTax).toBeUndefined();
     });
 
@@ -941,14 +941,14 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       fireEvent.change(form.getByRole('textbox', { name: 'Name' }), { target: { value: 'Courier' } });
       fireEvent.click(form.getByRole('switch', { name: 'Amount Includes Tax' }));
       fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '2.00' } });
-      click('Apply');
+      click('Add to Cart');
       expect(sale.order.shipping![0].amountIncludesTax).toBe(!store);
       click('Edit total of Courier');
       click('Edit Courier');
       const edit = chargeForm('Edit Courier');
       expect(edit.getByRole('switch', { name: 'Amount Includes Tax' }).getAttribute('aria-checked')).toBe(String(!store));
       fireEvent.click(edit.getByRole('switch', { name: 'Amount Includes Tax' }));
-      click('Apply');
+      click('Save');
       expect(sale.order.shipping![0].amountIncludesTax).toBeUndefined();
     });
 
@@ -963,7 +963,7 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       fireEvent.click(form.getByTestId('charge-form-unit-percent'));
       expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
       fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '10' } });
-      click('Apply');
+      click('Save');
       expect(fees()[0].percent).toBe(10);
       expect(fees()[0].amountIncludesTax).toBeUndefined();
     });
@@ -989,7 +989,7 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       const form = chargeForm('Edit Service');
       expect(form.queryByRole('switch', { name: 'Amount Includes Tax' })).toBeNull();
       fireEvent.change(form.getByRole('textbox', { name: 'Amount' }), { target: { value: '7.00' } });
-      click('Apply');
+      click('Save');
       expect(fees()[0].amountMinor).toBe(700);
       expect(fees()[0].amountIncludesTax).toBe(own);
     });

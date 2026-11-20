@@ -133,7 +133,7 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
     {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
     <View className="flex-row gap-2">
       <Pressable accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
-        <Text className="font-semibold text-primary-foreground">Apply</Text></Pressable>
+        <Text className="font-semibold text-primary-foreground">{t(initial ? 'common.save' : 'common.add_to_cart')}</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={onClose} className={`${button} bg-card`}>
         <Text className="text-foreground">Cancel</Text></Pressable>
     </View>
