@@ -30,7 +30,8 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
- * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every leg, and `resume` keeps
+ * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a kept
+ * paid draft's parked legs, and `resume` keeps
  * a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the sale stays on the till until it is paid or
  * its paid legs are voided.
  */
@@ -236,6 +237,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const generation = useRef(0);
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
+  const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
+  function heldLeg(p: Order['payments'][number]) { return !!p.locked || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -262,7 +265,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         asked = b.getSnapshot();
         codes.apply(b, discountState(asked, kept));
         applied.current = kept;
-        keptCoupons.current = undefined;
+        keptCoupons.current = undefined; keptLegIds.current = [];
         if (!kept.size) appliedWith.current = null;
         const message = messages.length ? messages.join(' ') : null;
         // A refusal only a re-price could have set goes once the codes are priced.
@@ -295,7 +298,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     taxNow.current = tax;
     applied.current.clear();
-    keptCoupons.current = undefined;
+    keptCoupons.current = undefined; keptLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
     setBuilder(next);
@@ -321,7 +324,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   function dropKept() { // kept coupons resumed with no discount codes: nothing can price them again
     builderNow.current.setCoupons([], { kind: 'store-priced', priced: new Map(), basis: '' });
     applied.current.clear();
-    keptCoupons.current = undefined;
+    keptCoupons.current = undefined; keptLegIds.current = [];
     setError(COUPONS_UNSUPPORTED);
   }
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
@@ -408,7 +411,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const taxIdsRefused = tender && taxIdsRefusal();
     if (taxIdsRefused) return setError(taxIdsRefused);
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) if (!payment.locked && !(keptCodes() && isLiveLeg(payment))) builder.removePayment(payment.id);
+    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
     droppedReferences.current.clear();
     setError(null);
     if (tender) addOne(tender);
@@ -491,7 +494,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (!current.lineItems.length) return;
     if (couponsUnpriced()) return setError(COUPONS_REPRICING);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-    const heldMinor = current.payments.reduce((sum, payment) => sum + (payment.locked || (keptCodes() && isLiveLeg(payment)) ? payment.amountMinor : 0), 0);
+    const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
     if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
     else setTender(method === 'external' && current.totalMinor - heldMinor > 0 ? { method, amountMinor: current.totalMinor - heldMinor } : null);
     stageNow.current = { kind: 'tender', method }; // 5.2 backlog F4: a same-tick setCustomer/setAddresses sees the tender
@@ -1037,7 +1040,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       if (builderNow.current === builder) {
         applied.current = kept;
-        if (keep) keptCoupons.current = saved.coupons;
+        if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
         generation.current++;
       }

@@ -524,6 +524,40 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     }
   });
 
+  it('T27: with the kept coupons, a leg Pay added is not held: cancel drops it, and Pay by cash drops it', async () => {
+    const shop = store();
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    const [cash] = result.current.order.payments;
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash]);
+    expect(result.current.order.balanceDueMinor).toBe(580);
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    act(() => { result.current.startTender('cash'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash]);
+    expect(result.current.order.payments.some((payment) => payment.method === 'external')).toBe(false);
+  });
+
+  it('T28: a resumed pending-leg draft keeps the pending leg on Pay by card and tenders only the balance', async () => {
+    const shop = store();
+    const { result } = renderSale({ discountCodes: shop.codes });
+    await apply(result, 'a');
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    const [pending] = result.current.order.payments;
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([pending, expect.objectContaining({ method: 'external', amountMinor: 580 })]);
+    expect(result.current.order.payments).toHaveLength(2);
+  });
+
   /** A one-line sale paid by a captured cash leg and completed: the receipt stage, with the finished builder still live. */
   async function saleOnReceipt() {
     const onSaleCompleted = vi.fn();
