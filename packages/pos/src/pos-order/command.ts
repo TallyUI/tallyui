@@ -207,7 +207,11 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       })),
       ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
         clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
-        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}), taxMinor: roundMicrosToMinor(BigInt(fee.taxMicros)),
+        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
+        // #1131: WooCommerce totals a fee line's tax per rate, as its own order totals do.
+        taxMinor: order.taxRounding?.granularity === 'woocommerce'
+          ? woocommerceChargeTaxMinor(fee, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+          : roundMicrosToMinor(BigInt(fee.taxMicros)),
       })) } : {}),
       ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
         clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
