@@ -267,6 +267,21 @@ describe('createTillDisplayService', () => {
     expect(s.service.pauseReason).toBeNull();
   });
 
+  it('P5: a signed_out pause that turns device_refused tells its listeners', async () => {
+    const s = setup({ displays: [record('d1')], sides: [], context: null });
+    await wait(LIST_POLL_MS);
+    expect(s.service.pauseReason).toBe('signed_out');
+    s.setContext(ctx);
+    s.signalling.registerDevice = refuseRegistration;
+    s.signalling.fail('list', 'device_refused');
+    const listener = vi.fn();
+    s.service.onChange(listener);
+    await wait(LIST_POLL_MS);
+    expect(listener).toHaveBeenCalled();
+    expect(s.service.status).toBe('paused');
+    expect(s.service.pauseReason).toBe('device_refused');
+  });
+
   it('10: not_found from postSnapshot tears that display down', async () => {
     const s = setup({ displays: [record('d1'), record('d2')], snapshot: true, sides: [] });
     s.signalling.fail('postSnapshot', 'not_found', 'd1');

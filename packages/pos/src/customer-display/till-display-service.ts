@@ -103,12 +103,16 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
     active: advertisement.snapshot && status === 'online' && slot.record.connected && slot.link?.state !== 'open',
     seq: slot.seq, config: slot.config, event: slot.event,
   });
-  const setStatus = (next: TillDisplayStatus) => {
-    if (status === next || status === 'closed') return;
-    status = next;
-    if (next !== 'paused') pauseReason = null;
-    slots.forEach(push);
-    if (next === 'online') ensureSignalPoll();
+  const setStatus = (next: TillDisplayStatus, reason: TillDisplayPauseReason | null = null) => {
+    const nextReason = next === 'paused' ? reason : null;
+    if (status === 'closed' || (status === next && pauseReason === nextReason)) return;
+    pauseReason = nextReason;
+    // A same-status pause with a new reason only emits; the slots and the signal poll stay as they are.
+    if (status !== next) {
+      status = next;
+      slots.forEach(push);
+      if (next === 'online') ensureSignalPoll();
+    }
     emit();
   };
 
@@ -116,10 +120,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   const contextNow = (): SyncContext | null => {
     if (status === 'closed' || forbidden) return null;
     const ctx = options.context();
-    if (!ctx) {
-      pauseReason = 'signed_out';
-      setStatus('paused');
-    }
+    if (!ctx) setStatus('paused', 'signed_out');
     return ctx;
   };
   /** The service's reading of a failed call: d11 for a lost server, a pause, or a display that is gone. */
@@ -129,9 +130,8 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       if (!forbidden) setStatus('offline');
     } else if (error.code === 'forbidden' || error.code === 'device_refused') {
       forbidden = true;
-      pauseReason = error.code;
       stopTimer('list');
-      setStatus('paused');
+      setStatus('paused', error.code);
     } else if (error.code === 'not_found' && displayId !== undefined) {
       remove(displayId);
       emit();
