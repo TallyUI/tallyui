@@ -30,8 +30,9 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
- * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every leg, and `resume`
- * re-checks coupons: so the sale stays on the till until it is paid or its paid legs are voided.
+ * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every leg, and `resume` keeps
+ * a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the sale stays on the till until it is paid or
+ * its paid legs are voided.
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
@@ -407,7 +408,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const taxIdsRefused = tender && taxIdsRefusal();
     if (taxIdsRefused) return setError(taxIdsRefused);
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) if (!payment.locked) builder.removePayment(payment.id);
+    for (const payment of builder.getSnapshot().payments) if (!payment.locked && !(keptCodes() && isLiveLeg(payment))) builder.removePayment(payment.id);
     droppedReferences.current.clear();
     setError(null);
     if (tender) addOne(tender);
@@ -490,13 +491,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (!current.lineItems.length) return;
     if (couponsUnpriced()) return setError(COUPONS_REPRICING);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-    const lockedMinor = current.payments.reduce((sum, payment) => sum + (payment.locked ? payment.amountMinor : 0), 0);
-    if (lockedMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
-    else setTender(method === 'external' && current.totalMinor - lockedMinor > 0 ? { method, amountMinor: current.totalMinor - lockedMinor } : null);
+    const heldMinor = current.payments.reduce((sum, payment) => sum + (payment.locked || (keptCodes() && isLiveLeg(payment)) ? payment.amountMinor : 0), 0);
+    if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    else setTender(method === 'external' && current.totalMinor - heldMinor > 0 ? { method, amountMinor: current.totalMinor - heldMinor } : null);
     stageNow.current = { kind: 'tender', method }; // 5.2 backlog F4: a same-tick setCustomer/setAddresses sees the tender
     setStage(stageNow.current);
   }
 
+  /** park()'s and switchSale()'s draft write: kept codes with no figures (a stopped re-price) park their coupons stale, so the resume prices them (as main does). */
+  async function writeParked(drafts: NonNullable<typeof opts.drafts>, snapshot: Order): Promise<string | null> {
+    const stale = keptCodes() && !snapshot.coupons?.length;
+    if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
+    return writeOrderDraft(drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot).then(() => null);
+  }
   const result = {
     order, stage, error, idle,
     /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
@@ -939,10 +946,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const builder = builderNow.current;
       const snapshot = builder.getSnapshot();
       if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
-      // Kept codes with no figures (a stopped re-price) park their coupons stale, so the resume prices them (as main does).
-      const stale = keptCodes() && !snapshot.coupons?.length;
-      if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
-      await writeOrderDraft(opts.drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot);
+      const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
       if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       resetSale();
       return null;
@@ -1056,7 +1060,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
       if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
-        await writeOrderDraft(opts.drafts, snapshot);
+        const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
         if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
       }
       resetSale();

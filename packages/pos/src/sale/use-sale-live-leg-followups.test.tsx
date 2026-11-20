@@ -11,7 +11,7 @@ import { PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { isLiveLeg } from '../order/order-builder';
 import { posOrderCollection } from '../pos-order';
 import { COUPONS_NEED_CONNECTION, COUPONS_UNSUPPORTED } from './discount-codes';
-import { TaxProvider } from '../tax';
+import { createTaxContext, TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
 import { COUPONS_REPRICING, SALE_FINISHED, SALE_HAS_PAYMENT, useSale } from './use-sale';
@@ -63,8 +63,8 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     await act(async () => { expect(await result.current.applyCoupon(code)).toBeNull(); });
   }
   /** Parks the sale (coupon 'a', and a captured 500 cash leg when `paid`), runs `parked`, then resumes it: an unpaid draft's coupon is priced again at resume. */
-  async function resumed(shop: ReturnType<typeof store>, paid: boolean, parked?: () => void) {
-    const hook = renderSale({ discountCodes: shop.codes });
+  async function resumed(shop: ReturnType<typeof store>, paid: boolean, parked?: () => void, overrides: Partial<SaleOptions> = {}) {
+    const hook = renderSale({ discountCodes: shop.codes, ...overrides });
     await apply(hook.result, 'a');
     if (paid) act(() => { expect(hook.result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
     const draftId = hook.result.current.order.id;
@@ -170,9 +170,13 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
   it('T8: with the kept coupons and a live leg, startTender enters tender with no error; complete from the cart stores the parked coupons', async () => {
     const shop = store();
     const tender = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    const kept = tender.result.current.order.payments;
     act(() => { tender.result.current.startTender('cash'); });
     expect(tender.result.current.stage.kind).toBe('tender');
     expect(tender.result.current.error).toBeNull();
+    await settle();
+    expect(tender.result.current.order.payments).toEqual(kept);
+    expect(tender.result.current.order.totalMinor).toBe(PARKED_TOTAL);
     cleanup();
 
     const onSaleCompleted = async (order: unknown) => { await db.pos_orders.insert(order); };
@@ -364,9 +368,9 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
   });
 
   /** A captured draft (coupon a=100) resumed after the store moved to 300; then `find` goes offline and the leg is voided. */
-  async function voidedOffline(onSaleCompleted?: SaleOptions['onSaleCompleted']) {
+  async function voidedOffline(onSaleCompleted?: SaleOptions['onSaleCompleted'], overrides: Partial<SaleOptions> = {}) {
     const shop = store();
-    const hook = renderSale({ discountCodes: shop.codes, ...(onSaleCompleted ? { onSaleCompleted } : {}) });
+    const hook = renderSale({ discountCodes: shop.codes, ...(onSaleCompleted ? { onSaleCompleted } : {}), ...overrides });
     await apply(hook.result, 'a');
     act(() => { expect(hook.result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
     const parked = hook.result.current.order;
@@ -424,6 +428,100 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.order.id).toBe(parked.id);
     expect(result.current.order.totalMinor).toBe(1200);
     expect(result.current.order.paidMinor).toBe(500);
+  });
+
+  it('T21: switchSale parks as park() does: after the void it writes the kept coupons stale', async () => {
+    const { result, parked } = await voidedOffline();
+    await act(async () => { expect(await result.current.switchSale(null)).toBeNull(); });
+    const doc = await db.pos_drafts.findOne(parked.id).exec();
+    const saved = JSON.parse(doc!.toJSON().data) as Order;
+    expect(saved.coupons).toEqual(parked.coupons);
+    expect(saved.couponPricesStale).toBe(true);
+  });
+
+  it('T22: switchSale refuses a paid stale sale with a live leg as park() does; nothing is written', async () => {
+    const { result, parked } = await voidedOffline();
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
+    await settle();
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: result.current.order.balanceDueMinor })).toEqual(expect.any(String)); });
+    await settle();
+    expect(result.current.order.balanceDueMinor).toBe(0);
+    const before = result.current.order;
+    let refusal: unknown;
+    await act(async () => { refusal = await result.current.switchSale(null); });
+    expect(refusal).toBe(COUPONS_REPRICING);
+    expect(await db.pos_drafts.count().exec()).toBe(0);
+    expect(result.current.order.id).toBe(parked.id);
+    expect(result.current.order).toEqual(before);
+  });
+
+  it('T23: with the kept coupons, Pay by card keeps the captured leg and tenders only the balance; complete stores the parked figures', async () => {
+    const shop = store();
+    const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; }, { onSaleCompleted });
+    const [cash] = result.current.order.payments;
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash, expect.objectContaining({ method: 'external', amountMinor: 580 })]);
+    expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.stage.kind).toBe('receipt');
+    type Stored = { totalMinor: number; coupons: NonNullable<Order['coupons']> };
+    const rows = (await db.pos_orders.find().exec()).map((doc) => doc.toJSON() as unknown as Stored);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalMinor).toBe(PARKED_TOTAL);
+    expect(rows[0].coupons.map(({ code, discountMinor }) => [code, discountMinor])).toEqual([['a', 100]]);
+  });
+
+  it('T24: a resumed paid draft parks again with its kept figures and resumes with them', async () => {
+    const shop = store();
+    const { result } = await resumed(shop, true, () => { shop.perUnit.a = 300; });
+    const draftId = result.current.order.id, coupons = result.current.order.coupons;
+    expect(amounts(result)).toEqual([['a', 100]]);
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+    expect(result.current.order.coupons).toEqual(coupons);
+  });
+
+  it('T25: after the void, a customer with other rates does not re-tax a sale whose kept codes wait for a re-price', async () => {
+    const location = { taxBasedOn: 'base', location: { country: '', state: '', city: '', postcode: '' }, addressUsed: 'base' } as const;
+    const woo = { granularity: 'woocommerce', roundAtSubtotal: false } as const; // woo lines re-derive their rates on a re-tax
+    const base = createTaxContext({ ...taxProps, rounding: woo });
+    const picked = createTaxContext({ pricesIncludeTax: false, ratesPpm: { default: 100000 }, rounding: woo,
+      taxRates: { standard: [{ ...taxProps.taxRates.standard[0], rate: '10.0000' }] } });
+    const taxContextFor = (customer: { id: string } | null) => ({ taxContext: customer?.id === other.id ? picked : base, location });
+    const { result } = await voidedOffline(undefined, { taxContextFor });
+    const lines = result.current.order.lineItems.map(({ netMinor, taxLines, totalMinor }) => ({ netMinor, taxLines, totalMinor }));
+    expect(() => act(() => { result.current.setCustomer(other); })).not.toThrow();
+    await settle();
+    expect(result.current.order.lineItems.map(({ netMinor, taxLines, totalMinor }) => ({ netMinor, taxLines, totalMinor }))).toEqual(lines);
+  });
+
+  it('T26 (desk 2026-11-20): kept live legs that cover the total: Pay adds no zero or negative leg and keeps the legs and total', async () => {
+    for (const paidMinor of [PARKED_TOTAL, 1500]) {
+      const shop = store();
+      const { result } = renderSale({ discountCodes: shop.codes });
+      await apply(result, 'a');
+      act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: paidMinor })).toEqual(expect.any(String)); });
+      const draftId = result.current.order.id;
+      await act(async () => { expect(await result.current.park()).toBeNull(); });
+      shop.perUnit.a = 300;
+      await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+      await settle();
+      expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+      const kept = result.current.order.payments;
+      for (const method of ['external', 'cash'] as const) {
+        act(() => { result.current.startTender(method); });
+        await settle();
+        expect(result.current.order.payments.every((payment) => payment.amountMinor > 0)).toBe(true);
+        expect(result.current.order.payments).toEqual(kept);
+        expect(result.current.order.totalMinor).toBe(PARKED_TOTAL);
+      }
+      cleanup();
+    }
   });
 
   /** A one-line sale paid by a captured cash leg and completed: the receipt stage, with the finished builder still live. */
