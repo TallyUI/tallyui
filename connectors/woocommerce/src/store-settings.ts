@@ -10,21 +10,35 @@ export const WOO_NOTE_ORDER_CREATE_VERSION = 7;
 /** Version 8 is version 7 plus the tax address and the customer's addresses (#722), sent as WCPOS's `_woocommerce_pos_tax_based_on`
  *  meta with the order's billing and shipping, which push/orders already passes through; a store takes it wherever it takes 7. */
 export const WOO_TAX_ADDRESS_ORDER_CREATE_VERSION = 8;
-// The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
+// The order.create version a store gets unless /status lists order_create_v5 (TallyUI fork) or, with no capabilities list, /site reports stock 1.10.20+ (then 7).
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
 // The first woocommerce-pos release whose coupon recalculation keeps the POS price (ADR-077 amendment 4, R2: 1.9.0, 2026-05-15).
 const WOO_COUPONS_MIN_PLUGIN: readonly [number, number, number] = [1, 9, 0];
+// Stock 1.10.20 took order.create v3-v7 to the cent without capability flags (20 Nov stock proof; Front desk ruling, 2026-11-20).
+const WOO_ORDER_LINES_FLOOR: readonly [number, number, number] = [1, 10, 20];
+// The version route stops at 7: v8's tax address is unproven, stock /stores answers `base` (20 Nov stock proof; desk ruling).
+const WOO_ORDER_LINES_VERSION_CAP = 7;
 
-export function wooPluginSupportsCoupons(version: unknown): boolean {
+/** True when the version is at or above the floor; a prerelease of the floor itself is below it. */
+function atLeast(version: unknown, floor: readonly [number, number, number]): boolean {
   if (typeof version !== 'string') return false;
   const match = /^(\d+)\.(\d+)(?:\.(\d+))?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.exec(version.trim());
   if (!match) return false;
   const parts: readonly [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
   for (let index = 0; index < parts.length; index++) {
-    if (parts[index] > WOO_COUPONS_MIN_PLUGIN[index]) return true;
-    if (parts[index] < WOO_COUPONS_MIN_PLUGIN[index]) return false;
+    if (parts[index] > floor[index]) return true;
+    if (parts[index] < floor[index]) return false;
   }
   return !match[4];
+}
+
+export function wooPluginSupportsCoupons(version: unknown): boolean {
+  return atLeast(version, WOO_COUPONS_MIN_PLUGIN);
+}
+
+/** A plain `1.10.N` with N >= 20 and no prerelease or build suffix: the stock 1.10 line the version route serves. */
+export function wooOnOrderLinesLine(version: unknown): boolean {
+  return typeof version === 'string' && /^1\.10\.\d+$/.test(version.trim()) && atLeast(version, WOO_ORDER_LINES_FLOOR);
 }
 
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
@@ -150,6 +164,8 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
     if (!Array.isArray(stores) || !stores[0] || typeof stores[0] !== 'object' || Array.isArray(stores[0])) return undefined;
     let multiplePayments = false;
     let capabilities: unknown[] = [];
+    // undefined when /status failed; false when it answered without a capabilities array (stock 1.10.x).
+    let flagged: boolean | undefined;
     try {
       const status = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/status`, {
         method: 'GET', headers: context.headers, signal: context.signal,
@@ -157,26 +173,32 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       throwIfUnauthorized(status, 'status');
       if (status.ok) {
         const body = await status.json();
-        capabilities = Array.isArray(body?.capabilities) ? body.capabilities : [];
+        flagged = Array.isArray(body?.capabilities);
+        capabilities = flagged ? body.capabilities : [];
         multiplePayments = capabilities.includes('order_payments_list');
       }
     } catch (error) {
       if (error instanceof ConnectorUnauthorizedError) throw error;
     }
     let coupons = false;
+    let wcposVersion: unknown;
     try {
       const site = await (context.fetch ?? globalThis.fetch)(`${context.baseUrl}/site`, {
         method: 'GET', headers: context.headers, signal: context.signal,
       });
       if (site.ok) {
         const body = await site.json();
-        coupons = wooPluginSupportsCoupons(body?.wcpos_version);
+        wcposVersion = body?.wcpos_version;
+        coupons = wooPluginSupportsCoupons(wcposVersion);
       }
     } catch {
       coupons = false;
     }
-    const orderCreate = capabilities.includes('order_create_v5')
-      ? (coupons ? WOO_TAX_ADDRESS_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION) : WOO_BASE_ORDER_CREATE_VERSION;
+    const linesVersion = coupons ? WOO_TAX_ADDRESS_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION;
+    // The flag decides wherever /status sends one; the version is only a fallback for a store that answered without it.
+    const orderCreate = flagged !== false
+      ? capabilities.includes('order_create_v5') ? linesVersion : WOO_BASE_ORDER_CREATE_VERSION
+      : wooOnOrderLinesLine(wcposVersion) ? Math.min(WOO_ORDER_LINES_VERSION_CAP, linesVersion) : WOO_BASE_ORDER_CREATE_VERSION;
     return {
       orderCreate,
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },

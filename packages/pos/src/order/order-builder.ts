@@ -535,8 +535,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
           })), taxContext.taxClassSlugs ?? [])
           : taxContext.shippingTaxClass
         : input.taxClass;
-      const untaxed = shipping ? taxClass === woocommerceTax.NO_SHIPPING_TAX : taxStatus === 'none';
-      const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX ? undefined : taxClass,
+      // A `none` shipping line is untaxed as WCPOS saves it (its _woocommerce_pos_data meta clears the store's shipping taxes).
+      const untaxed = shipping ? taxStatus === 'none' || taxClass === woocommerceTax.NO_SHIPPING_TAX : taxStatus === 'none';
+      const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX || (shipping && untaxed) ? undefined : taxClass,
         inclusive, untaxed, shipping);
       return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus, ...mode,
         ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),

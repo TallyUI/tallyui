@@ -195,7 +195,9 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     const total = chargeTotal(shipping.amountMinor,
       local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId);
     if (typeof total !== 'string') return total;
-    shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total });
+    // WCPOS (1.10.20 and 2.0.4 Orders.php) clears a shipping line's taxes when this meta says `none`.
+    shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total,
+      ...(shipping.taxStatus === 'none' ? { meta_data: [{ key: '_woocommerce_pos_data', value: JSON.stringify({ tax_status: 'none' }) }] } : {}) });
   }
   const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
   const cash = primary.method === 'cash';
