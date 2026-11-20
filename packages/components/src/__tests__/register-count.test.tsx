@@ -559,7 +559,7 @@ it('an approved close prints too', async () => {
 // Without the prop the raw message shows: 'shows RegisterTenderInProgressError as its own message on Close'.
 const FAILURE = 'Could not save the count — try again';
 async function renderFailing(actions: Partial<Register['actions']>, extra?: Partial<RegisterCountProps>,
-  overrides?: { varianceThreshold: number }) {
+  overrides?: Parameters<typeof RegisterHarness>[0]['overrides']) {
   const session = await seedSession(db, 10000);
   await (await db.register_sessions.findOne(session.id).exec())?.incrementalPatch({ status: 'counting' });
   render(
@@ -619,6 +619,15 @@ it('T5: with failureText, an approval-required rejection from closeSession shows
   await waitFor(() => expect(screen.getByTestId('count-manager-line').textContent).toBe(APPROVAL_REQUIRED_TEXT));
   expect(screen.queryByTestId('count-error')).toBeNull();
   expect(screen.queryByText(FAILURE)).toBeNull();
+});
+
+it("T6: with failureText, the hook's sale-in-progress refusal shows its own message", async () => {
+  await renderFailing({}, undefined, { tenderInProgress: true });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe('Finish or cancel the sale in progress first.'));
+  expect(screen.queryByText(FAILURE)).toBeNull();
+  expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
 });
 
 // #1086: the count reads the store's money format; its prefills, Clear and keypad write its decimal separator.

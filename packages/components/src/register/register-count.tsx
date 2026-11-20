@@ -132,7 +132,7 @@ export interface RegisterCountProps {
   } | null>;
   /** The host's Z-report print, as `ClosureSheet`'s: given, Close reads "Close & print" and awaits it after a successful close; a print failure is the host's to show. */
   onPrint?: () => void | Promise<void>;
-  /** Shown instead of the store's message when closing the register or going back to selling fails; the host's `approve` and `onPrint` failures, and the approval-required refusal, keep their own text. */
+  /** Shown instead of the store's message when closing the register or going back to selling fails; the host's `approve` and `onPrint` failures, and the approval-required and sale-in-progress refusals, keep their own text. */
   failureText?: string;
   className?: string;
 }
@@ -143,7 +143,9 @@ async function saving(call: () => Promise<unknown>) {
   try {
     await call();
   } catch (e) {
-    throw e instanceof Error && e.name === 'RegisterApprovalRequiredError' ? e : new StoreCallFailed(e);
+    // The hook's own refusals keep their text (by name: components import no class from pos, ADR-064).
+    const own = e instanceof Error && (e.name === 'RegisterApprovalRequiredError' || e.name === 'RegisterTenderInProgressError');
+    throw own ? e : new StoreCallFailed(e);
   }
 }
 
