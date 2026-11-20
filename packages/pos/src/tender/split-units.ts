@@ -1,3 +1,4 @@
+import type { Payment } from '../order/types';
 import type { TenderLineId } from './tender-state';
 
 /** A cart line as a unit split prices it: `totalMinor` is the line's money with tax inside, as the cashier is charged. */
@@ -8,6 +9,10 @@ export interface SplitUnitLine {
 }
 /** Payment id → line id (as `String(id)`) → units that payment paid for. */
 export type UnitAllocations = Record<string, Record<string, number>>;
+
+export function unitAllocationsFromLegs(payments: readonly Payment[]): UnitAllocations {
+  return Object.fromEntries(payments.filter((leg) => leg.units !== undefined).map((leg) => [leg.id, { ...leg.units }]));
+}
 
 /**
  * The money `units` units of a line carry, cumulatively: floor(total·units/quantity).

@@ -1,13 +1,35 @@
 import { describe, expect, it } from 'vitest';
+import type { Payment } from '../order/types';
 import { countsTowardPaid, type PaymentLegStatus } from './payment-legs';
 import { initialTenderState, tenderReducer } from './tender-state';
 import {
   paidUnitsByLine,
   pickedUnitsMinor,
   unitsMinor,
+  unitAllocationsFromLegs,
   unpaidUnitsByLine,
   type SplitUnitLine,
 } from './split-units';
+
+it('P2-U1: copies units from every leg, including voided legs, and skips amount-only legs', () => {
+  const payments: Payment[] = [
+    { id: 'p1', method: 'cash', amountMinor: 300, units: { l1: 2 } },
+    { id: 'p2', method: 'external', amountMinor: 100, status: 'voided', units: { l2: 1 } },
+    { id: 'p3', method: 'cash', amountMinor: 100 },
+  ];
+  const allocations = unitAllocationsFromLegs(payments);
+  expect(allocations).toEqual({ p1: { l1: 2 }, p2: { l2: 1 } });
+  allocations.p1.l1 = 9;
+  allocations.p2.l2 = 9;
+  expect(payments[0].units).toEqual({ l1: 2 });
+  expect(payments[1].units).toEqual({ l2: 1 });
+});
+
+it('P2-U7: ignores removed lines and clamps reduced lines with stale allocations to zero unpaid', () => {
+  const paid = paidUnitsByLine({ p1: { removed: 2, reduced: 3 } }, ['p1']);
+  expect(paid).toEqual({ removed: 2, reduced: 3 });
+  expect(unpaidUnitsByLine([{ id: 'reduced', quantity: 1, totalMinor: 100 }], paid)).toEqual({ reduced: 0 });
+});
 
 /** Each unit's share: unitsMinor(·, u) − unitsMinor(·, u − 1) for u = 1..quantity. */
 const shares = (totalMinor: number, quantity: number) =>

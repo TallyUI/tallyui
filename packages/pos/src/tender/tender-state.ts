@@ -1,4 +1,5 @@
-import type { UnitAllocations } from './split-units';
+import type { Payment } from '../order/types';
+import { unitAllocationsFromLegs, type UnitAllocations } from './split-units';
 
 /** The transport a payment terminal is reached over: hardware-neutral, not tied to any backend. */
 export type PaymentTransport = 'bluetooth' | 'usb' | 'network' | 'tap_to_pay';
@@ -120,12 +121,15 @@ export const initialTenderState: TenderState = {
 export function initTenderState({
   methodId,
   balanceMinor,
+  payments,
 }: {
   methodId: string | null;
   balanceMinor: number;
+  payments?: readonly Payment[];
 }): TenderState {
-  if (!methodId) return initialTenderState;
-  return { ...initialTenderState, view: 'amount', methodId, entryMinor: balanceMinor };
+  const state = payments ? { ...initialTenderState, unitAllocations: unitAllocationsFromLegs(payments ?? []) } : initialTenderState;
+  if (!methodId) return state;
+  return { ...state, view: 'amount', methodId, entryMinor: balanceMinor };
 }
 
 export function tenderReducer(state: TenderState, action: TenderAction): TenderState {

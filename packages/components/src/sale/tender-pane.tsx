@@ -114,9 +114,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   function take() {
     if (!method) return;
     const tender = tenderOf(method);
+    const units = Object.keys(state.pickedUnits).length ? { units: state.pickedUnits } : {};
     const id = tender.method === 'cash'
-      ? sale.addTender({ ...tender, amountMinor: figures.entryMinor })
-      : sale.addTender({ ...tender, amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
+      ? sale.addTender({ ...tender, ...units, amountMinor: figures.entryMinor })
+      : sale.addTender({ ...tender, ...units, amountMinor: figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');

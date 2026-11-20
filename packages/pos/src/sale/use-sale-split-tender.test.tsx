@@ -181,3 +181,86 @@ describe('useSale split tender', () => {
     expect(result.current.order.payments).toMatchObject([{ method: 'external', amountMinor: 2250 }]);
   });
 });
+
+
+describe('payment units (#1133 prerequisite 2)', () => {
+  it.each([['a', undefined], ['d', 'x'.repeat(256)]])('P2-U3(%s): stores units even when a reference is dropped', (_case, reference) => {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    act(() => result.current.setQuantity(lineId, 3));
+    act(() => {
+      expect(result.current.addTender({ method: reference ? 'external' : 'cash', amountMinor: 300, reference, units: { [lineId]: 2 } })).not.toBeNull();
+    });
+    expect(result.current.order.payments[0].units).toEqual({ [lineId]: 2 });
+    expect(result.current.order.payments[0].reference).toBeUndefined();
+  });
+
+  it.each([['b', 0], ['b', -1], ['b', 1.5], ['b', NaN], ['b', 'empty'], ['e', 'unknown']])('P2-U3(%s): refuses invalid units (%s) without recording a leg', (_case, value) => {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    const units = typeof value === 'number' ? { [lineId]: value } : { [value === 'empty' ? '' : 'unknown']: 1 };
+    act(() => result.current.setQuantity(lineId, 3));
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units })).toBeNull();
+    });
+    expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('P2-U3(c): an empty units map records an amount-only leg', () => {
+    const { result } = renderSale();
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: {} })).not.toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(1);
+    expect(result.current.order.payments[0]).not.toHaveProperty('units');
+  });
+
+  it.each(['Back', 'void'])('P2-U3(f): refuses over-allocation and frees units after %s', (release) => {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    act(() => { result.current.setQuantity(lineId, 3); result.current.startTender('cash'); });
+    let first: string | null = null;
+    act(() => {
+      first = result.current.addTender({ method: 'external', amountMinor: 300, units: { [lineId]: 2 } });
+    });
+    expect(first).not.toBeNull();
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(1);
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 150, units: { [lineId]: 1 } })).not.toBeNull();
+    });
+    if (release === 'Back') {
+      act(() => result.current.cancelTender());
+      act(() => result.current.startTender('cash'));
+      expect(result.current.order.payments.some((payment) => payment.id === first)).toBe(false);
+    } else {
+      act(() => { expect(result.current.voidTender(first!)).toBe(true); });
+      expect(result.current.order.payments[0].status).toBe('voided');
+    }
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).not.toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(release === 'Back' ? 1 : 3);
+  });
+
+  it('P2-U3(g): a failed leg\'s units are free to take again', () => {
+    const { result } = renderSale();
+    const lineId = result.current.order.lineItems[0].id;
+    act(() => { result.current.setQuantity(lineId, 3); result.current.startTender('cash'); });
+    let first: string | null = null;
+    act(() => {
+      first = result.current.addTender({ method: 'external', amountMinor: 300, status: 'pending', units: { [lineId]: 2 } });
+    });
+    expect(first).not.toBeNull();
+    act(() => { expect(result.current.setTenderStatus(first!, 'failed')).toBe(true); });
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).not.toBeNull();
+    });
+    expect(result.current.order.payments).toHaveLength(2);
+    expect(result.current.order.payments).toMatchObject([
+      { id: first, status: 'failed' }, { method: 'cash', amountMinor: 300, units: { [lineId]: 2 } },
+    ]);
+  });
+});
