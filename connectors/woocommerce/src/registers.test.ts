@@ -10,6 +10,7 @@ const context: SyncContext = {
 const fetchMock = vi.fn<typeof fetch>();
 let store: Record<string, unknown>;
 let registersResponse: () => Response;
+let storesResponse: () => Response;
 const twoRegisters = [
   { id: '0b6f8e2a-1111-4c3d-9e2f-000000000001', name: 'Front counter', store_id: 0, default_float: '150.0000', session: null },
   { id: '0b6f8e2a-2222-4c3d-9e2f-000000000002', name: 'Back bar', store_id: 3, default_float: null, session: null },
@@ -18,9 +19,10 @@ const twoRegisters = [
 beforeEach(() => {
   store = { id: 0, currency: 'USD', expected_close_time: '17:30', variance_threshold: '' };
   registersResponse = () => Response.json(twoRegisters);
+  storesResponse = () => Response.json([store]);
   fetchMock.mockReset().mockImplementation(async (input) => {
     const url = new URL(String(input));
-    if (url.pathname.endsWith('/stores')) return Response.json([store]);
+    if (url.pathname.endsWith('/stores')) return storesResponse();
     if (url.pathname.endsWith('/registers')) return registersResponse();
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -37,8 +39,8 @@ describe('wooListRegisters', () => {
       { id: twoRegisters[1].id, name: 'Back bar', expectedCloseTime: '17:30' },
     ]);
     expect(fetchMock.mock.calls).toEqual([
-      [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
       [`${context.baseUrl}/registers`, { method: 'GET', headers: context.headers, signal: context.signal }],
+      [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
     ]);
   });
 
@@ -58,7 +60,9 @@ describe('wooListRegisters', () => {
 
   it('T3: returns [] when the store has no registers route (404)', async () => {
     registersResponse = () => Response.json({ code: 'rest_no_route' }, { status: 404 });
+    storesResponse = () => new Response(null, { status: 500 });
     expect(await run()).toStrictEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('T3: throws on a 500', async () => {
@@ -73,10 +77,10 @@ describe('wooListRegisters', () => {
     await expect(result).rejects.toMatchObject({ status, message: `WooCommerce registers: HTTP ${status}` });
   });
 
-  it('throws when /stores fails, before asking for registers', async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+  it('throws when /stores fails after the registers answer', async () => {
+    storesResponse = () => new Response(null, { status: 500 });
     await expect(run()).rejects.toThrow('WooCommerce stores: HTTP 500');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('throws when the registers body is not an array', async () => {
