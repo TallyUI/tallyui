@@ -73,7 +73,7 @@ export type TenderAction =
     }
   | { type: 'pick-transport'; transport: PaymentTransport }
   | { type: 'pick-reader'; readerId: string | null }
-  | { type: 'tender-started'; paymentId?: string }
+  | { type: 'tender-started'; paymentId?: string; /** The units the recorded leg carries; frozen in place of pickedUnits when given (`{}` for a money-only leg). */ units?: Readonly<Record<string, number>> }
   | { type: 'key'; key: TenderKey }
   | { type: 'set-entry'; minor: number }
   | { type: 'set-entry-mode'; mode: 'money' | 'percent' }
@@ -176,11 +176,14 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
     case 'tender-started': {
       // A leg is being recorded: the method stays chosen for the next one; the entry
       // clears until `tender-recorded` pre-types the next planned leg. Picked units freeze
-      // to the pressed payment's id, so a void of that payment later frees them.
-      const freeze = action.paymentId !== undefined && Object.keys(state.pickedUnits).length > 0;
-      const units = freeze
-        ? { unitAllocations: { ...state.unitAllocations, [String(action.paymentId)]: state.pickedUnits }, pickedUnits: {} }
-        : {};
+      // to the pressed payment's id, so a void of that payment later frees them. When the action names the leg's units, those freeze, not the raw picks.
+      const leg = action.units ?? state.pickedUnits;
+      const freeze = action.paymentId !== undefined && Object.keys(leg).length > 0;
+      const clear = action.paymentId !== undefined && Object.keys(state.pickedUnits).length > 0;
+      const units = {
+        ...(freeze ? { unitAllocations: { ...state.unitAllocations, [String(action.paymentId)]: leg } } : {}),
+        ...(clear ? { pickedUnits: {} } : {}),
+      };
       return { ...state, entryMinor: 0, entryDirty: false, entryMode: 'money', splitView: false, ...units };
     }
     case 'back':
@@ -240,8 +243,9 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
             ? state.plan.lineIds.filter((id) => !state.linesPaidBy[id])
             : state.pickedLineIds,
       };
+    // Split closed means no picks: every action that closes Split clears pickedUnits, except tender-recorded (above) and tender-started without a payment id (S5); allocations stay.
     case 'close-split':
-      return { ...state, splitView: false };
+      return { ...state, splitView: false, pickedUnits: {} };
     case 'set-split-tab':
       return { ...state, splitTab: action.tab };
     case 'toggle-split-line':
@@ -256,6 +260,8 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
       // A fractional or negative count is refused outright: such a line cannot be split by units.
       if (!Number.isInteger(action.units) || action.units < 0) return state;
       if (!Number.isInteger(action.unpaidUnits) || action.unpaidUnits < 0) return state;
+      // No picks under a plan: the planned leg is paid by money, so a pick would freeze into its allocations.
+      if (state.plan && action.units > 0) return state;
       const units = Math.min(action.units, action.unpaidUnits);
       const next = { ...state.pickedUnits, [String(action.lineId)]: units };
       return { ...state, pickedUnits: Object.fromEntries(Object.entries(next).filter(([, n]) => n > 0)) };
@@ -265,6 +271,7 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         ...state,
         plan: action.plan,
         splitView: false,
+        pickedUnits: {},
         pickedLineIds: [],
         entryMinor:
           state.view === 'amount'
@@ -279,13 +286,14 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
         ...state,
         plan: null,
         splitView: false,
+        pickedUnits: {},
         view: action.type === 'arm-custom' ? 'amount' : state.view,
         entryMinor: action.type === 'clear-plan' ? action.balanceMinor : 0,
         entryDirty: false,
         entryMode: 'money',
       };
     case 'request-cancel':
-      return { ...state, view: 'cancel', splitView: false };
+      return { ...state, view: 'cancel', splitView: false, pickedUnits: {} };
     case 'reset':
       return initialTenderState;
   }

@@ -481,4 +481,45 @@ describe('split by units', () => {
     expect(closed.splitView).toBe(false);
     expect(closed.pickedUnits).toEqual({ a: 1 });
   });
+
+  it.each<TenderAction>([
+    { type: 'close-split' },
+    { type: 'set-plan', plan: { kind: 'even', ways: 2, from: 0 }, balanceMinor: 100 },
+    { type: 'clear-plan', balanceMinor: 100 },
+    { type: 'arm-custom' },
+    { type: 'request-cancel' },
+  ])('T2: %s closes Split and clears picked units, keeping allocations', (action) => {
+    const state = {
+      ...initialTenderState, view: 'amount' as const, methodId: 'cash', entryMinor: 100,
+      splitView: true, pickedUnits: { a: 1 }, unitAllocations: { p1: { b: 1 } },
+    };
+    const closed = tenderReducer(state, action);
+    expect(closed.splitView).toBe(false);
+    expect(closed.pickedUnits).toEqual({});
+    expect(closed.unitAllocations).toEqual({ p1: { b: 1 } });
+  });
+
+  it.each([
+    { kind: 'even' as const, ways: 2, from: 0 },
+    { kind: 'fixed' as const, firstMinor: 50, title: null, from: 0 },
+    { kind: 'items' as const, lineIds: ['a'], firstMinor: 50, ways: 1, from: 0 },
+  ].map((plan) => [plan.kind, plan] as const))('T3: under a %s plan, set-split-units refuses a count above 0 and still accepts 0', (_kind, plan) => {
+    const state = { ...initialTenderState, plan, pickedUnits: {} };
+    expect(tenderReducer(state, { type: 'set-split-units', lineId: 'a', units: 1, unpaidUnits: 2 })).toBe(state);
+    const cleared = tenderReducer(
+      { ...state, pickedUnits: { a: 1 } },
+      { type: 'set-split-units', lineId: 'a', units: 0, unpaidUnits: 2 },
+    );
+    expect(cleared.pickedUnits).toEqual({});
+  });
+
+  it("T4: tender-started freezes the leg's own units when given", () => {
+    const state = { ...initialTenderState, pickedUnits: { a: 1, b: 1 }, unitAllocations: { p0: { c: 1 } } };
+    const picked = tenderReducer(state, { type: 'tender-started', paymentId: 'p1', units: { b: 1 } });
+    expect(picked.unitAllocations).toEqual({ p0: { c: 1 }, p1: { b: 1 } });
+    expect(picked.pickedUnits).toEqual({});
+    const moneyOnly = tenderReducer(state, { type: 'tender-started', paymentId: 'p1', units: {} });
+    expect(moneyOnly.unitAllocations).toBe(state.unitAllocations);
+    expect(moneyOnly.pickedUnits).toEqual({});
+  });
 });
