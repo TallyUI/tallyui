@@ -48,6 +48,21 @@ describe('CustomerDisplayScreen', () => {
     expect(screen.getByTestId('customer-display-payment').textContent).toContain(`Approved${money(1200)}`);
   });
 
+  it('D3b: shows only the complete card change for a completed cash pick', () => {
+    const pickedCart = displayCart({
+      ...receipt, totals: { ...receipt.totals, totalMinor: 2000 }, changeDueMinor: 1500,
+      payments: [{ method: 'cash', amountMinor: 2000, changeMinor: 1500 }, { method: 'external', amountMinor: 300 }],
+    });
+    show({ config, view: { screen: 'payment', cart: pickedCart, payment: {
+      state: 'complete', leg: { method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500 },
+    } } });
+    const text = screen.getByTestId('customer-display-payment').textContent!;
+    expect(text).toContain('Paid in full');
+    expect(text).toContain(`Change ${money(1500)}`);
+    expect(text).not.toContain('Tendered');
+    expect(text.split('Change').length - 1).toBe(1);
+  });
+
   it('shows the store and the configured welcome when idle', () => {
     show({ config, view: { screen: 'idle', reason: 'no_cart' } });
     expect(screen.getByTestId('customer-display-idle').textContent).toBe('Corner ShopHello there');

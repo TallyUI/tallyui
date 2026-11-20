@@ -17,9 +17,12 @@ describe('derivePaymentEvent', () => {
     expect(derivePaymentEvent([], [pick], false, false, 1500)).toEqual({
       state: 'approved', leg: { method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500 },
     });
-    expect(derivePaymentEvent([], [pay('plain', 'captured', 600, 'cash')], false, false, 1400)).toEqual({
+    const event = derivePaymentEvent([], [pay('plain', 'captured', 600, 'cash')], false, false, 1400)!;
+    expect(event).toEqual({
       state: 'approved', leg: { method: 'cash', amountMinor: 600 },
     });
+    expect(event.leg).not.toHaveProperty('tenderedMinor');
+    expect(event.leg).not.toHaveProperty('changeMinor');
   });
 
   it('1: a sale that becomes completed is complete, with the last captured leg', () => {
