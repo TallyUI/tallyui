@@ -151,7 +151,7 @@ describe('createSaleDisplayPublisher', () => {
   });
 
   it('3: follows a leg from started to approved, and the leg that pays the balance to complete', () => {
-    const { link, payments } = recorder();
+    const { link, calls, payments } = recorder();
     const publisher = createSaleDisplayPublisher(link);
     const sale = newSale();
     const show = () => publisher.update({ order: sale.getSnapshot(), stage: tender });
@@ -160,13 +160,43 @@ describe('createSaleDisplayPublisher', () => {
     sale.setPaymentStatus(card, 'authorized');
     show();
     expect(payments()).toEqual([{ state: 'started', leg: leg(600) }, { state: 'approved', leg: leg(600) }]);
-    // Captured with a balance due is approved again: the receipt carries no leg status, so the call is the same one.
+    // Capture adds the row, so the call is sent again.
     sale.setPaymentStatus(card, 'captured');
     show();
-    expect(payments()).toEqual([{ state: 'started', leg: leg(600) }, { state: 'approved', leg: leg(600) }]);
+    expect(payments()).toEqual([{ state: 'started', leg: leg(600) }, { state: 'approved', leg: leg(600) }, { state: 'approved', leg: leg(600) }]);
+    expect(calls.at(-1)![1]!.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual([leg(600)]);
     sale.addPayment({ method: 'cash', amountMinor: 400, status: 'captured' });
     show();
-    expect(payments().slice(2)).toEqual([{ state: 'complete', leg: leg(400, 'cash') }]);
+    expect(payments().slice(3)).toEqual([{ state: 'complete', leg: leg(400, 'cash') }]);
+  });
+
+  it('P1: only captured legs reach the display receipt', () => {
+    const sale = newSale();
+    sale.addPayment({ method: 'cash', amountMinor: 300, status: 'captured' });
+    const failed = sale.addPayment({ method: 'card', amountMinor: 200, status: 'pending' });
+    sale.setPaymentStatus(failed, 'failed');
+    sale.addPayment({ method: 'card', amountMinor: 400, status: 'pending' });
+    sale.addPayment({ method: 'card', amountMinor: 100, status: 'authorized' });
+    const { link, calls } = recorder();
+    createSaleDisplayPublisher(link).update({ order: sale.getSnapshot(), stage: tender });
+    expect(calls.at(-1)![1]!.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual([leg(300, 'cash')]);
+  });
+
+  it('P2: a voided leg leaves the receipt rows', () => {
+    const sale = newSale();
+    const card = sale.addPayment({ method: 'card', amountMinor: 500, status: 'captured' });
+    sale.setPaymentStatus(card, 'voided');
+    const { link, calls } = recorder();
+    createSaleDisplayPublisher(link).update({ order: sale.getSnapshot(), stage: tender });
+    expect(calls.at(-1)![1]!.payments).toEqual([]);
+  });
+
+  it('P3: a leg with no status still counts', () => {
+    const sale = newSale();
+    sale.addPayment({ method: 'cash', amountMinor: 250 });
+    const { link, calls } = recorder();
+    createSaleDisplayPublisher(link).update({ order: sale.getSnapshot(), stage: tender });
+    expect(calls.at(-1)![1]!.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual([leg(250, 'cash')]);
   });
 
   it('4: a failed leg is declined, with the configured message', () => {
