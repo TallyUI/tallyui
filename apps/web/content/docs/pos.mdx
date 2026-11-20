@@ -275,7 +275,7 @@ manager.newOrder();
 | Cart | `openStoreOrder(order)` | Loads a reopened store order into an empty sale; returns a refusal or `null`. |
 | Tender | `startTender(method, options?)` | Starts `cash` or `external` tender and pins `options.session` or the hook's session; repeated calls keep the first pin. |
 | Tender | `setTender(tender)` | Replaces unlocked payments with one tender, or clears them for `null`. |
-| Tender | `addTender(tender)` | Adds a cash or external payment; external amounts are capped at the balance less payments in motion, and only cash gives change. |
+| Tender | `addTender(tender)` | Adds a cash or external payment; external amounts are capped at the balance less payments in motion, and only cash gives change. A cash payment for picked `units` may carry `tenderedMinor` (an integer at least its `amountMinor`; `amountMinor` must be at most the balance less payments in motion), and it stores `changeMinor`. |
 | Tender | `setTenderStatus(paymentId, status)` | Sets `authorized`, `captured` or `failed`; returns whether the status changed. |
 | Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. Refuses with `SALE_FINISHED` on the receipt. |
 | Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. Refuses with `SALE_FINISHED` on the receipt. |

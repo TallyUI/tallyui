@@ -88,6 +88,19 @@ const config: ReceiptConfig = {
   taxLabels: { 100000: 'VAT 10%', 50000: 'Reduced VAT 5%' },
 };
 
+it('D2: live receipt rows show picked cash tender and change, with no change key on plain cash', () => {
+  const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+  const lineId = builder.addLine({ productId: 'p1', name: 'Item', unitPrice: { amount: 500, currency: 'USD' }, quantity: 4 });
+  builder.addPayment({ method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500, units: { [lineId]: 1 } });
+  builder.addPayment({ method: 'cash', amountMinor: 600 });
+  const receipt = buildReceiptData(builder.getSnapshot(), config);
+  expect(receipt.payments).toEqual([
+    { method: 'cash', amountMinor: 2000, changeMinor: 1500, reference: undefined },
+    { method: 'cash', amountMinor: 600, reference: undefined },
+  ]);
+  expect(receipt.payments[1]).not.toHaveProperty('changeMinor');
+});
+
 describe('live receipt refund-due', () => {
   it('shows refund-due on a live reopened sale paid beyond its new total by locked legs, and no change', () => {
     const receipt = buildReceiptData({

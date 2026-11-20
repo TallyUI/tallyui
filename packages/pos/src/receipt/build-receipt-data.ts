@@ -77,6 +77,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
     payments: order.payments.map((p) => ({
       method: p.method,
       amountMinor: p.tenderedMinor ?? p.amountMinor,
+      ...(p.changeMinor !== undefined ? { changeMinor: p.changeMinor } : {}),
       reference: p.reference,
     })),
     changeDueMinor: order.changeDueMinor - refundDueMinor + order.payments.reduce((sum, p) => sum + (p.changeMinor ?? 0), 0),

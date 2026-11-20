@@ -9,7 +9,7 @@ export type PaymentPhase = 'started' | 'approved' | 'declined' | 'complete';
 export interface DisplayTemplate { id: string | number; version: number }
 /** The cart snapshot: the receipt as it stands, and whether lines were dropped to fit the message cap. */
 export interface DisplayCart { receipt: ReceiptData; linesTruncated: boolean }
-export interface DisplayPayment { state: PaymentPhase; leg?: { method: string; amountMinor: number }; message?: string }
+export interface DisplayPayment { state: PaymentPhase; leg?: { method: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number }; message?: string }
 export interface DisplayConfig {
   contract: '1.0';
   display: { id: string; name: string };

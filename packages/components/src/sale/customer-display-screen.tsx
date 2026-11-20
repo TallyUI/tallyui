@@ -10,7 +10,7 @@ const COPY = {
   discount: 'Discount', total_tax: 'Tax', included_tax: 'Tax included', total: 'Total', paid_so_far: 'Paid so far',
   present_card: 'Please present your card', approved: 'Approved', declined: 'Declined',
   try_another_card: 'Please try another card or ask staff', paid_in_full: 'Paid in full', change: 'Change',
-  thank_you: 'Thank you',
+  thank_you: 'Thank you', tendered: 'Tendered',
 };
 
 const CARD = { started: 'bg-primary', approved: 'bg-success', complete: 'bg-success', declined: 'bg-destructive' };
@@ -82,7 +82,7 @@ function PaymentCard({ receipt, payment, money, t, refundDueLabel, children }: {
   receipt: ReceiptData; payment: DisplayPayment; money: (amount: number) => string; t: (key: keyof typeof COPY) => string;
   refundDueLabel: string; children: ReactNode;
 }) {
-  const paid = receipt.payments.reduce((sum, { amountMinor }) => sum + amountMinor, 0);
+  const paid = receipt.payments.reduce((sum, { amountMinor, changeMinor }) => sum + amountMinor - (changeMinor ?? 0), 0);
   const due = Math.max(0, receipt.totals.totalMinor - paid);
   const complete = payment.state === 'complete';
   const title = { started: t('present_card'), approved: t('approved'), declined: t('declined'), complete: t('paid_in_full') }[payment.state];
@@ -95,6 +95,10 @@ function PaymentCard({ receipt, payment, money, t, refundDueLabel, children }: {
     <View className={`gap-2 rounded-xl p-6 ${CARD[payment.state]}`}>
       <Text className={`text-sm font-semibold uppercase ${text}`}>{title}</Text>
       <Text className={`text-4xl font-bold ${text}`}>{money(complete ? receipt.totals.totalMinor : payment.leg?.amountMinor ?? due)}</Text>
+      {!complete && payment.leg?.tenderedMinor !== undefined ? <>
+        <Text className={`text-lg ${text}`}>{`${t('tendered')} ${money(payment.leg.tenderedMinor)}`}</Text>
+        <Text className={`text-lg ${text}`}>{`${t('change')} ${money(payment.leg.changeMinor ?? 0)}`}</Text>
+      </> : null}
       {complete && receipt.changeDueMinor > 0 ? <Text className={`text-lg ${text}`}>{`${t('change')} ${money(receipt.changeDueMinor)}`}</Text> : null}
       {complete && receipt.refundDueMinor && receipt.refundDueMinor > 0
         ? <Text className={`text-lg ${text}`}>{`${refundDueLabel} ${money(receipt.refundDueMinor)}`}</Text> : null}

@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRxDatabase, type RxCollection } from 'rxdb';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
-import type { PosOrder } from '../pos-order';
+import { orderDraftSchema } from '../order';
+import { finalizeOrder, type PosOrder } from '../pos-order';
 import { buildReceiptData } from '../receipt/build-receipt-data';
 import { buildReceiptDataFromPosOrder } from '../receipt/reprint';
 import { wcposSourceFromPosOrder, wcposSourceFromSentOrder } from '../receipt-template/wcpos/from-orders';
@@ -22,13 +26,13 @@ const entries = catalogueEntries([{
 const pricing: StoreSettings = { currency: 'EUR', pricesIncludeTax: false, taxRatesPpm: { default: 0 } };
 const config = { storeName: 'Test Shop' };
 
-function renderSale(quantity = 2) {
+function renderSale(quantity = 2, drafts?: RxCollection) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
   }
   const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
   const { result } = renderHook(() => useSale(pricing, {
-    registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, onSaleCompleted,
+    registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 2 }, onSaleCompleted, drafts,
   }), { wrapper: Wrapper });
   act(() => { result.current.add(entries[0], traits); });
   const lineId = result.current.order.lineItems[0].id;
@@ -63,6 +67,77 @@ async function completeSale(quantity: number, amountMinor: number, picked = fals
 afterEach(cleanup);
 
 describe('cash tender for picked units', () => {
+  it.each(['captured', 'pending', 'authorized'] as const)('D4: refuses a pick above the balance less a %s external leg', (status) => {
+    const { result, lineId } = renderSale();
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 600, status })).toEqual(expect.any(String)); });
+    const payments = result.current.order.payments;
+    act(() => {
+      expect(result.current.addTender({ method: 'cash', amountMinor: 500, tenderedMinor: 2000, units: { [lineId]: 1 } })).toBeNull();
+    });
+    expect(result.current.order.payments).toEqual(payments);
+  });
+
+  it('D4: accepts and completes a cash pick equal to the remaining due', async () => {
+    const { result, lineId, onSaleCompleted } = renderSale();
+    const pick = { method: 'cash' as const, amountMinor: 500, tenderedMinor: 2000, units: { [lineId]: 1 } };
+    act(() => {
+      expect(result.current.addTender({ method: 'external', amountMinor: 500 })).toEqual(expect.any(String));
+      expect(result.current.addTender(pick)).toEqual(expect.any(String));
+    });
+    expect(result.current.order.balanceDueMinor).toBe(0);
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.stage.kind).toBe('receipt');
+    expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+    expect(onSaleCompleted.mock.calls[0][0].payments[1]).toMatchObject({
+      method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500,
+    });
+  });
+
+  it('D5: finalized pick cash cannot give change on top of its own recorded change', () => {
+    const { result, lineId } = renderSale();
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 1000 })).toEqual(expect.any(String)); });
+    const snapshot = result.current.order;
+    const order = {
+      ...snapshot, paidMinor: 1500, changeDueMinor: 500,
+      payments: [...snapshot.payments, {
+        id: 'pick', method: 'cash', status: 'captured' as const, amountMinor: 500,
+        tenderedMinor: 2000, changeMinor: 1500, units: { [lineId]: 1 },
+      }],
+    };
+    expect(() => finalizeOrder(order)).toThrow('finalize: change exceeds cash');
+  });
+
+  it('D6: parks and resumes picked cash, then completes with its tender and change intact', async () => {
+    const db = await createRxDatabase({
+      name: `cashpick${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false,
+    });
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const { result, lineId, onSaleCompleted } = renderSale(2, db.pos_drafts);
+      const pick = { method: 'cash' as const, amountMinor: 500, tenderedMinor: 2000, units: { [lineId]: 1 } };
+      act(() => { expect(result.current.addTender(pick)).toEqual(expect.any(String)); });
+      const draftId = result.current.order.id;
+      await act(async () => { expect(await result.current.park()).toBeNull(); });
+      expect(result.current.order.lineItems).toEqual([]);
+      await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+      expect(result.current.order.payments).toMatchObject([{ ...pick, changeMinor: 1500 }]);
+      act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
+      await act(async () => { await result.current.complete(); });
+      expect(onSaleCompleted).toHaveBeenCalledTimes(1);
+      const stage = result.current.stage;
+      expect(stage.kind).toBe('receipt');
+      if (stage.kind !== 'receipt') throw new Error('Sale did not complete');
+      expect(stage.posOrder.payments[0]).toMatchObject({
+        method: 'cash', amountMinor: 500, tenderedMinor: 2000, changeMinor: 1500,
+      });
+      expect(buildReceiptData(stage.order, config).changeDueMinor).toBe(1500);
+    } finally {
+      cleanup();
+      await db.remove();
+    }
+  });
+
   it.each([undefined, 'bad\u0000reference'])('C0-1: keeps the pick, tender and change (reference: %s)', (reference) => {
     const { result, lineId } = renderSale();
     let id: string | null = null;
