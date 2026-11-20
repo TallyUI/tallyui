@@ -4,6 +4,7 @@ import { Pressable, Text, TextInput, View, type ViewProps } from 'react-native';
 import { useFormatMoney, useMoneyFormat, minorUnitDigits, moneyFromDecimalString, normalizeMoneyText, type Money } from '@tallyui/core';
 import { quickTenderedAmounts } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
+import { moneyInputText } from '../lib/money-input';
 
 export interface CashTenderedProps extends Omit<ViewProps, 'children'> {
   total: Money;
@@ -38,10 +39,8 @@ export function CashTendered({
   const [internalAmount, setInternalAmount] = useState(defaultAmount ?? total);
   const amount = controlledAmount ?? internalAmount;
   const buttons = quickAmounts ?? defaultQuickAmounts(total);
-  const digits = minorUnitDigits(amount.currency);
-  const amountText = String(Math.abs(amount.amount)).padStart(digits + 1, '0');
-  const decimal = (amount.amount < 0 ? '-' : '') + (digits
-    ? `${amountText.slice(0, -digits)}.${amountText.slice(-digits)}` : amountText);
+  const decimal = moneyInputText(amount.amount, amount.currency, format);
+  const separator = format?.decimalSeparator || '.';
   const [text, setText] = useState(decimal);
   const lastTextAmount = useRef(amount);
 
@@ -89,7 +88,7 @@ export function CashTendered({
             setText(text);
             lastTextAmount.current = parsed;
             handleChange(parsed);
-          } else if (text === '' || /^\d+\.$/.test(text)) {
+          } else if (text === '' || (text.endsWith(separator) && /^\d+$/.test(text.slice(0, -separator.length)))) {
             setText(text);
           }
         }}
