@@ -120,6 +120,17 @@ describe('useSale removal and restore (#1095)', () => {
     unchanged(removal, SALE_FINISHED);
   });
 
+  it('T4b: refuses, changing nothing, after park then a resume of that same draft', async () => {
+    const { result } = renderSale();
+    const removal = removeLine(result, addThree(result)[1]);
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(removal.orderId)).toBeNull(); });
+    expect(result.current.order.id).toBe(removal.orderId);
+    const before = result.current.order;
+    expect(restore(result, removal)).toBe(RESTORE_STALE);
+    expect(result.current.order).toEqual(before);
+  });
+
   it('T5: a second restore of the same removal refuses and leaves one copy', () => {
     const { result } = renderSale();
     const ids = addThree(result);

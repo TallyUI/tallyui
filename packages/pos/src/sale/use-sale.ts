@@ -66,7 +66,7 @@ export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel 
 export const RESTORE_STALE = 'This item can no longer be put back. Add it again.';
 /** Taken by `removal()` before a remove; pass it to `restore()`. Hosts never build one. */
 export type SaleRemoval = { readonly kind: 'line' | 'fee' | 'shipping'; readonly id: string; readonly item: LineItem | ChargeLine;
-  readonly index: number; readonly orderId: string; readonly taxContext: TaxContext };
+  readonly index: number; readonly orderId: string; readonly taxContext: TaxContext; readonly epoch: number };
 /** The sale's tax context and, with `taxContextFor`, the address it matched (#722). */
 type SaleTax = { taxContext: TaxContext; location?: woocommerceTax.ResolvedTaxLocation };
 // The start of the message addOne sets when a terminal reference is dropped; a later tender change keeps it.
@@ -239,6 +239,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const repricing = useRef<Promise<string | null> | null>(null);
   const [couponsRepricing, setCouponsRepricing] = useState(false);
   const generation = useRef(0);
+  const saleEpoch = useRef(0); // #1095: bumped by every resetSale (new sale, park, resume, switch); a removal from an older epoch is stale.
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
@@ -305,6 +306,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     keptCoupons.current = undefined; keptLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
+    saleEpoch.current++;
     setBuilder(next);
     setOrder(next.getSnapshot());
     // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
@@ -633,13 +635,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const order = builderNow.current.getSnapshot();
       const list: readonly (LineItem | ChargeLine)[] = kind === 'line' ? order.lineItems : kind === 'fee' ? order.fees ?? [] : order.shipping ?? [];
       const index = list.findIndex((item) => item.id === id);
-      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext };
+      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext, epoch: saleEpoch.current };
     },
     /** #1095, v2's Undo: puts a removal back at its old index (clamped), re-taxed when the sale's rates moved since; returns a refusal or null. */
     restore(removal: SaleRemoval): string | null {
       const held = editRefusal(); if (held) return held;
       const order = builderNow.current.getSnapshot(), moved = removal.taxContext !== taxNow.current.taxContext;
-      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id) return RESTORE_STALE;
+      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id || removal.epoch !== saleEpoch.current) return RESTORE_STALE;
       const ids = [removal.item, ...(removal.kind === 'line' ? (removal.item as LineItem).discounts : [])].map((entry) => entry.id);
       if ([...order.lineItems.flatMap((li) => [li, ...li.discounts]), ...order.fees ?? [], ...order.shipping ?? [], ...order.discounts, ...order.payments]
         .some((entry) => ids.includes(entry.id))) return RESTORE_STALE; // already back
