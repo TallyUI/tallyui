@@ -68,4 +68,16 @@ describe('order.create shipping taxMinor in WooCommerce mode (#1120)', () => {
       expect(micros(finalized.shipping![0])).toStrictEqual(['33500000']);
       expect(toOrderCreateEnvelope(finalized, 'till').payload.shipping![0].taxMinor).toBe(taxMinor);
     });
+
+  // S7's inclusive tie on a generic store: its default rounding is not WooCommerce's, so it rounds half away from zero.
+  it('S6: a generic 0.335 inclusive tie keeps half-away rounding and sends 34', () => {
+    const builder = createOrderBuilder({ currency: 'USD', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 200000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1999, currency: 'USD' } });
+    builder.addShipping({ name: 'Shipping', amountMinor: 201, methodId: 'flat_rate' });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const finalized = finalizeOrder(builder.getSnapshot(), options);
+    expect(finalized.taxRounding?.granularity).not.toBe('woocommerce');
+    expect(micros(finalized.shipping![0])).toStrictEqual(['33500000']);
+    expect(toOrderCreateEnvelope(finalized, 'till').payload.shipping![0].taxMinor).toBe(34);
+  });
 });
