@@ -285,6 +285,31 @@ describe('a plan keys its legs by payment id (#1133 prerequisite 1)', () => {
     act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); });
     expect(text('tender-plan')).toBe('2 of 3');
   }, 20_000);
+
+  it("D5: keeps a fixed plan's progress when a leg before the plan is voided", () => {
+    startPane();
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500 }); });
+    const A = sale.order.payments[0];
+    fireEvent.click(screen.getByTestId('tender-method-cash'));
+    for (const key of ['Clear', '3', '0', '0']) press(key);
+    fireEvent.click(screen.getByTestId('tender-split-chip'));
+    fireEvent.click(screen.getByTestId('tender-split-even-2'));
+    expect(state.plan).toMatchObject({ kind: 'fixed', firstMinor: 300, thenWays: 2 });
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 300 }); });
+    const label = text('tender-plan');
+    expect(label).toBe('2 of 3');
+    fireEvent.click(screen.getByTestId(`tender-leg-${A.id}-void`));
+    expect(text('tender-plan')).toBe(label);
+  }, 20_000);
+
+  it('D6: a pending leg taken under the plan does not count as taken', () => {
+    startPane();
+    fireEvent.click(screen.getByTestId('tender-split-chip'));
+    fireEvent.click(screen.getByTestId('tender-split-even-3'));
+    expect(text('tender-plan')).toBe('1 of 3');
+    act(() => { sale.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    expect(text('tender-plan')).toBe('1 of 3');
+  }, 20_000);
 });
 
 describe('Tender on a reopened order (ADR-090 gate 36)', () => {
