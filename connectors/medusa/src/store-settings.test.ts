@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StoreSettingsError } from '@tallyui/core';
+import { ConnectorUnauthorizedError, StoreSettingsError } from '@tallyui/core';
 import type { SyncContext } from '@tallyui/core';
 
 import { medusaStoreSettings } from './store-settings';
@@ -18,12 +18,34 @@ const apiKeys = (
 ) => ok({ api_keys: list.map((k) => ({ title: 'Key', token: 'pk_x', revoked_at: null, ...k })) });
 const taxRegions = (list: Array<Record<string, unknown>> = []) => ok({ tax_regions: list });
 
-/** Mocks the two-phase request sequence: the four parallel reads, then (only if a country resolves) the tax-regions read. */
-function mockFetch(...responses: Response[]) {
-  const spy = vi.spyOn(globalThis, 'fetch');
-  for (const r of responses) spy.mockResolvedValueOnce(r);
-  return spy;
+const emptyPage = () => ok({ tax_regions: [], count: 0, offset: 0, limit: 100 });
+
+/**
+ * Serves each read by its URL. The arguments are, in order, the four parallel reads and the
+ * country's tax-regions read; `allPages` are the pages of the all-tax-regions read (#673), by
+ * offset / 100, one empty page by default. Any other request rejects.
+ */
+function routeFetch(responses: Response[], allPages: Response[] = [emptyPage()]) {
+  const [storesRes, regionsRes, pricePrefRes, apiKeysRes, countryTaxRegionsRes] = responses;
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    const offset = url.searchParams.get('offset');
+    const response =
+      url.pathname === '/admin/tax-regions'
+        ? offset !== null
+          ? allPages[Number(offset) / 100]
+          : countryTaxRegionsRes
+        : { '/admin/stores': storesRes, '/admin/regions': regionsRes, '/admin/price-preferences': pricePrefRes, '/admin/api-keys': apiKeysRes }[url.pathname];
+    if (!response) throw new Error(`Unexpected request: ${url}`);
+    return response;
+  });
 }
+
+function mockFetch(...responses: Response[]) {
+  return routeFetch(responses);
+}
+
+const requestUrls = (spy: ReturnType<typeof routeFetch>) => spy.mock.calls.map(([input]) => String(input));
 
 describe('medusaStoreSettings', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -52,6 +74,7 @@ describe('medusaStoreSettings', () => {
       pricesIncludeTax: false,
       taxRatesPpm: { default: 0 },
       pricingContext: { region_id: 'reg_01M35QW1ACR84WNR3T0SVK6M1C', currency_code: 'eur', publishable_key: 'pk_test_fixture' },
+      allTaxRates: [],
     });
   });
 
@@ -281,5 +304,64 @@ describe('medusaStoreSettings', () => {
     for (const spy of consoleSpies) {
       for (const call of spy.mock.calls) expect(call.join(' ')).not.toContain(token);
     }
+  });
+});
+
+// #673: every tax region's rates, for an app's "View all tax rates" table. Display only.
+describe('medusaStoreSettings allTaxRates', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const fixtureReads = () => [ok(fixture.stores), ok(fixture.regions), ok(fixture.pricePreferences), ok(fixture.apiKeys), ok(fixture.taxRegionsDe)];
+  const allFields = 'fields=id,country_code,province_code,parent_id,*tax_rates,*tax_rates.rules';
+
+  it('T1: lists every region rate in order, with rules, the province as region, and no null rate', async () => {
+    routeFetch(fixtureReads(), [ok(fixture.taxRegionsAll)]);
+
+    const settings = await medusaStoreSettings(context, { country: 'de' });
+    expect(settings.allTaxRates).toStrictEqual([
+      { id: 'txr_de_standard', name: 'Germany', rate: '19', location: { country: 'de' } },
+      {
+        id: 'txr_de_books', name: 'Books', rate: '7', location: { country: 'de' },
+        rules: [{ reference: 'product_type', referenceId: 'ptyp_books' }],
+      },
+      { id: 'txr_de_by', name: 'Bavaria', rate: '2', location: { country: 'de', region: 'by' } },
+      { id: 'txr_fr_standard', name: 'FR-STANDARD', rate: '20', location: { country: 'fr' } },
+    ]);
+  });
+
+  it('T2: pages by offset until the count is reached, and no further', async () => {
+    const region = (i: number) => ({ id: `txreg_${i}`, country_code: 'de', province_code: null, parent_id: null, tax_rates: [] });
+    const page = (from: number, length: number) => ok({ tax_regions: Array.from({ length }, (_, i) => region(from + i)), count: 150, offset: from, limit: 100 });
+    const spy = routeFetch(fixtureReads(), [page(0, 100), page(100, 50)]);
+
+    await medusaStoreSettings(context, { country: 'de' });
+    expect(requestUrls(spy).filter((url) => url.includes('offset='))).toEqual([
+      `https://medusa.test/admin/tax-regions?limit=100&offset=0&${allFields}`,
+      `https://medusa.test/admin/tax-regions?limit=100&offset=100&${allFields}`,
+    ]);
+  });
+
+  it("T3: keeps what the cart reads byte-identical for the fixture with { country: 'de' }", async () => {
+    routeFetch(fixtureReads(), [ok(fixture.taxRegionsAll)]);
+
+    const { taxRatesPpm, pricesIncludeTax, currency, pricingContext } = await medusaStoreSettings(context, { country: 'de' });
+    // Captured from 5c4468e8, before `allTaxRates` existed for Medusa.
+    expect(JSON.stringify({ taxRatesPpm, pricesIncludeTax, currency, pricingContext })).toBe(
+      '{"taxRatesPpm":{"default":0},"pricesIncludeTax":false,"currency":"EUR",'
+      + '"pricingContext":{"region_id":"reg_01M35QW1ACR84WNR3T0SVK6M1C","currency_code":"eur","publishable_key":"pk_test_fixture"}}',
+    );
+  });
+
+  it('T4: a choice_required path makes no all-tax-regions request', async () => {
+    const spy = routeFetch([ok(fixture.stores), ok(fixture.regions), ok(fixture.pricePreferences), ok(fixture.apiKeys)], [ok(fixture.taxRegionsAll)]);
+
+    await expect(medusaStoreSettings(context)).rejects.toMatchObject({ code: 'choice_required' });
+    expect(requestUrls(spy).some((url) => url.includes('offset='))).toBe(false);
+  });
+
+  it('T5: a 401 on the all-tax-regions read rejects with ConnectorUnauthorizedError', async () => {
+    routeFetch(fixtureReads(), [new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 })]);
+
+    await expect(medusaStoreSettings(context, { country: 'de' })).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   });
 });

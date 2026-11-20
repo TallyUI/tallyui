@@ -243,6 +243,13 @@ describe('wooStoreSettings', () => {
     ]);
   });
 
+  // #673: `rules` is a Medusa field; WooCommerce has no rate rules, so its rows never carry the key.
+  it('T6: lists no rate with a rules key', async () => {
+    const { allTaxRates } = await wooStoreSettings(context);
+    expect(allTaxRates!.length).toBeGreaterThan(0);
+    for (const row of allTaxRates!) expect('rules' in row).toBe(false);
+  });
+
   it('keeps the filtered rates the cart reads byte-identical', async () => {
     taxesBody = listedRates;
     const { taxRates, taxRatesPpm } = await wooStoreSettings(context);

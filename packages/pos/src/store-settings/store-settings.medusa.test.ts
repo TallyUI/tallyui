@@ -9,10 +9,10 @@ import { withPricingContext, taxProviderProps } from './map-store-settings';
 const context: SyncContext = { connectorId: 'medusa', baseUrl: 'https://medusa.test', headers: { Authorization: 'Basic abc' } };
 const ok = (body: unknown) => new Response(JSON.stringify(body));
 
-/** The connector's request order: the four parallel reads, then the tax-regions read once a country resolves. */
+/** The connector's request order: the four parallel reads, then, once a country resolves, the country's tax-regions read and the one page of every tax region (#673). */
 function serveFixture(withCountry: boolean) {
   const spy = vi.spyOn(globalThis, 'fetch');
-  const bodies = [fixture.stores, fixture.regions, fixture.pricePreferences, fixture.apiKeys, ...(withCountry ? [fixture.taxRegionsDe] : [])];
+  const bodies = [fixture.stores, fixture.regions, fixture.pricePreferences, fixture.apiKeys, ...(withCountry ? [fixture.taxRegionsDe, fixture.taxRegionsAll] : [])];
   for (const body of bodies) spy.mockResolvedValueOnce(ok(body));
   return spy;
 }
