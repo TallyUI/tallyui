@@ -364,4 +364,13 @@ describe('medusaStoreSettings allTaxRates', () => {
 
     await expect(medusaStoreSettings(context, { country: 'de' })).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   });
+
+  it("the country's tax-regions read asks for country_code, limit=1000 and its fields (#1108)", async () => {
+    const spy = routeFetch(fixtureReads(), [ok(fixture.taxRegionsAll)]);
+
+    await medusaStoreSettings(context, { country: 'de' });
+    expect(requestUrls(spy).filter((url) => url.includes('/admin/tax-regions') && !url.includes('offset='))).toEqual([
+      'https://medusa.test/admin/tax-regions?country_code=de&limit=1000&fields=id,country_code,province_code,*tax_rates',
+    ]);
+  });
 });
