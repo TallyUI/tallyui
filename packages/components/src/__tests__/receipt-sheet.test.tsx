@@ -418,3 +418,36 @@ describe('printer switcher', () => {
     expect(onPrinterChange).not.toHaveBeenCalled();
   });
 });
+
+describe('Download PDF', () => {
+  it('D1: Download PDF is drawn only with onDownloadPdf', () => {
+    setup();
+    expect(screen.queryByTestId('receipt-download-pdf-button')).toBeNull();
+    cleanup();
+    setup({ onDownloadPdf: vi.fn() });
+    expect(screen.getByTestId('receipt-download-pdf-button').textContent).toBe('Download PDF');
+  });
+
+  it('D2: one press calls onDownloadPdf once', () => {
+    const onDownloadPdf = vi.fn();
+    setup({ onDownloadPdf });
+    fireEvent.click(screen.getByTestId('receipt-download-pdf-button'));
+    expect(onDownloadPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it('D3: while downloadingPdf, Download PDF is disabled and a press makes no call', () => {
+    const fn = vi.fn();
+    setup({ onDownloadPdf: fn, downloadingPdf: true });
+    const button = screen.getByTestId('receipt-download-pdf-button');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('D4: the footer order is Close, Email Receipt, Download PDF, Print', () => {
+    setup({ onEmail: vi.fn(), onDownloadPdf: vi.fn() });
+    const ids = Array.from(screen.getByTestId('receipt-footer').querySelectorAll('[data-testid]'),
+      (button) => button.getAttribute('data-testid'));
+    expect(ids).toEqual(['receipt-close-button', 'receipt-email-button', 'receipt-download-pdf-button', 'receipt-print-button']);
+  });
+});

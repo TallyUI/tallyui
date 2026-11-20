@@ -1,6 +1,6 @@
 ---
 title: ReceiptSheet
-description: ReceiptSheet is WCPOS v2's receipt print sheet, a right-edge sheet with a close icon in its header, the template choice, the printer, the app's preview and Close, Email Receipt and Print.
+description: ReceiptSheet is WCPOS v2's receipt print sheet, a right-edge sheet with a close icon in its header, the template choice, the printer, the app's preview and Close, Email Receipt, Download PDF and Print.
 ---
 
 ## Import
@@ -41,9 +41,9 @@ function ReceiptButton() {
 }
 ```
 
-This is the layout of WCPOS v2's receipt print sheet: the title, a Template row and a Printer row, the preview filling the rest of the sheet, and Close, Email Receipt and Print on the right of the footer, in that order. The sheet is props-only: it renders no receipt and prints nothing. Pass the preview as children ([Receipt](/docs/components/receipt), [ReceiptPreview](/docs/components/receipt-preview) or a rendered template) and do the printing in `onPrint`.
+This is the layout of WCPOS v2's receipt print sheet: the title, a Template row and a Printer row, the preview filling the rest of the sheet, and Close, Email Receipt, Download PDF and Print on the right of the footer, in that order. The sheet is props-only: it renders no receipt and prints nothing. Pass the preview as children ([Receipt](/docs/components/receipt), [ReceiptPreview](/docs/components/receipt-preview) or a rendered template) and do the printing in `onPrint`.
 
-The Template row shows a picker when there is more than one template, the template's title when there is one, and is left out when there are none. A disabled template is listed but cannot be chosen. The Printer row shows `printerLabel`, or, when `printers` is given, WCPOS v2's printer switcher: Auto first, reading `Auto — <name>` with `autoPrinterName`, then each printer by name or id. The app keeps the pick and resets it on a template change, as v2 does. Email Receipt appears only when `onEmail` or `email` is given; with `onEmail` alone, open your own email form from it. Close calls `onOpenChange(false)`.
+The Template row shows a picker when there is more than one template, the template's title when there is one, and is left out when there are none. A disabled template is listed but cannot be chosen. The Printer row shows `printerLabel`, or, when `printers` is given, WCPOS v2's printer switcher: Auto first, reading `Auto — <name>` with `autoPrinterName`, then each printer by name or id. The app keeps the pick and resets it on a template change, as v2 does. Email Receipt appears only when `onEmail` or `email` is given; with `onEmail` alone, open your own email form from it. Download PDF appears only when `onDownloadPdf` is given; the sheet makes no PDF, so the app makes and saves it in `onDownloadPdf`, and passes `downloadingPdf` while it works. Close calls `onOpenChange(false)`.
 
 ## Email form
 
@@ -88,6 +88,8 @@ Send refuses an address without an `@` inline ("Enter an email address."). Other
 | `printed` | `boolean` | `false` | Print reads "Print again" instead of "Print receipt" |
 | `onEmail` | `() => void` | — | Draws Email Receipt, which calls it |
 | `email` | `ReceiptSheetEmail` | — | Draws Email Receipt, which opens the sheet's email form; takes the place of `onEmail` |
+| `onDownloadPdf` | `() => void` | — | Draws Download PDF, which calls it |
+| `downloadingPdf` | `boolean` | `false` | Download PDF shows a spinner and cannot be pressed |
 | `children` | `ReactNode` | required | The preview |
 
 ### ReceiptSheetTemplate
