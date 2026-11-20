@@ -20,8 +20,7 @@ export const CART_COLUMNS = {
   regularPrice: { head: 'w-18 flex-none items-end px-2', cell: 'w-18 flex-none items-end px-2' },
   total: { head: 'w-20 flex-none items-end pr-3 pl-2', cell: 'min-w-20 flex-none items-end pr-3 pl-2' },
 };
-/** The quantity column while Cart's `picker` is on: room for v2's `− 99 of 99 +` stepper and its "This payment" head
- * (two 44px buttons and the count, about 165px; v2's split.jpg gives the column about 160px at 1280×800). */
+/** The quantity column while Cart's `picker` is on: w-48 (192px) fits v2's `− 99 of 99 +` stepper (two 44px buttons, two gaps and the count, about 175px) and its "This payment" head. */
 export const CART_PICKING_QUANTITY = { head: 'w-48 flex-none items-center px-2', cell: 'w-48 flex-none items-center px-2' };
 
 /** Under this cart width the Price column folds away, so the item name keeps room to read. */

@@ -465,7 +465,7 @@ describe('split by units', () => {
     expect(paidUnitsByLine(state.unitAllocations, ['p2'])).toEqual({ a: 1 });
   });
 
-  it('T1: tender-recorded keeps Split open while units are picked, and closes it when none are', () => {
+  it('T1: tender-recorded keeps Split as it is while units are picked, and closes it when none are', () => {
     const allocations = { p1: { a: 1 } };
     const state = { ...pick(initialTenderState, 1), splitView: true, unitAllocations: allocations };
     expect(state.pickedUnits).toEqual({ a: 1 });
@@ -477,5 +477,8 @@ describe('split by units', () => {
     expect(none.splitView).toBe(false);
     expect(none.pickedUnits).toEqual({});
     expect(none.unitAllocations).toEqual(allocations);
+    const closed = tenderReducer({ ...state, splitView: false }, { type: 'tender-recorded', rowsSinceFrom: [], balanceMinor: 100 });
+    expect(closed.splitView).toBe(false);
+    expect(closed.pickedUnits).toEqual({ a: 1 });
   });
 });
