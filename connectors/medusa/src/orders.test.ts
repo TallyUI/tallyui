@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError, UnsupportedOrderFilterError, type StoreOrder, type SyncContext } from '@tallyui/core';
-import { createMedusaOrders, ORDER_FIELDS, toMedusaStoreOrder } from './orders';
+import { createMedusaOrders, MEDUSA_ORDER_FILTERS, medusaOrderFilters, ORDER_FIELDS, toMedusaStoreOrder } from './orders';
 import { medusaMinor, medusaSumMinor } from './money';
 import { createMedusaAdminUserConnector } from './index';
 import fixture from './orders.fixture.json';
@@ -190,5 +190,127 @@ describe('Medusa order history', () => {
     expect(connector.orderFilters).toEqual(['status', 'customerId', 'dateRange']);
     expect(typeof connector.listOrders).toBe('function');
     expect(typeof connector.getOrders).toBe('function');
+  });
+});
+
+describe('Medusa order history through the plugin orders route (#1114)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const ctx2: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 2 } };
+  const ctx3: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 3 } };
+  const X = L[0];
+  const Y = L[2];
+  const pluginOf = (ids: string[], extra: Record<string, unknown> = { hasMore: false }) =>
+    response({ status: 200, body: { orders: ids.map((id) => ({ id, displayId: 1 })), ...extra } });
+  const call = (spy: { mock: { calls: unknown[][] } }, index: number) => new URL(String(spy.mock.calls[index]?.[0]));
+  const path = (url: URL) => `${url.origin}${url.pathname}`;
+  const entries = (url: URL) => [...url.searchParams.entries()];
+
+  it('N1 offers registerId only at plugin contract 3', () => {
+    for (const capabilities of [undefined, { orderCreate: 1 }, { orderCreate: 1, pluginContract: 2 }]) {
+      expect(medusaOrderFilters(capabilities)).toStrictEqual(MEDUSA_ORDER_FILTERS);
+    }
+    expect(medusaOrderFilters({ orderCreate: 1, pluginContract: 3 })).toStrictEqual([...MEDUSA_ORDER_FILTERS, 'registerId']);
+  });
+
+  it('N2 refuses a register filter below contract 3 and keeps digit searches on the admin path', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no request expected'));
+    await expect(listOrders(ctx2, { registerId: 'reg-1' })).rejects.toBeInstanceOf(UnsupportedOrderFilterError);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockResolvedValueOnce(response(fixture.list));
+    await listOrders(ctx2, { search: '303' });
+    expect(spy).toHaveBeenCalledOnce();
+    expect(path(call(spy, 0))).toBe(`${baseUrl}/admin/orders`);
+    expect(call(spy, 0).searchParams.get('q')).toBe('303');
+  });
+
+  it('N3 picks ids through the route by register and reads the rows in the route order', async () => {
+    const after = '2026-11-01T00:00:00.000Z';
+    const before = '2026-11-02T00:00:00.000Z';
+    const spy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(pluginOf([X.id, Y.id], { hasMore: true, total: 12 }))
+      .mockResolvedValueOnce(listOf([Y, X]));
+    const page = await listOrders(ctx3, { registerId: 'reg-1', status: 'completed', dateRange: { after, before }, page: 2, perPage: 10 });
+    expect(spy).toHaveBeenCalledTimes(2);
+    const first = call(spy, 0);
+    expect(path(first)).toBe(`${baseUrl}/tally/v1/orders`);
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', headers });
+    expect(entries(first).sort()).toStrictEqual([
+      ['after', after], ['before', before], ['page', '2'], ['perPage', '10'], ['registerId', 'reg-1'], ['status', 'completed'],
+    ]);
+    const second = call(spy, 1);
+    expect(path(second)).toBe(`${baseUrl}/admin/orders`);
+    expect(second.searchParams.getAll('id[]')).toStrictEqual([X.id, Y.id]);
+    expect(second.searchParams.get('limit')).toBe('2');
+    expect(second.searchParams.get('fields')).toBe(ORDER_FIELDS);
+    expect(page).toStrictEqual({ orders: [toMedusaStoreOrder(X), toMedusaStoreOrder(Y)], hasMore: true, total: 12 });
+  });
+
+  it.each([
+    ['123456', 'plugin', '123456'],
+    ['1234567', 'admin', '1234567'],
+    ['12a', 'admin', '12a'],
+    [' 303 ', 'plugin', '303'],
+  ])('N4 search %j takes the %s path', async (search, route, sent) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(route === 'plugin' ? pluginOf([]) : response(fixture.list));
+    await listOrders(ctx3, { search });
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    if (route === 'plugin') {
+      expect(path(url)).toBe(`${baseUrl}/tally/v1/orders`);
+      expect(entries(url).sort()).toStrictEqual([['page', '1'], ['perPage', '25'], ['search', sent]]);
+    } else {
+      expect(path(url)).toBe(`${baseUrl}/admin/orders`);
+      expect(url.searchParams.get('q')).toBe(sent);
+    }
+  });
+
+  it('N5 resolves an empty route answer with one request', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([], { hasMore: false, total: 0 }));
+    await expect(listOrders(ctx3, { registerId: 'reg-1' })).resolves.toStrictEqual({ orders: [], hasMore: false, total: 0 });
+    spy.mockResolvedValueOnce(pluginOf([]));
+    await expect(listOrders(ctx3, { registerId: 'reg-1' })).resolves.toStrictEqual({ orders: [], hasMore: false });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls.every(([url]) => String(url).startsWith(`${baseUrl}/tally/v1/orders?`))).toBe(true);
+  });
+
+  it('N5 leaves out and counts an id the admin answer lacks', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(pluginOf([X.id, 'order_gone', Y.id]))
+      .mockResolvedValueOnce(listOf([X, Y]));
+    const page = await listOrders(ctx3, { registerId: 'reg-1' });
+    expect(page.orders.map((order) => order.id)).toStrictEqual([X.id, Y.id]);
+    expect(page.unreadable).toBe(1);
+  });
+
+  it('N5b an empty route answer to a digit search does not fall through to the admin path', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(pluginOf([])).mockResolvedValue(response(fixture.list));
+    await expect(listOrders(ctx3, { search: '303' })).resolves.toStrictEqual({ orders: [], hasMore: false });
+    expect(spy).toHaveBeenCalledOnce();
+    for (const [url] of spy.mock.calls) {
+      expect(String(url)).not.toContain('/admin/orders');
+      expect(new URL(String(url)).searchParams.has('q')).toBe(false);
+    }
+  });
+
+  it('N6 maps route failures without a second request', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch');
+    spy.mockResolvedValueOnce(new Response('{}', { status: 403 }));
+    await expect(listOrders(ctx3, { registerId: 'reg-1' })).rejects.toSatisfy((error) => error instanceof ConnectorUnauthorizedError && error.status === 403);
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockResolvedValueOnce(new Response('{}', { status: 400 }));
+    await expect(listOrders(ctx3, { search: '303' })).rejects.toSatisfy((error) => error instanceof CustomerServiceError && error.code === 'invalid');
+    spy.mockResolvedValueOnce(response({ status: 200, body: { orders: [{ id: X.id }] } }));
+    await expect(listOrders(ctx3, { registerId: 'reg-1' })).rejects.toSatisfy((error) => error instanceof CustomerServiceError && error.code === 'server');
+    expect(spy).toHaveBeenCalledTimes(3);
+  });
+
+  it('N7 keeps a word search on the admin path with today\'s params', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.list));
+    await listOrders(ctx3, { search: 'jane' });
+    expect(spy).toHaveBeenCalledOnce();
+    const url = call(spy, 0);
+    expect(path(url)).toBe(`${baseUrl}/admin/orders`);
+    expect(entries(url)).toStrictEqual([['limit', '25'], ['offset', '0'], ['order', '-created_at'], ['fields', ORDER_FIELDS], ['q', 'jane']]);
   });
 });
