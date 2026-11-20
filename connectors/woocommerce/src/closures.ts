@@ -169,9 +169,11 @@ export const wooClosures: ClosureReads = {
   },
 
   async markPrinted(context, id) {
+    // Like recount, `stores` comes first: the store counts every print (Closure_Store.php:1063), so a failed `stores` read must send no print.
+    const currency = await wooStoreCurrency(context);
     // Answers with the closure row after recording the print (Closures_Controller.php:156-165).
     const response = await request(context, `closures/${encodeURIComponent(id)}/print`, {});
-    if (response.status === 200) return toClosure(await response.json().catch(() => { throw unexpected(); }), await wooStoreCurrency(context));
+    if (response.status === 200) return toClosure(await response.json().catch(() => { throw unexpected(); }), currency);
     const code = await errorCode(response);
     // A print needs manage_woocommerce_pos_cash and view_woocommerce_pos_reports (Closures_Controller.php:77-86).
     if (response.status === 403 && code === 'rest_forbidden') return { refused: 'forbidden' };

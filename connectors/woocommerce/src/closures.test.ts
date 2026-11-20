@@ -233,6 +233,7 @@ describe('wooClosures', () => {
         { method: 'GET', path: `closures/${closureId}` },
       ]);
       expect(fetchMock.mock.calls[1][1]?.headers).toEqual({ 'Content-Type': 'application/json', ...context.headers });
+      expect(sent.filter((request) => request.path === 'stores')).toHaveLength(1);
     });
 
     it('carries the approval when given', async () => {
@@ -306,6 +307,7 @@ describe('wooClosures', () => {
       const closure = await wooClosures.markPrinted(ctx(), closureId);
       expect(closure).toEqual({ ...fullClosure, printCount: 2 });
       expect(closureRequests()).toEqual([{ method: 'POST', path: `closures/${closureId}/print`, body: {} }]);
+      expect(sent.map((request) => request.path)).toEqual(['stores', `closures/${closureId}/print`]);
     });
 
     it('maps rest_forbidden to forbidden', async () => {
@@ -318,11 +320,11 @@ describe('wooClosures', () => {
       expect(await wooClosures.markPrinted(ctx(), closureId)).toEqual({ refused: 'not_found' });
     });
 
-    it('R3: a 404 needs no stores answer', async () => {
-      routes[printPath] = refusal(404, 'rest_no_route');
+    it('R3: a print sends no POST when stores fails', async () => {
+      routes[printPath] = () => Response.json(fullRow());
       routes['GET stores'] = () => new Response(null, { status: 500 });
-      expect(await wooClosures.markPrinted(ctx(), closureId)).toEqual({ refused: 'not_found' });
-      expect(sent).toEqual([{ method: 'POST', path: `closures/${closureId}/print`, body: {} }]);
+      await expect(wooClosures.markPrinted(ctx(), closureId)).rejects.toThrow('WooCommerce stores: HTTP 500');
+      expect(sent).toEqual([{ method: 'GET', path: 'stores' }]);
     });
   });
 
