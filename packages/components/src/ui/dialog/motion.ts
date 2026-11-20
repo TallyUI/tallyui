@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Platform } from 'react-native';
 import { useReducedMotion } from '../../lib/use-reduced-motion';
-import { EASE, EASE_EXIT } from '../../lib/motion';
+import { EASE, EASE_EXIT, POPOVER_FADE } from '../../lib/motion';
 export { EASE, EASE_EXIT };
 export type OverlayMotion = {
   enterMs: number; exitMs: number; scrimInMs: number; scrimOutMs: number; exitEasing: (value: number) => number;
@@ -10,6 +10,8 @@ export type OverlayMotion = {
 export const SHEET_MOTION: OverlayMotion = { enterMs: 250, exitMs: 200, scrimInMs: 150, scrimOutMs: 200, exitEasing: EASE_EXIT };
 // WCPOS v2 apps/main/global.css:174-177.
 export const DIALOG_MOTION: OverlayMotion = { enterMs: 150, exitMs: 150, scrimInMs: 150, scrimOutMs: 200, exitEasing: EASE };
+// WCPOS v2 packages/components/src/lib/overlay/index.tsx:227-231 (anchored).
+export const POPOVER_MOTION: OverlayMotion = { enterMs: POPOVER_FADE, exitMs: POPOVER_FADE, scrimInMs: POPOVER_FADE, scrimOutMs: POPOVER_FADE, exitEasing: EASE };
 
 export function useOverlayMotion(open: boolean, enabled: boolean, motion: OverlayMotion): {
   mounted: boolean; scrim: Animated.Value; panel: Animated.Value;

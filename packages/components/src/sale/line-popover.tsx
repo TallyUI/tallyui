@@ -2,12 +2,13 @@
 // reducer.ts), lib/decimal-entry.ts and keypad/index.tsx's decimalRow, as the cart cells open them
 // (packages/core/src/screens/main/pos/cart/cells/quantity-keypad.tsx and cells/price.tsx); MIT, WCPOS.
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
 import { decimalRows, typeDecimal } from '../input/decimal-entry';
 import { Keypad } from '../input/keypad';
+import { POPOVER_MOTION, useOverlayMotion } from '../ui/dialog/motion';
 import { lessPercent, parsePrice, QuickDiscountKeys, quickKeys } from './price-form';
 
 /** nav-drawer.tsx's focus targets. */
@@ -52,6 +53,7 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
   actions, commit = 'apply', onRemove, onCloseRefused }: LinePopoverProps) {
   const formatMoney = useFormatMoney();
   const [open, setOpen] = useState(false);
+  const { mounted, panel } = useOverlayMotion(open, true, POPOVER_MOTION);
   // v2's entry: the typed buffer (`.` as its separator), or the lit quick key, a percentage off `value`.
   const [entry, setEntry] = useState<{ buffer: string; percent?: number }>({ buffer: '' });
   const [error, setError] = useState<string | null>(null);
@@ -119,12 +121,14 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
       className="min-h-11 justify-center rounded-md px-1">
       <Text className={cn('text-sm tabular-nums text-foreground', textClassName)}>{format(value)}</Text>
     </Popover.Trigger>
-    <Popover.Portal>
+    {mounted ? <Popover.Portal forceMount>
       <Popover.Overlay testID={`${kind}-popover-overlay`} style={StyleSheet.absoluteFill} />
-      <Popover.Content testID={`${kind}-popover`} align={price ? 'end' : 'start'} sideOffset={4}
-        aria-labelledby={titleId} aria-describedby={undefined} onEscapeKeyDown={() => { discard.current = true; }}
-        className="w-64 rounded-md border border-border bg-popover p-4 shadow-md">
-        <Panel onKey={onKey}>
+      <Popover.Content forceMount testID={`${kind}-popover`} align={price ? 'end' : 'start'} sideOffset={4}
+        aria-labelledby={titleId} aria-describedby={undefined} onEscapeKeyDown={() => { discard.current = true; }}>
+        <Animated.View className="w-64 rounded-md border border-border bg-popover p-4 shadow-md"
+          style={{ opacity: panel, transform: Platform.OS === 'web' ? [{ translateY: panel.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }] : undefined }}
+          pointerEvents={open ? 'auto' : 'none'}>
+        <Panel onKey={onKey} active={open}>
           <Text nativeID={titleId} className="font-semibold text-popover-foreground">{title}</Text>
           <View className="items-end">
             {regular ? <Text accessibilityLabel={`Regular price ${regular}`} style={{ textDecorationLine: 'line-through' }}
@@ -163,23 +167,24 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
               <Text className="text-foreground">Cancel</Text></Pressable>
           </View>}
         </Panel>
+        </Animated.View>
       </Popover.Content>
-    </Popover.Portal>
+    </Popover.Portal> : null}
   </Popover.Root>;
 }
 
 /** The open panel. Web: focus moves into it and back to where it was on close; keys go to `onKey` (nav-drawer's pattern). */
-function Panel({ onKey, children }: { onKey: (key: string) => void; children: ReactNode }) {
+function Panel({ onKey, active, children }: { onKey: (key: string) => void; active: boolean; children: ReactNode }) {
   const panel = useRef<View>(null);
-  useKeys(panel, onKey);
+  useKeys(panel, onKey, active);
   return <View ref={panel} className="gap-3">{children}</View>;
 }
 
-function useKeys(panel: RefObject<View | null>, onKey: (key: string) => void) {
+function useKeys(panel: RefObject<View | null>, onKey: (key: string) => void, active: boolean) {
   const latest = useRef(onKey);
   latest.current = onKey;
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!active || Platform.OS !== 'web' || typeof document === 'undefined') return;
     const previous = document.activeElement as HTMLElement | null;
     (panel.current as unknown as HTMLElement | null)?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     const onKeyDown = (event: KeyboardEvent) => latest.current(event.key);
@@ -188,5 +193,5 @@ function useKeys(panel: RefObject<View | null>, onKey: (key: string) => void) {
       document.removeEventListener('keydown', onKeyDown);
       previous?.focus?.();
     };
-  }, [panel]);
+  }, [panel, active]);
 }

@@ -264,7 +264,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
   // Web only: Escape and a pointerdown outside content and trigger dismiss the
   // topmost open layer (see layer-stack.ts). Native is untouched.
   React.useEffect(() => {
-    if ((!open && !forceMount) || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!open || Platform.OS !== 'web' || typeof document === 'undefined') return;
     pushLayer(nativeID);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !isTopLayer(nativeID)) return;
@@ -294,7 +294,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
       document.removeEventListener('pointerdown', onPointerDown, { capture: true });
       removeLayer(nativeID);
     };
-  }, [open, forceMount, nativeID, triggerRef, overlayCount]);
+  }, [open, nativeID, triggerRef, overlayCount]);
 
   const positionStyle = useRelativePosition({
     align,
@@ -307,6 +307,8 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
     side,
     disablePositioningStyle,
   });
+  const lastPositionStyle = React.useRef<typeof positionStyle | undefined>(undefined);
+  if (open) lastPositionStyle.current = positionStyle;
 
   const onLayout = React.useCallback(
     (event: LayoutChangeEvent) => {
@@ -330,7 +332,7 @@ const Content = React.forwardRef<View, ContentProps>(function Content(
       aria-labelledby={`${nativeID}_title`}
       aria-describedby={`${nativeID}_description`}
       aria-modal={true}
-      style={[positionStyle, style]}
+      style={[!open && forceMount ? lastPositionStyle.current ?? positionStyle : positionStyle, style]}
       onLayout={onLayout}
       {...props}
     />

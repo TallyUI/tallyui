@@ -82,7 +82,7 @@ The positioned floating panel. Accepts all `PositionedContentProps` for anchorin
 | `align` | `'start' \| 'center' \| 'end'` | `'center'` | Alignment along the trigger |
 | `alignOffset` | `number` | `0` | Offset from the aligned edge |
 | `avoidCollisions` | `boolean` | `true` | Shift to stay within the viewport |
-| `forceMount` | `true` | — | Always render the content |
+| `forceMount` | `true` | — | Always render the content; while closed it keeps its last position and ignores Escape and outside presses |
 | `asChild` | `boolean` | `false` | Merge props onto child instead of rendering |
 
 Plus all React Native `ViewProps`. See the [overview](/docs/primitives#shared-types) for the full `PositionedContentProps` reference.
