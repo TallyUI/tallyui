@@ -199,6 +199,34 @@ describe('createSaleDisplayPublisher', () => {
     expect(calls.at(-1)![1]!.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual([leg(250, 'cash')]);
   });
 
+  it('P4: the event after a void still sees every leg', () => {
+    const sale = newSale();
+    const { link, payments } = recorder();
+    const publisher = createSaleDisplayPublisher(link);
+    const cash = sale.addPayment({ method: 'cash', amountMinor: 300, status: 'captured' });
+    publisher.update({ order: sale.getSnapshot(), stage: tender });
+    sale.addPayment({ method: 'card', amountMinor: 200, status: 'pending' });
+    publisher.update({ order: sale.getSnapshot(), stage: tender });
+    sale.setPaymentStatus(cash, 'voided');
+    publisher.update({ order: sale.getSnapshot(), stage: tender });
+    expect(payments()).toEqual([
+      { state: 'approved', leg: leg(300, 'cash') },
+      { state: 'started', leg: leg(200) },
+      { state: 'declined', leg: leg(300, 'cash') },
+    ]);
+  });
+
+  it('P5: the receipt stage counts only captured legs too', () => {
+    const sale = newSale();
+    sale.addPayment({ method: 'cash', amountMinor: 400, status: 'captured' });
+    const card = sale.addPayment({ method: 'card', amountMinor: 300, status: 'captured' });
+    sale.setPaymentStatus(card, 'voided');
+    const { link, calls } = recorder();
+    const done = sale.getSnapshot();
+    createSaleDisplayPublisher(link).update({ order: done, stage: receiptStage(done) });
+    expect(calls.at(-1)![1]!.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual([leg(400, 'cash')]);
+  });
+
   it('4: a failed leg is declined, with the configured message', () => {
     const { link, payments } = recorder();
     const publisher = createSaleDisplayPublisher(link, { declinedMessage: 'Payment declined' });
