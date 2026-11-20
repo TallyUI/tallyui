@@ -20,6 +20,11 @@ export function MoneyFormatProvider({ locale, format, children }: MoneyFormatPro
   return <MoneyFormatContext.Provider value={value}>{children}</MoneyFormatContext.Provider>;
 }
 
+/** The nearest provider's store money format; `undefined` outside a provider or when it has none. */
+export function useMoneyFormat(): MoneyFormat | undefined {
+  return useContext(MoneyFormatContext).format;
+}
+
 /**
  * `formatMoney` with the nearest provider's locale and store format. An explicit `locale` wins over the provider's.
  * Outside a provider it is exactly `formatMoney(money, locale)`.
