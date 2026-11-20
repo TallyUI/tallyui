@@ -311,6 +311,61 @@ it('loops item groups, preserves their paying methods, and only marks covered gr
   expect(planLegs(plan, [...rows, ...rows, ...rows], 1300).thisPaymentMinor).toBe(700);
 });
 
+describe('a voided leg frees its plan\'s lines (#1133)', () => {
+  const plan = { kind: 'items' as const, lineIds: [1, 2], firstMinor: 1000, ways: 3, from: 0 };
+  const record = (state: typeof initialTenderState, rows: { title: string; amountMinor: number }[]) =>
+    tenderReducer(state, {
+      type: 'tender-recorded',
+      rowsSinceFrom: rows,
+      balanceMinor: 1500 - rows.reduce((sum, row) => sum + row.amountMinor, 0),
+    });
+
+  it('CL1: a void below firstMinor frees the lines', () => {
+    const paid = record({ ...initialTenderState, plan }, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const voided = record(paid, []);
+    expect(voided.linesPaidBy).toEqual({});
+    expect(tenderReducer(voided, { type: 'open-split' }).pickedLineIds).toEqual([1, 2]);
+    expect(tenderReducer(voided, { type: 'toggle-split-line', lineId: 1 }).pickedLineIds).toEqual([1]);
+  });
+
+  it('CL2: a void that leaves the sum covered keeps the lines and their first titles', () => {
+    const paid = record({ ...initialTenderState, plan }, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const extra = record(paid, [
+      { title: 'Cash', amountMinor: 1000 },
+      { title: 'Card', amountMinor: 200 },
+    ]);
+    expect(extra.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+    const voided = record(extra, [{ title: 'Cash', amountMinor: 1000 }]);
+    expect(voided.linesPaidBy).toEqual({ 1: ['Cash'], 2: ['Cash'] });
+  });
+
+  it('CL3: lines of an earlier plan survive a void in the current plan', () => {
+    const paid = record(
+      { ...initialTenderState, plan, linesPaidBy: { 9: ['Card'] } },
+      [{ title: 'Cash', amountMinor: 1000 }],
+    );
+    expect(paid.linesPaidBy).toEqual({ 9: ['Card'], 1: ['Cash'], 2: ['Cash'] });
+    expect(record(paid, []).linesPaidBy).toEqual({ 9: ['Card'] });
+  });
+
+  it('CL4: a partial void, then a later leg covers the plan again with the new titles', () => {
+    const paid = record({ ...initialTenderState, plan }, [
+      { title: 'Cash', amountMinor: 600 },
+      { title: 'Card', amountMinor: 400 },
+    ]);
+    expect(paid.linesPaidBy).toEqual({ 1: ['Cash', 'Card'], 2: ['Cash', 'Card'] });
+    const voided = record(paid, [{ title: 'Cash', amountMinor: 600 }]);
+    expect(voided.linesPaidBy).toEqual({});
+    const covered = record(voided, [
+      { title: 'Cash', amountMinor: 600 },
+      { title: 'SumUp', amountMinor: 400 },
+    ]);
+    expect(covered.linesPaidBy).toEqual({ 1: ['Cash', 'SumUp'], 2: ['Cash', 'SumUp'] });
+  });
+});
+
 describe('split by units', () => {
   const pick = (state: typeof initialTenderState, units: number, unpaidUnits = 3) =>
     tenderReducer(state, { type: 'set-split-units', lineId: 'a', units, unpaidUnits });
