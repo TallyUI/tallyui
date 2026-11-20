@@ -1,4 +1,5 @@
-import type { Payment } from '../order/types';
+import type { Order, Payment } from '../order/types';
+import { roundMicrosToMinor, roundedTaxByRate } from '../tax/exact';
 import { countsTowardPaid, isInMotion } from './payment-legs';
 import type { TenderLineId } from './tender-state';
 
@@ -10,6 +11,29 @@ export interface SplitUnitLine {
 }
 /** Payment id → line id (as `String(id)`) → units that payment paid for. */
 export type UnitAllocations = Record<string, Record<string, number>>;
+
+/** Each line as a unit split prices it: its charged money with tax inside, in lineItems order. A line whose figure is
+ *  negative is left out (unitsMinor refuses it). Fees, shipping and cash rounding are never in a figure. */
+export function splitUnitLines(order: Pick<Order, 'lineItems' | 'pricesIncludeTax' | 'taxRounding'>): SplitUnitLine[] {
+  let taxSoFar = 0n;
+  const mode = order.taxRounding?.granularity === 'per_order' ? order.taxRounding.mode : undefined;
+  return order.lineItems.map((li) => {
+    let totalMinor: number;
+    if (order.taxRounding?.granularity === 'woocommerce' && li.netMicros !== undefined && li.totalMinor !== undefined) {
+      totalMinor = li.totalMinor;
+    } else if (li.taxInclusive) {
+      totalMinor = li.netMinor;
+    } else if (order.taxRounding?.granularity === 'per_line_items') {
+      const r = roundedTaxByRate([li], order.taxRounding)!;
+      totalMinor = r.baseMinor + r.taxMinor;
+    } else {
+      const t = BigInt(li.taxMicros);
+      totalMinor = li.netMinor + (roundMicrosToMinor(taxSoFar + t, mode) - roundMicrosToMinor(taxSoFar, mode));
+      taxSoFar += t;
+    }
+    return { id: li.id, quantity: li.quantity, totalMinor };
+  }).filter((line) => line.totalMinor >= 0);
+}
 
 export function unitAllocationsFromLegs(payments: readonly Payment[]): UnitAllocations {
   return Object.fromEntries(payments.filter((leg) => leg.units !== undefined).map((leg) => [leg.id, { ...leg.units }]));
