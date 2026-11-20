@@ -31,3 +31,5 @@ export { createTillPairing, PENDING_POLL_MS } from './till-pairing';
 export type { TillPairing, TillPairingOptions, PairingPhase, PairingError } from './till-pairing';
 export { useTillPairing, useTillDisplays } from './use-till-pairing';
 export type { TillPairingView, TillDisplaysView } from './use-till-pairing';
+export { createTillDevice } from './till-device';
+export type { TillDeviceHandle, TillDeviceKeyStore, TillDeviceOptions } from './till-device';

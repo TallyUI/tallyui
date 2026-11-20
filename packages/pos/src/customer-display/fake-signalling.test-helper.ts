@@ -1,5 +1,5 @@
 import {
-  DisplaySignallingError, type DisplayRecord, type DisplaySignalling, type DisplaySignallingErrorCode, type SignalMessage,
+  DisplaySignallingError, type DisplayRecord, type DisplaySignalling, type DisplaySignallingErrorCode, type SignalMessage, type TillDevice,
 } from '@tallyui/core';
 import type { PendingPairing } from '@tallyui/core';
 import type { SignalPort } from './webrtc';
@@ -66,7 +66,7 @@ export class FakeSignalling implements DisplaySignalling {
     await held;
     return answer;
   }
-  async sendSignal(_ctx: unknown, _deviceId: string, displayId: string, message: SignalMessage) {
+  async sendSignal(_ctx: unknown, _device: TillDevice, displayId: string, message: SignalMessage) {
     await this.enter({ method: 'sendSignal', displayId });
     const inbox = this.displayInbox.get(displayId) ?? [];
     inbox.push(message);
@@ -77,7 +77,7 @@ export class FakeSignalling implements DisplaySignalling {
     await this.enter({ method: 'receiveSignals' });
     return this.tillInbox.splice(0);
   }
-  async postSnapshot(_ctx: unknown, _deviceId: string, displayId: string, body: unknown) {
+  async postSnapshot(_ctx: unknown, _device: TillDevice, displayId: string, body: unknown) {
     await this.enter({ method: 'postSnapshot', displayId, body });
   }
 
@@ -100,6 +100,7 @@ export class FakeSignalling implements DisplaySignalling {
     for (const message of this.displayInbox.get(displayId)?.splice(0) ?? []) listeners.forEach((listener) => listener(message));
   }
 
+  registerDevice: DisplaySignalling['registerDevice'] = notUsed;
   mint = notUsed;
   pending = notUsed;
   confirm = notUsed;
@@ -162,18 +163,19 @@ export class FakePairingSignalling implements DisplaySignalling {
     await this.enter('pending');
     return this.claims.map((claim) => ({ ...claim }));
   }
-  async confirm(_ctx: unknown, _deviceId: string, claimId: string) {
+  async confirm(_ctx: unknown, _device: TillDevice, claimId: string) {
     await this.enter('confirm', claimId);
     this.claims = this.claims.filter((claim) => claim.claimId !== claimId);
   }
-  async decline(_ctx: unknown, _deviceId: string, claimId: string) {
+  async decline(_ctx: unknown, _device: TillDevice, claimId: string) {
     await this.enter('decline', claimId);
     this.claims = this.claims.filter((claim) => claim.claimId !== claimId);
   }
-  async forget(_ctx: unknown, _deviceId: string, displayId: string) {
+  async forget(_ctx: unknown, _device: TillDevice, displayId: string) {
     await this.enter('forget', displayId);
   }
 
+  registerDevice: DisplaySignalling['registerDevice'] = notUsed;
   list = notUsed;
   sendSignal = notUsed;
   receiveSignals = notUsed;

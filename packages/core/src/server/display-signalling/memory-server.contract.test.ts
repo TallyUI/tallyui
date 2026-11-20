@@ -39,23 +39,25 @@ describe('the in-memory server keeps check codes unique per till', () => {
     const { harness: h } = createMemoryDisplaySignalling();
     const a = await h.till({ cashierId: 'cashier-a', canPair: true });
     const b = await h.till({ cashierId: 'cashier-b', canPair: true });
-    return { h, s: h.signalling, a, b };
+    const da = { deviceId: 'till-a', deviceKey: (await h.signalling.registerDevice(a, 'till-a')).deviceKey };
+    const db = { deviceId: 'till-b', deviceKey: (await h.signalling.registerDevice(b, 'till-b')).deviceKey };
+    return { h, s: h.signalling, a, b, da, db };
   };
 
   it("two tills' live claims may share a check code", async () => {
-    const { h, s, a, b } = await setup();
-    const codeA = (await s.mint(a, 'till-a')).code, codeB = (await s.mint(b, 'till-b')).code;
+    const { h, s, a, b, da, db } = await setup();
+    const codeA = (await s.mint(a, da)).code, codeB = (await s.mint(b, db)).code;
     queueDraws(42, 42);
     const claimA = await s.claim(h.display('192.0.2.1'), { code: codeA, displayName: 'A' });
     const claimB = await s.claim(h.display('192.0.2.2'), { code: codeB, displayName: 'B' });
     expect([claimA.checkCode, claimB.checkCode]).toEqual(['0042', '0042']);
-    expect((await s.pending(a, 'till-a')).map((p) => [p.displayName, p.checkCode])).toEqual([['A', '0042']]);
-    expect((await s.pending(b, 'till-b')).map((p) => [p.displayName, p.checkCode])).toEqual([['B', '0042']]);
+    expect((await s.pending(a, da)).map((p) => [p.displayName, p.checkCode])).toEqual([['A', '0042']]);
+    expect((await s.pending(b, db)).map((p) => [p.displayName, p.checkCode])).toEqual([['B', '0042']]);
   });
 
   it("one till's live claims never share a check code", async () => {
-    const { h, s, a } = await setup();
-    const first = (await s.mint(a, 'till-a')).code, second = (await s.mint(a, 'till-a')).code;
+    const { h, s, a, da } = await setup();
+    const first = (await s.mint(a, da)).code, second = (await s.mint(a, da)).code;
     queueDraws(42, 42, 7);
     const claimOne = await s.claim(h.display('192.0.2.1'), { code: first, displayName: 'One' });
     const claimTwo = await s.claim(h.display('192.0.2.2'), { code: second, displayName: 'Two' });

@@ -3,7 +3,7 @@
 import type { SyncContext } from '../../types/connector';
 import {
   DISPLAY_PAIR_CAPABILITY, DisplaySignallingError,
-  type DisplaySignalling, type DisplaySignallingContext, type DisplaySignallingErrorCode, type SignalMessage,
+  type DisplaySignalling, type DisplaySignallingContext, type DisplaySignallingErrorCode, type SignalMessage, type TillDevice,
 } from '../../types/display-signalling';
 import { rateLimitSource } from '../../customer-display/rate-limit-source';
 
@@ -18,7 +18,11 @@ export interface DisplaySignallingHarness {
   advance(ms: number): Promise<void>;
   /** Everything the server persists, serialised. */
   storedText(): Promise<string>;
-  storedCounts(): Promise<{ codes: number; pending: number; displays: number; snapshots: number }>;
+  storedCounts(): Promise<{ codes: number; pending: number; displays: number; snapshots: number; devices: number }>;
+  /** Writes a pre-migration till: a device with no key, owning one paired display with a token. */
+  seedLegacyDevice(deviceId: string): Promise<{ displayId: string; token: string }>;
+  /** Every adoption of a pre-migration device id by `registerDevice`, in order. */
+  adoptionLog(): Promise<Array<{ deviceId: string; cashierId: string }>>;
 }
 
 const MINUTE = 60_000;
@@ -38,6 +42,14 @@ const newSecret = (): string =>
 /** SHA-256 of the UTF-8 text, as lower-case hex. */
 export const sha256Hex = async (text: string): Promise<string> =>
   toHex(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
+
+/** Compares two strings in constant time for equal lengths; differing lengths are unequal. */
+function sameText(x: string, y: string): boolean {
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i += 1) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
 
 /** `digits` uniform random decimal digits, by rejection sampling so no value is favoured. */
 function randomDigits(digits: number): string {
@@ -61,6 +73,8 @@ interface Code { deviceId: string; expiresAt: number; spent: boolean }
 interface Pending { deviceId: string; secretHash: string; displayName: string; checkCode: string; expiresAt: number; movingDisplayId: string | null }
 interface Row { deviceId: string; name: string; cashierId: string; confirmedAt: number; lastSeenAt: number | null; tokenHash: string | null; secretHash: string | null }
 interface Window { openedAt: number; failures: number }
+/** A till device; `keyHash` is null only for a pre-migration id, until it adopts. */
+interface Device { keyHash: string | null; adopted: boolean; lastCallAt: number }
 
 /** The ADR-085 U2 reference server: every rule of the seam, in memory, with lazy pruning on every call. */
 export function createMemoryDisplaySignalling(options: { now?: () => number } = {}): { signalling: DisplaySignalling; harness: DisplaySignallingHarness } {
@@ -71,6 +85,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
   const codes = new Map<string, Code>(), pending = new Map<string, Pending>(), displays = new Map<string, Row>();
   const snapshots = new Map<string, { text: string; postedAt: number }>(), sources = new Map<string, Window>();
   const displayInbox = new Map<string, SignalMessage[]>(), tillInbox = new Map<string, Array<SignalMessage & { displayId: string }>>();
+  const devices = new Map<string, Device>(), adoptions: Array<{ deviceId: string; cashierId: string }> = [];
   let storeWindow: Window | null = null;
   const dropDisplay = (displayId: string): void => [displays, snapshots, displayInbox].forEach((map) => map.delete(displayId));
 
@@ -83,6 +98,8 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     for (const [displayId, row] of displays) if (now >= (row.lastSeenAt ?? row.confirmedAt) + ROW_TTL) dropDisplay(displayId);
     for (const [key, window] of sources) if (now >= window.openedAt + SOURCE_WINDOW) sources.delete(key);
     if (storeWindow && now >= storeWindow.openedAt + STORE_WINDOW) storeWindow = null;
+    const owns = (id: string) => [...displays.values(), ...codes.values(), ...pending.values()].some((entry) => entry.deviceId === id);
+    for (const [id, device] of devices) if (now > device.lastCallAt + ROW_TTL && !owns(id)) devices.delete(id);
     return now;
   };
 
@@ -92,6 +109,18 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     const session = sessions.get(ctx.headers?.[SESSION_HEADER] ?? '');
     if (!session || !session.capabilities.includes(DISPLAY_PAIR_CAPABILITY)) throw fail('forbidden');
     return { now, cashierId: session.cashierId };
+  };
+  /**
+   * Every till call's gate: hashes the key first, so no await follows, then admits the session and checks the key
+   * (`device_refused`), giving the call's time, cashier and device id. A missing key hashes to '' and never matches.
+   */
+  const tillCall = async (ctx: SyncContext, device: TillDevice): Promise<{ now: number; cashierId: string; deviceId: string }> => {
+    const keyHash = typeof device.deviceKey === 'string' && device.deviceKey !== '' ? await sha256Hex(device.deviceKey) : '';
+    const admitted = admit(ctx);
+    const known = devices.get(device.deviceId);
+    if (!known || known.keyHash === null || !sameText(keyHash, known.keyHash)) throw fail('device_refused');
+    known.lastCallAt = admitted.now;
+    return { ...admitted, deviceId: device.deviceId };
   };
   /** The entry under `id` when `deviceId` owns it; `not_found` otherwise. */
   const ownedIn = <T extends { deviceId: string }>(map: Map<string, T>, deviceId: string, id: string): T => {
@@ -118,8 +147,19 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
   };
 
   const signalling: DisplaySignalling = {
-    async mint(ctx, deviceId) {
-      const { now } = admit(ctx);
+    async registerDevice(ctx, deviceId) {
+      const deviceKey = newSecret();
+      const keyHash = await sha256Hex(deviceKey);
+      const { now, cashierId } = admit(ctx);
+      const known = devices.get(deviceId);
+      if (known && (known.keyHash !== null || known.adopted)) throw fail('device_refused');
+      // A pre-migration id adopts: it keeps its rows, and only once.
+      if (known) adoptions.push({ deviceId, cashierId });
+      devices.set(deviceId, { keyHash, adopted: known !== undefined, lastCallAt: now });
+      return { deviceKey };
+    },
+    async mint(ctx, device) {
+      const { now, deviceId } = await tillCall(ctx, device);
       const unspent = [...codes.values()].filter((entry) => entry.deviceId === deviceId && !entry.spent).length;
       if (unspent >= MAX_UNSPENT) throw fail('limit');
       let code: string;
@@ -127,13 +167,13 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       codes.set(code, { deviceId, expiresAt: now + CODE_TTL, spent: false });
       return { code, expiresAt: iso(now + CODE_TTL) };
     },
-    async pending(ctx, deviceId) {
-      admit(ctx);
+    async pending(ctx, device) {
+      const { deviceId } = await tillCall(ctx, device);
       return [...pending].filter(([, entry]) => entry.deviceId === deviceId)
         .map(([claimId, entry]) => ({ claimId, displayName: entry.displayName, checkCode: entry.checkCode, expiresAt: iso(entry.expiresAt) }));
     },
-    async confirm(ctx, deviceId, claimId) {
-      const { now, cashierId } = admit(ctx);
+    async confirm(ctx, device, claimId) {
+      const { now, cashierId, deviceId } = await tillCall(ctx, device);
       const entry = ownedIn(pending, deviceId, claimId);
       pending.delete(claimId);
       // A moving display: its old row, token and snapshot go in this same step, and its id carries over.
@@ -143,35 +183,35 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       const row: Row = { deviceId, name: entry.displayName, cashierId, confirmedAt: now, lastSeenAt: null, tokenHash: null, secretHash: entry.secretHash };
       displays.set(moving ?? newId(), row);
     },
-    async decline(ctx, deviceId, claimId) {
-      admit(ctx);
+    async decline(ctx, device, claimId) {
+      const { deviceId } = await tillCall(ctx, device);
       ownedIn(pending, deviceId, claimId);
       pending.delete(claimId);
     },
-    async list(ctx, deviceId) {
-      const { now } = admit(ctx);
+    async list(ctx, device) {
+      const { now, deviceId } = await tillCall(ctx, device);
       return [...displays].filter(([, row]) => row.deviceId === deviceId).map(([displayId, row]) => ({
         displayId, name: row.name, cashierId: row.cashierId,
         lastSeenAt: row.lastSeenAt === null ? null : iso(row.lastSeenAt),
         connected: row.lastSeenAt !== null && now - row.lastSeenAt <= CONNECTED_MS,
       }));
     },
-    async forget(ctx, deviceId, displayId) {
-      admit(ctx);
+    async forget(ctx, device, displayId) {
+      const { deviceId } = await tillCall(ctx, device);
       ownedIn(displays, deviceId, displayId);
       dropDisplay(displayId);
     },
-    async sendSignal(ctx, deviceId, displayId, message) {
-      admit(ctx);
+    async sendSignal(ctx, device, displayId, message) {
+      const { deviceId } = await tillCall(ctx, device);
       ownedIn(displays, deviceId, displayId);
       displayInbox.set(displayId, [...(displayInbox.get(displayId) ?? []), { type: message.type, payload: message.payload }]);
     },
-    async receiveSignals(ctx, deviceId) {
-      admit(ctx);
+    async receiveSignals(ctx, device) {
+      const { deviceId } = await tillCall(ctx, device);
       return drain(tillInbox, deviceId).filter((message) => displays.get(message.displayId)?.deviceId === deviceId);
     },
-    async postSnapshot(ctx, deviceId, displayId, body) {
-      const { now } = admit(ctx);
+    async postSnapshot(ctx, device, displayId, body) {
+      const { now, deviceId } = await tillCall(ctx, device);
       ownedIn(displays, deviceId, displayId);
       const text = JSON.stringify(body) ?? 'null';
       if (new TextEncoder().encode(text).length > SNAPSHOT_MAX_BYTES) throw fail('too_large');
@@ -239,13 +279,20 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     async storedText() {
       prune();
       return JSON.stringify({
-        sessions: [...sessions], codes: [...codes], pending: [...pending], displays: [...displays], snapshots: [...snapshots], displayInbox: [...displayInbox], tillInbox: [...tillInbox], sources: [...sources], storeWindow,
+        sessions: [...sessions], devices: [...devices], codes: [...codes], pending: [...pending], displays: [...displays], snapshots: [...snapshots], displayInbox: [...displayInbox], tillInbox: [...tillInbox], sources: [...sources], storeWindow,
       });
     },
     async storedCounts() {
       prune();
-      return { codes: codes.size, pending: pending.size, displays: displays.size, snapshots: snapshots.size };
+      return { codes: codes.size, pending: pending.size, displays: displays.size, snapshots: snapshots.size, devices: devices.size };
     },
+    async seedLegacyDevice(deviceId) {
+      const token = newSecret(), displayId = newId(), now = clock();
+      devices.set(deviceId, { keyHash: null, adopted: false, lastCallAt: now });
+      displays.set(displayId, { deviceId, name: 'Legacy', cashierId: 'cashier-legacy', confirmedAt: now, lastSeenAt: null, tokenHash: await sha256Hex(token), secretHash: null });
+      return { displayId, token };
+    },
+    adoptionLog: async () => adoptions.map((entry) => ({ ...entry })),
   };
   return { signalling, harness };
 }

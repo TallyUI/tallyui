@@ -1,18 +1,24 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import type { SyncContext } from '@tallyui/core';
 import { FakePairingSignalling, pendingClaim } from './fake-signalling.test-helper';
+import { createTillDevice } from './till-device';
 import { PENDING_POLL_MS, createTillPairing, type PairingPhase, type TillPairing } from './till-pairing';
 
 const ctx: SyncContext = { connectorId: 'woo', baseUrl: 'https://shop.test', headers: {} };
 const NOW = '2026-11-11T10:00:00.000Z';
 const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
+/** A till device whose key is already stored, so no call registers. */
+const storedDevice = (signalling: FakePairingSignalling) => {
+  let key: string | null = 'key-1';
+  return createTillDevice({ signalling, deviceId: 'till-1', keys: { load: async () => key, save: async (next) => void (key = next), clear: async () => void (key = null) } });
+};
 let pairings: TillPairing[] = [];
 function setup(context: SyncContext | null = ctx) {
   const signalling = new FakePairingSignalling();
   const service = { refresh: vi.fn(async () => {}) };
   const errors: unknown[] = [];
-  const pairing = createTillPairing({ signalling, context: () => context, deviceId: 'till-1', service, onError: (error) => errors.push(error) });
+  const pairing = createTillPairing({ signalling, context: () => context, device: storedDevice(signalling), service, onError: (error) => errors.push(error) });
   pairings.push(pairing);
   return { signalling, service, errors, pairing };
 }
