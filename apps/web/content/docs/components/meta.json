@@ -84,6 +84,8 @@
     "order-card",
     "order-list",
     "order-detail",
+    "refund-form",
+    "refund-modal",
     "---Register---",
     "cash-count-input",
     "register-summary",
