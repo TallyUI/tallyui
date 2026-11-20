@@ -6131,7 +6131,10 @@ interface OrderCreatePayload {
        till call without the matching key (`device_refused`). A key is re-issued only after the device is pruned (30
        days idle, nothing owned) or reset by an admin (Front desk, 19 Nov 2026). The hash comparison is
        constant-time. The key is never logged or returned after issue, and an admin reset revokes the old key at
-       once. The till keeps the key next to its device id, never replicated (`createTillDevice`).
+       once. An admin reset deletes the device record with every display, code and pending pairing it owns, so the
+       id registers as new; a reset never returns an id to the keyless pre-migration state. The till keeps the key
+       next to its device id, never replicated (`createTillDevice`); a key that fails to save is held only in memory,
+       so after a restart that till is refused until an admin resets it.
        - **Adoption, a known limit.** A device id that owned rows before the key existed adopts them once: only
          inside `registerDevice`, under a cashier session with `customer_display.pair`, only for an id that existed
          before the migration, and logged with the cashier id. After that adoption, or after the first keyed
