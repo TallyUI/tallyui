@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import type { DisplayRecord, SyncContext } from '@tallyui/core';
+import { DisplaySignallingError, type DisplayRecord, type SyncContext } from '@tallyui/core';
 import { createOrderBuilder } from '../order';
 import { FakeSignalling, record } from './fake-signalling.test-helper';
 import { line, receiptWith } from './fixture.test-helper';
@@ -24,6 +24,9 @@ const hello = (id: string) => makeEnvelope('display.hello', { template: { id: 'd
 const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 /** Long enough for the offer, the answer at the next inbox poll, and the channel to open. */
 const OPEN_MS = SIGNAL_POLL_MS * 2;
+const refuseRegistration = async (): Promise<{ deviceKey: string }> => {
+  throw new DisplaySignallingError('device_refused');
+};
 
 /** A till device whose key is already stored, so no call registers. */
 const storedDevice = (signalling: FakeSignalling) => {
@@ -224,6 +227,44 @@ describe('createTillDisplayService', () => {
     await wait(LIST_POLL_MS);
     expect(none.service.status).toBe('online');
     expect(none.service.displays).toHaveLength(2);
+  });
+
+  it('P1: a device_refused list pauses with pauseReason device_refused', async () => {
+    const s = setup({ displays: [record('d1')], sides: [] });
+    // The service re-registers once on device_refused (#754); the store refuses that registration too.
+    s.signalling.registerDevice = refuseRegistration;
+    s.signalling.fail('list', 'device_refused');
+    await wait(LIST_POLL_MS);
+    expect(s.service.status).toBe('paused');
+    expect(s.service.pauseReason).toBe('device_refused');
+  });
+
+  it('P2: a forbidden list pauses with pauseReason forbidden', async () => {
+    const s = setup({ displays: [record('d1')], sides: [] });
+    s.signalling.fail('list', 'forbidden');
+    await wait(LIST_POLL_MS);
+    expect(s.service.status).toBe('paused');
+    expect(s.service.pauseReason).toBe('forbidden');
+  });
+
+  it('P3: a null context pauses with pauseReason signed_out', async () => {
+    const s = setup({ context: null });
+    await wait(LIST_POLL_MS);
+    expect(s.service.status).toBe('paused');
+    expect(s.service.pauseReason).toBe('signed_out');
+  });
+
+  it('P4: after a device_refused pause, a refresh() that lists goes online with pauseReason null', async () => {
+    const s = setup({ displays: [record('d1')], sides: [] });
+    s.signalling.registerDevice = refuseRegistration;
+    s.signalling.fail('list', 'device_refused');
+    await wait(LIST_POLL_MS);
+    expect(s.service.pauseReason).toBe('device_refused');
+    s.signalling.registerDevice = async () => ({ deviceKey: 'key-2' });
+    s.signalling.heal('list');
+    await s.service.refresh();
+    expect(s.service.status).toBe('online');
+    expect(s.service.pauseReason).toBeNull();
   });
 
   it('10: not_found from postSnapshot tears that display down', async () => {

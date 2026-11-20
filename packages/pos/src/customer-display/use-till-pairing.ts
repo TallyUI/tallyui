@@ -1,12 +1,12 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
-import type { TillDisplayService, TillDisplayEntry, TillDisplayStatus } from './till-display-service';
+import type { TillDisplayService, TillDisplayEntry, TillDisplayPauseReason, TillDisplayStatus } from './till-display-service';
 import type { PairingError, PairingPhase, TillPairing } from './till-pairing';
 
 export interface TillPairingView { phase: PairingPhase; forgetError: PairingError | null }
-export interface TillDisplaysView { status: TillDisplayStatus; displays: readonly TillDisplayEntry[] }
+export interface TillDisplaysView { status: TillDisplayStatus; displays: readonly TillDisplayEntry[]; pauseReason: TillDisplayPauseReason | null }
 
 const NO_PAIRING: TillPairingView = { phase: { phase: 'idle' }, forgetError: null };
-const NO_DISPLAYS: TillDisplaysView = { status: 'closed', displays: [] };
+const NO_DISPLAYS: TillDisplaysView = { status: 'closed', displays: [], pauseReason: null };
 
 /** A store over `source.onChange` whose snapshot is a new object only when one of its parts changed. */
 function useView<S extends { onChange(listener: () => void): () => void }, V extends object>(
@@ -31,5 +31,5 @@ export function useTillPairing(pairing: TillPairing | null): TillPairingView {
 
 /** The till display service's status and displays, re-rendered on each change; null gives `closed` with none. */
 export function useTillDisplays(service: TillDisplayService | null): TillDisplaysView {
-  return useView(service, NO_DISPLAYS, (s) => ({ status: s.status, displays: s.displays }));
+  return useView(service, NO_DISPLAYS, (s) => ({ status: s.status, displays: s.displays, pauseReason: s.pauseReason }));
 }

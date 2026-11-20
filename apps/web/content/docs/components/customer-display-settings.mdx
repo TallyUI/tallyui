@@ -36,7 +36,7 @@ Errors show as text: a pairing error above the button, a forget error under the 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `pairing` | `{ phase: PairingPhase; forgetError: PairingError \| null }` | required | From `useTillPairing(pairing)` |
-| `displays` | `{ status: TillDisplayStatus; displays: readonly TillDisplayEntry[] }` | required | From `useTillDisplays(service)` |
+| `displays` | `{ status: TillDisplayStatus; displays: readonly TillDisplayEntry[]; pauseReason?: TillDisplayPauseReason \| null }` | required | From `useTillDisplays(service)`; while paused with `pauseReason: 'device_refused'`, the line says the store does not recognise this till |
 | `onStartPairing` | `() => void` | required | Pair a display pressed |
 | `onConfirm` | `(claimId: string) => void` | required | Confirm pressed for a display |
 | `onDecline` | `(claimId: string) => void` | required | Decline pressed for a display |

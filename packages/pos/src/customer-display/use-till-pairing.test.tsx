@@ -62,6 +62,6 @@ describe('useTillDisplays', () => {
 
   it('gives closed with no displays for a null service', () => {
     const { result } = renderHook(() => useTillDisplays(null));
-    expect(result.current).toEqual({ status: 'closed', displays: [] });
+    expect(result.current).toEqual({ status: 'closed', displays: [], pauseReason: null });
   });
 });

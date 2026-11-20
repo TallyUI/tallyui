@@ -36,9 +36,12 @@ export interface TillDisplayServiceOptions {
   onError?: (error: unknown) => void;
 }
 export type TillDisplayStatus = 'online' | 'offline' | 'paused' | 'closed';
+export type TillDisplayPauseReason = 'signed_out' | 'forbidden' | 'device_refused';
 export interface TillDisplayEntry { display: DisplayRecord; link: PeerLinkState }
 export interface TillDisplayService extends DisplayLink {
   readonly status: TillDisplayStatus;
+  /** Why the service is `paused`; null in every other status. */
+  readonly pauseReason: TillDisplayPauseReason | null;
   /** The owned displays from the last successful list, each with its current link's state. */
   readonly displays: readonly TillDisplayEntry[];
   /** Called after any change to `status` or `displays`; returns the unsubscribe. */
@@ -80,6 +83,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   // A `forbidden` or `device_refused` pause stops every call until refresh(); a null context pauses without one, and the list timer
   // keeps reading context() so the till picks its displays up again when a cashier logs in (d5).
   let forbidden = false;
+  let pauseReason: TillDisplayPauseReason | null = null;
   let latest: DisplayCall | null = null;
   let entries: readonly TillDisplayEntry[] = [];
   const timers: { list: unknown; signal: unknown } = { list: null, signal: null };
@@ -102,6 +106,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   const setStatus = (next: TillDisplayStatus) => {
     if (status === next || status === 'closed') return;
     status = next;
+    if (next !== 'paused') pauseReason = null;
     slots.forEach(push);
     if (next === 'online') ensureSignalPoll();
     emit();
@@ -111,7 +116,10 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
   const contextNow = (): SyncContext | null => {
     if (status === 'closed' || forbidden) return null;
     const ctx = options.context();
-    if (!ctx) setStatus('paused');
+    if (!ctx) {
+      pauseReason = 'signed_out';
+      setStatus('paused');
+    }
     return ctx;
   };
   /** The service's reading of a failed call: d11 for a lost server, a pause, or a display that is gone. */
@@ -121,6 +129,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       if (!forbidden) setStatus('offline');
     } else if (error.code === 'forbidden' || error.code === 'device_refused') {
       forbidden = true;
+      pauseReason = error.code;
       stopTimer('list');
       setStatus('paused');
     } else if (error.code === 'not_found' && displayId !== undefined) {
@@ -270,6 +279,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
 
   return {
     get status() { return status; },
+    get pauseReason() { return pauseReason; },
     get displays() { return entries; },
     onChange(listener) {
       listeners.add(listener);
@@ -288,6 +298,7 @@ export function createTillDisplayService(options: TillDisplayServiceOptions): Ti
       stopTimer('signal');
       for (const id of [...slots.keys()]) remove(id);
       status = 'closed';
+      pauseReason = null;
       emit();
       listeners.clear();
     },
