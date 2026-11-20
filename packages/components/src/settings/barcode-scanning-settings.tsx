@@ -6,10 +6,16 @@
  * as v2 saves every change at once (there is no Save button).
  *
  * Left out, each a later row: v2's Sound section (TallyUI has no scan-sound player, so a switch would do nothing),
- * the Input sources / scanner chooser, and the Barcode Scanning Test panel (it needs v2's scan-trace analysis).
+ * the Input sources / scanner chooser, and the test panel's key capture, timing chart and history. The app captures
+ * keys and runs `analyzeScanTrace`; the optional test prop draws its verdict and applies suggestions through onChange.
  */
 import { useState } from 'react';
+import { View } from 'react-native';
+import type { TraceAnalysis } from '@tallyui/pos';
+import { CheckIcon } from '../ui/icon/check-icon';
 import { Input } from '../ui/input';
+import { Notice } from '../ui/notice';
+import { Text } from '../ui/text';
 import { SettingsGroup } from './settings-group';
 import { SettingsRow } from './settings-row';
 
@@ -27,6 +33,9 @@ export interface BarcodeScanningSettingsProps {
   /** Called with only the field that changed, as soon as it holds a valid value. */
   onChange: (patch: Partial<BarcodeScanningValues>) => void;
   className?: string;
+  /** v2's Barcode Scanning Test: drawn only when given. The app captures the keys and runs `analyzeScanTrace` with the
+   *  current values; `analysis` is null before the first test scan. `capture` is the app's own capture field, drawn first. */
+  test?: { analysis: TraceAnalysis | null; capture?: React.ReactNode };
 }
 
 const FIELD = 'h-11 w-28';
@@ -79,8 +88,10 @@ const MIN_CHARS = 'Barcode Minimum Length';
 const PREFIX = 'Barcode Scanner Prefix';
 const SUFFIX = 'Barcode Scanner Suffix';
 
-export function BarcodeScanningSettings({ values, onChange, className }: BarcodeScanningSettingsProps) {
-  return (
+export function BarcodeScanningSettings({ values, onChange, className, test }: BarcodeScanningSettingsProps) {
+  const analysis = test?.analysis;
+  const avg = analysis ? Math.round(analysis.avgGapMs) : 0;
+  return (<>
     <SettingsGroup title="Scanning" className={className}>
       <SettingsRow label={THRESHOLD} action={(
         <CountField testID="settings-barcode-threshold" label={THRESHOLD} value={values.threshold}
@@ -99,5 +110,55 @@ export function BarcodeScanningSettings({ values, onChange, className }: Barcode
           onValue={(suffix) => onChange({ suffix })} />
       )} />
     </SettingsGroup>
-  );
+    {test && (
+      <SettingsGroup title="Barcode Scanning Test">
+        {test.capture}
+        {analysis && (
+          <View testID="barcode-test-verdict" className="gap-3 p-4">
+            {analysis.detectedAsScan ? (
+              <>
+                <View className="flex-row items-center gap-2">
+                  <CheckIcon className="text-success" />
+                  <Text testID="barcode-test-headline">{`Detected as a scan → ${analysis.code}`}</Text>
+                </View>
+                <Text testID="barcode-test-detail" className="text-sm text-muted-foreground">
+                  {`Average keystroke gap ${avg}ms, under the ${values.threshold}ms threshold`}
+                </Text>
+              </>
+            ) : analysis.nearMiss ? (
+              <Notice tone="warning" testID="barcode-test-headline"
+                title={`Treated as typing — average gap ${avg}ms is above your ${values.threshold}ms threshold`} />
+            ) : !Number.isFinite(analysis.avgGapMs) ? (
+              <Text testID="barcode-test-headline">
+                Treated as typing — only one key pressed, so there are no gaps to measure
+              </Text>
+            ) : (
+              <Text testID="barcode-test-headline">
+                {`Treated as typing (average gap ${avg}ms) — correctly ignored`}
+              </Text>
+            )}
+            {analysis.suggestions.map((s) => (
+              <Notice key={s.kind} tone="info" testID={`barcode-test-suggestion-${s.kind}`}
+                title={s.kind === 'raise-threshold'
+                  ? `Raise threshold to ${s.value}ms — your scanner averages ${avg}ms`
+                  : s.kind === 'lower-min-chars'
+                    ? `Lower minimum length to ${s.value} — this code is ${s.value} characters`
+                    : `Strip leading "${s.value}" — set it as your prefix`}
+                actions={[{ label: 'Apply', onPress: () => onChange(s.settings), testID: `barcode-test-apply-${s.kind}` }]} />
+            ))}
+            {analysis.shiftMangled && (
+              <Notice tone="warning" testID="barcode-test-shift" title="Scanner is sending Shift as separate keys">
+                <Text>Reconfigure it to a US-keyboard / no-modifier mode.</Text>
+              </Notice>
+            )}
+            {analysis.trailingEnter && (
+              <Text testID="barcode-test-trailing-enter" className="text-sm text-muted-foreground">
+                Trailing Enter detected and ignored — no suffix needed
+              </Text>
+            )}
+          </View>
+        )}
+      </SettingsGroup>
+    )}
+  </>);
 }
