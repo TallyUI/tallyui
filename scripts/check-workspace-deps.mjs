@@ -62,6 +62,14 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
   'tenderReducer', 'initTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   'legStatus', 'countsTowardPaid', 'isInMotion', 'canVoidLeg',
+  // the tender picker (#1133 11c): the pure charged line figures used to price a unit pick.
+  'splitUnitLines',
+  // the tender picker (#1133 11c): the pure count of units captured or held by an in-motion leg.
+  'heldUnitsByLine',
+  // the tender picker (#1133 11c): the pure money calculation for the selected units.
+  'pickedUnitsMinor',
+  // the tender picker (#1133 11c): the pure count of units still available to pick.
+  'unpaidUnitsByLine',
   // the Sales room (plan unit 25): the pure store-day date presets its filters bar offers, never a hook or the store.
   'presetRange', 'DATE_PRESETS',
   // the catalogue tiles (unit ucat): the pure per-product cart quantity the in-cart badge shows, never a hook or the store.
