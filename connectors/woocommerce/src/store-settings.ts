@@ -10,7 +10,7 @@ export const WOO_NOTE_ORDER_CREATE_VERSION = 7;
 /** Version 8 is version 7 plus the tax address and the customer's addresses (#722), sent as WCPOS's `_woocommerce_pos_tax_based_on`
  *  meta with the order's billing and shipping, which push/orders already passes through; a store takes it wherever it takes 7. */
 export const WOO_TAX_ADDRESS_ORDER_CREATE_VERSION = 8;
-// The order.create version a store gets unless /status lists order_create_v5, which only the TallyUI fork of the plugin advertises.
+// The order.create version a store gets unless /status lists order_create_v5 (TallyUI fork) or, with no capabilities list, /site reports stock 1.10.20+ (then 7).
 const WOO_BASE_ORDER_CREATE_VERSION = 3;
 // The first woocommerce-pos release whose coupon recalculation keeps the POS price (ADR-077 amendment 4, R2: 1.9.0, 2026-05-15).
 const WOO_COUPONS_MIN_PLUGIN: readonly [number, number, number] = [1, 9, 0];

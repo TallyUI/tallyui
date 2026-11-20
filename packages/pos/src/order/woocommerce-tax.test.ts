@@ -219,6 +219,18 @@ describe('ADR-076 WooCommerce builder strategy', () => {
     expect(untaxed.getSnapshot().totalMinor).toBe(1400);
   });
 
+  it.each([false, true])('leaves a none shipping line untaxed on an inclusive standard cart (custom: %s)', (custom) => {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: {
+      ...context({ standard: [rate(1, '20.0000')], 'reduced-rate': [rate(2, '5.0000')] }, true), shippingTaxClass: 'inherit',
+    } });
+    builder.addLine({ productId: 'p', name: 'Item', ...(custom ? { custom: true as const } : {}), unitPrice: { amount: 1000, currency: 'GBP' } });
+    const none = builder.addShipping({ name: 'Post', amountMinor: 100, taxClass: 'reduced-rate', taxStatus: 'none' });
+    builder.updateShipping(none, { amountMinor: 200 });
+    expect(builder.getSnapshot().shipping?.[0]).toMatchObject({ taxClass: 'reduced-rate', taxStatus: 'none', taxLines: [], taxMicros: '0' });
+    // Inclusive: the 10.00 item already carries its 20% (1.67 of it), the untaxed 2.00 post adds only itself.
+    expect(builder.getSnapshot()).toMatchObject({ taxMinor: 167, totalMinor: 1200 });
+  });
+
   it('leaves inherited shipping untaxed when all product and custom lines are non-taxable', () => {
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: { ...context({ standard: [rate(1, '20.0000')] }),
       shippingTaxClass: 'inherit' } });
