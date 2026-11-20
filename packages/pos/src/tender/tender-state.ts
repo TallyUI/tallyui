@@ -185,6 +185,10 @@ export function tenderReducer(state: TenderState, action: TenderAction): TenderS
           // Preserve the group's original methods when subsequently taking the rest.
           linesPaidBy[id] ??= [...new Set(action.rowsSinceFrom.map((row) => row.title))];
         }
+      } else if (state.plan?.kind === 'items') {
+        for (const id of state.plan.lineIds) {
+          delete linesPaidBy[id];
+        }
       }
       // The method stays chosen for the next leg (the selector is always on screen now);
       // the entry pre-types the next planned leg, or the balance when no plan is left.
