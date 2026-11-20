@@ -116,7 +116,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');
-    dispatch({ type: 'tender-started' });
+    dispatch({ type: 'tender-started', paymentId: id });
   }
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
