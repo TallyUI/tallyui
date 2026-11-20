@@ -58,6 +58,7 @@ export type {
 } from './types/orders';
 export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
 export type { RegisterInfo } from './types/registers';
+export type { ApproverCredentials, Correction, StoreClosure, ClosureReads } from './types/closures';
 export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 

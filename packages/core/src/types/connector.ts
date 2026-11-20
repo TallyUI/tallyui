@@ -10,6 +10,7 @@ import type { ListOrdersQuery, OrderFilterField, StoreOrder, StoreOrderPage } fr
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
+import type { ClosureReads } from './closures';
 import type { Cashier } from './cashier';
 import type { FailureClass } from '../connectivity';
 import type { DisplayAdvertisement, DisplaySignalling } from './display-signalling';
@@ -420,6 +421,8 @@ export interface TallyConnector {
    * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.
    */
   listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
+  /** The store's Z closures (ADR-093): online only. `undefined` when the connector has none: the app hides its server-closure features. */
+  closures?: ClosureReads;
   /**
    * The signed-in cashier and their neutral POS permissions (v2 parity A12), mapped from the platform's own roles or
    * capabilities. Read-only. `null` when the connector has no cashier to describe; `undefined` (no method) when the

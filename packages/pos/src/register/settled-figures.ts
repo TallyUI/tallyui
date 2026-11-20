@@ -5,24 +5,10 @@
  * minor-units convention: WCPOS's four-decimal-string arithmetic becomes direct integer
  * arithmetic on a2's `*_minor` fields and tender maps.
  */
+import type { Correction } from '@tallyui/core';
 import type { Closure } from './schemas';
 
-export type Correction = {
-  id: number;
-  type: 'late_sale' | 'late_movement' | 'recount';
-  created_at: string;
-  actor: { id: string; name: string };
-  approver: { id: string; name: string } | null;
-  reason: string;
-  figures: {
-    expected_delta?: Record<string, number>;
-    cash_delta?: number;
-    sales_delta?: number;
-    refunds_delta?: number;
-    counted?: Record<string, number>;
-    variance?: Record<string, number>;
-  };
-};
+export type { Correction };
 
 export type RecordedFigures = Pick<
   Closure,
@@ -38,7 +24,7 @@ export type RecordedFigures = Pick<
 /**
  * Folds `corrections` onto `recorded`, ordered by `created_at` then `id`, deduplicated by `id`.
  * A `recount` replaces the supplied tenders in `counted`; a `late_movement` adds its signed
- * `cash_delta` to expected cash; a `late_sale` adds its `expected_delta` tenders to expected and
+ * `cash_delta` to expected cash; a `late_sale` or `late_refund` adds its `expected_delta` tenders to expected and
  * its `sales_delta`/`refunds_delta` to both the period and perpetual totals. Variance is
  * recomputed for every tender named by expected or counted, once any correction applies.
  * `touched` names every field, or `field.tender`, whose settled value differs from `recorded`.
@@ -61,12 +47,12 @@ export function deriveSettled(recorded: RecordedFigures, corrections: readonly C
     const deltas: Record<string, number> =
       correction.type === 'late_movement'
         ? { cash: f.cash_delta ?? 0 }
-        : correction.type === 'late_sale'
+        : correction.type === 'late_sale' || correction.type === 'late_refund'
           ? (f.expected_delta ?? {})
           : {};
     for (const [tender, delta] of Object.entries(deltas))
       settled.expected[tender] = (settled.expected[tender] ?? 0) + delta;
-    if (correction.type === 'late_sale') {
+    if (correction.type === 'late_sale' || correction.type === 'late_refund') {
       settled.period_sales_total_minor += f.sales_delta ?? 0;
       settled.perpetual_sales_total_minor += f.sales_delta ?? 0;
       settled.period_refunds_total_minor += f.refunds_delta ?? 0;
