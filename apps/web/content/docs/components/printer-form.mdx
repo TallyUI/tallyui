@@ -1,0 +1,66 @@
+---
+title: PrinterForm
+description: PrinterForm adds or edits a device-local printer and passes a validated draft to the app to save.
+---
+
+## Import
+
+```tsx
+import { PrinterForm, type PrinterFormDraft, type PrinterFormProps } from '@tallyui/components';
+```
+
+## Usage
+
+The app opens the dialog from `PrintingSettings`, assigns or keeps the printer id, and saves the draft to its device-local `printer_profiles`.
+
+```tsx
+import { useState } from 'react';
+import { ScrollView, useWindowDimensions } from 'react-native';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, PrinterForm, PrintingSettings } from '@tallyui/components';
+import type { PrinterProfile } from '@tallyui/pos';
+
+const { height } = useWindowDimensions();
+const [editing, setEditing] = useState<PrinterProfile | 'new' | null>(null);
+
+<>
+  <PrintingSettings printers={printers} onAdd={() => setEditing('new')} onEdit={setEditing}
+    onTest={testPrinter} onSetDefault={setDefaultPrinter} onDelete={deletePrinter} />
+  <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+    <DialogContent className="flex-col overflow-hidden" style={{ maxHeight: Math.max(280, height - 64) }}>
+      <DialogHeader><DialogTitle>{editing === 'new' ? 'Add Printer' : 'Edit Printer'}</DialogTitle></DialogHeader>
+      <ScrollView className="flex-1">{editing !== null && (
+        <PrinterForm key={editing === 'new' ? 'new' : editing.id}
+          printer={editing === 'new' ? undefined : editing} onCancel={() => setEditing(null)}
+          onSave={async (draft) => {
+            const refusal = await savePrinter(editing === 'new' ? undefined : editing.id, draft);
+            if (refusal === null) setEditing(null);
+            return refusal;
+          }} />
+      )}</ScrollView>
+    </DialogContent>
+  </Dialog>
+</>
+```
+
+The form has no scroll of its own: inside a dialog, wrap it in a `ScrollView` and cap the dialog's height, as above.
+
+`savePrinter` above is the app's callback: it returns a refusal string or `null` on success. Save is disabled and shows a loader while a promise is pending. Use a new key when opening a different printer so the form starts from its values.
+
+## Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `printer` | `PrinterProfile` | Optional profile to edit; absent starts a new network printer. |
+| `onSave` | `(draft: PrinterFormDraft) => string \| null \| Promise<string \| null>` | Saves the validated draft; a string is shown inline as a refusal. |
+| `onCancel` | `() => void` | Closes the form without saving. |
+| `onTest` | `(draft: PrinterFormDraft) => void` | Optional; shows Test Print and receives the validated current draft. |
+| `className` | `string` | Additional root styles. |
+
+## Validation
+
+Save and Test Print show only the first failure, in this order:
+
+- `Name is required`
+- `Address is required` (network only)
+- `Port must be 1 to 65535` (network only)
+- `Characters per line must be 1 or more`
