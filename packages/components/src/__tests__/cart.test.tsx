@@ -208,6 +208,24 @@ describe('Cart', () => {
     expect(sale.order.shipping![0].taxStatus).toBe('none');
   });
 
+  it("K2: at order.create 6 a WooCommerce shipping line's edit form offers No tax, and sends it (#1115)", { timeout: 20_000 }, () => {
+    render(<SaleHarness capabilities={{ orderCreate: 6, lineTax: { none: true, classes: true },
+      taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false } }}>
+      {(sale) => <Cart sale={sale} taxClasses={[{ id: 'reduced', label: 'Reduced' }]} />}</SaleHarness>);
+    click('Add charge');
+    click('Shipping');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Delivery' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '2' } });
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).not.toBe('none');
+    click('Edit total of Delivery');
+    click('Edit Delivery');
+    const shippingForm = within(screen.getByRole('group', { name: 'Edit Delivery' }));
+    fireEvent.click(shippingForm.getByRole('switch', { name: 'No tax' }));
+    click('Apply');
+    expect(sale.order.shipping![0].taxStatus).toBe('none');
+  });
+
   it.each([undefined, false])('hides Price without permission (%s)', (canEditPrice) => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} canEditPrice={canEditPrice} />}</SaleHarness>);
     act(() => sale.add(blue, traits));

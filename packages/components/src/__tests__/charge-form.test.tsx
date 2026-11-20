@@ -215,6 +215,21 @@ describe('ChargeForm', () => {
       click('Shipping');
       expect(noTax()).toBeTruthy();
     });
+
+    it("C6: turning No tax on keeps the line's own tax class", () => {
+      const onApply = mountShipping({ lineTax: { none: true, classes: true },
+        initial: { name: 'Delivery', amountMinor: 200, taxClass: 'reduced-rate' } });
+      fireEvent.click(noTax());
+      click('Apply');
+      expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
+        taxStatus: 'none', taxClass: 'reduced-rate' });
+    });
+
+    it('C7: without shippingTaxFromStore, No tax follows lineTax.none, not shippingNoTax', () => {
+      mountShipping({ shippingTaxFromStore: undefined, lineTax: { classes: true }, taxClasses });
+      expect(screen.queryByRole('switch', { name: 'No tax' })).toBeNull();
+      expect(screen.getByRole('group', { name: 'Tax class' })).toBeTruthy();
+    });
   });
 
   it('shows a refusal inline and closes only on Cancel', () => {
