@@ -339,6 +339,14 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const legacy = await w.h.seedLegacyDevice('till-legacy');
       await expectRefusal(w.s.registerDevice(w.viewer, 'till-legacy'), 'forbidden', 'a register without the capability');
       check((await w.h.adoptionLog()).length === 0, 'a refused register adopted');
+      const before = JSON.stringify(await w.h.storedCounts());
+      for (const [what, deviceKey] of [['no key', ''], ['a random key', randomKey()]] as const) {
+        const keyless = { deviceId: 'till-legacy', deviceKey };
+        await expectRefusal(w.s.list(w.a, keyless), 'device_refused', `list with ${what} before the adoption`);
+        await expectRefusal(w.s.mint(w.a, keyless), 'device_refused', `mint with ${what} before the adoption`);
+      }
+      const after = JSON.stringify(await w.h.storedCounts());
+      check(after === before, `refused pre-adoption calls changed the stored counts from ${before} to ${after}`);
       const device = { deviceId: 'till-legacy', deviceKey: (await w.s.registerDevice(w.a, 'till-legacy')).deviceKey };
       check(SECRET.test(device.deviceKey), 'the adopting key is not 22+ base64url characters');
       check((await w.s.list(w.a, device)).some((r) => r.displayId === legacy.displayId), 'the adopted till does not list its display');
@@ -357,6 +365,7 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const old = { deviceId: 'till-idle', deviceKey: (await w.s.registerDevice(w.a, 'till-idle')).deviceKey };
       const shown = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       await w.h.advance(29 * DAY);
+      await expectRefusal(w.s.list(w.a, { deviceId: 'till-idle', deviceKey: randomKey() }), 'device_refused', 'a wrong key on an idle device');
       await w.s.readSnapshot(shown.d, shown.token);
       await w.h.advance(2 * DAY);
       check((await w.s.list(w.a, w.da)).some((r) => r.displayId === shown.displayId), 'a device that owns a live row was pruned');

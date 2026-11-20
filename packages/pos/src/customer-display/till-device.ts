@@ -1,7 +1,7 @@
 import { DisplaySignallingError, type DisplaySignalling, type SyncContext, type TillDevice } from '@tallyui/core';
 import { quietly } from './snapshot-fallback';
 
-/** Where the till keeps its device key (TallyUI#754): next to its device id, never replicated. */
+/** Where the till keeps its device key (TallyUI#754): next to its device id, never replicated. Its errors never carry the key. */
 export interface TillDeviceKeyStore {
   load(): Promise<string | null>;
   save(key: string): Promise<void>;
@@ -12,7 +12,7 @@ export interface TillDeviceOptions {
   /** The till's device id: an identifier, not a credential. */
   deviceId: string;
   keys: TillDeviceKeyStore;
-  /** A key store failure on save or clear, for logs. Never throws into the handle. */
+  /** A key store failure on save or clear, for logs; never throws into the handle. A key that fails to save is held only in memory, so after a restart the till is refused until an admin resets it. */
   onError?: (error: unknown) => void;
 }
 /** The till's credential for every till-side call; `createTillPairing` and `createTillDisplayService` share one. */
@@ -28,10 +28,12 @@ export function createTillDevice(options: TillDeviceOptions): TillDeviceHandle {
   const { signalling, deviceId, keys } = options;
   const report = (error: unknown) => quietly(() => options.onError?.(error));
   let loading: Promise<string> | null = null;
+  let held: string | null = null;
   const key = async (ctx: SyncContext): Promise<string> => {
-    const stored = await keys.load();
-    if (stored) return stored;
+    const stored = held ?? (await keys.load());
+    if (stored) return (held = stored);
     const { deviceKey } = await signalling.registerDevice(ctx, deviceId);
+    held = deviceKey;
     await keys.save(deviceKey).catch(report);
     return deviceKey;
   };
@@ -40,7 +42,7 @@ export function createTillDevice(options: TillDeviceOptions): TillDeviceHandle {
       loading ??= key(ctx).finally(() => { loading = null; });
       return { deviceId, deviceKey: await loading };
     },
-    refused: () => keys.clear().catch(report),
+    refused: async () => { held = null; await keys.clear().catch(report); },
   };
 }
 

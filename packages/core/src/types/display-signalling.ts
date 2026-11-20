@@ -92,7 +92,10 @@ export interface SignalMessage { type: 'offer' | 'answer' | 'ice'; payload: stri
 export interface DisplaySignalling {
   /**
    * Issues the device key for `deviceId`, needing `customer_display.pair`: 128 bits, base64url, stored only as SHA-256
-   * hex, and returned once, by this call only. An id that already holds a key gives `device_refused`.
+   * hex, and returned once, by this call only. An id that already holds a key gives `device_refused`. A pre-migration id
+   * (rows from before device keys, no key hash) adopts them once, logged with the cashier id. An admin reset deletes the
+   * device record with every display, code and pending pairing it owns, so the id registers as new; a reset never returns
+   * an id to the keyless pre-migration state.
    */
   registerDevice(ctx: SyncContext, deviceId: string): Promise<{ deviceKey: string }>;
   /** A pairing code: 6+ digits from `crypto.getRandomValues`, single use, live at most 10 minutes; a 6th unspent code per device gives `limit`. */

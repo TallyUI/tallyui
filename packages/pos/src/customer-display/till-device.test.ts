@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { DisplaySignalling, SyncContext } from '@tallyui/core';
 import { createMemoryDisplaySignalling } from '@tallyui/core/server';
 import type { DisplayConfig } from './protocol';
-import { createTillDevice, type TillDeviceKeyStore } from './till-device';
+import { createTillDevice, withTillDevice, type TillDeviceKeyStore } from './till-device';
 import { createTillDisplayService } from './till-display-service';
 import { createTillPairing } from './till-pairing';
 
@@ -119,5 +119,62 @@ describe('createTillDevice (TallyUI#754)', () => {
     expect(server.count('list')).toBe(1);
     expect(server.count('registerDevice')).toBe(2);
     expect(serviceStore.current()).toBeNull();
+  });
+
+  it('TD5: a key that fails to save is held in memory: the next call uses it, with one registration', async () => {
+    const server = await countedServer();
+    const store = keyStore(null);
+    const saveError = new Error('key store unavailable');
+    const keys = { ...store.keys, save: vi.fn(store.keys.save).mockRejectedValueOnce(saveError) };
+    const errors: unknown[] = [];
+    const handle = createTillDevice({ signalling: server.signalling, deviceId: 'till-1', keys, onError: (error) => errors.push(error) });
+    const first = await handle.device(server.tillCtx);
+    expect(await handle.device(server.tillCtx)).toEqual(first);
+    await expect(withTillDevice(handle, server.tillCtx, (till) => server.signalling.list(server.tillCtx, till))).resolves.toEqual([]);
+    expect(server.count('registerDevice')).toBe(1);
+    expect(errors).toEqual([saveError]);
+  });
+
+  it('TD6: two calls refused with the same stale key register once; the later refusal keeps the new key', async () => {
+    // The server does not know till-1, so its stored key is refused. The service's list with that key is held until the
+    // pairing has re-registered, so the service's refusal always lands after the new key is issued and saved.
+    const server = await countedServer();
+    const store = keyStore('stale-key');
+    let open = () => {};
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const listed: string[] = [];
+    let held = 0;
+    const signalling: DisplaySignalling = {
+      ...server.signalling,
+      list: async (callCtx, till) => {
+        if (till.deviceKey === 'stale-key') { held += 1; await gate; }
+        const rows = await server.signalling.list(callCtx, till);
+        listed.push(till.deviceKey);
+        return rows;
+      },
+    };
+    const device = createTillDevice({ signalling, deviceId: 'till-1', keys: store.keys });
+    const errors: unknown[] = [];
+    const service = createTillDisplayService({
+      signalling, context: () => server.tillCtx, device,
+      advertisement: { iceServers: [], snapshot: false }, configFor, onError: (error) => errors.push(error),
+    });
+    closers.push(() => service.close());
+    const pairing = createTillPairing({ signalling, context: () => server.tillCtx, device, onError: (error) => errors.push(error) });
+    closers.push(() => pairing.close());
+    await vi.waitFor(() => expect(held).toBe(1));
+    await pairing.start();
+    expect(pairing.phase.phase).toBe('code');
+    expect(server.count('registerDevice')).toBe(1);
+    open();
+    await vi.waitFor(() => expect(listed).toHaveLength(1));
+    expect(listed).toEqual([store.saved[0]]);
+    expect(service.status).toBe('online');
+    expect(errors).toEqual([]);
+    expect(server.count('registerDevice')).toBe(1);
+    expect(server.count('list')).toBe(2);
+    expect(store.saved).toHaveLength(1);
+    expect(store.current()).toBe(store.saved[0]);
+    expect(store.current()).not.toBe('stale-key');
   });
 });
