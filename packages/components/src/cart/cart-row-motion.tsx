@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
-import { Animated, Platform, View } from 'react-native';
+import { Animated, Platform } from 'react-native';
 import { EASE, EASE_EXIT, PANEL_SLIDE_OUT } from '../lib/motion';
 import { useReducedMotion } from '../lib/use-reduced-motion';
 
@@ -54,6 +54,7 @@ export function CartRowMotion({ beat, leaving, onLeft, still, testID, children }
   }, [leaving, removed, height, useNativeDriver]);
   return (
     <Animated.View testID={testID} style={closing ? { height, overflow: 'hidden' } : undefined}
+      pointerEvents={leaving ? 'none' : undefined} aria-hidden={leaving || undefined}
       onLayout={(event) => { if (!leaving) measured.current = event.nativeEvent.layout.height; }}>
       {children}
       <Animated.View pointerEvents="none" aria-hidden testID={testID && `${testID}-added`}
@@ -118,9 +119,7 @@ export function MotionRows<T>({ items, keyOf, pulseKey, identity, renderItem, em
   return <>{rows.map((row) => (
     <CartRowMotion key={row.key} testID={`cart-row-${row.key}`} beat={row.beat} leaving={row.leaving} still={still}
       onLeft={() => setSeen((s) => ({ ...s, rows: s.rows.filter((other) => other.key !== row.key || !other.leaving) }))}>
-      {row.leaving
-        ? <View pointerEvents="none" aria-hidden>{nodes.current.get(row.key)}</View>
-        : rendered.get(row.key)}
+      {row.leaving ? nodes.current.get(row.key) : rendered.get(row.key)}
     </CartRowMotion>
   ))}</>;
 }
