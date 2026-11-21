@@ -24,5 +24,6 @@ import { NavRail } from '@tallyui/components';
 | `items` | `ShellNavItem[]` | required | Navigation entries |
 | `activeId` | `string` | --- | The `id` of the item marked `aria-current="page"` |
 | `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` |
+| `footer` | `ReactNode` | --- | Drawn at the foot of the rail, under the bottom items, such as the app version |
 | `className` | `string` | --- | Override column styles |
 | `testID` | `string` | `'nav-rail'` | Test identifier; items are `nav-item-<id>` |

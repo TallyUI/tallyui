@@ -25,10 +25,19 @@ const register = { session: null, overdue: false, enabled: false, lastClosure: n
   typeof useRegisterSession
 >;
 
-function Shell({ onNavigate = vi.fn(), navItems = items }: { onNavigate?: (id: string) => void; navItems?: ShellNavItem[] }) {
+function Shell({
+  onNavigate = vi.fn(),
+  navItems = items,
+  navFooter,
+}: {
+  onNavigate?: (id: string) => void;
+  navItems?: ShellNavItem[];
+  navFooter?: React.ReactNode;
+}) {
   return (
     <AppShell
       navItems={navItems}
+      navFooter={navFooter}
       activeId="pos"
       onNavigate={onNavigate}
       registerBar={<RegisterBar register={register} registerId="r" online multiRegister={false} storeName="Main St" onOpenPanel={vi.fn()} />}
@@ -167,4 +176,36 @@ it('paints the drawer panel and its active row like the rail', () => {
   const label = screen.getByText('POS').getAttribute('data-class');
   expect(label).toContain('text-rail-selected-foreground');
   expect(label).not.toContain('font-semibold');
+});
+
+// Gap 1.1b: an app line (its version) at the foot of the rail and of the phone drawer.
+it('draws navFooter in the rail after the bottom items on wide windows', () => {
+  render(<Shell navFooter={<Text>v1.2.3</Text>} />);
+  const footer = screen.getByTestId('nav-rail-footer');
+  expect(footer.textContent).toBe('v1.2.3');
+  expect(screen.getByTestId('nav-rail').contains(footer)).toBe(true);
+  const last = screen.getByTestId('nav-item-settings');
+  expect(last.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('draws navFooter in the drawer panel, outside its navigation, on phones', () => {
+  Object.assign(dimensions, { width: 360, height: 640 });
+  render(<Shell navFooter={<Text>v1.2.3</Text>} />);
+  fireEvent.click(screen.getByTestId('register-bar-menu'));
+  const footer = screen.getByTestId('nav-drawer-footer');
+  expect(footer.textContent).toBe('v1.2.3');
+  expect(screen.getByTestId('nav-drawer-panel').contains(footer)).toBe(true);
+  const nav = screen.getByTestId('nav-drawer').querySelector('nav');
+  expect(nav).not.toBeNull();
+  expect(nav?.contains(footer)).toBe(false);
+});
+
+it('draws no footer in the rail or the drawer without navFooter', () => {
+  const { rerender } = render(<Shell />);
+  expect(screen.queryByTestId('nav-rail-footer')).toBeNull();
+  Object.assign(dimensions, { width: 360, height: 640 });
+  rerender(<Shell />);
+  fireEvent.click(screen.getByTestId('register-bar-menu'));
+  expect(screen.getByTestId('nav-drawer-panel')).toBeDefined();
+  expect(screen.queryByTestId('nav-drawer-footer')).toBeNull();
 });

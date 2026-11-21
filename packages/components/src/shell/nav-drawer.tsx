@@ -17,6 +17,8 @@ export interface NavDrawerProps {
   onNavigate: (id: string) => void;
   /** Drawn above the items (a store name or logo). */
   header?: React.ReactNode;
+  /** Drawn at the foot of the panel, under the items (a version line). */
+  footer?: React.ReactNode;
   testID?: string;
 }
 
@@ -61,7 +63,7 @@ function useFocusTrap(panel: React.RefObject<View | null>, active: boolean, onEs
  * The phone's navigation: a 200-wide panel that slides over the screen from the left, v2's
  * `drawerType: 'front'`, with a backdrop that closes it. Pressing the current page only closes it.
  */
-export function NavDrawer({ open, onOpenChange, items, activeId, onNavigate, header, testID = 'nav-drawer' }: NavDrawerProps) {
+export function NavDrawer({ open, onOpenChange, items, activeId, onNavigate, header, footer, testID = 'nav-drawer' }: NavDrawerProps) {
   const [mounted, setMounted] = React.useState(open);
   const offset = React.useRef(new Animated.Value(open ? 0 : -DRAWER_WIDTH)).current;
   const panel = React.useRef<View>(null);
@@ -124,6 +126,7 @@ export function NavDrawer({ open, onOpenChange, items, activeId, onNavigate, hea
           <View>{top.map(renderItem)}</View>
           {bottom.length > 0 && <View className="mt-auto">{bottom.map(renderItem)}</View>}
         </View>
+        {footer != null && <View testID={`${testID}-footer`}>{footer}</View>}
       </Animated.View>
     </View>
   );

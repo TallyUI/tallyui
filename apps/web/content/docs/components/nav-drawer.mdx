@@ -35,4 +35,5 @@ const [open, setOpen] = useState(false);
 | `activeId` | `string` | --- | The `id` of the item marked `aria-current="page"` |
 | `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` when it isn't the active one |
 | `header` | `ReactNode` | --- | Drawn above the items, such as the store name |
+| `footer` | `ReactNode` | --- | Drawn at the foot of the panel, under the items, such as the app version |
 | `testID` | `string` | `'nav-drawer'` | Test identifier; the panel is `<testID>-panel` and the backdrop `<testID>-backdrop` |
