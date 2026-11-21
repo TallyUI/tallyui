@@ -23,7 +23,8 @@ export interface WooCommandTransportOptions {
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
    * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
    * it can, `send` retries with what `/site` answered: `network` or `timeout` with no answer, `status_<n>` for a non-2xx
-   * answer (`status_404` when the plugin is missing), `store_version_unknown` for a 2xx without a readable version. */
+   * answer (`status_404` when the plugin is missing), `store_version_unknown` for a 2xx without a readable version. A 401,
+   * or a 403 `rest_forbidden`, is `unauthorized` instead. */
   ledgerPayments?: boolean | (() => boolean | Promise<boolean>);
 }
 
@@ -275,8 +276,12 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     async send(batch, context) {
       if (batch.length === 0) return { kind: 'results', results: [] };
       const ledger = await ledgerStore();
-      if (typeof ledger !== 'boolean') return ledger.status >= 200 && ledger.status < 300
-        ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
+      if (typeof ledger !== 'boolean') {
+        // As the register transport does (register-transport.ts:61): an expired or refused token asks for sign-in.
+        if (ledger.status === 401 || (ledger.status === 403 && ledger.body?.code === 'rest_forbidden')) return { kind: 'unauthorized' };
+        return ledger.status >= 200 && ledger.status < 300
+          ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
+      }
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const results: CommandResult[] = [];
