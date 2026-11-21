@@ -131,6 +131,70 @@ describe('PrintingSettings', () => {
   });
 });
 
+describe('PrintingSettings report and help link', () => {
+  it('P1: report and help link are off by default', () => {
+    show();
+    expect(screen.queryByTestId('printer-row-dialog-menu')).toBeNull();
+    openMenu('bt');
+    expect(screen.queryByTestId('printer-row-bt-copy-report')).toBeNull();
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.queryByTestId('printing-having-trouble')).toBeNull();
+  });
+
+  it('P2: the copy item is first and passes the printer', () => {
+    const onCopySetupReport = vi.fn();
+    show({ onCopySetupReport });
+    openMenu('bt');
+    const items = Array.from(document.querySelectorAll('[data-testid^="printer-row-bt-"]'))
+      .map((node) => node.getAttribute('data-testid'))
+      .filter((id) => /-(copy-report|set-default|delete)$/.test(id ?? ''));
+    expect(items).toEqual(['printer-row-bt-copy-report', 'printer-row-bt-set-default', 'printer-row-bt-delete']);
+    expect(screen.getByText('Copy setup report')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('printer-row-bt-copy-report'));
+    expect(onCopySetupReport).toHaveBeenCalledTimes(1);
+    expect(onCopySetupReport).toHaveBeenCalledWith(bluetooth);
+  });
+
+  it('P3: a built-in printer gets a menu with only the copy item', () => {
+    const onCopySetupReport = vi.fn();
+    show({ onCopySetupReport });
+    expect(screen.getByTestId('printer-row-dialog-menu')).toBeTruthy();
+    openMenu('dialog');
+    expect(screen.getByTestId('printer-row-dialog-copy-report')).toBeTruthy();
+    expect(screen.queryByTestId('printer-row-dialog-set-default')).toBeNull();
+    expect(screen.queryByTestId('printer-row-dialog-delete')).toBeNull();
+    fireEvent.click(screen.getByTestId('printer-row-dialog-copy-report'));
+    expect(onCopySetupReport).toHaveBeenCalledTimes(1);
+    expect(onCopySetupReport).toHaveBeenCalledWith(dialog);
+  });
+
+  it('P4: the help link calls onOpenHelp', () => {
+    const onOpenHelp = vi.fn();
+    show({ onOpenHelp });
+    const link = screen.getByRole('link', { name: 'Having trouble?' });
+    expect(link).toBeTruthy();
+    expect(onOpenHelp).not.toHaveBeenCalled();
+    fireEvent.click(link);
+    expect(onOpenHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it('P5: the link shows in the empty state and hides while loading', () => {
+    const onOpenHelp = vi.fn();
+    show({ printers: [dialog], onOpenHelp });
+    expect(screen.getByRole('link', { name: 'Having trouble?' })).toBeTruthy();
+    cleanup();
+    show({ loading: true, onOpenHelp });
+    expect(screen.queryByTestId('printing-having-trouble')).toBeNull();
+  });
+
+  it('P6: the link comes after the Add Printer button', () => {
+    show({ onOpenHelp: vi.fn() });
+    const add = screen.getByTestId('printing-add-printer-button');
+    const help = screen.getByTestId('printing-having-trouble');
+    expect(add.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 type TemplateProp = NonNullable<PrintingSettingsProps['templates']>[number];
 
 describe('PrintingSettings template routing', () => {

@@ -23,14 +23,16 @@ import { PrintingSettings } from '@tallyui/components';
   templates={templates}
   routing={routing}
   onRoutingChange={(templateId, printerId) => setTemplatePrinter(templateId, printerId)}
+  onCopySetupReport={(printer) => copySetupReport(printer)}
+  onOpenHelp={openPrinterDocs}
 />
 ```
 
-Props only: the app passes its `PrinterProfile`s (from `@tallyui/pos`) and wires every callback. The component holds only the delete confirmation; it has no add or edit dialog of its own and shows no toast, so the app opens its own dialog from `onAdd` / `onEdit` and reports the result of `onTest`.
+Props only: the app passes its `PrinterProfile`s (from `@tallyui/pos`) and wires every callback. The component holds only the delete confirmation; it has no add or edit dialog of its own and shows no toast, so the app opens its own dialog from `onAdd` / `onEdit` and reports the result of `onTest`. The app also does the copy itself: it passes `onCopySetupReport` and shows its own "copied" message.
 
 `PrinterForm` can be that dialog's body.
 
-Each printer is a row with its name, a "Default" tag on the default printer, and its connection line: "Print Dialog · built-in" for the Print Dialog (`connectionType: 'system'`), otherwise the address with its port and " · Epson" or " · Star" for those vendors. Actions are Test Print (busy while its id is in `testingIds`), Edit, and a "More actions" menu with Set Default and Delete. A built-in printer has no Edit and no Delete; the default printer has no Set Default. Delete asks first and calls `onDelete` only on confirm.
+Each printer is a row with its name, a "Default" tag on the default printer, and its connection line: "Print Dialog · built-in" for the Print Dialog (`connectionType: 'system'`), otherwise the address with its port and " · Epson" or " · Star" for those vendors. Actions are Test Print (busy while its id is in `testingIds`), Edit, and a "More actions" menu with Set Default and Delete, plus "Copy setup report" first when `onCopySetupReport` is given (the menu then shows for a built-in printer too). A built-in printer has no Edit and no Delete; the default printer has no Set Default. Delete asks first and calls `onDelete` only on confirm. With `onOpenHelp`, a "Having trouble?" link under the Add Printer button calls it, and the app opens its printer docs.
 
 With only the Print Dialog, the section shows "No printers configured" and a primary Add Printer; once a hardware printer exists, every printer is listed and Add Printer is an outline button. While `loading`, only the section title shows.
 
@@ -51,4 +53,6 @@ With `templates`, three routing sections follow the Printers section: Receipt Te
 | `templates` | `readonly Pick<ReceiptTemplate, 'id' \| 'kind' \| 'title' \| 'engine' \| 'paper'>[]` | --- | The store's templates; when absent, no routing sections show |
 | `routing` | `Readonly<Record<string, string>>` | `{}` | Template id to printer id, this device's overrides |
 | `onRoutingChange` | `(templateId: string, printerId: string \| null) => void` | --- | A template's printer chosen; `null` is Auto |
+| `onCopySetupReport` | `(printer: PrinterProfile) => void` | --- | Adds "Copy setup report", first in each row's menu, and shows the menu for every row; the app copies the report and shows any toast |
+| `onOpenHelp` | `() => void` | --- | Draws the "Having trouble?" link under the printer list and is called when it is pressed; the app opens its docs. Absent: no link |
 | `className` | `string` | --- | Override container styles |

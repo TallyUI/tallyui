@@ -2,8 +2,8 @@
  * Settings › Printing, the Printers section and template routing: ported from WCPOS v2
  * `packages/core/src/screens/main/settings/printing/` (`index.tsx`, `printer-row.tsx`, `template-row.tsx`). Props only;
  * the app passes the printers and wires every callback, and opens its own add/edit dialog from `onAdd` / `onEdit` and
- * shows the result of `onTest`. Left out (later rows): "Copy setup report", the "Having trouble?" docs link and the
- * test-print toast.
+ * shows the result of `onTest`. The setup report and docs link are optional (`onCopySetupReport`, `onOpenHelp`);
+ * the app does the copying, the toast and opening the docs. Left out (a later row): the test-print toast.
  */
 import { useState, type JSX } from 'react';
 import { View } from 'react-native';
@@ -43,6 +43,11 @@ export interface PrintingSettingsProps {
   routing?: Readonly<Record<string, string>>;
   /** A template's printer was chosen; `null` means Auto (clear the override). */
   onRoutingChange?: (templateId: string, printerId: string | null) => void;
+  /** v2's "Copy setup report": adds that item, first in each printer row's menu, and makes the menu show for every row. The app builds
+   * and copies the report (clipboard or share sheet) and shows any toast; the component only calls this. */
+  onCopySetupReport?: (printer: PrinterProfile) => void;
+  /** v2's "Having trouble?" link under the printer list; pressing it calls this (the app opens its printer docs). Absent: no link. */
+  onOpenHelp?: () => void;
   className?: string;
 }
 
@@ -70,13 +75,13 @@ function connectionLabel(printer: PrinterProfile): string {
   return base;
 }
 
-interface PrinterRowProps extends Pick<PrintingSettingsProps, 'onTest' | 'onEdit' | 'onSetDefault'> {
+interface PrinterRowProps extends Pick<PrintingSettingsProps, 'onTest' | 'onEdit' | 'onSetDefault' | 'onCopySetupReport'> {
   printer: PrinterProfile;
   testing: boolean;
   onDelete: (printer: PrinterProfile) => void;
 }
 
-function PrinterRow({ printer, testing, onTest, onEdit, onSetDefault, onDelete }: PrinterRowProps): JSX.Element {
+function PrinterRow({ printer, testing, onTest, onEdit, onSetDefault, onDelete, onCopySetupReport }: PrinterRowProps): JSX.Element {
   const { id, name, isDefault, isBuiltIn } = printer;
   const canSetDefault = !isDefault && !isBuiltIn;
   const canDelete = !isBuiltIn;
@@ -103,8 +108,8 @@ function PrinterRow({ printer, testing, onTest, onEdit, onSetDefault, onDelete }
             <Text>Edit</Text>
           </Button>
         )}
-        {/* v2 always shows the menu for its "Copy setup report"; without it a built-in printer's menu would be empty. */}
-        {(canSetDefault || canDelete) && (
+        {/* Without onCopySetupReport a built-in printer's menu would be empty, so the menu shows only with an item. */}
+        {(canSetDefault || canDelete || onCopySetupReport) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <IconButton testID={`printer-row-${id}-menu`} size="sm" accessibilityLabel="More actions">
@@ -112,12 +117,17 @@ function PrinterRow({ printer, testing, onTest, onEdit, onSetDefault, onDelete }
               </IconButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {onCopySetupReport && (
+                <DropdownMenuItem testID={`printer-row-${id}-copy-report`} onPress={() => onCopySetupReport(printer)}>
+                  <Text>Copy setup report</Text>
+                </DropdownMenuItem>
+              )}
               {canSetDefault && (
                 <DropdownMenuItem testID={`printer-row-${id}-set-default`} onPress={() => onSetDefault(id)}>
                   <Text>Set Default</Text>
                 </DropdownMenuItem>
               )}
-              {canDelete && canSetDefault && <DropdownMenuSeparator />}
+              {canDelete && (canSetDefault || onCopySetupReport) && <DropdownMenuSeparator />}
               {canDelete && (
                 <DropdownMenuItem testID={`printer-row-${id}-delete`} onPress={() => onDelete(printer)}>
                   <Text className="text-destructive">Delete</Text>
@@ -184,7 +194,7 @@ function TemplateRow({ template, printers, overrideId, onRoutingChange }: Templa
 
 export function PrintingSettings({
   printers, loading = false, testingIds = NO_TESTS, onTest, onEdit, onSetDefault, onDelete, onAdd,
-  templates, routing = NO_ROUTING, onRoutingChange, className,
+  templates, routing = NO_ROUTING, onRoutingChange, onCopySetupReport, onOpenHelp, className,
 }: PrintingSettingsProps): JSX.Element {
   // The dialog is open while `pending` is set; `target` outlives it so the title keeps the name while it closes.
   const [pending, setPending] = useState<PrinterProfile>();
@@ -204,6 +214,7 @@ export function PrintingSettings({
               <PrinterRow
                 key={printer.id} printer={printer} testing={testingIds.has(printer.id)}
                 onTest={onTest} onEdit={onEdit} onSetDefault={onSetDefault} onDelete={askDelete}
+                onCopySetupReport={onCopySetupReport}
               />
             )) : (
               <View testID="printers-empty-state" className="gap-1 px-4 py-6">
@@ -219,6 +230,14 @@ export function PrintingSettings({
                 <Text>Add Printer</Text>
               </Button>
             </View>
+            {onOpenHelp ? (
+              <View className="px-4 pb-4">
+                <Button testID="printing-having-trouble" variant="link" size="sm" role="link" className="h-11 self-start px-0"
+                  onPress={onOpenHelp}>
+                  <Text className="text-xs">Having trouble?</Text>
+                </Button>
+              </View>
+            ) : null}
           </>
         )}
       </SettingsGroup>
