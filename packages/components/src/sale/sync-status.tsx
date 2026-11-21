@@ -71,6 +71,8 @@ const REFUSED_DETAIL = 'Refused sales stay on this till under Needs attention, e
 // on reopen and both sentences name a reopen.
 const SALES_REFUSED = 'The online store refused the last send. This till will try again with the next sale, or when the app is reopened.';
 const TILL_UPDATES_REFUSED = 'The online store refused the last send. This till will try again with the next till update, or when the app is reopened.';
+// The line below the sending or retrying line while the shown outbox's lastRetryReason is store_version_unknown.
+const STORE_VERSION_UNKNOWN = "The online store didn't say which POS plugin version it runs.";
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 // iOS has no live region (accessibilityLiveRegion is Android-only), so there each text is announced when it changes: never on
@@ -147,6 +149,8 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
     {oneDetail ? null : <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>}
   </> : null}<Text accessibilityLabel={spoken} accessibilityLiveRegion="polite" className="px-4 py-2 text-xs text-muted-foreground">{spoken}</Text>
   {doing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{doing}</Text> : null}
+  {doing && outbox.lastRetryReason === 'store_version_unknown'
+    ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{STORE_VERSION_UNKNOWN}</Text> : null}
   {refused ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{REFUSED_DETAIL}</Text> : null}
   {oneDetail && notice ? <Text className="px-4 pb-2 text-xs text-muted-foreground">{notice.detail}</Text>
     : backendMissing ? <Text className="px-4 pb-2 text-xs text-muted-foreground">
