@@ -66,3 +66,20 @@ it('F4: reduced motion unmounts immediately on Cancel', async () => {
   fireEvent.click(screen.getByTestId('quantity-popover-cancel'));
   expect(screen.queryByTestId('quantity-popover')).toBeNull();
 });
+
+it('F5: during a held exit the keypad takes no pointer events and its overlay is gone', async () => {
+  await openQuantity();
+  expect(screen.getByTestId('quantity-popover-overlay')).toBeTruthy();
+  expect(getComputedStyle(screen.getByTestId('quantity-popover')).pointerEvents).not.toBe('none');
+  let exitEnd: Animated.EndCallback | undefined;
+  vi.spyOn(Animated, 'parallel').mockImplementation(() => ({
+    start: (cb: Animated.EndCallback) => { exitEnd = cb; },
+    stop: () => {},
+    reset: () => {},
+  }) as unknown as Animated.CompositeAnimation);
+  fireEvent.click(screen.getByTestId('quantity-popover-cancel'));
+  expect(getComputedStyle(screen.getByTestId('quantity-popover')).pointerEvents).toBe('none');
+  expect(screen.queryByTestId('quantity-popover-overlay')).toBeNull();
+  act(() => exitEnd?.({ finished: true }));
+  expect(screen.queryByTestId('quantity-popover')).toBeNull();
+});
