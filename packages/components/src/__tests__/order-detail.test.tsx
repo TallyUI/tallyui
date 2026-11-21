@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Text } from 'react-native';
+import { PortalHost } from '@tallyui/primitives';
 import { OrderDetail } from '../order/order-detail';
 
 describe('OrderDetail', () => {
@@ -113,6 +114,38 @@ describe('OrderDetail', () => {
       expect(fn).toHaveBeenCalledTimes(1);
       cleanup();
     }
+  });
+  it('hides Delete and Refund when only Sync is passed', () => {
+    render(<OrderDetail {...base} onSync={vi.fn()} />);
+    expect(screen.queryByTestId('order-detail-delete')).toBeNull();
+    expect(screen.queryByTestId('order-detail-refund')).toBeNull();
+  });
+  it('draws the actions row with only Refund and calls it on press', () => {
+    const onRefund = vi.fn();
+    render(<OrderDetail {...base} onRefund={onRefund} />);
+    expect(screen.getByTestId('order-detail-actions')).toBeDefined();
+    fireEvent.click(screen.getByTestId('order-detail-refund'));
+    expect(onRefund).toHaveBeenCalledTimes(1);
+  });
+  it('Delete asks first and calls onDelete only on confirm', () => {
+    const onDelete = vi.fn();
+    render(<><OrderDetail {...base} onDelete={onDelete} /><PortalHost /></>);
+    fireEvent.click(screen.getByTestId('order-detail-delete'));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByText('Delete order #1042')).toBeDefined();
+    fireEvent.click(screen.getByTestId('order-detail-delete-dialog-cancel'));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.queryByText('Delete order #1042')).toBeNull();
+    fireEvent.click(screen.getByTestId('order-detail-delete'));
+    fireEvent.click(screen.getByTestId('order-detail-delete-dialog-confirm'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+  it('draws Delete before Refund with only those actions passed', () => {
+    render(<OrderDetail {...base} onDelete={vi.fn()} onRefund={vi.fn()} />);
+    expect(screen.getByTestId('order-detail-actions')).toBeDefined();
+    expect(screen.getByTestId('order-detail-delete').compareDocumentPosition(
+      screen.getByTestId('order-detail-refund'),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it('reopenDisabled disables Re-open', () => {
     const onReopen = vi.fn();

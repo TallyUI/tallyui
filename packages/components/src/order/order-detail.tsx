@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ScrollView, Text, View, type ViewProps } from 'react-native';
 
 import { cn } from '@tallyui/theme';
 
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Text as UIText } from '../ui/text';
 import { OrderStatusBadge, type OrderStatus } from './order-status-badge';
 
@@ -49,6 +50,10 @@ export interface OrderDetailProps extends Omit<ViewProps, 'children'> {
   onSync?: () => void;
   /** Show the order's receipt; draws the Receipt button. */
   onReceipt?: () => void;
+  /** Refund the order; draws Refund in the actions row's destructive group. */
+  onRefund?: () => void;
+  /** Delete the order; draws Delete, which asks for confirmation and calls this only on confirm. */
+  onDelete?: () => void;
   /** Disables Re-open, e.g. while it runs or while storage is degraded. Default `false`. */
   reopenDisabled?: boolean;
   className?: string;
@@ -74,10 +79,13 @@ export function OrderDetail({
   onReopen,
   onSync,
   onReceipt,
+  onRefund,
+  onDelete,
   reopenDisabled = false,
   className,
   ...viewProps
 }: OrderDetailProps) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const metaLine = meta?.filter(Boolean).join(' · ');
   const scroll = (
     <ScrollView className={cn('flex-1', className)} {...viewProps}>
@@ -160,13 +168,17 @@ export function OrderDetail({
       </View>
     </ScrollView>
   );
-  if (!onReopen && !onSync && !onReceipt) return scroll;
+  if (!onReopen && !onSync && !onReceipt && !onRefund && !onDelete) return scroll;
   return (
     <View className="flex-1">
       {scroll}
-      {/* v2's pinned order footer (orders/edit/view.tsx): Sync on the left, Receipt and Re-open on the right. */}
+      {/* v2's pinned order footer (orders/edit/view.tsx): Delete, Refund and Sync on the left, Receipt and Re-open on the right. */}
       <View testID="order-detail-actions" className="flex-row flex-wrap items-center justify-between gap-2 border-t border-border p-4">
         <View className="min-w-0 shrink flex-row flex-wrap gap-2">
+          {onDelete && <Button variant="outline" className="border-destructive" testID="order-detail-delete" onPress={() => setDeleteOpen(true)}>
+            <UIText className="text-destructive">Delete</UIText></Button>}
+          {onRefund && <Button variant="outline" className="border-destructive" testID="order-detail-refund" onPress={onRefund}>
+            <UIText className="text-destructive">Refund</UIText></Button>}
           {onSync && <Button variant="outline" testID="order-detail-sync" onPress={onSync}><UIText>Sync</UIText></Button>}
         </View>
         <View className="ml-auto flex-row flex-wrap gap-2">
@@ -175,6 +187,14 @@ export function OrderDetail({
             accessibilityState={{ disabled: reopenDisabled }}><UIText>Re-open</UIText></Button>}
         </View>
       </View>
+      {onDelete && <ConfirmDialog
+        testID="order-detail-delete-dialog"
+        title={`Delete order ${orderNumber}`}
+        description="Are you sure you want to delete this order?"
+        confirmLabel="Delete"
+        open={deleteOpen} onOpenChange={setDeleteOpen}
+        onConfirm={onDelete}
+      />}
     </View>
   );
 }
