@@ -97,6 +97,26 @@ describe.each([true, false])('carried coupon receipt rows (pricesIncludeTax: %s)
   });
 });
 
+it('R7 a carried coupon whose lines are all in the display mode shows each line\'s exact amount', () => {
+  const builder: OrderBuilder = createOrderBuilder({ currency: 'GBP', taxContext: taxContext(true) });
+  const ids = [0, 1].map(() => builder.addLine({ productId: 'p1', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' }, separate: true }));
+  builder.setCoupons(['save'], { kind: 'store-priced', carried: true, basis: couponPricingBasis(builder.getSnapshot()),
+    priced: new Map([['save', { couponId: 'c0', lines: [{ lineId: ids[0], amountMinor: 70 }, { lineId: ids[1], amountMinor: 70 }] }]]) });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const snapshot: Order = builder.getSnapshot();
+  let nextId = 0;
+  const stored = finalizeOrder(snapshot, { capabilities: { orderCreate: 12 }, now: new Date('2026-11-21T10:00:00.000Z'),
+    newId: () => `019f6d2e-7800-7000-8000-${String(++nextId).padStart(12, '0')}` });
+  expect(stored.coupons![0].lines!.map((l) => l.discountMinor + l.discountTaxMinor)).toEqual([71, 69]);
+  for (const [receipt, coupons] of [[buildReceiptData(snapshot, config), snapshot.display.coupons!],
+    [buildReceiptDataFromPosOrder(stored, config), stored.display!.coupons!]] as const) {
+    for (const line of receipt.lineItems) {
+      expect(line.displayDiscounts.filter((row) => row.label === label('save'))).toEqual([{ label: label('save'), amountMinor: 70 }]);
+    }
+    expectCarried(receipt, coupons);
+  }
+});
+
 describe('isCarriedCouponLabel', () => {
   it('is true for a carried coupon label and false for every other row', () => {
     expect(isCarriedCouponLabel(carriedCouponLabel('save'))).toBe(true);
