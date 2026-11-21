@@ -1,12 +1,11 @@
 import { Stack } from 'expo-router';
+import { useStackScreenOptions } from '../../lib/use-stack-screen-options';
 
 export default function POSLayout() {
+  const screenOptions = useStackScreenOptions();
   return (
     <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: '#f8f9fa' },
-        headerTitleStyle: { fontWeight: '600' },
-      }}
+      screenOptions={screenOptions}
     />
   );
 }
