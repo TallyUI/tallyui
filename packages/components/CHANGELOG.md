@@ -1,5 +1,15 @@
 # @tallyui/components
 
+## 4.0.1
+
+### Patch Changes
+
+- Updated dependencies [af47cbc]
+  - @tallyui/pos@4.0.1
+  - @tallyui/core@4.0.1
+  - @tallyui/primitives@4.0.1
+  - @tallyui/theme@4.0.1
+
 ## 4.0.0
 
 ### Minor Changes

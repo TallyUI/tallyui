@@ -1,5 +1,11 @@
 # @tallyui/database
 
+## 4.0.1
+
+### Patch Changes
+
+- @tallyui/core@4.0.1
+
 ## 4.0.0
 
 ### Minor Changes
