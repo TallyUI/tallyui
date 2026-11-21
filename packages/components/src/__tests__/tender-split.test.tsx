@@ -60,7 +60,7 @@ describe('Tender split', () => {
     expect(sale.order.payments.reduce((sum, leg) => sum + leg.amountMinor, 0)).toBe(sale.order.totalMinor);
     expect(sale.order.totalMinor).toBe(1000);
     expect(sale.order.balanceDueMinor).toBe(0);
-    expect(screen.getByText('Paid in full')).toBeTruthy();
+    expect(screen.getByText(/^Paid in full · /)).toBeTruthy();
   });
 
   it('after a typed part payment the ways divide what is left', () => {

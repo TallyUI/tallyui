@@ -12,6 +12,7 @@ import { useT } from '../i18n';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
+import { shortTime } from './since-text';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
@@ -39,6 +40,9 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const balance = order.balanceDueMinor;
   const settled = order.payments.some(countsTowardPaid);
+  /** v2's paid_in_full_at: the time of the last settled leg (settled.at(-1)); plain Paid in full when it has none. */
+  const paidAt = order.payments.filter(countsTowardPaid).at(-1)?.takenAt;
+  const paidInFull = paidAt ? t('pos_checkout.paid_in_full_at', { time: shortTime(paidAt) }) : t('pos_checkout.paid_in_full');
   const firstPending = order.payments.find((leg) => legStatus(leg) === 'pending');
   const askedLeg = order.payments.find((leg) => leg.id === asking);
   const asked = askedLeg && descriptorOf(askedLeg);
@@ -59,6 +63,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
           <Text testID={`tender-leg-${leg.id}-status`} className={cn('text-sm font-semibold', STATUS_TONE[status])}>{voided ? t('pos_checkout.cancelled') : t(STATUS_LABEL[status])}</Text>
         </View>
         {leg.reference ? <Text className="text-sm text-muted-foreground">{leg.reference}</Text> : null}
+        {leg.takenAt ? <Text testID={`tender-leg-${leg.id}-time`} className="text-sm text-muted-foreground">{shortTime(leg.takenAt)}</Text> : null}
         {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
         {descriptor && canVoidLeg(leg, descriptor) && !heldTillLeg(order, leg) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
           onPress={() => (confirmVoid ? setAsking(leg.id) : sale.voidTender(leg.id))} className="self-start min-h-11 justify-center px-2">
@@ -66,7 +71,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
         </Pressable> : null}
       </View>;
     })}
-    {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{t('pos_checkout.paid_in_full')}</Text> : null}
+    {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{paidInFull}</Text> : null}
     {confirmVoid ? <ConfirmDialog testID="tender-leg-void-dialog" tone="destructive" title={t('pos_checkout.cancel_payment_question')} description={question}
       confirmLabel={t('pos_checkout.cancel_payment')} open={asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}
       onConfirm={() => { if (asking) sale.voidTender(asking); }} /> : null}
@@ -83,7 +88,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
       {row(t('common.total'), order.totalMinor)}
       {row(t('pos_checkout.paid'), order.paidMinor)}
       <View testID="tender-ledger-lead" className="mt-1.5 flex-row justify-between border-t border-border pt-2">
-        {balance === 0 && settled ? <Text className="font-semibold text-success">{t('pos_checkout.paid_in_full')}</Text> : <>
+        {balance === 0 && settled ? <Text className="font-semibold text-success">{paidInFull}</Text> : <>
           <Text className="font-semibold text-foreground">{t('pos_checkout.remaining')}</Text>
           <Text testID="tender-ledger-remaining" className="font-semibold text-foreground">{money(order.balanceDueMinor)}</Text>
         </>}
