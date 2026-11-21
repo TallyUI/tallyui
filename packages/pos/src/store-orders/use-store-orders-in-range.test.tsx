@@ -120,6 +120,22 @@ describe('useStoreOrdersInRange', () => {
     expect(listOrders).toHaveBeenCalledTimes(2);
   });
 
+  it("S6b shows none of the old query's orders once it has published", async () => {
+    const q1Page1 = deferred<StoreOrderPage>();
+    const { listOrders, connector } = fakeConnector(q1Page1.promise, deferred<StoreOrderPage>().promise);
+    const q2: StoreOrdersRangeQuery = { ...query, status: 'completed' };
+    const { result, rerender } = renderHook(({ q }) => useStoreOrdersInRange(connector, context, q), {
+      initialProps: { q: query },
+    });
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(1));
+
+    await act(async () => q1Page1.resolve({ orders: [A], hasMore: true, total: 5 }));
+    expect(ids(result.current.orders)).toEqual(['A']);
+
+    rerender({ q: q2 });
+    expect(result.current).toEqual({ ...IDLE, progress: { downloaded: 0, total: null } });
+  });
+
   it('S7 is idle and calls nothing without a query, a context or listOrders', async () => {
     const { listOrders, connector } = fakeConnector();
     const cases = [
