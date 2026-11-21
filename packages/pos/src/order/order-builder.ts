@@ -150,6 +150,7 @@ export interface OrderBuilderOptions {
   id?: string;
   createdAt?: string; // a restored order's own (#742); absent is now
   storeOrder?: StoreOrderRef;
+  afterClose?: Order['afterClose'];
   couponContext?: OrderCouponContext;
 }
 
@@ -203,6 +204,7 @@ export interface OrderBuilder {
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
   let storeOrder = options.storeOrder;
+  let afterClose = options.afterClose;
   let couponContext: OrderCouponContext | StorePricedCouponContext | KeptCouponContext | undefined = options.couponContext;
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
@@ -488,6 +490,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const order: Order = {
       id: orderId,
       ...(storeOrder !== undefined ? { storeOrder } : {}),
+      ...(afterClose !== undefined ? { afterClose } : {}),
       status: 'draft',
       lineItems: lines,
       ...(coupons ? { coupons } : {}),
@@ -876,6 +879,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     clear() {
       storeOrder = undefined;
+      afterClose = undefined;
       lineItems = [];
       fees = [];
       shipping = [];

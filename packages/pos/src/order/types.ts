@@ -28,6 +28,9 @@ export interface Order {
   id: string;
   /** Set only on a reopened sale; absent on every new sale. */
   storeOrder?: StoreOrderRef;
+  /** Set only on a reopened sale whose closed session's closure already counted it (ADR-077, Front desk 2026-11-21): it is re-sent with its original time and register, in no session, with the payment legs, fees, shipping and tax that closure counted, at the legs' sum as its total. */
+  afterClose?: { sessionId: string; createdAt: string; registerId?: string; payments: Array<{ id: string; method: string; amountMinor: number }>;
+    taxMinor: number; fees: Array<Pick<ChargeLine, 'totalMinor' | 'taxLines'>>; shipping: Array<Pick<ChargeLine, 'totalMinor' | 'taxLines'>> };
   status: 'draft' | 'parked' | 'saved' | 'completed';
   lineItems: LineItem[];
   fees?: FeeLine[];

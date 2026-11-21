@@ -15,9 +15,10 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { OrderCreateEnvelope, OrderUpdateEnvelope, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
-import { createOrderBuilder, orderDraftSchema, type CustomerSummary } from '../order';
+import { createOrderBuilder, orderDraftSchema, writeOrderDraft, type CustomerSummary, type OrderBuilder } from '../order';
 import { createOrderOutbox, outboxLogger, useOrderOutbox, type CommandTransport } from '../outbox';
 import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
+import { AFTER_CLOSE_PAYMENTS_CHANGED } from '../pos-order/finalize';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import {
@@ -563,6 +564,199 @@ describe('late sale', () => {
       expect(completed.sessionId).toBe(sessionId);
       expect(completed).not.toHaveProperty('lateSessionId');
       expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('an after-close draft completed with an open session passed joins no session and logs no late-sale fact (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1250 }], taxMinor: 250, fees: [], shipping: [] } });
+      builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
+      builder.addPayment({ id: 'leg-1', method: 'cash', status: 'captured', amountMinor: 1250 });
+      await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session: { id: sessionId, sessions } }));
+      await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      const completed = onSaleCompleted.mock.calls[0][0] as PosOrder;
+      expect(completed).toMatchObject({ countedInClosureOf: 'closed-session', createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0' });
+      expect(completed).not.toHaveProperty('sessionId');
+      expect(completed).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  /** The after-close draft above (captured cash leg-1 of 1250, counted by its closure), written to pos_drafts and resumed. */
+  async function resumeAfterClose(db: Awaited<ReturnType<typeof withOpenSession>>['db'], session: { id: string; sessions: RegisterSessionCollection }, legStatus: 'authorized' | 'captured' = 'captured',
+    change: (builder: OrderBuilder) => void = () => {}) {
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+      createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1250 }], taxMinor: 250, fees: [], shipping: [] } });
+    builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addPayment({ id: 'leg-1', method: 'cash', status: legStatus, amountMinor: 1250 });
+    change(builder);
+    await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    const onSaleCompleted = vi.fn();
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session }));
+    await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+    return { result, onSaleCompleted };
+  }
+  const countedLeg = { id: 'leg-1', method: 'cash', amountMinor: 1250, status: 'captured' };
+
+  it('B9a: tender on an after-close draft keeps the counted leg and takes nothing more (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result, onSaleCompleted } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => result.current.startTender('external'));
+      act(() => result.current.startTender('cash'));
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+      expect(result.current.order.balanceDueMinor).toBe(0);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B9b: remove, void and status changes on an after-close draft\'s counted leg are refused (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result, onSaleCompleted } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => result.current.removeTender('leg-1'));
+      act(() => { expect(result.current.voidTender('leg-1')).toBe(false); });
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'failed')).toBe(false); });
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B9c: a status change on an after-close draft\'s authorized counted leg is refused by the sale, not the builder (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions }, 'authorized');
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'captured')).toBe(false); });
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'failed')).toBe(false); });
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject({ ...countedLeg, status: 'authorized' });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B11a: a tender set on an after-close draft is refused before any leg changes (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => result.current.startTender('external'));
+      act(() => result.current.setTender({ method: 'external', amountMinor: 1250, reference: 'x' }));
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+      expect(result.current.order.changeDueMinor).toBe(0);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B11b: addTender on an after-close draft is refused and adds no leg (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 100 })).toBeNull(); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("B11c: an after-close draft whose total is not its counted legs' sum starts no tender (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions }, 'captured', (builder) => {
+        builder.addLine({ productId: 'hat', variantId: 'red', name: 'Hat', unitPrice: { amount: 500, currency: 'EUR' } });
+      });
+      expect(result.current.order.totalMinor).not.toBe(1250);
+      for (const method of ['external', 'cash'] as const) {
+        act(() => result.current.startTender(method));
+        expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+        expect(result.current.order.payments).toHaveLength(1);
+        expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+        expect(result.current.stage.kind).not.toBe('tender');
+      }
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("B11d: voiding an after-close draft's counted leg says why it is refused (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => { expect(result.current.voidTender('leg-1')).toBe(false); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("B12a: removing an after-close draft's counted leg says why it is refused (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => { result.current.removeTender('leg-1'); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("B12b: a status change on an after-close draft's counted leg says why it is refused (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions }, 'authorized');
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'captured')).toBe(false); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B13a: a zero-total after-close draft starts tender with no refusal and completes (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [], taxMinor: 0, fees: [], shipping: [] } });
+      builder.addLine({ productId: 'gift', variantId: 'free', name: 'Gift', unitPrice: { amount: 0, currency: 'EUR' } });
+      await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session: { id: sessionId, sessions } }));
+      await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+      act(() => result.current.startTender('external'));
+      expect(result.current.error).toBeNull();
+      expect(result.current.stage.kind).toBe('tender');
+      expect(result.current.order.payments).toEqual([]);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
     } finally {
       await db.remove();
     }

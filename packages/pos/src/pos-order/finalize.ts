@@ -37,6 +37,18 @@ function orderAddress(address: CustomerAddress | undefined): OrderAddress | unde
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
+// Front desk 2026-11-21 (Q-B1): an after-close sale keeps the payments its closed session's closure counted.
+export const AFTER_CLOSE_PAYMENTS_CHANGED = 'This sale was counted in a closed register. Its payments must stay as that closure counted them.';
+
+type TaxedRow = { taxLines: ReadonlyArray<{ code?: string; ratePpm: number; taxMicros: string }> };
+type Charge = Pick<ChargeLine, 'totalMinor' | 'taxLines'>;
+/** The same tax lines, by index: code, rate and tax. */
+export const sameTaxes = (a: TaxedRow, b: TaxedRow) => a.taxLines.length === b.taxLines.length
+  && a.taxLines.every((tax, i) => tax.code === b.taxLines[i].code && tax.ratePpm === b.taxLines[i].ratePpm && tax.taxMicros === b.taxLines[i].taxMicros);
+/** The same fee or shipping lines, by index: total and tax lines. */
+export const sameCharges = (a: readonly Charge[] = [], b: readonly Charge[] = []) => a.length === b.length
+  && a.every((charge, i) => charge.totalMinor === b[i].totalMinor && sameTaxes(charge, b[i]));
+
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
 export const MESSAGE_NAME_MAX = 61;
 
@@ -156,11 +168,29 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
 }
 
 /**
+ * True when an after-close order (one carrying `afterClose`) no longer matches what its closure counted; false without
+ * `afterClose`. It finalizes with the legs, fees, shipping and tax the closure counted, at the legs' sum, so it gives
+ * no change (a removed fee or shipping line would), and no new leg of the same amount finalizes uncounted.
+ */
+export function afterCloseChanged(order: Order): boolean {
+  const { afterClose } = order;
+  return !!afterClose && (order.payments.length !== afterClose.payments.length || order.payments.some((payment, i) =>
+    payment.id !== afterClose.payments[i].id
+    || payment.method !== afterClose.payments[i].method || payment.amountMinor !== afterClose.payments[i].amountMinor)
+    || order.totalMinor !== afterClose.payments.reduce((sum, payment) => sum + payment.amountMinor, 0)
+    || order.taxMinor !== afterClose.taxMinor || !sameCharges(order.fees, afterClose.fees) || !sameCharges(order.shipping, afterClose.shipping));
+}
+
+/**
  * Turns a fully paid builder Order into a pending PosOrder without mutating it. The PosOrder holds the sent form,
  * frozen: line names and v3 discount labels are cut to PAYLOAD_STRING_MAX with NUL stripped (`cutText`), and a
  * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
+  const { afterClose } = order;
+  if (afterCloseChanged(order)) throw new Error(AFTER_CLOSE_PAYMENTS_CHANGED);
+  // An after-close sale keeps its original register; the till finalizing it now is not where it was taken.
+  const registerId = afterClose ? afterClose.registerId : options.registerId;
   if ((order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom))
     && (options.capabilities?.orderCreate ?? 1) < 5) {
     throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
@@ -234,7 +264,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   // Refused before any id is minted, so such a value never reaches the stored order or the outbox.
   // v3 also sends each line discount's id and each tax code (as taxByRate's codes); an id is never clamped.
   const v3 = (options.capabilities?.orderCreate ?? 1) >= 3;
-  const references: Array<[string, string | undefined]> = [['registerId', options.registerId], ['cashierRef', options.cashierRef],
+  const references: Array<[string, string | undefined]> = [['registerId', registerId], ['cashierRef', options.cashierRef],
     ...order.lineItems.flatMap((line, i): Array<[string, string | undefined]> => {
       const name = `"${cutText(line.name, MESSAGE_NAME_MAX)}"`;
       return [line.variantId !== undefined ? [`${name}: the variant id`, line.variantId] : [`${name}: the product id`, line.productId],
@@ -343,7 +373,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (taxIds === null) throw new Error(TAX_IDS_INVALID);
   const now = (options.now ?? new Date()).toISOString();
   return freezeSentForm({
-    id, saleId: order.id, createdAt: now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
+    id, saleId: order.id, createdAt: afterClose?.createdAt ?? now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
@@ -367,7 +397,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(order.note ? { note: order.note } : {}),
     ...(order.meta?.length ? { meta: order.meta.map((m) => ({ ...m })) } : {}),
     ...(taxAddress ? { taxAddress } : {}),
-    ...(options.registerId !== undefined ? { registerId: options.registerId } : {}),
+    ...(registerId !== undefined ? { registerId } : {}),
+    ...(afterClose ? { countedInClosureOf: afterClose.sessionId } : {}),
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
     ...(localWarnings?.length ? { localWarnings } : {}),
   });

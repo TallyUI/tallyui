@@ -5037,9 +5037,18 @@ interface OrderCreatePayload {
       original time and register and no session (so no late-sale correction counts it twice), marked locally as
       counted in that closure, and the frozen closure is never altered." For a coupon sale this supersedes Q-d4b-2's
       "the cashier collects the difference" and Q-d4b-3's "no coupons" as the default; the explicit `withoutCoupons`
-      drop keeps them. The closed-session part will supersede Q-d4b-5
-      for a closure that counted the order; until it lands (PR B, D2), a coupon sale in a closed session still refuses
-      `session_closed`.
+      drop keeps them. The closed-session part supersedes Q-d4b-5 for a closure that counted the order. It is
+      implemented: a carried reopen whose closed session's closure lists the order is drafted *after close* and
+      finalized with its original `createdAt` and `registerId`, `countedInClosureOf` set and no session, and finalize
+      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payment legs are the ones that closure counted, its fees,
+      shipping and tax are the refused order's, and its total is the legs' sum, so it gives no change. The Front desk
+      ruling of 2026-11-21: "After-close reopen only for the exact carry, and finalize refuses
+      AFTER_CLOSE_PAYMENTS_CHANGED unless payments match the refused order's in count, method and amount. An inexact
+      carry or a drop after close stays refused (session_closed); it goes to the Needs-attention row for a manager,
+      never a silent uncounted payment." and "a closed session whose closure does NOT list the order still refuses
+      session_closed". So after close an inexact carry, a drop, a draft parked while the session was open, and a
+      successor already counted (`countedInClosureOf`) refused again all refuse `session_closed`, as do a counting or
+      missing session; `stampSession` leaves a counted successor in no session.
       - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
         attention must not be a dead end: today's drop reopen stays available there as an explicit, labelled choice
         that shows the amount still to collect ("Reopen without the coupon: 2.00 to collect"). Never automatic, never
@@ -5057,7 +5066,7 @@ interface OrderCreatePayload {
         `coupon <code> not accepted at send`. A carried coupon whose lines are not all in the receipt's tax mode shows
         its shares on every line, and its last line takes what its other rows leave of its display row, so its rows
         add up to it even when tax rounded over lines and charges puts its shares a cent off.
-      - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
+      - Status: the closed-session part is implemented (PR B, D2). Until the Needs-attention reopen row lands, the explicit
         choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,
     2026-10-07; not checked on HPOS stores):

@@ -201,3 +201,25 @@ describe('store ids on reopened carts', () => {
     expect(restored.balanceDueMinor).toBe(saved.balanceDueMinor);
   });
 });
+
+describe('an after-close draft (ADR-077, Front desk 2026-11-21)', () => {
+  const afterClose: NonNullable<Order['afterClose']> = { sessionId: 's-1', createdAt: '2026-11-21T10:00:00.000Z', registerId: 'r-1',
+    payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1100 }], taxMinor: 0, fees: [], shipping: [] };
+  it('park and resume keeps afterClose; clear() drops it', () => {
+    const builder = createOrderBuilder({ ...options, afterClose });
+    builder.addLine(line);
+    builder.addPayment({ method: 'cash', amountMinor: 1100 });
+    const parked = JSON.parse(JSON.stringify(builder.getSnapshot())) as Order;
+    expect(parked.afterClose).toEqual(afterClose);
+    const resumed = restoreOrderDraft(parked, options);
+    expect(resumed.getSnapshot().afterClose).toEqual(afterClose);
+    resumed.clear();
+    expect('afterClose' in resumed.getSnapshot()).toBe(false);
+  });
+  it('a draft without it restores without it', () => {
+    const builder = createOrderBuilder(options);
+    builder.addLine(line);
+    const restored = restoreOrderDraft(JSON.parse(JSON.stringify(builder.getSnapshot())), options).getSnapshot();
+    expect('afterClose' in restored).toBe(false);
+  });
+});
