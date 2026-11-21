@@ -71,6 +71,9 @@ if (!getRxStorageSQLite && process.env.CI) {
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 18', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 18 }));
 
+(getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 19', () =>
+  addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 19 }));
+
 (getRxStorageSQLite ? describe : describe.skip)('addPosOrderCollection on SQLite storage from version 8', () =>
   addPosOrderCollectionTests(() => getRxStorageSQLite!(openNodeSQLite().database), { sqlite: true, from: 8 }));
 
@@ -152,7 +155,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     const byId = async (id: string) => (await orders.findOne(id).exec())?.toJSON();
     // Version 6 then records each one's default tax rounding.
     const taxRounding = DEFAULT_TAX_ROUNDING;
@@ -178,7 +181,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) {
       expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual({ ...order, taxRounding: DEFAULT_TAX_ROUNDING });
     }
@@ -201,7 +204,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage: wrappedValidateAjvStorage({ storage }), multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) {
       const migrated = (await orders.findOne(order.id).exec())?.toJSON();
       expect(migrated).toStrictEqual(order);
@@ -226,7 +229,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();
@@ -247,7 +250,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();
@@ -271,7 +274,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();
@@ -294,7 +297,7 @@ function versionThreeOrder(): OlderPosOrder {
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(19);
+    expect(orders.schema.version).toBe(20);
     for (const order of [pending, applied]) expect((await orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
   } finally {
     await db.close();
@@ -328,7 +331,7 @@ const identityTo11 = Object.fromEntries(Array.from({ length: 11 }, (_, index) =>
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())?.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
@@ -412,7 +415,7 @@ function v12Sale(kind: 'store' | 'woo' | 'taxed' | 'bare', version: 12 | 13 = 12
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())!.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
@@ -439,7 +442,7 @@ function v12Sale(kind: 'store' | 'woo' | 'taxed' | 'bare', version: 12 | 13 = 12
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())!.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
@@ -485,7 +488,7 @@ function v15Sales(): PosOrder[] {
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())!.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
@@ -524,7 +527,7 @@ function v16Sales(): PosOrder[] {
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())!.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
@@ -542,7 +545,7 @@ function v17Sales(): PosOrder[] {
   return [...v16Sales(), JSON.parse(JSON.stringify({ ...untaxed, id: uuidv7(), sentVersion: 11 })) as PosOrder];
 }
 
-(getRxStorageSQLite ? it : it.skip)('version 17 to 19 keeps the schema-17 sales and an untaxed sale with addresses byte for byte, beside a local document, through two opens, and resends the same bytes at cap 12 as at 11 (ADR-092)', async () => {
+(getRxStorageSQLite ? it : it.skip)('version 17 to 20 keeps the schema-17 sales and an untaxed sale with addresses byte for byte, beside a local document, through two opens, and resends the same bytes at cap 12 as at 11 (ADR-092)', async () => {
   addRxPlugin(RxDBLocalDocumentsPlugin);
   const handle = openNodeSQLite(), storage = wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(handle.database) });
   const name = `posorder${uuidv7().replaceAll('-', '')}`;
@@ -558,13 +561,39 @@ function v17Sales(): PosOrder[] {
     const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(19);
+      expect(orders.schema.version).toBe(20);
       for (const order of sales) {
         const migrated = (await orders.findOne(order.id).exec())!.toJSON() as PosOrder;
         expect(migrated, `open ${open}`).toStrictEqual(order);
         expect(sent(migrated, 12)).toBe(sent(order, 11));
       }
       expect((await db.getLocal<{ closure: number }>('till'))?.toJSON().data).toStrictEqual({ closure: 7 });
+    } finally { await db.close(); }
+  }
+  handle.raw.close();
+});
+
+(getRxStorageSQLite ? it : it.skip)('version 19 to 20 keeps schema-19 sales byte for byte, beside a local document, through two opens, then stores a payment takenAt', async () => {
+  addRxPlugin(RxDBLocalDocumentsPlugin);
+  const handle = openNodeSQLite(), storage = wrappedValidateAjvStorage({ storage: getRxStorageSQLite!(handle.database) });
+  const name = `posorder${uuidv7().replaceAll('-', '')}`;
+  const sales = v17Sales();
+  const older = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
+  expect((await (await older.addCollections({ pos_orders: olderCollection(19) })).pos_orders.bulkInsert(structuredClone(sales))).error).toEqual([]);
+  await older.insertLocal('till', { closure: 7 });
+  await older.close();
+  for (const open of [1, 2]) {
+    const db = await createRxDatabase({ name, storage, multiInstance: false, localDocuments: true });
+    try {
+      const orders = await addPosOrderCollection(db);
+      expect(orders.schema.version).toBe(20);
+      for (const order of sales) expect((await orders.findOne(order.id).exec())!.toJSON(), `open ${open}`).toStrictEqual(order);
+      expect((await db.getLocal<{ closure: number }>('till'))?.toJSON().data).toStrictEqual({ closure: 7 });
+      if (open === 2) {
+        const taken: PosOrder = { ...sales[0], id: uuidv7(), payments: sales[0].payments.map((payment) => ({ ...payment, takenAt: '2026-11-21T10:15:00.000Z' })) };
+        await orders.insert(taken);
+        expect((await orders.findOne(taken.id).exec())!.toJSON()).toStrictEqual(taken);
+      }
     } finally { await db.close(); }
   }
   handle.raw.close();

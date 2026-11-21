@@ -41,7 +41,7 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
         storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
       try {
         const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
-        expect(pos_orders.schema.version).toBe(19);
+        expect(pos_orders.schema.version).toBe(20);
         expect((await pos_orders.insert(order)).toJSON()).toStrictEqual(order);
       } finally { await db.remove(); }
     });
@@ -69,7 +69,7 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
     try {
       const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
-      expect(pos_orders.schema.version).toBe(19);
+      expect(pos_orders.schema.version).toBe(20);
       expect((await pos_orders.insert(order)).toJSON()).toStrictEqual(order);
     } finally { await db.remove(); }
   });

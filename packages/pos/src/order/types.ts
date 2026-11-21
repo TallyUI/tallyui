@@ -194,6 +194,8 @@ export interface Payment {
   reference?: string;
   /** The units of each line (`String(line id)`) this leg paid for, set when it was taken with unit picks (#1133). Absent for a leg taken by amount. */
   units?: Readonly<Record<string, number>>;
+  /** When the till recorded the leg (an ISO 8601 instant). Absent on store-held legs and on legs from before 4.2. */
+  takenAt?: string;
 }
 
 export interface CustomerSummary {

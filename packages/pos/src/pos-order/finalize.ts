@@ -304,6 +304,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
     ...(payment.changeMinor !== undefined ? { changeMinor: payment.changeMinor } : {}),
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
+    ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
   const localWarnings = options.localWarnings?.flatMap((warning): PosOrderLocalWarning[] => {

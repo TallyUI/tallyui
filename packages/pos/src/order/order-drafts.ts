@@ -150,6 +150,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.reopened !== undefined ? { reopened: payment.reopened } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
+      ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
     });
   }
   if (saved.coupons?.some((c) => c.carried) && !saved.coupons.every((c) => c.carried)) throw new Error('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');
