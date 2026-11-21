@@ -77,7 +77,7 @@ it.each([
   expect(totals(saved)).toEqual(totals(order));
   expect(saved.coupons).toBeUndefined();
   expect(saved.payments.map(({ id: _id, ...payment }) => payment)).toEqual(order.payments.map(({ method, amountMinor, reference }) => ({
-    method, amountMinor, ...(reference !== undefined ? { reference } : {}),
+    method, amountMinor, reopened: true, ...(reference !== undefined ? { reference } : {}),
   })));
   expect(order.payments[0].changeMinor).toBeGreaterThan(0);
   expect(saved.note).toBe('Keep the receipt');
