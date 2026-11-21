@@ -46,6 +46,10 @@ export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the pa
 export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
 export const COUPONS_REPRICING = 'Coupon prices are being checked; try again in a moment';
+/** Coupon changes refuse with this while a store-priced coupon is carried. */
+export const COUPON_CARRIED = "The store refused this sale's coupon, so it is carried at the amount charged. Coupons can't be added or removed on this sale.";
+/** Tender and completion refuse with this after a carried coupon's pricing basis changes. */
+export const COUPON_CARRY_STALE = 'The sale changed after the store refused its coupon, so the amount carried for it no longer applies. Reopen the sale without the coupon to take payment.';
 /** startTender refuses with this when the app's tenderGate rejects instead of answering. */
 export const TENDER_GATE_FAILED = 'The checkout check failed, so the tender did not start';
 /** 5.2 backlog F5: startTender shows this when a re-tax swapped the sale while the tender gate ran; the tender does not start. */
@@ -285,6 +289,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
   function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
+  function carriedCoupon() { return builderNow.current.getSnapshot().coupons?.some((coupon) => coupon.carried); }
   // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
   function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: SaleTax) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
@@ -354,7 +359,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
    * ones go stale and price again, as the basis has the customer). `applied`, the error and the stage are kept.
    */
   function retax(customer: CustomerSummary | null, next: SaleTax) {
-    const snapshot = { ...builderNow.current.getSnapshot(), customer };
+    const snapshot = { ...builderNow.current.getSnapshot(), customer, ...(carriedCoupon() ? { couponPricesStale: true as const } : {}) };
     const rebuilt = restoreOrderDraft(snapshot, { currency: snapshot.currency, taxContext: next.taxContext });
     if (appliedWith.current && applied.current.size) appliedWith.current.apply(rebuilt, discountState(rebuilt.getSnapshot(), applied.current));
     builderNow.current = rebuilt;
@@ -503,7 +508,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (locked()) return;
     const current = builderNow.current.getSnapshot();
     if (!current.lineItems.length) return;
-    if (couponsUnpriced()) return setError(COUPONS_REPRICING);
+    if (couponsUnpriced()) return setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
     const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
     if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
@@ -678,6 +683,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-077: looks up, checks and applies a discount code through the platform's discount codes; resolves to the refusal to show, or null once applied. */
     async applyCoupon(code: string): Promise<string | null> {
       const held = editRefusal(); if (held) return held;
+      if (carriedCoupon()) return COUPON_CARRIED;
       if (keptCodes()) return COUPONS_REPRICING;
       const codes = codesFor();
       if (!codes) return COUPONS_UNSUPPORTED;
@@ -701,6 +707,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** Removes an applied coupon; returns the refusal to show, or null once removed. */
     removeCoupon(code: string): string | null {
       const held = editRefusal(); if (held) return held;
+      if (carriedCoupon()) return COUPON_CARRIED;
       if (keptCodes()) return COUPONS_REPRICING;
       const normalized = code.trim().toLowerCase();
       if (!applied.current.has(normalized)) return null;
@@ -820,7 +827,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
       if (!current.lineItems.length) return;
-      if (couponsUnpriced()) return setError(COUPONS_REPRICING);
+      if (couponsUnpriced()) return setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING);
       if (tenderGatePending.current) return;
       const b = builderNow.current, at = generation.current;
       tenderGatePending.current = true;
@@ -925,7 +932,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setSaving(true);
       const snapshot = builderNow.current.getSnapshot();
       if (snapshot.payments.some(isInMotion)) { setSaving(false); setError(PAYMENT_IN_MOTION); return; }
-      if (couponsUnpriced()) { setSaving(false); setError(COUPONS_REPRICING); return; }
+      if (couponsUnpriced()) { setSaving(false); setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING); return; }
       // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
       const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
@@ -1039,13 +1046,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
       // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
       // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
-      const keep = !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
+      const carriedDraft = !!saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried);
+      const keep = !carriedDraft && !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
         keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
       let n = 0;
       // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
       // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
-      if (opts.currentPrice && !options?.keepParkedPrices && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
+      if (opts.currentPrice && !options?.keepParkedPrices && !carriedDraft && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
         for (const line of builder.getSnapshot().lineItems) {
           if (!line.variantId) continue;
           const price = opts.currentPrice(line.variantId);
@@ -1056,9 +1064,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         }
       }
       const kept = new Map<string, unknown>(), messages: string[] = [];
-      const codes = saved.coupons?.length ? codesFor() : null;
+      const codes = !carriedDraft && saved.coupons?.length ? codesFor() : null;
       if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
-      if (saved.coupons?.length) {
+      if (!carriedDraft && saved.coupons?.length) {
         const supported = codes !== null;
         if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
         if (keep) for (const { code } of saved.coupons) kept.set(code, KEPT);

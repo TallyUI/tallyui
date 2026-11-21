@@ -111,6 +111,7 @@ export interface StorePricedCoupon {
 /** Coupons priced by the store (TallyUI#709): the till applies the amounts and never computes a coupon's value. */
 export interface StorePricedCouponContext {
   kind: 'store-priced';
+  carried?: true;
   priced: ReadonlyMap<string, StorePricedCoupon>; // lower-case code to its priced amounts
   /** couponPricingBasis(order) of the order the store priced. */
   basis: string;
@@ -359,7 +360,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         // A settlement subtotal is a difference of separately rounded sums (lines total less order-rounded tax), so a
         // rounding cent could in principle move it against a coupon; a coupon never shows as raising the price.
         const coupon = { code, couponId: priced?.couponId ?? '', discountMinor: Math.max(0, before.subtotalMinor - totals.subtotalMinor),
-          discountTaxMinor: Math.max(0, before.taxMinor - totals.taxMinor) };
+          discountTaxMinor: Math.max(0, before.taxMinor - totals.taxMinor), ...(store.carried ? { carried: true as const } : {}) };
         const fallbackId = priced?.lines.find(({ lineId }) => lineItems.some((li) => li.id === lineId))?.lineId;
         const fallbackIndex = lineItems.findIndex((li) => li.id === fallbackId);
         if (fallbackIndex === -1) {
@@ -370,8 +371,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         const t = lines.map((line, i) => BigInt(beforeLines[i].taxMicros) - BigInt(line.taxMicros));
         const discountShares = apportionLargestRemainders(e, coupon.discountMinor, fallbackIndex);
         const taxShares = apportionLargestRemainders(t, coupon.discountTaxMinor, fallbackIndex);
-        return { ...coupon, lines: lineItems.map((li, i) => ({ lineId: li.id, discountMinor: discountShares[i], discountTaxMinor: taxShares[i] }))
-          .filter((line) => line.discountMinor !== 0 || line.discountTaxMinor !== 0) };
+        return { ...coupon, lines: lineItems.map((li, i) => ({ lineId: li.id, discountMinor: discountShares[i], discountTaxMinor: taxShares[i],
+          ...(store.carried ? { amountMinor: priced?.lines.find(({ lineId }) => lineId === li.id)?.amountMinor ?? 0 } : {}) }))
+          .filter((line) => line.discountMinor !== 0 || line.discountTaxMinor !== 0 || (line.amountMinor ?? 0) !== 0) };
       });
     }
     const { subtotalMinor, taxMinor, totalMinor } = totals;

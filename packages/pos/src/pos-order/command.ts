@@ -100,7 +100,8 @@ function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean, woocomm
  * discounted (ADR-062), else 1; fees, shipping or custom lines need 5; coupons or a line's Any picks (#495) need 6. Also used by pos_orders v5's migration.
  */
 export function contentVersion(order: Pick<PosOrder, 'display' | 'taxByRate' | 'lines' | 'fees' | 'shipping' | 'coupons'>): 1 | 2 | 3 | 5 | 6 {
-  if (order.coupons?.length || order.lines.some((line) => line.anyAttributes?.length)) return 6;
+  const redeemable = order.coupons?.filter((coupon) => !coupon.carried);
+  if (redeemable?.length || order.lines.some((line) => line.anyAttributes?.length)) return 6;
   if (order.fees?.length || order.shipping?.length || order.lines.some((line) => line.custom)) return 5;
   return order.display && order.taxByRate ? 3 : order.lines.reduce((sum, line) => sum + line.discountMinor, 0) > 0 ? 2 : 1;
 }
@@ -126,6 +127,7 @@ function wireNote(note: string | undefined): string | undefined {
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
  * Coupon orders need version 6, carrying coupons, stored regular prices, line attributes and receipt coupons.
+ * A carried coupon (`carried`) is never sent as a coupon; its line shares go in the line discounts and its display row in `display.orderDiscountMinor`, and it needs version 4.
  * A sale with a note goes as version 7 when capped at 7 or more and it has figures; otherwise the note is not sent.
  * A sale taxed on the customer's address (`taxAddress`, #722) needs version 8 and never downgrades: below 8 the server
  * taxes on the base, so a lower cap throws UnsupportedOrderVersionError(8). At 8 it carries the note, `taxAddress` and
@@ -144,6 +146,7 @@ export function toOrderCreateEnvelope(order: PosOrder, deviceId: string, attempt
 }
 
 function createEnvelope(order: PosOrder, deviceId: string, attempt: number, options?: { maxVersion?: number }, floor?: 5): OrderCreateEnvelope {
+  const redeemable = (order.coupons ?? []).filter((coupon) => !coupon.carried), carried = (order.coupons ?? []).filter((coupon) => coupon.carried);
   const grossMinor = order.lines.reduce((sum, line) => sum + line.discountMinor, 0);
   const content = contentVersion(order);
   const cap = options?.maxVersion === undefined ? order.sentVersion : Math.min(options.maxVersion, order.sentVersion ?? options.maxVersion);
@@ -158,29 +161,34 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   // Version 4 only when the cap allows it (the server advertises 4, and no sentVersion holds the order lower).
   const base = Math.max(floor ?? 1, content === 3 && cap !== undefined && cap >= 4 ? 4
     : Math.min(content, cap ?? content)) as 1 | 2 | 3 | 4 | 5 | 6;
+  if (carried.length && base < 4) throw new UnsupportedOrderVersionError(4, cap ?? base);
   // Version 7 (ADR-083) is 6 plus the note: only for a sale with one, with figures (3+), when the cap allows 7.
   // Every other field follows `base`, so a note changes nothing else in the payload.
   const note = wireNote(order.note);
   if (taxAddress && base < 3) throw new Error(`Order ${order.id} is taxed on the customer's ${taxAddress} address but has no figures`);
-  const couponLines = !!order.coupons?.length && order.coupons.every((coupon) => coupon.lines !== undefined);
+  const couponLines = !!redeemable.length && redeemable.every((coupon) => coupon.lines !== undefined);
   // Version 10 is 9 plus each payment's methodId: only when the cap allows 10, the payload has figures (net discounts, 4+),
   // every coupon carries its lines (10 sends them as 9 does), and a leg has an id. Otherwise the version is today's and no id is sent.
   const methodIds = cap !== undefined && cap >= PAYMENT_METHOD_ID_ORDER_CREATE_VERSION && base >= 4
-    && (!order.coupons?.length || couponLines) && order.payments.some((payment) => payment.methodId !== undefined);
+    && (!redeemable.length || couponLines) && order.payments.some((payment) => payment.methodId !== undefined);
   // Version 11 is 10 plus the customer's addresses on a sale not taxed by address (ADR-086 d2, amended 2026-11-19):
   // only when the cap allows 11 and the payload meets 10's own requirements; otherwise the addresses are dropped and the bytes are today's.
   const untaxedAddresses = !taxAddress && !!(order.customer?.billing || order.customer?.shipping)
-    && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
+    && cap !== undefined && cap >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION && base >= 4 && (!redeemable.length || couponLines);
   // Version 12 is 11 plus tax ids, meta and a catalogue line's edited SKU (ADR-092), on the same terms; otherwise none of them is sent.
   const sentTaxIds = sendableTaxIds(order.customer?.taxIds), sentMeta = sendableMeta(order.meta);
   const extras = !!(sentTaxIds.length || sentMeta.length || order.lines.some(editedSku))
-    && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!order.coupons?.length || couponLines);
+    && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!redeemable.length || couponLines);
   const version = (extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
   const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
   const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentTaxIds.length ? { taxIds: sentTaxIds } : undefined;
   const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
+  for (const coupon of carried) {
+    if (!coupon.lines) throw new Error(`Order ${order.id}: a carried coupon has no line shares`);
+    for (const [i, line] of order.lines.entries()) lineDiscounts[i] += coupon.lines.find(({ lineId }) => lineId === line.id)?.discountMinor ?? 0;
+  }
   // The order's discount is the sum of its lines', on one basis, so the payload's two always agree.
   const discountMinor = lineDiscounts.reduce((sum, discount) => sum + discount, 0);
   const email = order.customer?.email;
@@ -191,6 +199,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   const { billing, shipping } = order.customer ?? {};
   const addresses = withAddresses ? { ...(billing ? { billing: { ...billing } } : {}), ...(shipping ? { shipping: { ...shipping } } : {}) } : {};
   const { fees: _fees, shipping: _shipping, coupons: _coupons, ...storedDisplay } = { ...order.display! };
+  const displayCoupons = carried.length ? _coupons?.filter(({ code }) => redeemable.some((coupon) => coupon.code === code)) : _coupons;
   return {
     id: order.commandId, type: 'order.create', version, createdAt: order.createdAt, deviceId, attempt,
     payload: {
@@ -222,7 +231,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
           ? woocommerceChargeTaxMinor(charge, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
           : roundMicrosToMinor(BigInt(charge.taxMicros)),
       })) } : {}),
-      ...(base === 6 && order.coupons?.length ? { coupons: order.coupons.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
+      ...(base === 6 && redeemable.length ? { coupons: redeemable.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
         ...(version >= 9 ? { lines: lines!.map(({ lineId, discountMinor, discountTaxMinor }) =>
           ({ clientLineId: lineId, discountMinor, discountTaxMinor })) } : {}),
@@ -241,9 +250,11 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
         display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
         })),
+        ...(carried.length ? { orderDiscountMinor: order.display!.orderDiscountMinor + (_coupons ?? [])
+          .reduce((sum, row) => sum + (carried.some((coupon) => coupon.code === row.code) ? row.amountMinor : 0), 0) } : {}),
         ...(base >= 5 && order.display!.fees ? { fees: order.display!.fees.map(({ id, amountMinor }) => ({ clientFeeId: id, amountMinor })) } : {}),
         ...(base >= 5 && order.display!.shipping ? { shipping: order.display!.shipping.map(({ id, amountMinor }) => ({ clientShippingId: id, amountMinor })) } : {}),
-        ...(base === 6 && order.coupons?.length && order.display!.coupons ? { coupons: order.display!.coupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
+        ...(base === 6 && redeemable.length && displayCoupons && (!carried.length || displayCoupons.length) ? { coupons: displayCoupons.map(({ code, amountMinor }) => ({ code, amountMinor })) } : {}),
         },
         taxByRate: order.taxByRate!.map(({ ratePpm, code, netMinor, amountMinor, grossMinor }) => ({
           ratePpm, ...(code !== undefined ? { code } : {}), netMinor, taxMinor: amountMinor, grossMinor,

@@ -63,6 +63,7 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
  * from their class too. Outside woo, a line marked taxFromClass re-derives from its class unless `keepTaxRates` is set;
  * every other line (given rates, a draft from before the marker) keeps its stored rates. `keepCoupons` puts the saved
  * coupons back as parked, figures and all, while an unlocked leg is live (ADR-077 d3, amended 2026-11-19); otherwise none.
+ * Carried coupons always restore their priced amounts against the saved basis, keeping stale figures stale.
  */
 export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean; keepCoupons?: boolean }): OrderBuilder {
   const { currency, taxContext } = options;
@@ -132,7 +133,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
   }
 
-  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3); only keepCoupons, below, restores them from the draft.
+  // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3), except carried coupons and keepCoupons below.
   // Restore payments
   for (const payment of saved.payments) {
     builder.addPayment({
@@ -148,6 +149,14 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
     });
+  }
+  if (saved.coupons?.some((c) => c.carried) && !saved.coupons.every((c) => c.carried)) throw new Error('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');
+  if (saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried)) {
+    builder.setCoupons(saved.coupons.map((c) => c.code), { kind: 'store-priced', carried: true,
+      priced: new Map(saved.coupons.map((c) => [c.code, { couponId: c.couponId,
+        lines: (c.lines ?? []).filter((l) => l.amountMinor !== undefined).map(({ lineId, amountMinor }) => ({ lineId, amountMinor: amountMinor! })) }])),
+      basis: saved.couponPricesStale ? '' : couponPricingBasis(saved) });
+    return builder;
   }
   // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).
   if (options.keepCoupons && saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length) {

@@ -6,6 +6,8 @@ export interface OrderCouponLine {
   lineId: string;
   discountMinor: number;    // >= 0
   discountTaxMinor: number; // >= 0
+  /** The store's priced amount in this line's own tax mode; present only on a carried coupon. */
+  amountMinor?: number;
 }
 
 export interface OrderCoupon {
@@ -13,7 +15,9 @@ export interface OrderCoupon {
   couponId: string; // the connector's coupon id, as a string
   discountMinor: number; // the coupon's discount (WooCommerce's replay, or the store's own prices, #709), ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
-  /** #790: present only on a store-priced coupon. It holds the coupon's share of each line, in lineItems order, with no zero entries. */
+  /** The store refused this code at send and the sale was charged at its price; it is never sent as a coupon. */
+  carried?: true;
+  /** #790: present only on a store-priced coupon. It holds the coupon's share of each line, in lineItems order, with no zero entries unless a carried coupon's amountMinor is non-zero. */
   lines?: OrderCouponLine[];
 }
 

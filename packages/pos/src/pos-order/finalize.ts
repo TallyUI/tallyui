@@ -166,8 +166,11 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     throw new Error("finalize: fees, shipping and custom lines need the store to accept order.create version 5; update the store's TallyUI plugin");
   }
   if (order.storeOrder && (options.capabilities?.orderCreate ?? 1) < 5) throw new Error("finalize: a reopened store order needs the store to accept order.create version 5; update the store's TallyUI plugin");
-  if (order.coupons?.length && (options.capabilities?.orderCreate ?? 1) < 6) {
+  if (order.coupons?.some((coupon) => !coupon.carried) && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: coupons need the store to accept order.create version 6; update the store's TallyUI plugin");
+  }
+  if (order.coupons?.some((coupon) => coupon.carried) && (options.capabilities?.orderCreate ?? 1) < 4) {
+    throw new Error("finalize: a carried coupon needs the store to accept order.create version 4; update the store's TallyUI plugin");
   }
   if (order.couponPricesStale) {
     throw new Error("finalize: the coupons' prices are out of date; price the coupons again before finalizing");
@@ -348,10 +351,11 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(order.storeOrder ? { storeOrderId: order.storeOrder.id, baseRevision: order.storeOrder.revision, refundDueMinor: refundDue } : {}),
     ...(order.coupons?.length ? { coupons: order.coupons.map((coupon) => ({
       code: coupon.code, couponId: coupon.couponId, discountMinor: coupon.discountMinor, discountTaxMinor: coupon.discountTaxMinor,
-      ...(coupon.lines !== undefined ? { lines: coupon.lines.map(({ lineId, discountMinor, discountTaxMinor }) => {
+      ...(coupon.carried ? { carried: true as const } : {}),
+      ...(coupon.lines !== undefined ? { lines: coupon.lines.map(({ lineId, discountMinor, discountTaxMinor, amountMinor }) => {
         const index = order.lineItems.findIndex((line) => line.id === lineId);
         if (index === -1) throw new Error("finalize: a coupon's line share names no line on the order");
-        return { lineId: lines[index].id, discountMinor, discountTaxMinor };
+        return { lineId: lines[index].id, discountMinor, discountTaxMinor, ...(amountMinor !== undefined ? { amountMinor } : {}) };
       }) } : {}),
     })) } : {}),
     ...(display && taxByRate ? { display, taxByRate } : {}),

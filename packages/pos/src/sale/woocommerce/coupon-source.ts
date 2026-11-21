@@ -24,7 +24,7 @@ export function createSaleCouponSource(deps: {
       if (!['percent', 'fixed_cart', 'fixed_product'].includes(data.discount_type)
         || !Number.isInteger(data.id) || typeof data.amount !== 'string') return null;
       const orders = await deps.orders.find({ selector: { syncStatus: { $in: ['pending', 'applied'] } } }).exec();
-      const counted = orders.filter((order) => order.coupons?.some((coupon) => coupon.code === code)
+      const counted = orders.filter((order) => order.coupons?.some((coupon) => !coupon.carried && coupon.code === code)
         && (order.syncStatus === 'pending' || (Date.parse(order.updatedAt) > data._meta.lwt
           && now() - Date.parse(order.updatedAt) < APPLIED_USE_GRACE_MS)));
       const usedBy = [...(data.used_by ?? [])];
