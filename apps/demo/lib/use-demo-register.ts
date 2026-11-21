@@ -12,6 +12,7 @@ import {
   addRegisterSessionCollection,
   cashMovementSchema,
   closureSchema,
+  orderDraftSchema,
   ensureRegister,
   useRegisterSession,
   type CashMovementCollection,
@@ -27,6 +28,7 @@ export type DemoRegisterDb = RxDatabase<{
   cash_movements: CashMovementCollection;
   closures: ClosureCollection;
   pos_orders: RxCollection<PosOrder>;
+  order_drafts: RxCollection;
 }>;
 
 export const DEMO_ACTOR = { id: 'demo-cashier', name: 'Demo cashier' };
@@ -52,6 +54,7 @@ export function useDemoRegister({
       await created.addCollections({
         cash_movements: { schema: cashMovementSchema },
         closures: { schema: closureSchema },
+        order_drafts: { schema: orderDraftSchema },
       });
       await addRegisterSessionCollection(created);
       await addPosOrderCollection(created);
