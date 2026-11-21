@@ -1,6 +1,6 @@
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder } from './types';
 export { uuidv7 } from './uuidv7';
-export { finalizeOrder } from './finalize';
+export { AFTER_CLOSE_PAYMENTS_CHANGED, finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
 export { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError } from './command';
 export { posOrderSchema, posOrderCollection } from './schema';

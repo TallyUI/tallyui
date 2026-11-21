@@ -959,7 +959,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           // A failing sink must never lose the sale.
         }
       }
-      if (session) {
+      // An after-close successor's sale is already in a closed session's closure: it joins no session (ADR-077).
+      if (session && posOrder.countedInClosureOf === undefined) {
         try {
           posOrder = await stampSession(posOrder, session.id, session.sessions);
         } catch {

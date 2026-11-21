@@ -5037,9 +5037,11 @@ interface OrderCreatePayload {
       original time and register and no session (so no late-sale correction counts it twice), marked locally as
       counted in that closure, and the frozen closure is never altered." For a coupon sale this supersedes Q-d4b-2's
       "the cashier collects the difference" and Q-d4b-3's "no coupons" as the default; the explicit `withoutCoupons`
-      drop keeps them. The closed-session part will supersede Q-d4b-5
-      for a closure that counted the order; until it lands (PR B, D2), a coupon sale in a closed session still refuses
-      `session_closed`.
+      drop keeps them. The closed-session part supersedes Q-d4b-5 for a closure that counted the order. It is
+      implemented: a carried reopen whose closed session's closure lists the order is drafted *after close* and
+      finalized with its original `createdAt` and `registerId`, `countedInClosureOf` set and no session, and finalize
+      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payments are the ones that closure counted. An inexact carry,
+      a drop, and any other closed, counting or missing session refuse.
       - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
         attention must not be a dead end: today's drop reopen stays available there as an explicit, labelled choice
         that shows the amount still to collect ("Reopen without the coupon: 2.00 to collect"). Never automatic, never

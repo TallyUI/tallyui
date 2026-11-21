@@ -73,6 +73,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     id: saved.id,
     ...(saved.createdAt ? { createdAt: saved.createdAt } : {}), // #742: with every id below (fees and shipping replay whole)
     ...(saved.storeOrder !== undefined ? { storeOrder: saved.storeOrder } : {}),
+    ...(saved.afterClose !== undefined ? { afterClose: saved.afterClose } : {}),
   });
 
   // Restore state from saved order

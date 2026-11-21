@@ -436,6 +436,18 @@ describe('OrdersList', () => {
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
   });
 
+  // ADR-077, Front desk 2026-11-21: a carried sale re-sent after its closed session's closure counted it.
+  it('explains a sale recorded after its register closed, and leaves the late line to late sales', () => {
+    const after = 'Recorded after the register closed. Its payment is in that register\'s closure.';
+    const late = 'Taken after the register closed. It is not in that register\'s closure.';
+    const view = render(<OrdersList orders={[order('a', { countedInClosureOf: 'closed' })]} onRetry={async () => 0} />);
+    expect(screen.getAllByText(after).length).toBeGreaterThan(0);
+    expect(screen.queryByText(late)).toBeNull();
+    view.rerender(<OrdersList orders={[order('l', { lateSessionId: 'closed' })]} onRetry={async () => 0} />);
+    expect(screen.getAllByText(late)).toHaveLength(2);
+    expect(screen.queryByText(after)).toBeNull();
+  });
+
   it('calls onRetry with the order id and stays retrying until the order leaves rejected', async () => {
     const rejected = order('r', { syncStatus: 'rejected', error: { code: 'unknown_variant', message: 'gone' } });
     let settle!: (count: number) => void;

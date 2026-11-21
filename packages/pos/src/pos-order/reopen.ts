@@ -3,7 +3,7 @@ import type { RxCollection } from 'rxdb';
 import { couponPricingBasis, createOrderBuilder, type StorePricedCoupon } from '../order/order-builder';
 import { writeOrderDraft } from '../order/order-drafts';
 import type { ChargeLine, Order } from '../order/types';
-import { readSession, type RegisterSessionCollection } from '../register/session-store';
+import { readSession, type ClosureCollection, type RegisterSessionCollection } from '../register/session-store';
 import { readFresh } from '../rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from './command';
@@ -49,6 +49,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
   now?: () => Date;
   /** The store's capabilities: a coupon carry needs `orderCreate` 4 or more; absent counts as 1, as in finalize. */
   capabilities?: ServerCapabilities;
+  /** The frozen closures: a carried sale whose closed session's closure lists it reopens after close (ADR-077, Front desk 2026-11-21). */
+  closures?: ClosureCollection;
 }, options?: { withoutCoupons?: true }): Promise<string> {
   const [order] = await readFresh(deps.orders, { selector: { id: orderId } });
   if (!order) throw new ReopenRefusedOrderError(orderId, 'not_found');
@@ -58,9 +60,16 @@ export async function reopenRefusedOrder(orderId: string, deps: {
   if (!REOPENABLE_CODES.includes(order.error?.code ?? '')) throw new ReopenRefusedOrderError(orderId, 'code_not_reopenable');
   const successors = await readFresh(deps.orders, { selector: { saleId: orderId } });
   if (successors.some((successor) => successor.id !== orderId)) throw new ReopenRefusedOrderError(orderId, 'already_replaced');
+  let afterClose: Order['afterClose'];
   if (order.sessionId) {
     const session = await readSession(deps.sessions, order.sessionId);
-    if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
+    // Its closure counted this sale's money: only the exact carry may re-send it, outside every session.
+    const counted = session?.status === 'closed' && !!order.coupons?.length && !options?.withoutCoupons && deps.closures
+      && !!(await deps.closures.findOne(session.id).exec())?.order_ids.includes(order.id);
+    if (counted) {
+      afterClose = { sessionId: order.sessionId, createdAt: order.createdAt, ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
+        payments: order.payments.map(({ method, amountMinor }) => ({ method, amountMinor })) };
+    } else if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
   const existing = await deps.drafts.findOne(orderId).exec();
   if (existing && options?.withoutCoupons
@@ -68,7 +77,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     throw new ReopenRefusedOrderError(orderId, 'carried_draft_exists');
   }
   if (!existing) {
-    const builder = createOrderBuilder({ currency: order.currency, taxContext: deps.taxContext, id: order.id });
+    const builder = createOrderBuilder({ currency: order.currency, taxContext: deps.taxContext, id: order.id, ...(afterClose ? { afterClose } : {}) });
     const converted = order.lines.some((line) => line.taxInclusive !== undefined && line.taxInclusive !== order.pricesIncludeTax);
     const display = order.display && !converted ? order.display : undefined;
     const carry = !!order.coupons?.length && !options?.withoutCoupons;

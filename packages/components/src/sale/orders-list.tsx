@@ -67,6 +67,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     {sentence ? <Text className="text-destructive">{sentence}</Text> : null}
     {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
     {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
+    {order.countedInClosureOf !== undefined ? <Text className="text-foreground">Recorded after the register closed. Its payment is in that register's closure.</Text> : null}
     {order.localWarnings?.map((warning, index) => <Text key={index} className="text-foreground">
       {warning.code === 'customer_omitted'
         ? `The customer's ${warning.field} couldn't be sent to the store, so the order isn't linked to them.`

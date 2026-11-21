@@ -15,7 +15,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { OrderCreateEnvelope, OrderUpdateEnvelope, StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
-import { createOrderBuilder, orderDraftSchema, type CustomerSummary } from '../order';
+import { createOrderBuilder, orderDraftSchema, writeOrderDraft, type CustomerSummary } from '../order';
 import { createOrderOutbox, outboxLogger, useOrderOutbox, type CommandTransport } from '../outbox';
 import { addPosOrderCollection, finalizeOrder, type PosOrder } from '../pos-order';
 import { TaxProvider } from '../tax';
@@ -561,6 +561,30 @@ describe('late sale', () => {
     try {
       const { completed } = await completeOn(sessions, sessionId);
       expect(completed.sessionId).toBe(sessionId);
+      expect(completed).not.toHaveProperty('lateSessionId');
+      expect(lateFacts()).toEqual([]);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('an after-close draft completed with an open session passed joins no session and logs no late-sale fact (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ method: 'cash', amountMinor: 1250 }] } });
+      builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
+      builder.addPayment({ method: 'cash', status: 'captured', amountMinor: 1250 });
+      await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session: { id: sessionId, sessions } }));
+      await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      const completed = onSaleCompleted.mock.calls[0][0] as PosOrder;
+      expect(completed).toMatchObject({ countedInClosureOf: 'closed-session', createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0' });
+      expect(completed).not.toHaveProperty('sessionId');
       expect(completed).not.toHaveProperty('lateSessionId');
       expect(lateFacts()).toEqual([]);
     } finally {
