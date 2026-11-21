@@ -36,6 +36,7 @@ function Sale() {
   return <>
     <Stack.Screen options={{ title: 'Split sale' }} />
     <POSLayout cartSlot={cart} renderCheckout={renderCheckout}
+      columnKey={stage.kind === 'receipt' ? `receipt:${stage.posOrder.id}` : undefined}
       browseSlot={<Catalogue products={products} traits={traits} currency="EUR" lastSyncedAt={null} statusText="2 products"
         onSelect={(entry) => sale.add(entry, traits)} cartLines={sale.order.lineItems} />} />
   </>;

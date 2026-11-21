@@ -43,7 +43,7 @@ At tender, `renderCheckout` is WCPOS v2's checkout column: its result takes the 
 />
 ```
 
-In the split layout the column fades in over 200 ms (v2's crossfade) each time checkout opens or closes; with reduced motion it swaps at once. The stacked layout does not fade.
+In the split layout the column fades in over 200 ms (v2's crossfade) each time checkout opens or closes, or its `columnKey` changes; with reduced motion it swaps at once. The stacked layout does not fade.
 
 ## Props
 
@@ -58,6 +58,7 @@ In the split layout the column fades in over 200 ms (v2's crossfade) each time c
 | `tabBar` | `'top' \| 'bottom'` | `'top'` | Where the stacked layout's tabs sit; `'bottom'` is WCPOS v2's phone tab bar (Products / Cart with icons), with both panes kept mounted |
 | `cartCount` | `number` | --- | The cart's item count, shown over the Cart tab's icon in the bottom bar; hidden at 0 |
 | `renderCheckout` | `(layout: 'split' \| 'stacked') => ReactNode` | --- | WCPOS v2's checkout column, called with the layout in force. When given, it replaces the browse column in split and the whole body (tabs included) in stacked |
+| `columnKey` | `string` | --- | What the checkout column shows (e.g. `receipt:<order id>`); a new key fades the split column in as opening checkout does |
 
 ## Slots
 

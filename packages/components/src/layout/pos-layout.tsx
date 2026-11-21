@@ -7,19 +7,19 @@ import { useReducedMotion } from '../lib/use-reduced-motion';
 import { InCartBadge } from '../product/in-cart-badge';
 import { GiftIcon, ShoppingCartIcon } from '../ui';
 
-function useColumnFade(mode: 'checkout' | 'products', enabled: boolean) {
+function useColumnFade(key: string, enabled: boolean) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const previousMode = useRef(mode);
+  const previousKey = useRef(key);
   const reduced = useReducedMotion();
   useLayoutEffect(() => {
-    if (mode === previousMode.current) return;
-    previousMode.current = mode;
+    if (key === previousKey.current) return;
+    previousKey.current = key;
     if (!enabled || reduced !== false) { opacity.setValue(1); return; }
     opacity.setValue(0);
     const animation = Animated.timing(opacity, { toValue: 1, duration: CROSSFADE, useNativeDriver: Platform.OS !== 'web' });
     animation.start();
     return () => { animation.stop(); opacity.setValue(1); };
-  }, [mode, enabled, reduced, opacity]);
+  }, [key, enabled, reduced, opacity]);
   return opacity;
 }
 
@@ -40,6 +40,10 @@ export interface POSLayoutProps extends Omit<ViewProps, 'children'> {
    *  whole body, with no tabs or tab bar. It is called with the layout in force, so the app can give the pane its own
    *  ledger when the cart is not on screen. */
   renderCheckout?: (layout: 'split' | 'stacked') => ReactNode;
+  /** v2 keys its checkout column by what it shows (pos-columns.tsx receipt:<uuid> / checkout / cart): a new key in
+   *  split layout fades the column in as opening checkout does, e.g. `receipt:<order id>` when tender gives way to
+   *  the receipt. Default: none, so only opening or closing checkout fades. */
+  columnKey?: string;
 }
 
 export function POSLayout({
@@ -52,12 +56,14 @@ export function POSLayout({
   tabBar = 'top',
   cartCount,
   renderCheckout,
+  columnKey,
   ...viewProps
 }: POSLayoutProps) {
   const { width } = useWindowDimensions();
   const layout = layoutProp ?? (width >= breakpoint ? 'split' : 'stacked');
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse');
-  const opacity = useColumnFade(renderCheckout ? 'checkout' : 'products', layout === 'split');
+  const mode = renderCheckout ? 'checkout' : 'products';
+  const opacity = useColumnFade(columnKey ? `${mode}:${columnKey}` : mode, layout === 'split');
   const checkout = (mode: 'split' | 'stacked') =>
     <View testID="pos-checkout-column" className="flex-1 bg-card">{renderCheckout?.(mode)}</View>;
 
