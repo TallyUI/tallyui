@@ -593,12 +593,12 @@ describe('late sale', () => {
   });
 
   /** The after-close draft above (captured cash leg-1 of 1250, counted by its closure), written to pos_drafts and resumed. */
-  async function resumeAfterClose(db: Awaited<ReturnType<typeof withOpenSession>>['db'], session: { id: string; sessions: RegisterSessionCollection }) {
+  async function resumeAfterClose(db: Awaited<ReturnType<typeof withOpenSession>>['db'], session: { id: string; sessions: RegisterSessionCollection }, legStatus: 'authorized' | 'captured' = 'captured') {
     await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
     const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
       createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1250 }], taxMinor: 250, fees: [], shipping: [] } });
     builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
-    builder.addPayment({ id: 'leg-1', method: 'cash', status: 'captured', amountMinor: 1250 });
+    builder.addPayment({ id: 'leg-1', method: 'cash', status: legStatus, amountMinor: 1250 });
     await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
     const onSaleCompleted = vi.fn();
     const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session }));
@@ -636,6 +636,19 @@ describe('late sale', () => {
       await act(async () => { await result.current.complete(); });
       expect(result.current.error).toBeNull();
       expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B9c: a status change on an after-close draft\'s authorized counted leg is refused by the sale, not the builder (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions }, 'authorized');
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'captured')).toBe(false); });
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'failed')).toBe(false); });
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject({ ...countedLeg, status: 'authorized' });
     } finally {
       await db.remove();
     }
