@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
-import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion } from '../tender/payment-legs';
+import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus } from '../tender/payment-legs';
 import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
@@ -393,18 +393,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
   }, []);
 
-  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string {
+  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }, stamp: boolean): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
-    const takenAt = new Date().toISOString(); // stamped here, never in addPayment, which the restore paths call too
-    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, takenAt,
+    // addTender stamps a leg that enters captured; setTender's pre-filled leg waits for complete(), a pending one for capture.
+    // Stamped here, never in addPayment, which the restore paths call too.
+    const takenAt = stamp && legStatus({ status: tender.status }) === 'captured' ? { takenAt: new Date().toISOString() } : {};
+    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, ...takenAt,
       ...(tender.tenderedMinor !== undefined ? { tenderedMinor: tender.tenderedMinor } : {}),
       ...(tender.changeMinor !== undefined ? { changeMinor: tender.changeMinor } : {}),
       ...(tender.units !== undefined ? { units: tender.units } : {}),
-      ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : { ...tender, takenAt };
+      ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : { ...tender, ...takenAt };
     const builder = builderNow.current;
     const { units, ...payment } = kept;
     const paymentId = builder.addPayment({ ...payment, ...(units && Object.keys(units).length ? { units } : {}) });
@@ -435,7 +437,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
     droppedReferences.current.clear();
     setError(null);
-    if (tender) addOne(tender);
+    if (tender) addOne(tender, false);
   }
 
   /** addTender, voidTender and removeTender changed the tenders: a stale error goes, a dropped-reference message stays. */
@@ -872,17 +874,17 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) return null;
         clearStaleError(); // before addOne, which sets its own message for a dropped reference
-        return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) });
+        return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) }, true);
       }
       clearStaleError();
-      return addOne({ ...tender, ...(tender.tenderedMinor !== undefined ? { changeMinor: tender.tenderedMinor - tender.amountMinor } : {}) });
+      return addOne({ ...tender, ...(tender.tenderedMinor !== undefined ? { changeMinor: tender.tenderedMinor - tender.amountMinor } : {}) }, true);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment && countedLeg(payment)) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return false; }
-      const changed = builderNow.current.setPaymentStatus(paymentId, status);
+      const changed = builderNow.current.setPaymentStatus(paymentId, status, status === 'captured' ? new Date().toISOString() : undefined);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
       return changed;
@@ -946,7 +948,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (snapshot.payments.some(isInMotion)) { setSaving(false); setError(PAYMENT_IN_MOTION); return; }
       if (couponsUnpriced()) { setSaving(false); setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING); return; }
       // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
-      const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid) };
+      // A leg with no takenAt yet (setTender's pre-filled one) was taken now; store and reopened legs keep what they have.
+      // Only this copy is stamped, never the builder, so a retry (pending.current) keeps this attempt's instant.
+      const completedAt = new Date().toISOString();
+      const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid)
+        .map((payment) => payment.takenAt === undefined && !payment.locked && !payment.reopened ? { ...payment, takenAt: completedAt } : payment) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
         .map((payment) => ({ code: 'payment_reference_dropped' as const, paymentId: payment.id }));
       let posOrder: PosOrder;

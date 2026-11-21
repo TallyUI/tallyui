@@ -285,9 +285,10 @@ describe('useSale locked legs', () => {
     const { result, lockedLeg } = await resumeSale();
     act(() => { result.current.startTender('external'); });
     expect(result.current.order.payments).toEqual([
-      lockedLeg, { id: expect.any(String), takenAt: expect.any(String), method: 'external', amountMinor: result.current.order.totalMinor - 500 },
+      lockedLeg, { id: expect.any(String), takenAt: undefined, method: 'external', amountMinor: result.current.order.totalMinor - 500 },
     ]);
     expect(result.current.order.payments[1]).not.toHaveProperty('storePaymentId');
+    expect(result.current.order.payments[1]).not.toHaveProperty('takenAt'); // the pre-filled tender is stamped at complete()
     expect(result.current.order.payments[1]).not.toHaveProperty('locked');
   });
 

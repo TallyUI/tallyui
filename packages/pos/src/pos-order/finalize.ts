@@ -2,6 +2,7 @@ import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX
   type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
+import { isTakenAt } from '../order/taken-at';
 import type { ChargeLine, Order, SentOrder } from '../order/types';
 import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
@@ -304,7 +305,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(payment.tenderedMinor !== undefined ? { tenderedMinor: payment.tenderedMinor } : {}),
     ...(payment.changeMinor !== undefined ? { changeMinor: payment.changeMinor } : {}),
     ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
-    ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
+    ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
   }));
   // A warning naming a payment the order no longer has is dropped and logged, never thrown: this runs at sale completion.
   const localWarnings = options.localWarnings?.flatMap((warning): PosOrderLocalWarning[] => {
