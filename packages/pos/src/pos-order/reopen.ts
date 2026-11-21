@@ -128,6 +128,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor, reopened: true,
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
+      ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
     });
     if (order.customer?.id && order.customer.name && customerRefusal(order.customer) === null) {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,

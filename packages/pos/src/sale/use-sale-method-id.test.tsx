@@ -45,7 +45,7 @@ describe('useSale payment method ids (condition 5: method decides cash, methodId
     await act(async () => { await result.current.complete(); });
     expect(onSaleCompleted).toHaveBeenCalledTimes(1);
     expect(onSaleCompleted.mock.calls[0][0].payments).toStrictEqual([
-      { id: expect.any(String), method: 'cash', methodId: 'cod', amountMinor: 2250, tenderedMinor: 3000, changeMinor: 750 }]);
+      { id: expect.any(String), takenAt: expect.any(String), method: 'cash', methodId: 'cod', amountMinor: 2250, tenderedMinor: 3000, changeMinor: 750 }]);
   });
 
   it('caps an external leg with an id at the balance and stores it with its id; setTender keeps the id', async () => {
@@ -57,7 +57,7 @@ describe('useSale payment method ids (condition 5: method decides cash, methodId
     expect(result.current.order.payments).toMatchObject([{ method: 'external', methodId: 'pp_system_default', amountMinor: 2250, reference: 'T-9' }]);
     await act(async () => { await result.current.complete(); });
     const [stored] = onSaleCompleted.mock.calls[0][0].payments;
-    expect(stored).toStrictEqual({ id: expect.any(String), method: 'external', methodId: 'pp_system_default', amountMinor: 2250, reference: 'T-9' });
+    expect(stored).toStrictEqual({ id: expect.any(String), takenAt: expect.any(String), method: 'external', methodId: 'pp_system_default', amountMinor: 2250, reference: 'T-9' });
   });
 
   it('keeps the methodId of a leg whose reference is dropped', async () => {
@@ -70,7 +70,7 @@ describe('useSale payment method ids (condition 5: method decides cash, methodId
     expect(result.current.error).toContain('reference');
     await act(async () => { await result.current.complete(); });
     const stored = onSaleCompleted.mock.calls[0][0];
-    expect(stored.payments[0]).toStrictEqual({ id: expect.any(String), method: 'external', methodId: 'stripe', amountMinor: 1000 });
+    expect(stored.payments[0]).toStrictEqual({ id: expect.any(String), takenAt: expect.any(String), method: 'external', methodId: 'stripe', amountMinor: 1000 });
     expect(stored.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: stored.payments[0].id }]);
   });
 });

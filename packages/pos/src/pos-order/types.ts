@@ -74,6 +74,8 @@ export interface PosOrderPayment {
   tenderedMinor?: number;
   changeMinor?: number;
   reference?: string;
+  /** When the till recorded the leg (`Payment.takenAt`); absent on store-held and older legs. */
+  takenAt?: string;
 }
 
 export interface PosOrder {

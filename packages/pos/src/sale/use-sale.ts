@@ -399,11 +399,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
     const reason = referenceReason(tender.reference);
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
-    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor,
+    const takenAt = new Date().toISOString(); // stamped here, never in addPayment, which the restore paths call too
+    const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, takenAt,
       ...(tender.tenderedMinor !== undefined ? { tenderedMinor: tender.tenderedMinor } : {}),
       ...(tender.changeMinor !== undefined ? { changeMinor: tender.changeMinor } : {}),
       ...(tender.units !== undefined ? { units: tender.units } : {}),
-      ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : tender;
+      ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : { ...tender, takenAt };
     const builder = builderNow.current;
     const { units, ...payment } = kept;
     const paymentId = builder.addPayment({ ...payment, ...(units && Object.keys(units).length ? { units } : {}) });

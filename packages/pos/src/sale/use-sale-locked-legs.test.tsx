@@ -285,7 +285,7 @@ describe('useSale locked legs', () => {
     const { result, lockedLeg } = await resumeSale();
     act(() => { result.current.startTender('external'); });
     expect(result.current.order.payments).toEqual([
-      lockedLeg, { id: expect.any(String), method: 'external', amountMinor: result.current.order.totalMinor - 500 },
+      lockedLeg, { id: expect.any(String), takenAt: expect.any(String), method: 'external', amountMinor: result.current.order.totalMinor - 500 },
     ]);
     expect(result.current.order.payments[1]).not.toHaveProperty('storePaymentId');
     expect(result.current.order.payments[1]).not.toHaveProperty('locked');
@@ -318,7 +318,7 @@ describe('useSale locked legs', () => {
     // The stored row marks the store's locked leg by its storePaymentId (finalize-reopened.test.ts T1); it has no `locked` field.
     expect(row.payments).toEqual([
       { id: expect.any(String), storePaymentId: 'p1', method: 'external', amountMinor: 500, reference: 'Cash' },
-      { id: expect.any(String), method: 'external', amountMinor: 500 },
+      { id: expect.any(String), takenAt: expect.any(String), method: 'external', amountMinor: 500 },
     ]);
     expect(row.payments.reduce((sum, payment) => sum + payment.amountMinor, 0)).toBe(row.totalMinor);
   });

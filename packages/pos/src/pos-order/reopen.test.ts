@@ -431,3 +431,20 @@ it("RK1 keeps a catalogue line's edited SKU on the reopened sale and in its orde
 it('exports only the two reopenable refusal codes', () => {
   expect(REOPENABLE_CODES).toEqual(['coupon_invalid', 'total_mismatch']);
 });
+
+async function reopenedTakenAt() {
+  const stored = storedOrder();
+  const order: PosOrder = { ...stored, payments: [{ ...stored.payments[0], takenAt: '2026-10-06T11:58:00.000Z' }, stored.payments[1]] };
+  await db.pos_orders.insert(order);
+  return (await draft(await reopenRefusedOrder(order.id, deps()))).payments;
+}
+
+it('T7 reopen keeps a stored leg takenAt', async () => {
+  expect((await reopenedTakenAt())[0]).toMatchObject({ method: 'cash', reopened: true, takenAt: '2026-10-06T11:58:00.000Z' });
+});
+
+it('T8 reopen leaves a legacy stored leg without takenAt', async () => {
+  const legacy = (await reopenedTakenAt())[1];
+  expect(legacy).toMatchObject({ method: 'external', reopened: true });
+  expect(legacy).not.toHaveProperty('takenAt');
+});
