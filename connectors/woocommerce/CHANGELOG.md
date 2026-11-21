@@ -1,5 +1,71 @@
 # @tallyui/connector-woocommerce
 
+## 4.0.0
+
+### Minor Changes
+
+- 2bdae98: Adds an optional, online `closures` connector surface (ADR-093): read the store's Z closures, append a recount and record a reprint. `Correction` and `ApproverCredentials` move to core (pos and the Woo connector re-export them); `Correction` gains `late_refund`, which `deriveSettled` counts on the refund side. The Woo connector implements it for WCPOS 2.0.
+- f51a692: A store order read now carries what a reopen needs to write the order back: the order's `revision`, an `id` on each fee, shipping line and payment record, and the recorded `taxStatus` on a fee or shipping line, a fee's `taxClass` and a shipping line's `methodId`. All new fields are optional. The WooCommerce connector fills them from the order resource and the WCPOS payment ledger.
+
+  An order list page now leaves out an order the connector cannot read and counts it in `unreadable`, instead of failing the whole page. An order whose payment record the connector cannot read carries `paymentRecordUnreadable`.
+
+- 5b8ad63: A WooCommerce customer read by search, get, create or update now carries its `billing` and `shipping` address, mapped from the Woo address fields under `CustomerAddress` names. Empty and null fields are left out, an address with no field left is left out, and shipping never carries an email. An edit that saves a read customer's address back now sends the stored address instead of a blank one.
+
+  A customer whose Woo billing holds only contact details (name, company, email, phone) now reads with a `billing` of those fields. A picked customer's address reaches a sale only on a store whose POS tax basis (`tax_based_on`) is billing or shipping and that takes order.create 8: there it sets the tax location and goes on the order. On a store taxed on its base address, nothing about the sale changes.
+
+- c5e8951: Product and variation documents keep WooCommerce's `low_stock_amount`; the product schema goes to version 4, so a till resyncs its products once.
+- 1d16b4f: Stock WCPOS 2.0.4+ stores (2.0 line) without the `order_create_v5` flag take order.create 6 (fees, shipping, custom lines, coupons).
+- 099c8bc: Stock WCPOS 1.10.20+ stores with no capability flags take order.create 7 (fees, shipping, custom lines, coupons, notes); a `none` shipping line carries its tax status to the store.
+- cc6f6cf: `StoreSettings` gains `preventOverselling` and `StockLevel` gains `backorders` (`no` | `notify` | `yes`). The WooCommerce connector reads the store's `prevent_overselling` and each product's and variation's `backorders`, which WCPOS v2's stock guard needs. The product schema goes to version 3, so a till resyncs its products once.
+- 2de9dca: Send `X-WCPOS-Protocol: 3`, and pay WCPOS 2.0.x sales through the payment ledger: the order is pushed `pending`, then each payment is recorded (or a free sale closed) before the sale counts as applied. WCPOS 1.10.x and fork stores get the same push body as before. A ledger sale whose store total differs from the till's is refused before any payment is recorded, and a payment the store may have recorded is retried rather than reported unpaid.
+- b465d5f: Reads WCPOS 2.0's registers (`listRegisters`) and the store's variance threshold (`registerApproval`).
+- 33d9d27: Sends register sessions, movements and closures to WCPOS 2.0 (`createWooRegisterTransport`, `wooApproveSession`) and reads the store's `register_sessions` setting as `register: 3`.
+- 23a6813: `StoreSettings.moneyFormat` carries the store's own money format (core's `MoneyFormat`). The WooCommerce connector fills it from WCPOS's store row (currency position, thousand and decimal separators, decimals) and WooCommerce's currency symbol, so CAD reads `$`; pass it to `CurrencyProvider`'s `format`.
+
+### Patch Changes
+
+- 1b9f3e0: Internal tidy: the WooCommerce order, customer and order-push code use `WCPOS_UUID_META_KEY` instead of spelling the meta key, and stale doc comments are corrected (the Woo coupon order.create version, Medusa's ignored `maxPages` advice, the errors Vendure's `gql` throws). Behaviour unchanged.
+- e69a10b: Internal tidy: the customer row read, the payment-ledger check and the stored-line lookup are each written once. Behaviour and exports unchanged.
+- 74b6cac: Internal tidy: the command transport resolves its capability options in one place. No behaviour change.
+- 5358713: Internal tidy: the store-settings and payment-method reads share one 401/403 refusal check. Errors are unchanged.
+- 2e98257: On a store whose prices exclude tax, a fee or shipping charge entered as including tax is sent at its 6-decimal net, so the store's tax and total equal the till's (before this, they could differ by 0.01 either way, depending on the rate).
+- 81c579a: The closures and registers readers ask for their own route before the store list, so a store without them gets the empty answer.
+- 3820381: Fix: a WooCommerce order read reports the payments the order actually holds. These are the captured rows of the WCPOS payment ledger, or, for an order without one, a single payment of the total only when the order is paid. An unpaid order no longer reads as fully paid.
+- 316f607: The product pull accepts WCPOS 2.0.x's bare-array /variations answer as well as 1.10.x's sync envelope.
+- Updated dependencies [fae1b1a]
+- Updated dependencies [028c0e3]
+- Updated dependencies [3942708]
+- Updated dependencies [81198d2]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [1f40158]
+- Updated dependencies [bc9a686]
+- Updated dependencies [c9403ce]
+- Updated dependencies [e928f11]
+- Updated dependencies [ac46fa5]
+- Updated dependencies [c83dcda]
+- Updated dependencies [b6e936c]
+- Updated dependencies [d034d9f]
+- Updated dependencies [82ec063]
+- Updated dependencies [e48cac6]
+- Updated dependencies [ccb28e1]
+- Updated dependencies [1821a2c]
+- Updated dependencies [74191f9]
+- Updated dependencies [0eb7640]
+- Updated dependencies [f5a739f]
+- Updated dependencies [3b25108]
+- Updated dependencies [61846d3]
+- Updated dependencies [7a6075b]
+- Updated dependencies [2cb63cb]
+- Updated dependencies [6e191c9]
+- Updated dependencies [2bdae98]
+- Updated dependencies [f51a692]
+- Updated dependencies [28ba50e]
+- Updated dependencies [c9201a2]
+- Updated dependencies [a171cf5]
+- Updated dependencies [cc6f6cf]
+- Updated dependencies [23a6813]
+  - @tallyui/core@4.0.0
+
 ## 3.20.1
 
 ### Patch Changes

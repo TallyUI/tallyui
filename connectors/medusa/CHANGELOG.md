@@ -1,5 +1,52 @@
 # @tallyui/connector-medusa
 
+## 4.0.0
+
+### Minor Changes
+
+- 28ba50e: Store settings list every tax region's rates as `allTaxRates`, with rate rules. Display only; the cart's rate is unchanged.
+- 9dc9ce3: Order history for Medusa (ADR-081): `createMedusaAdminUserConnector()` now has `listOrders`, `getOrders` and `orderFilters` (`status`, `customerId`, `dateRange`), read from the admin API (`GET /admin/orders`). Money is converted exactly from Medusa's major-unit amounts, and a refunded order reads as sold, with its refunds beside it. New exports: `createMedusaOrders`, `toMedusaStoreOrder`, `MEDUSA_ORDER_FILTERS`.
+- 870f16a: At MedusaPOS plugin contract 4, the Medusa connector's `listOrders` sends `allChannels=true` on the plugin orders route, so register filters and display-number searches read every sales channel, like the admin list. Contract 3 is unchanged and stays scoped to the till's channel (#1125). `MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT` names the contract.
+- 82ec063: `ServerCapabilities.pluginContract` carries `/tally/v1/info`'s top-level `pluginContract`. The Medusa connector's `listOrders` sends register filters and 1-6 digit searches (display numbers) through the MedusaPOS plugin's `GET /tally/v1/orders` at plugin contract 3, reading the rows from the admin API so every order maps the same way; `medusaOrderFilters(capabilities)` gives the filter fields a store honours (#1114).
+
+### Patch Changes
+
+- 1b9f3e0: Internal tidy: the WooCommerce order, customer and order-push code use `WCPOS_UUID_META_KEY` instead of spelling the meta key, and stale doc comments are corrected (the Woo coupon order.create version, Medusa's ignored `maxPages` advice, the errors Vendure's `gql` throws). Behaviour unchanged.
+- 568ee6c: Internal tidy: the Admin API reads in the product and variant feeds and the id, price and stock reconcilers share one GET helper, and the price fingerprint builds its base-price entries in one place. Behaviour unchanged.
+- Updated dependencies [fae1b1a]
+- Updated dependencies [028c0e3]
+- Updated dependencies [3942708]
+- Updated dependencies [81198d2]
+- Updated dependencies [fed2ec4]
+- Updated dependencies [1f40158]
+- Updated dependencies [bc9a686]
+- Updated dependencies [c9403ce]
+- Updated dependencies [e928f11]
+- Updated dependencies [ac46fa5]
+- Updated dependencies [c83dcda]
+- Updated dependencies [b6e936c]
+- Updated dependencies [d034d9f]
+- Updated dependencies [82ec063]
+- Updated dependencies [e48cac6]
+- Updated dependencies [ccb28e1]
+- Updated dependencies [1821a2c]
+- Updated dependencies [74191f9]
+- Updated dependencies [0eb7640]
+- Updated dependencies [f5a739f]
+- Updated dependencies [3b25108]
+- Updated dependencies [61846d3]
+- Updated dependencies [7a6075b]
+- Updated dependencies [2cb63cb]
+- Updated dependencies [6e191c9]
+- Updated dependencies [2bdae98]
+- Updated dependencies [f51a692]
+- Updated dependencies [28ba50e]
+- Updated dependencies [c9201a2]
+- Updated dependencies [a171cf5]
+- Updated dependencies [cc6f6cf]
+- Updated dependencies [23a6813]
+  - @tallyui/core@4.0.0
+
 ## 3.20.1
 
 ### Patch Changes
