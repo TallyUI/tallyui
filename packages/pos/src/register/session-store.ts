@@ -163,6 +163,8 @@ export async function requireOpenSession(
 // the order stamped with it -- `finalizeOrder` is pure and never checks it. Refuses to re-stamp
 // an order that already carries a different session's id.
 export async function stampSession(order: PosOrder, sessionId: string, sessions: RegisterSessionCollection): Promise<PosOrder> {
+  // Its money is in that closed session's closure (ADR-077), so it joins no session.
+  if (order.countedInClosureOf !== undefined) return order;
   if (order.sessionId !== undefined && order.sessionId !== sessionId) throw new Error('session_already_stamped');
   const session = await requireLiveSession(sessions, sessionId);
   return { ...order, sessionId: session.id };

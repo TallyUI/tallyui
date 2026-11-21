@@ -5040,8 +5040,14 @@ interface OrderCreatePayload {
       drop keeps them. The closed-session part supersedes Q-d4b-5 for a closure that counted the order. It is
       implemented: a carried reopen whose closed session's closure lists the order is drafted *after close* and
       finalized with its original `createdAt` and `registerId`, `countedInClosureOf` set and no session, and finalize
-      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payments are the ones that closure counted. An inexact carry,
-      a drop, and any other closed, counting or missing session refuse.
+      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payments are the ones that closure counted. The Front desk
+      ruling of 2026-11-21: "After-close reopen only for the exact carry, and finalize refuses
+      AFTER_CLOSE_PAYMENTS_CHANGED unless payments match the refused order's in count, method and amount. An inexact
+      carry or a drop after close stays refused (session_closed); it goes to the Needs-attention row for a manager,
+      never a silent uncounted payment." and "a closed session whose closure does NOT list the order still refuses
+      session_closed". So after close an inexact carry, a drop, a draft parked while the session was open, and a
+      successor already counted (`countedInClosureOf`) refused again all refuse `session_closed`, as do a counting or
+      missing session; `stampSession` leaves a counted successor in no session.
       - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
         attention must not be a dead end: today's drop reopen stays available there as an explicit, labelled choice
         that shows the amount still to collect ("Reopen without the coupon: 2.00 to collect"). Never automatic, never

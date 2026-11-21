@@ -11,7 +11,7 @@ import type { Order } from '../order/types';
 import { ensureRegister } from '../register/register-document';
 import { closureSchema, registerSessionCreator } from '../register/schemas';
 import {
-  closeSession, openSession, startCounting, writeClosure, type ClosureCollection, type RegisterSessionCollection,
+  closeSession, openSession, stampSession, startCounting, writeClosure, type ClosureCollection, type RegisterSessionCollection,
 } from '../register/session-store';
 import type { TaxContext } from '../tax/types';
 import { toOrderCreateEnvelope } from './command';
@@ -51,14 +51,17 @@ function build(coupons = true): Order {
   return builder.getSnapshot();
 }
 
-/** A refused sale stamped into a session, then that session's state as `state` gives it. */
-async function refusedIn(state: 'listed' | 'unlisted' | 'no-closure' | 'counting', coupons = true) {
-  const session = await openSession(db.register_sessions, {
-    registerId, storeKey: 'store', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7', businessDay: { year: 2026, month: 11, day: 21 },
-  });
+const open = () => openSession(db.register_sessions, {
+  registerId, storeKey: 'store', expectedFloatMinor: 0, countedFloatMinor: 0, openedBy: '7', businessDay: { year: 2026, month: 11, day: 21 },
+});
+/** A refused sale stamped into a session, `whileOpen` run on it, then that session's state as `state` gives it. */
+async function refusedIn(state: 'listed' | 'unlisted' | 'no-closure' | 'counting', coupons = true,
+  whileOpen?: (order: PosOrder) => Promise<unknown>) {
+  const session = await open();
   const order: PosOrder = { ...finalizeOrder(build(coupons), { capabilities, registerId, now: new Date('2026-11-21T10:00:00.000Z') }),
     sessionId: session.id, syncStatus: 'rejected', error: { code: coupons ? 'coupon_invalid' : 'total_mismatch', message: 'x' } };
   await db.pos_orders.insert(order);
+  await whileOpen?.(order);
   if (state === 'counting') {
     await startCounting(db.register_sessions, session.id);
     return { order, sessionId: session.id };
@@ -158,9 +161,49 @@ describe('reopenRefusedOrder after close', () => {
     });
   });
 
-  it('E5f closed and listed, an inexact carry refuses coupon_carry_inexact and writes nothing', async () => {
+  it('E5f closed and listed, an inexact carry refuses session_closed and writes nothing', async () => {
     const { order } = await refusedIn('listed');
-    await expectRefused(order, 'coupon_carry_inexact', reopenRefusedOrder(order.id, deps({ orderCreate: 3 })));
+    await expectRefused(order, 'session_closed', reopenRefusedOrder(order.id, deps({ orderCreate: 3 })));
+  });
+
+  describe('a draft parked while the session was open refuses session_closed after close, unchanged', () => {
+    it.each([
+      ['B3a a drop draft', { withoutCoupons: true } as const], ['B3b a carried draft', undefined],
+    ])('%s', async (_name, options) => {
+      const { order } = await refusedIn('listed', true, (refused) => reopenRefusedOrder(refused.id, deps(), options));
+      const before = await draft(order.id);
+      expect(before.afterClose).toBeUndefined();
+      await expect(reopenRefusedOrder(order.id, deps())).rejects.toMatchObject({ reason: 'session_closed' });
+      expect(await draft(order.id)).toEqual(before);
+      expect(await db.order_drafts.count().exec()).toBe(1);
+    });
+  });
+
+  it('B3c a reopen after close run twice returns the same id, the draft still after close', async () => {
+    const { order, sessionId } = await refusedIn('listed');
+    expect(await reopenRefusedOrder(order.id, deps())).toBe(order.id);
+    expect(await reopenRefusedOrder(order.id, deps())).toBe(order.id);
+    expect((await draft(order.id)).afterClose?.sessionId).toBe(sessionId);
+  });
+
+  it('B3d a counted successor refused again refuses session_closed and writes no draft for it', async () => {
+    const { order } = await refusedIn('listed');
+    const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+    const successor: PosOrder = { ...finalizeOrder(restored(saved), { capabilities, now }),
+      syncStatus: 'rejected', error: { code: 'coupon_invalid', message: 'x' } };
+    await db.pos_orders.insert(successor);
+    await expect(reopenRefusedOrder(successor.id, deps())).rejects.toMatchObject({ reason: 'session_closed' });
+    expect(await db.order_drafts.findOne(successor.id).exec()).toBeNull();
+  });
+
+  it('B3e stampSession leaves a counted successor in no session, even with a session open', async () => {
+    const { order, sessionId } = await refusedIn('listed');
+    const successor = finalizeOrder(restored(await draft(await reopenRefusedOrder(order.id, deps()))), { capabilities, now });
+    const reopened = await open();
+    const stamped = await stampSession(successor, reopened.id, db.register_sessions);
+    expect(stamped).toEqual(successor);
+    expect(stamped).not.toHaveProperty('sessionId');
+    expect(stamped.countedInClosureOf).toBe(sessionId);
   });
 
   describe('E5g finalize keeps the payments the closure counted', () => {

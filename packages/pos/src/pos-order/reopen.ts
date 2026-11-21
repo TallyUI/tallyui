@@ -60,20 +60,24 @@ export async function reopenRefusedOrder(orderId: string, deps: {
   if (!REOPENABLE_CODES.includes(order.error?.code ?? '')) throw new ReopenRefusedOrderError(orderId, 'code_not_reopenable');
   const successors = await readFresh(deps.orders, { selector: { saleId: orderId } });
   if (successors.some((successor) => successor.id !== orderId)) throw new ReopenRefusedOrderError(orderId, 'already_replaced');
+  // A successor already counted in a frozen closure: a manager settles it in Needs attention (ADR-077).
+  if (order.countedInClosureOf !== undefined) throw new ReopenRefusedOrderError(orderId, 'session_closed');
   let afterClose: Order['afterClose'];
   if (order.sessionId) {
     const session = await readSession(deps.sessions, order.sessionId);
     // Its closure counted this sale's money: only the exact carry may re-send it, outside every session.
     const counted = session?.status === 'closed' && !!order.coupons?.length && !options?.withoutCoupons && deps.closures
-      && !!(await deps.closures.findOne(session.id).exec())?.order_ids.includes(order.id);
+      && !!(await deps.closures.storageInstance.findDocumentsById([session.id], false))[0]?.order_ids.includes(order.id);
     if (counted) {
       afterClose = { sessionId: order.sessionId, createdAt: order.createdAt, ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
         payments: order.payments.map(({ method, amountMinor }) => ({ method, amountMinor })) };
     } else if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
   const existing = await deps.drafts.findOne(orderId).exec();
-  if (existing && options?.withoutCoupons
-    && (JSON.parse(String(existing.data)) as Order).coupons?.some((coupon) => coupon.carried)) {
+  const parked = existing ? JSON.parse(String(existing.data)) as Order : undefined;
+  // Parked while the session was open, its money is in the closed closure: it is not re-sent after close.
+  if (afterClose && parked && !parked.afterClose) throw new ReopenRefusedOrderError(orderId, 'session_closed');
+  if (parked && options?.withoutCoupons && parked.coupons?.some((coupon) => coupon.carried)) {
     throw new ReopenRefusedOrderError(orderId, 'carried_draft_exists');
   }
   if (!existing) {
@@ -140,7 +144,9 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     if (carry) {
       const coupons = order.coupons!;
       const toCollectMinor = Math.max(0, dropped.totalMinor - order.payments.reduce((sum, payment) => sum + payment.amountMinor, 0));
-      const inexact = () => new ReopenRefusedOrderError(orderId, 'coupon_carry_inexact', toCollectMinor);
+      // After close no drop is offered: an inexact carry stays refused for a manager (Front desk, 2026-11-21).
+      const inexact = () => afterClose ? new ReopenRefusedOrderError(orderId, 'session_closed')
+        : new ReopenRefusedOrderError(orderId, 'coupon_carry_inexact', toCollectMinor);
       const index = new Map(order.lines.map((line, i) => [line.id, i]));
       if ((deps.capabilities?.orderCreate ?? 1) < 4 || coupons.some((coupon) => !coupon.lines
         || coupon.lines.some(({ lineId }) => !index.has(lineId)))) throw inexact();
