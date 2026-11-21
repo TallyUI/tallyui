@@ -6,7 +6,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { couponPricingBasis, createOrderBuilder } from '../order/order-builder';
-import { orderDraftSchema, restoreOrderDraft } from '../order/order-drafts';
+import { orderDraftSchema, restoreOrderDraft, writeOrderDraft } from '../order/order-drafts';
 import type { Order } from '../order/types';
 import { ensureRegister } from '../register/register-document';
 import { closureSchema, registerSessionCreator } from '../register/schemas';
@@ -94,8 +94,8 @@ describe('reopenRefusedOrder after close', () => {
     const { order, sessionId } = await refusedIn('listed');
     const saved = await draft(await reopenRefusedOrder(order.id, deps()));
     expect(saved.afterClose).toEqual({ sessionId, createdAt: order.createdAt, registerId,
-      payments: order.payments.map(({ method, amountMinor }) => ({ method, amountMinor })) });
-    expect(saved.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual(saved.afterClose!.payments);
+      payments: order.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor })), taxMinor: order.taxMinor, fees: [], shipping: [] });
+    expect(saved.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor }))).toEqual(saved.afterClose!.payments);
     expect(saved.coupons?.[0].carried).toBe(true);
     expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBe(now.toISOString());
   });
@@ -225,26 +225,76 @@ describe('reopenRefusedOrder after close', () => {
       expect(finalizeOrder(saved, { capabilities, now }).totalMinor).toBe(saved.totalMinor);
     });
     async function feeDraft() {
+      return (await refusedFeeDraft()).saved;
+    }
+    async function refusedFeeDraft() {
       const { order } = await refusedIn('listed', true, undefined, true);
       expect(order.fees).toHaveLength(1);
-      return draft(await reopenRefusedOrder(order.id, deps()));
+      return { order, saved: await draft(await reopenRefusedOrder(order.id, deps())) };
     }
+    const legs = (o: { payments: ReadonlyArray<{ method: string; amountMinor: number }> }) => o.payments.map(({ method, amountMinor }) => ({ method, amountMinor }));
     it('B4a a removed fee, paid again in cash at the original amount, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
       const saved = await feeDraft();
       const builder = restoreOrderDraft(saved, { currency, taxContext });
       const before = builder.getSnapshot();
       builder.removeFee(before.fees![0].id);
       builder.removePayment(before.payments[0].id);
-      builder.addPayment({ method: 'cash', amountMinor: before.payments[0].amountMinor });
+      builder.addPayment({ id: before.payments[0].id, method: 'cash', amountMinor: before.payments[0].amountMinor });
       const changed = builder.getSnapshot();
       expect(changed.totalMinor).toBeLessThan(before.totalMinor);
-      expect(changed.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual(saved.afterClose!.payments);
+      expect(changed.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor }))).toEqual(saved.afterClose!.payments);
       expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
     });
     it('B4b the unchanged fee sale finalizes at the sum of the payments the closure counted', async () => {
       const saved = await feeDraft();
       const successor = finalizeOrder(restored(saved), { capabilities, now });
       expect(successor.totalMinor).toBe(saved.afterClose!.payments.reduce((sum, payment) => sum + payment.amountMinor, 0));
+    });
+    it('B6a the counted cash leg removed and a new cash leg of the same amount taken refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      const { order } = await refusedIn('listed');
+      const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+      const builder = restoreOrderDraft(saved, { currency, taxContext });
+      const before = builder.getSnapshot();
+      builder.removePayment(before.payments[0].id);
+      builder.addPayment({ method: 'cash', amountMinor: before.payments[0].amountMinor });
+      const changed = builder.getSnapshot();
+      expect(legs(changed)).toEqual(saved.afterClose!.payments.map(({ method, amountMinor }) => ({ method, amountMinor })));
+      expect(changed.totalMinor).toBe(order.totalMinor);
+      expect(changed.payments[0].id).not.toBe(saved.afterClose!.payments[0].id);
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
+    it('B6b the fee swapped for shipping of the same amount, the counted leg kept, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      const { order, saved } = await refusedFeeDraft();
+      const builder = restoreOrderDraft(saved, { currency, taxContext });
+      const before = builder.getSnapshot();
+      builder.removeFee(before.fees![0].id);
+      builder.addShipping({ name: 'Post', amountMinor: before.fees![0].amountMinor });
+      const changed = builder.getSnapshot();
+      expect(changed.fees ?? []).toHaveLength(0);
+      expect(changed.shipping).toHaveLength(1);
+      expect(changed.totalMinor).toBe(order.totalMinor);
+      expect(legs(changed)).toEqual(legs(order));
+      expect(changed.payments.map((payment) => payment.id)).toEqual(order.payments.map((payment) => payment.id));
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
+    it('B6c a changed tax, the total and the counted legs kept, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      // A restore recomputes taxMinor from the lines, and a different tax context moves the total too, so the snapshot is edited.
+      const { order, saved } = await refusedFeeDraft();
+      const snapshot = restored(saved);
+      const changed: Order = { ...snapshot, taxMinor: snapshot.taxMinor + 1 };
+      expect(changed.totalMinor).toBe(order.totalMinor);
+      expect(changed.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor }))).toEqual(saved.afterClose!.payments);
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
+    it('B6d the pinned leg ids survive park and resume, and the unchanged draft still finalizes', async () => {
+      const { order, saved } = await refusedFeeDraft();
+      expect(saved.afterClose!.payments.map((payment) => payment.id)).toEqual(saved.payments.map((payment) => payment.id));
+      expect(saved.afterClose!.payments.map((payment) => payment.id)).toEqual(order.payments.map((payment) => payment.id));
+      await writeOrderDraft(db.order_drafts, restored(saved));
+      const resumed = restored(await draft(order.id));
+      expect(resumed.afterClose).toEqual(saved.afterClose);
+      expect(resumed.payments.map((payment) => payment.id)).toEqual(saved.afterClose!.payments.map((payment) => payment.id));
+      expect(finalizeOrder(resumed, { capabilities, now }).totalMinor).toBe(order.totalMinor);
     });
   });
 });

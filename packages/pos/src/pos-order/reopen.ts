@@ -2,11 +2,12 @@ import type { ServerCapabilities } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import { couponPricingBasis, createOrderBuilder, type StorePricedCoupon } from '../order/order-builder';
 import { writeOrderDraft } from '../order/order-drafts';
-import type { ChargeLine, Order } from '../order/types';
+import type { Order } from '../order/types';
 import { readSession, type ClosureCollection, type RegisterSessionCollection } from '../register/session-store';
 import { readFresh } from '../rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from './command';
+import { sameCharges, sameTaxes } from './finalize';
 import type { PosOrder } from './types';
 
 export const REOPENABLE_CODES: readonly string[] = ['coupon_invalid', 'total_mismatch'];
@@ -19,11 +20,6 @@ export class ReopenRefusedOrderError extends Error {
   }
 }
 
-type TaxedRow = { taxLines: ReadonlyArray<{ code?: string; ratePpm: number; taxMicros: string }> };
-const sameTaxes = (a: TaxedRow, b: TaxedRow) => a.taxLines.length === b.taxLines.length
-  && a.taxLines.every((tax, i) => tax.code === b.taxLines[i].code && tax.ratePpm === b.taxLines[i].ratePpm && tax.taxMicros === b.taxLines[i].taxMicros);
-const sameCharges = (a: readonly ChargeLine[] = [], b: readonly ChargeLine[] = []) => a.length === b.length
-  && a.every((charge, i) => charge.totalMinor === b[i].totalMinor && sameTaxes(charge, b[i]));
 /** The carried draft has the stored order's figures exactly: every line, fee and shipping line, its total and its tax. */
 function sameFigures(draft: Order, order: PosOrder): boolean {
   return draft.couponPricesStale !== true && draft.lineItems.length === order.lines.length
@@ -70,12 +66,14 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       && !!(await deps.closures.storageInstance.findDocumentsById([session.id], false))[0]?.order_ids.includes(order.id);
     if (counted) {
       afterClose = { sessionId: order.sessionId, createdAt: order.createdAt, ...(order.registerId !== undefined ? { registerId: order.registerId } : {}),
-        payments: order.payments.map(({ method, amountMinor }) => ({ method, amountMinor })) };
+        payments: order.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor })), taxMinor: order.taxMinor,
+        fees: (order.fees ?? []).map(({ totalMinor, taxLines }) => ({ totalMinor, taxLines })),
+        shipping: (order.shipping ?? []).map(({ totalMinor, taxLines }) => ({ totalMinor, taxLines })) };
     } else if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
   const existing = await deps.drafts.findOne(orderId).exec();
   const parked = existing && (afterClose || options?.withoutCoupons) ? JSON.parse(String(existing.data)) as Order : undefined;
-  // Parked while the session was open, its money is in the closed closure: it is not re-sent after close.
+  // Parked while the session was open, its money is in the closed closure: reopen refuses it after close (resume is not gated).
   if (afterClose && parked && !parked.afterClose) throw new ReopenRefusedOrderError(orderId, 'session_closed');
   if (parked && options?.withoutCoupons && parked.coupons?.some((coupon) => coupon.carried)) {
     throw new ReopenRefusedOrderError(orderId, 'carried_draft_exists');
@@ -126,7 +124,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       ...(shipping.methodId !== undefined ? { methodId: shipping.methodId } : {}),
     });
     for (const payment of order.payments) builder.addPayment({
-      method: payment.method, amountMinor: payment.amountMinor,
+      // After close each leg keeps the refused order's id, so finalize knows it for the leg that closure counted.
+      ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor,
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
