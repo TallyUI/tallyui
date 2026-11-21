@@ -310,6 +310,7 @@ describe('ProductTable row extras', () => {
       expect(onToggleExpand).toHaveBeenCalledExactlyOnceWith(tee);
       rerender(view({ onToggleExpand, expanded: true }));
       expect(screen.getByTestId('product-row-expanded-tee')).toBeTruthy();
+      expect(screen.getByTestId('product-row-expanded-tee').style.paddingLeft).toBe('0px');
     }, 20_000);
 
     it('V5: a product with 1 variant gets no button', () => {

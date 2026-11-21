@@ -208,7 +208,7 @@ export function ProductTable({
                       <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
                         className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}
                         {cell === 0 && expandable && variationsButton ? <Pressable accessibilityRole="button" aria-expanded={expanded}
-                          testID={'product-row-variations-' + key} className="mt-0.5 flex-row items-center gap-1"
+                          testID={'product-row-variations-' + key} className="mt-0.5 self-start flex-row items-center gap-1"
                           onPress={(event) => { event.stopPropagation?.(); onToggleExpand!(item); }}>
                           <View className="text-muted-foreground">{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}</View>
                           <Text className="text-xs text-muted-foreground">{`${variantCount} variations`}</Text>
