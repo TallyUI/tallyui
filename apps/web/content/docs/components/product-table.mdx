@@ -47,8 +47,9 @@ Press a sortable header to cycle through ascending, descending and no sort. The 
 | `showAddButton` | `boolean` | `false` | Ends each row with v2's add control, which calls `onSelect(item)` as a row press does: a + labelled “Add to cart”, or a > labelled “Variations” for a product with more than one variant; needs `onSelect` |
 | `cartQuantity` | `(doc: any) => number` | no count | How many of the product the cart holds; in the add column a count above 0 shows in place of the +, labelled “In cart: N”, and pressing it calls `onSelect` |
 | `isExpanded` | `(doc: any) => boolean` | — | Whether a row's expanded block shows; pass a new function when it changes |
-| `onToggleExpand` | `(doc: any) => void` | — | With `renderExpanded` and `showThumbnail`, a product with more than one variant has its thumbnail toggle its block (a “Show variations” button with `aria-expanded`); a press calls this, not `onSelect` |
-| `renderExpanded` | `(doc: any) => ReactNode` | — | Drawn under an expanded row, indented by the thumbnail column |
+| `onToggleExpand` | `(doc: any) => void` | — | With `renderExpanded` and `showThumbnail` (or `variationsButton`), a product with more than one variant has its thumbnail toggle its block (a “Show variations” button with `aria-expanded`); a press calls this, not `onSelect` |
+| `renderExpanded` | `(doc: any) => ReactNode` | — | Drawn under an expanded row, indented by the thumbnail column when it shows |
+| `variationsButton` | `boolean` | `false` | v2's “`count` variations” button, with a chevron and `aria-expanded`, under the first cell of a product with more than one variant; a press calls `onToggleExpand`, never `onSelect`, and the row expands without `showThumbnail`; needs `onToggleExpand` and `renderExpanded` |
 | `className` | `string` | — | Override container styles |
 
 Other `ViewProps` are forwarded to the container.

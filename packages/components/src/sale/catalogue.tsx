@@ -167,8 +167,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** v2's table row extras in table view: thumbnail leads the row, addButton ends it with the + (> for a product
    * with variants) that does what a row press does. With expand and thumbnail, a product with more than one variant
    * has its thumbnail show or hide its variants as rows under it: option chips, price, stock and a + that adds that
-   * variant as the list chooser does. Default: none. */
-  tableRow?: { thumbnail?: boolean; addButton?: boolean; expand?: boolean };
+   * variant as the list chooser does; variationsButton adds v2's '{count} variations' button under the name, which shows
+   * or hides the variants as expand does; it needs expand. Default: none. */
+  tableRow?: { thumbnail?: boolean; addButton?: boolean; expand?: boolean; variationsButton?: boolean };
   /** v2's rows between the chips and the products (its ListColumn `rows`): notices such as "Price check only until
    * the register is open.", rendered under the header and above the grid, table or category tiles. Default none. */
   rowsSlot?: ReactNode;
@@ -534,7 +535,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             if (next.has(key)) next.delete(key); else next.add(key);
             return next;
           }) : undefined}
-          renderExpanded={tableRow?.expand ? variantRows : undefined}
+          renderExpanded={tableRow?.expand ? variantRows : undefined} variationsButton={tableRow?.variationsButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : drillEntries.length > 0 ? <LevelWrap level onBack={() => setDrillId(null)}>
         {/* v2 drill-in.tsx:44-68: "Products › name" above the variant tiles; at phone width the Breadcrumb drops the separator. */}

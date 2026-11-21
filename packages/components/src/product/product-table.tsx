@@ -4,7 +4,7 @@ import { useProductTraits, useTraitContext, useStockOverlaid, type ProductTraits
 import { productSortValue, sortProducts, type ProductSort, type ProductSortValue } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Text, VStack, IconButton, PlusIcon, ChevronRightIcon,
-  Skeleton, skeletonCount } from '../ui';
+  ChevronDownIcon, Skeleton, skeletonCount } from '../ui';
 import { MinTargetBand } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
 import { ProductImage } from './product-image';
@@ -88,8 +88,12 @@ export interface ProductTableProps extends Omit<ViewProps, 'children'> {
   /** With renderExpanded and showThumbnail, a product with more than one variant has its thumbnail toggle its
    * expanded block: a button labelled "Show variations" with aria-expanded. A press calls this, never onSelect. */
   onToggleExpand?: (doc: ProductTableRowDoc) => void;
-  /** The block drawn under an expanded row (e.g. its variant rows), indented by the thumbnail column. */
+  /** The block drawn under an expanded row (e.g. its variant rows), indented by the thumbnail column when it shows. */
   renderExpanded?: (doc: ProductTableRowDoc) => ReactNode;
+  /** v2's "{count} variations" button under the first cell's content, with a chevron and aria-expanded, on a product
+   * with more than one variant. A press calls onToggleExpand, never onSelect; needs onToggleExpand and renderExpanded,
+   * and makes such rows expandable without showThumbnail. Default false. */
+  variationsButton?: boolean;
   /** With no items, draw the header and skeleton rows instead of emptyState, as WCPOS v2's DataTableSkeleton. */
   loading?: boolean;
   className?: string;
@@ -121,7 +125,7 @@ export function useDefaultProductColumns(options?: { currencySymbol?: string }):
 export function ProductTable({
   items, columns, sort, defaultSort = null, onSortChange, sortItems = true, onSelect,
   searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, showThumbnail = false,
-  showAddButton = false, cartQuantity, isExpanded, onToggleExpand, renderExpanded, loading = false, className, ...viewProps
+  showAddButton = false, cartQuantity, isExpanded, onToggleExpand, renderExpanded, variationsButton = false, loading = false, className, ...viewProps
 }: ProductTableProps): JSX.Element {
   // Without a ConnectorProvider, custom columns can render without traits.
   let traits: ReturnType<typeof useProductTraits> | undefined;
@@ -190,7 +194,8 @@ export function ProductTable({
                 const key = String(item.id ?? index);
                 const variations = addButton && traits !== undefined && traits.getVariantCount(item) > 1;
                 const count = addButton && !variations ? cartQuantity?.(item) ?? 0 : 0;
-                const expandable = thumbnail && onToggleExpand !== undefined && renderExpanded !== undefined && traits!.getVariantCount(item) > 1;
+                const variantCount = traits?.getVariantCount(item) ?? 0;
+                const expandable = (thumbnail || variationsButton) && onToggleExpand !== undefined && renderExpanded !== undefined && variantCount > 1;
                 const expanded = expandable && (isExpanded?.(item) ?? false);
                 const row = (
                   <TableRow testID={onSelect ? undefined : 'product-row-' + key}>
@@ -199,9 +204,15 @@ export function ProductTable({
                         testID={'product-row-expand-' + key} onPress={(event) => { event.stopPropagation?.(); onToggleExpand!(item); }}>
                         <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" /></Pressable> :
                       <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" />}</TableCell> : null}
-                    {resolvedColumns.map((column) => (
+                    {resolvedColumns.map((column, cell) => (
                       <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
-                        className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}</TableCell>
+                        className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}
+                        {cell === 0 && expandable && variationsButton ? <Pressable accessibilityRole="button" aria-expanded={expanded}
+                          testID={'product-row-variations-' + key} className="mt-0.5 self-start flex-row items-center gap-1"
+                          onPress={(event) => { event.stopPropagation?.(); onToggleExpand!(item); }}>
+                          <View className="text-muted-foreground">{expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}</View>
+                          <Text className="text-xs text-muted-foreground">{`${variantCount} variations`}</Text>
+                        </Pressable> : null}</TableCell>
                     ))}
                     {addButton ? (
                       <TableCell style={{ width: ACTION_WIDTH }} className="flex-none items-center justify-center px-0 py-1.5">
@@ -222,7 +233,7 @@ export function ProductTable({
                     {row}
                   </Pressable>
                 ) : row}
-                  {expanded ? <View testID={'product-row-expanded-' + key} style={{ paddingLeft: thumb + CELL_PAD_X }}
+                  {expanded ? <View testID={'product-row-expanded-' + key} style={{ paddingLeft: thumbnail ? thumb + CELL_PAD_X : 0 }}
                     className="border-b border-border">{renderExpanded!(item)}</View> : null}
                 </>;
               }}

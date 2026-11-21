@@ -264,6 +264,60 @@ describe('ProductTable row extras', () => {
     expect(screen.queryAllByTestId(/^product-row-expand/)).toHaveLength(0);
     expect(screen.queryByText('Body')).toBeNull();
   });
+
+  describe('variationsButton', () => {
+    const tee = { ...hoodie, id: 'tee', title: 'Tee', variants: ['S', 'M', 'L'].map((size) => ({ ...hoodie.variants[0], id: 'tee-' + size })) };
+    const view = (props: Partial<ProductTableProps> & { expanded?: boolean } = {}) => {
+      const { expanded = false, ...rest } = props;
+      return <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+        <ProductTable items={[tee]} variationsButton onToggleExpand={vi.fn()} isExpanded={() => expanded}
+          renderExpanded={() => <Text testID="tee-variants">Variants</Text>} {...rest} />
+      </ConnectorProvider>;
+    };
+
+    it('V1: a product with 3 variants shows "3 variations", collapsed', () => {
+      render(view({ showThumbnail: true }));
+      const button = screen.getByTestId('product-row-variations-tee');
+      expect(button.textContent).toBe('3 variations');
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+    }, 20_000);
+
+    it('V2: a press toggles expansion, never selects, and reflects aria-expanded', () => {
+      const onSelect = vi.fn(), onToggleExpand = vi.fn();
+      const { rerender } = render(view({ showThumbnail: true, onSelect, onToggleExpand }));
+      fireEvent.click(screen.getByTestId('product-row-variations-tee'));
+      expect(onToggleExpand).toHaveBeenCalledExactlyOnceWith(tee);
+      expect(onSelect).not.toHaveBeenCalled();
+      rerender(view({ showThumbnail: true, onSelect, onToggleExpand, expanded: true }));
+      expect(screen.getByTestId('product-row-variations-tee').getAttribute('aria-expanded')).toBe('true');
+      expect(within(screen.getByTestId('product-row-expanded-tee')).getByTestId('tee-variants')).toBeTruthy();
+    }, 20_000);
+
+    it('V3: off by default, the row stays as it is', () => {
+      render(view({ showThumbnail: true, variationsButton: undefined, onSelect: vi.fn() }));
+      expect(screen.queryAllByTestId(/^product-row-variations-/)).toHaveLength(0);
+      const cells = within(screen.getByTestId('product-row-tee')).getAllByRole('cell');
+      expect(cells).toHaveLength(7);
+      expect(cells[1].textContent).toBe('Tee');
+      expect(screen.getByTestId('product-row-expand-tee')).toBeTruthy();
+    }, 20_000);
+
+    it('V4: without showThumbnail the button shows and expands the row', () => {
+      const onToggleExpand = vi.fn();
+      const { rerender } = render(view({ onToggleExpand }));
+      expect(screen.queryByTestId('product-row-expand-tee')).toBeNull();
+      fireEvent.click(screen.getByTestId('product-row-variations-tee'));
+      expect(onToggleExpand).toHaveBeenCalledExactlyOnceWith(tee);
+      rerender(view({ onToggleExpand, expanded: true }));
+      expect(screen.getByTestId('product-row-expanded-tee')).toBeTruthy();
+      expect(screen.getByTestId('product-row-expanded-tee').style.paddingLeft).toBe('0px');
+    }, 20_000);
+
+    it('V5: a product with 1 variant gets no button', () => {
+      render(view({ items: [{ ...tee, variants: tee.variants.slice(0, 1) }] }));
+      expect(screen.queryAllByTestId(/^product-row-variations-/)).toHaveLength(0);
+    });
+  });
 });
 
 describe('ProductTable loading', () => {

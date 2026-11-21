@@ -70,3 +70,13 @@ it("C4: a subrow + takes the chooser's path for local Any options", () => {
   expect(onSelect).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Choose options')).toBeTruthy();
 });
+
+it('V6: variationsButton without a thumbnail shows and expands the variant rows', () => {
+  const onSelect = vi.fn();
+  render(<Catalogue products={[tee]} traits={wooProductTraits} currency="EUR" onSelect={onSelect} lastSyncedAt={null}
+    defaultViewState={{ view: 'table' }} tableRow={{ expand: true, variationsButton: true }} />, { wrapper });
+  expect(screen.queryByTestId('product-row-expand-80')).toBeNull();
+  press('product-row-variations-80');
+  for (const id of ['81', '82', '83']) expect(screen.getByTestId(`variation-row-${id}`)).toBeTruthy();
+  expect(onSelect).not.toHaveBeenCalled();
+});
