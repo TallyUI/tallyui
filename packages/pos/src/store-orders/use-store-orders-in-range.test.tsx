@@ -297,4 +297,25 @@ describe('stalled read', () => {
     expect(result.current.unreadable).toBe(1);
     expect(listOrders).toHaveBeenCalledTimes(3);
   });
+
+  it('T4 completes when the last page adds nothing new', async () => {
+    const empty = fakeConnector(Promise.resolve({ orders: [], hasMore: false, total: 0 }));
+    const first = renderHook(() => useStoreOrdersInRange(empty.connector, context, query));
+    await waitFor(() => expect(first.result.current.complete).toBe(true));
+
+    expect(first.result.current.error).toBeNull();
+    expect(first.result.current.orders).toEqual([]);
+    expect(empty.listOrders).toHaveBeenCalledTimes(1);
+
+    const repeat = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [A], hasMore: false }),
+    );
+    const second = renderHook(() => useStoreOrdersInRange(repeat.connector, context, query));
+    await waitFor(() => expect(second.result.current.complete).toBe(true));
+
+    expect(second.result.current.error).toBeNull();
+    expect(ids(second.result.current.orders)).toEqual(['A']);
+    expect(repeat.listOrders).toHaveBeenCalledTimes(2);
+  });
 });
