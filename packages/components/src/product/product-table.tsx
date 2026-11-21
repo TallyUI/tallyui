@@ -52,6 +52,8 @@ export interface ProductTableColumn<Doc = any> {
   flex?: number;
 }
 
+/** A row's doc: an item of `items` (the table is not generic, so this is that item's type). */
+type ProductTableRowDoc = ProductTableProps['items'][number];
 export interface ProductTableProps extends Omit<ViewProps, 'children'> {
   items: any[];
   /** Default: trait columns with a ConnectorProvider, else none. */
@@ -80,6 +82,14 @@ export interface ProductTableProps extends Omit<ViewProps, 'children'> {
    * (showAddButton), a count above 0 shows in place of the +, labelled "In cart: N", and pressing it calls onSelect
    * as the + does; a product with variants keeps its >. Default: no count. */
   cartQuantity?: (doc: any) => number;
+  /** v2's expanding variable row: whether the row's expanded block shows. Used only with onToggleExpand and
+   * renderExpanded. Pass a new function when the expanded set changes (an inline arrow does). */
+  isExpanded?: (doc: ProductTableRowDoc) => boolean;
+  /** With renderExpanded and showThumbnail, a product with more than one variant has its thumbnail toggle its
+   * expanded block: a button labelled "Show variations" with aria-expanded. A press calls this, never onSelect. */
+  onToggleExpand?: (doc: ProductTableRowDoc) => void;
+  /** The block drawn under an expanded row (e.g. its variant rows), indented by the thumbnail column. */
+  renderExpanded?: (doc: ProductTableRowDoc) => ReactNode;
   /** With no items, draw the header and skeleton rows instead of emptyState, as WCPOS v2's DataTableSkeleton. */
   loading?: boolean;
   className?: string;
@@ -111,7 +121,7 @@ export function useDefaultProductColumns(options?: { currencySymbol?: string }):
 export function ProductTable({
   items, columns, sort, defaultSort = null, onSortChange, sortItems = true, onSelect,
   searchSlot, filterSlot, emptyState, showUnsellable = false, currencySymbol, showThumbnail = false,
-  showAddButton = false, cartQuantity, loading = false, className, ...viewProps
+  showAddButton = false, cartQuantity, isExpanded, onToggleExpand, renderExpanded, loading = false, className, ...viewProps
 }: ProductTableProps): JSX.Element {
   // Without a ConnectorProvider, custom columns can render without traits.
   let traits: ReturnType<typeof useProductTraits> | undefined;
@@ -171,6 +181,7 @@ export function ProductTable({
           {rows.length ? <TableBody className="flex-1">
             <FlatList
               data={rows}
+              extraData={isExpanded}
               keyExtractor={(item, index) => String(item.id ?? index)}
               initialNumToRender={INITIAL_ROWS}
               maxToRenderPerBatch={BATCH_ROWS}
@@ -179,10 +190,15 @@ export function ProductTable({
                 const key = String(item.id ?? index);
                 const variations = addButton && traits !== undefined && traits.getVariantCount(item) > 1;
                 const count = addButton && !variations ? cartQuantity?.(item) ?? 0 : 0;
+                const expandable = thumbnail && onToggleExpand !== undefined && renderExpanded !== undefined && traits!.getVariantCount(item) > 1;
+                const expanded = expandable && (isExpanded?.(item) ?? false);
                 const row = (
                   <TableRow testID={onSelect ? undefined : 'product-row-' + key}>
                     {thumbnail ? <TableCell style={{ width: thumb + CELL_PAD_X }} className="flex-none px-3 py-1.5">
-                      <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" /></TableCell> : null}
+                      {expandable ? <Pressable accessibilityRole="button" accessibilityLabel="Show variations" aria-expanded={expanded}
+                        testID={'product-row-expand-' + key} onPress={(event) => { event.stopPropagation?.(); onToggleExpand!(item); }}>
+                        <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" /></Pressable> :
+                      <ProductImage doc={item} size={thumb} showPlaceholder className="rounded-md" />}</TableCell> : null}
                     {resolvedColumns.map((column) => (
                       <TableCell key={column.id} style={{ flex: column.flex ?? 1 }}
                         className={cn('px-3 py-1.5', column.align && ALIGN[column.align])}>{column.render(item)}</TableCell>
@@ -201,11 +217,14 @@ export function ProductTable({
                     ) : null}
                   </TableRow>
                 );
-                return onSelect ? (
+                return <>{onSelect ? (
                   <Pressable accessibilityRole={addButton ? undefined : 'button'} testID={'product-row-' + key} onPress={() => onSelect(item)}>
                     {row}
                   </Pressable>
-                ) : row;
+                ) : row}
+                  {expanded ? <View testID={'product-row-expanded-' + key} style={{ paddingLeft: thumb + CELL_PAD_X }}
+                    className="border-b border-border">{renderExpanded!(item)}</View> : null}
+                </>;
               }}
             />
           </TableBody> : (

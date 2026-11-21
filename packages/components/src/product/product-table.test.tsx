@@ -218,6 +218,52 @@ describe('ProductTable row extras', () => {
     render(table({ onSelect: vi.fn(), cartQuantity: () => 3 }));
     expect(screen.queryAllByTestId(/^product-row-in-cart-/)).toHaveLength(0);
   });
+
+  it('T1: expansion is off without the props or without thumbnails', () => {
+    const { rerender } = render(
+      <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+        <ProductTable items={[hoodie]} showThumbnail onSelect={vi.fn()} />
+      </ConnectorProvider>,
+    );
+    expect(screen.queryByTestId('product-row-expand-hoodie')).toBeNull();
+    expect(screen.queryByTestId('product-row-expanded-hoodie')).toBeNull();
+    const cell = within(screen.getByTestId('product-row-hoodie')).getAllByRole('cell')[0];
+    expect(within(cell).queryByRole('button')).toBeNull();
+    rerender(<ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+      <ProductTable items={[hoodie]} onSelect={vi.fn()} isExpanded={() => true} onToggleExpand={vi.fn()}
+        renderExpanded={() => <Text>Variants</Text>} />
+    </ConnectorProvider>);
+    expect(screen.queryByTestId('product-row-expand-hoodie')).toBeNull();
+    expect(screen.queryByTestId('product-row-expanded-hoodie')).toBeNull();
+  }, 20_000);
+
+  it('T2: the thumbnail toggles expansion without selecting the product', () => {
+    const onSelect = vi.fn(), onToggleExpand = vi.fn();
+    const view = (expanded: boolean) => <ConnectorProvider connector={medusaConnector} traitContext={{ currency: 'EUR' }}>
+      <ProductTable items={[hoodie]} showThumbnail onSelect={onSelect} onToggleExpand={onToggleExpand}
+        isExpanded={() => expanded} renderExpanded={() => <Text testID="hoodie-variants">Variants</Text>} />
+    </ConnectorProvider>;
+    const { rerender } = render(view(false));
+    const toggle = screen.getByTestId('product-row-expand-hoodie');
+    expect(toggle.getAttribute('aria-label')).toBe('Show variations');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('product-row-expanded-hoodie')).toBeNull();
+    fireEvent.click(toggle);
+    expect(onToggleExpand).toHaveBeenCalledExactlyOnceWith(hoodie);
+    expect(onSelect).not.toHaveBeenCalled();
+    rerender(view(true));
+    expect(screen.getByTestId('product-row-expand-hoodie').getAttribute('aria-expanded')).toBe('true');
+    expect(within(screen.getByTestId('product-row-expanded-hoodie')).getByTestId('hoodie-variants')).toBeTruthy();
+    rerender(view(false));
+    expect(screen.queryByTestId('product-row-expanded-hoodie')).toBeNull();
+  }, 20_000);
+
+  it('T3: a simple product gets no toggle or expanded block', () => {
+    render(table({ items, showThumbnail: true, onSelect: vi.fn(), isExpanded: () => true,
+      onToggleExpand: vi.fn(), renderExpanded: () => <Text>Body</Text> }));
+    expect(screen.queryAllByTestId(/^product-row-expand/)).toHaveLength(0);
+    expect(screen.queryByText('Body')).toBeNull();
+  });
 });
 
 describe('ProductTable loading', () => {
