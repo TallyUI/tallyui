@@ -253,3 +253,69 @@ describe('useStoreOrdersInRange', () => {
     expect(listOrders).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('stalled read', () => {
+  const STALLED = 'listOrders answered hasMore: true with a page that added no new order';
+
+  it('T1 ends with an error when a hasMore page repeats only seen orders', async () => {
+    const { listOrders, connector } = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true, total: 3 }),
+      Promise.resolve({ orders: [A], hasMore: true }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+
+    expect((result.current.error as Error).message).toBe(STALLED);
+    expect(result.current.progress).toBeNull();
+    expect(result.current.complete).toBe(false);
+    expect(ids(result.current.orders)).toEqual(['A']);
+    expect(listOrders).toHaveBeenCalledTimes(2);
+    await act(async () => {});
+    expect(listOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('T2 ends with an error when the first page is empty and says hasMore', async () => {
+    const { listOrders, connector } = fakeConnector(Promise.resolve({ orders: [], hasMore: true }));
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+
+    expect((result.current.error as Error).message).toBe(STALLED);
+    await act(async () => {});
+    expect(listOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it('T3 carries on when a repeat page has unreadable rows', async () => {
+    const { listOrders, connector } = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [A], unreadable: 1, hasMore: true }),
+      Promise.resolve({ orders: [B], hasMore: false }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.complete).toBe(true));
+
+    expect(ids(result.current.orders)).toEqual(['A', 'B']);
+    expect(result.current.unreadable).toBe(1);
+    expect(listOrders).toHaveBeenCalledTimes(3);
+  });
+
+  it('T4 completes when the last page adds nothing new', async () => {
+    const empty = fakeConnector(Promise.resolve({ orders: [], hasMore: false, total: 0 }));
+    const first = renderHook(() => useStoreOrdersInRange(empty.connector, context, query));
+    await waitFor(() => expect(first.result.current.complete).toBe(true));
+
+    expect(first.result.current.error).toBeNull();
+    expect(first.result.current.orders).toEqual([]);
+    expect(empty.listOrders).toHaveBeenCalledTimes(1);
+
+    const repeat = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [A], hasMore: false }),
+    );
+    const second = renderHook(() => useStoreOrdersInRange(repeat.connector, context, query));
+    await waitFor(() => expect(second.result.current.complete).toBe(true));
+
+    expect(second.result.current.error).toBeNull();
+    expect(ids(second.result.current.orders)).toEqual(['A']);
+    expect(repeat.listOrders).toHaveBeenCalledTimes(2);
+  });
+});

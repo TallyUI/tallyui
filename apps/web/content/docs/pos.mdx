@@ -335,6 +335,8 @@ function OrdersToday() {
 }
 ```
 
+Keep `connector` and `context` the same objects across renders, from state, a ref or `useMemo`: a new object restarts the read. A page that says there is more but adds no new order ends the read with an error, so a store that repeats itself cannot page forever.
+
 ## Repositories
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
