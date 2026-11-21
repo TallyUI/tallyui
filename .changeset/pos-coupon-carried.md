@@ -7,3 +7,4 @@ A carried sale parks and resumes with its figures, refuses coupon changes with C
 `reopenRefusedOrder` carries a refused sale's coupons at the amounts charged, refuses with `coupon_carry_inexact` and `toCollectMinor` when it cannot, and takes `{ withoutCoupons: true }` as the explicit drop.
 Receipts show a carried coupon as a row on each line it priced, labelled `coupon <code> not accepted at send`.
 `isCarriedCouponLabel` tells whether a receipt row is a carried coupon's label.
+A refused coupon sale in a store whose prices include tax carries the exact amount each line was charged. `{ withoutCoupons: true }` refuses `carried_draft_exists` when a carried draft is already parked.

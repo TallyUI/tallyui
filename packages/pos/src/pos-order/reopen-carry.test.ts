@@ -202,4 +202,56 @@ describe('reopenRefusedOrder carries store-priced coupons at the amounts charged
     expect(saved.totalMinor - order.totalMinor).toBe(effect(fixture));
     expect(effect(fixture)).toBeGreaterThan(0);
   });
+
+  it.each([false, true])('G1 two lines priced 0.70 each carry exactly, even on an inclusive tie: inclusive = %s', async (pricesIncludeTax) => {
+    const fixture: Fixture = { ...equalLines(pricesIncludeTax), codes: { save: [[0, 70], [1, 70]] } }, order = stored(fixture);
+    if (pricesIncludeTax) expect(order.coupons![0].lines!.map((l) => l.discountMinor + l.discountTaxMinor)).toEqual([71, 69]);
+    await db.pos_orders.insert(order);
+    const saved = await draft(await reopenRefusedOrder(order.id, deps(fixture.context)));
+    expectSameFigures(saved, order);
+    expect(saved.coupons![0].lines!.map((l) => l.amountMinor)).toEqual([70, 70]);
+  });
+
+  it('G2 a coupon share naming a line the order does not hold refuses with the amount still to collect', async () => {
+    const fixture = oneLine(false), order = stored(fixture);
+    order.coupons![0].lines![0].lineId = 'no-such-line';
+    await db.pos_orders.insert(order);
+    await expectInexact(order, fixture.context, undefined, effect(fixture));
+  });
+
+  it('G3 withoutCoupons against a parked carried draft refuses and changes nothing', async () => {
+    const fixture = oneLine(false), order = stored(fixture);
+    await db.pos_orders.insert(order);
+    await reopenRefusedOrder(order.id, deps(fixture.context));
+    const data = (await db.order_drafts.findOne(order.id).exec())!.data;
+    const reopenedAt = (await db.pos_orders.findOne(order.id).exec())!.reopenedAt;
+    expect(JSON.parse(data).coupons[0].carried).toBe(true);
+    const refused = reopenRefusedOrder(order.id, deps(fixture.context), { withoutCoupons: true });
+    await expect(refused).rejects.toBeInstanceOf(ReopenRefusedOrderError);
+    await expect(refused).rejects.toMatchObject({ reason: 'carried_draft_exists' });
+    expect((await db.order_drafts.findOne(order.id).exec())!.data).toBe(data);
+    expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBe(reopenedAt);
+  });
+
+  it('G4 withoutCoupons twice returns the dropped draft unchanged', async () => {
+    const fixture = oneLine(false), order = stored(fixture);
+    await db.pos_orders.insert(order);
+    expect(await reopenRefusedOrder(order.id, deps(fixture.context), { withoutCoupons: true })).toBe(order.id);
+    const data = (await db.order_drafts.findOne(order.id).exec())!.data;
+    expect(await reopenRefusedOrder(order.id, deps(fixture.context), { withoutCoupons: true })).toBe(order.id);
+    expect((await db.order_drafts.findOne(order.id).exec())!.data).toBe(data);
+    expect((await draft(order.id)).coupons).toBeUndefined();
+  });
+
+  it('G5 the dropped draft is the rebuild whose amount to collect the refusal previewed', async () => {
+    const fixture = equalLines(false), order = stored(fixture), below = deps(fixture.context, { orderCreate: 3 });
+    await db.pos_orders.insert(order);
+    const error = await reopenRefusedOrder(order.id, below).catch((e: unknown) => e);
+    expect(error).toMatchObject({ reason: 'coupon_carry_inexact' });
+    const { toCollectMinor } = error as ReopenRefusedOrderError;
+    expect(toCollectMinor).toBeGreaterThan(0);
+    const saved = await draft(await reopenRefusedOrder(order.id, below, { withoutCoupons: true }));
+    expect(saved.lineItems).toHaveLength(2);
+    expect(saved.totalMinor - saved.payments.reduce((sum, p) => sum + p.amountMinor, 0)).toBe(toCollectMinor);
+  });
 });

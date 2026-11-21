@@ -5035,17 +5035,21 @@ interface OrderCreatePayload {
       step and sent as line discounts with no code; a sale whose session has closed and counted it is re-sent with its
       original time and register and no session (so no late-sale correction counts it twice), marked locally as
       counted in that closure, and the frozen closure is never altered." For a coupon sale this supersedes Q-d4b-2's
-      "the cashier collects the difference" and Q-d4b-3's "no coupons", and, for a closure that counted the order,
-      Q-d4b-5.
+      "the cashier collects the difference" and Q-d4b-3's "no coupons". The closed-session part will supersede Q-d4b-5
+      for a closure that counted the order; until it lands (PR B, D2), a coupon sale in a closed session still refuses
+      `session_closed`.
       - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
         attention must not be a dead end: today's drop reopen stays available there as an explicit, labelled choice
         that shows the amount still to collect ("Reopen without the coupon: 2.00 to collect"). Never automatic, never
         silent."
       - In code: `reopenRefusedOrder` refuses with `coupon_carry_inexact` and `toCollectMinor` when the rebuilt sale
         does not equal the stored one line by line, when a coupon has no per-line amounts (WooCommerce replay coupons
-        and orders stored before schema 13), or when the store takes order.create below 4. `{ withoutCoupons: true }`
-        is the explicit drop. Receipts show each carried coupon as a row on each line it priced, labelled
-        `coupon <code> not accepted at send`.
+        and orders stored before schema 13) or names a line the order does not hold, or when the store takes
+        order.create below 4. A carried line's amount is its stored amountMinor, else, on a line only one coupon priced
+        (outside WooCommerce rounding), the coupon total the stored line holds (unit price × quantity − discounts −
+        net), else its stored shares. `{ withoutCoupons: true }` is the explicit drop. `{ withoutCoupons: true }`
+        against a parked carried draft refuses `carried_draft_exists` rather than return it. Receipts show each carried
+        coupon as a row on each line it priced, labelled `coupon <code> not accepted at send`.
       - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
         choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,
@@ -5079,10 +5083,13 @@ interface OrderCreatePayload {
       - `already_replaced`, when a finalized successor exists;
       - `session_closed`, when the order's `sessionId` names a session that is not `open` or is missing. A late
         association (`lateSessionId`) does not block.
+      - `coupon_carry_inexact`, with `toCollectMinor` (ADR-077 coupon amendment above);
+      - `carried_draft_exists` (same amendment).
     - **The parked sale.**
-      - **Its id is the refused order's id.** A second call returns the draft already written, unchanged. When the
-        sale is finalized, its `saleId` names the refused order, and the new order gets a fresh id. A prefixed id
-        would be longer than the 36 characters `saleId` allows.
+      - **Its id is the refused order's id.** A second call returns the draft already written, unchanged (except
+        `withoutCoupons` against a carried draft; see the coupon amendment). When the sale is finalized, its `saleId`
+        names the refused order, and the new order gets a fresh id. A prefixed id would be longer than the 36
+        characters `saleId` allows.
       - **Line discounts.** When the receipt rows can be trusted, the line discounts come from them as fixed amounts
         with their labels, and the order discount as one fixed `Discount`. The rows can be trusted when the order has
         `display` and no line is in the other tax mode. Otherwise each line gets one fixed `Discount` of its stored
@@ -5094,7 +5101,7 @@ interface OrderCreatePayload {
         reference.
       - **The customer.** It is copied when it has an id and a name and passes `customerRefusal`.
       - **The note.** It is `Refused by the store: <message>`, followed by the original note on a new line.
-      - **No coupons.**
+      - **Coupons.** None, unless the coupon amendment above carries them.
     - **The order of writes.** The draft is written first. The order is then marked with `reopenedAt` inside
       `incrementalModify`, only while it is still rejected and unmarked, so a mark made in the meantime stands.
       A crash after the draft write leaves the order counted once (the draft is not counted); the next call marks it.

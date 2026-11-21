@@ -11,7 +11,7 @@ import type { PosOrder } from './types';
 
 export const REOPENABLE_CODES: readonly string[] = ['coupon_invalid', 'total_mismatch'];
 export type ReopenRefusal = 'not_found' | 'store_order' | 'not_rejected' | 'code_not_reopenable' | 'already_replaced' | 'session_closed'
-  | 'coupon_carry_inexact';
+  | 'coupon_carry_inexact' | 'carried_draft_exists';
 export class ReopenRefusedOrderError extends Error {
   constructor(readonly orderId: string, readonly reason: ReopenRefusal, readonly toCollectMinor?: number) {
     super(`Cannot reopen order ${orderId}: ${reason}`);
@@ -37,6 +37,7 @@ function sameFigures(draft: Order, order: PosOrder): boolean {
  * Reopens a refused sale as a draft; a coupon sale reopens with its coupons carried at the amounts the store charged.
  * When that carry is not exact it refuses `coupon_carry_inexact`, with `toCollectMinor` the amount still to collect without them.
  * `{ withoutCoupons: true }` is the explicit drop: the sale reopens without its coupons and the cashier collects the difference.
+ * It refuses `carried_draft_exists` when the parked draft already carries a coupon, rather than return that draft.
  */
 export async function reopenRefusedOrder(orderId: string, deps: {
   orders: RxCollection<PosOrder>;
@@ -61,7 +62,12 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     const session = await readSession(deps.sessions, order.sessionId);
     if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
-  if (!await deps.drafts.findOne(orderId).exec()) {
+  const existing = await deps.drafts.findOne(orderId).exec();
+  if (existing && options?.withoutCoupons
+    && (JSON.parse(String(existing.data)) as Order).coupons?.some((coupon) => coupon.carried)) {
+    throw new ReopenRefusedOrderError(orderId, 'carried_draft_exists');
+  }
+  if (!existing) {
     const builder = createOrderBuilder({ currency: order.currency, taxContext: deps.taxContext, id: order.id });
     const converted = order.lines.some((line) => line.taxInclusive !== undefined && line.taxInclusive !== order.pricesIncludeTax);
     const display = order.display && !converted ? order.display : undefined;
@@ -78,8 +84,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
         taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
         ...(line.custom ? { custom: true, taxClass: line.custom.taxClass, taxStatus: line.custom.taxStatus }
           : { taxClass: deps.taxClassOf?.(line.productId, line.variantId) ?? 'standard', taxStatus: line.taxStatus }),
-        // The stored lines are distinct and coupon lines map by stored index, so a carry never merges two of them.
-        ...(carry ? { separate: true as const } : {}),
+        // Stored lines stay distinct for a coupon sale, so the carry maps by index and the drop is the rebuild it previews.
+        ...(order.coupons?.length ? { separate: true as const } : {}),
       });
       lineIds.push(lineId);
       // A catalogue line comes back with its catalogue SKU, then its edit, as restoreOrderDraft does (ADR-092 6b).
@@ -129,11 +135,18 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       const index = new Map(order.lines.map((line, i) => [line.id, i]));
       if ((deps.capabilities?.orderCreate ?? 1) < 4 || coupons.some((coupon) => !coupon.lines
         || coupon.lines.some(({ lineId }) => !index.has(lineId)))) throw inexact();
-      // Before schema 19 a line's amount is its shares in the stored line's own tax mode; the equality guard proves it.
+      // Shares split ex-tax and tax separately, so on an inclusive line their sum can be a unit off the price; a line one
+      // coupon priced holds the exact total, else the shares in the line's own mode serve. The equality guard proves it.
+      const exact = (i: number) => {
+        const line = order.lines[i], total = line.unitPriceMinor * line.quantity - line.discountMinor - line.netMinor;
+        return coupons.filter((coupon) => coupon.lines!.some(({ lineId }) => lineId === line.id)).length === 1
+          && order.taxRounding?.granularity !== 'woocommerce' && total >= 0 ? total : undefined;
+      };
       const priced = new Map<string, StorePricedCoupon>(coupons.map((coupon) => [coupon.code, { couponId: coupon.couponId,
         lines: coupon.lines!.map((share) => {
           const i = index.get(share.lineId)!, inclusive = order.lines[i].taxInclusive ?? order.pricesIncludeTax;
-          return { lineId: lineIds[i], amountMinor: share.amountMinor ?? share.discountMinor + (inclusive ? share.discountTaxMinor : 0) };
+          return { lineId: lineIds[i],
+            amountMinor: share.amountMinor ?? exact(i) ?? share.discountMinor + (inclusive ? share.discountTaxMinor : 0) };
         }) }]));
       builder.setCoupons(coupons.map((coupon) => coupon.code), { kind: 'store-priced', carried: true, priced, basis: couponPricingBasis(dropped) });
       const carried = builder.getSnapshot();
