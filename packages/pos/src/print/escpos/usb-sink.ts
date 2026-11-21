@@ -1,33 +1,35 @@
 /**
  * A WebUSB sink for `createEscPosTransport`. The app supplies the `USBDevice` from `navigator.usb.requestDevice` (which
  * needs a user gesture) or `navigator.usb.getDevices`, and keeps it between jobs. The sink holds no vendor code
- * (ADR-084 decision 2) and never closes the device: the app releases it when it is done.
+ * (ADR-084 decision 2) and never closes the device: the app releases it when it is done. The sink sets no timeout on a
+ * transfer.
  */
 import { PrintError } from '../types';
 import type { EscPosSink } from './transport';
 
 interface WebUsbEndpoint { readonly endpointNumber: number; readonly direction: 'in' | 'out'; readonly type: 'bulk' | 'interrupt' | 'isochronous' }
 
-/** The members of the DOM `USBDevice` this sink reads or calls; a real `USBDevice` is assignable to it. */
+/** Shaped on the DOM `USBDevice`; e2e/web/webusb-sink.spec.ts checks these member names in Chromium. */
 export interface WebUsbDevice {
   readonly opened: boolean;
-  readonly configuration: {
+  readonly configuration?: {
     readonly interfaces: readonly {
       readonly interfaceNumber: number;
       readonly claimed: boolean;
       readonly alternate: { readonly endpoints: readonly WebUsbEndpoint[] };
     }[];
   } | null;
-  readonly productName?: string;
+  readonly productName?: string | null;
   open(): Promise<void>;
   selectConfiguration(configurationValue: number): Promise<void>;
   claimInterface(interfaceNumber: number): Promise<void>;
-  transferOut(endpointNumber: number, data: Uint8Array): Promise<{ status: 'ok' | 'stall' | 'babble'; bytesWritten: number }>;
+  clearHalt(direction: 'in' | 'out', endpointNumber: number): Promise<void>;
+  transferOut(endpointNumber: number, data: Uint8Array<ArrayBuffer>): Promise<{ status: 'ok' | 'stall' | 'babble'; bytesWritten: number }>;
 }
 
 export interface WebUsbSinkOptions {
   device: WebUsbDevice;
-  /** Bytes per `transferOut`. Default `USB_CHUNK_SIZE`. */
+  /** Bytes per `transferOut`: a positive integer, default 4096. */
   chunkSize?: number;
 }
 
@@ -57,15 +59,19 @@ export function createWebUsbSink({ device, chunkSize = USB_CHUNK_SIZE }: WebUsbS
     async write(bytes) {
       // Read the device's state on every write, so a write after the app reopens the device works.
       if (!device.opened) await step('open', () => device.open());
-      if (!device.configuration) await step('selectConfiguration(1)', () => device.selectConfiguration(1));
+      if (device.configuration == null) await step('selectConfiguration(1)', () => device.selectConfiguration(1));
       const target = bulkOut(device);
       if (!target) throw new PrintError('unsupported', `${name()} has no bulk OUT endpoint to print to`);
       const { usbInterface: { interfaceNumber, claimed }, endpointNumber } = target;
       if (!claimed) await step(`claimInterface(${interfaceNumber})`, () => device.claimInterface(interfaceNumber));
       for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, i + chunkSize);
+        // slice, not subarray: each transfer gets its own ArrayBuffer-backed copy.
+        const chunk = bytes.slice(i, i + chunkSize);
         const result = await step(`transferOut(${endpointNumber})`, () => device.transferOut(endpointNumber, chunk));
-        if (result.status !== 'ok') throw new PrintError('failed', `${name()}: transferOut(${endpointNumber}) ended with status ${result.status}`);
+        if (result.status === 'ok') continue;
+        // A stalled endpoint stays halted until cleared, so clear it for the next job; this job still fails.
+        if (result.status === 'stall') await device.clearHalt('out', endpointNumber).catch(() => undefined);
+        throw new PrintError('failed', `${name()}: transferOut(${endpointNumber}) ended with status ${result.status}`);
       }
     },
   };

@@ -6,15 +6,17 @@ type Endpoint = { endpointNumber: number; direction: 'in' | 'out'; type: 'bulk' 
 // interfaces: one endpoint list per interface number, default interface 0 with bulk OUT endpoint 2.
 // statuses: each transferOut's status in turn, default 'ok'.
 interface FakeOptions {
-  opened?: boolean; configured?: boolean; claimed?: number[]; openError?: Error;
+  opened?: boolean; configured?: boolean; claimed?: number[]; openError?: Error; clearHaltError?: Error;
   interfaces?: Endpoint[][]; statuses?: ('ok' | 'stall' | 'babble')[];
 }
 
 // Enforces what Chromium's WebUSB enforces: configuring and claiming need an open device, a transfer needs its
-// interface claimed. open() leaves configuration null until selectConfiguration(1) sets it.
+// interface claimed, and a stalled endpoint stays halted until clearHalt. open() leaves configuration null until
+// selectConfiguration(1) sets it.
 function fakeDevice(options: FakeOptions = {}) {
   const calls: string[] = [];
   const transfers: Uint8Array[] = [];
+  const halted = new Set<number>();
   const interfaces = (options.interfaces ?? [[{ endpointNumber: 2, direction: 'out', type: 'bulk' }]]).map(
     (endpoints, interfaceNumber) => ({ interfaceNumber, claimed: options.claimed?.includes(interfaceNumber) ?? false, alternate: { endpoints } }),
   );
@@ -39,13 +41,21 @@ function fakeDevice(options: FakeOptions = {}) {
       if (!target) throw new Error('InvalidStateError');
       target.claimed = true;
     },
-    async transferOut(endpointNumber: number, data: Uint8Array) {
+    async clearHalt(direction: 'in' | 'out', endpointNumber: number) {
+      calls.push(`clearHalt(${direction},${endpointNumber})`);
+      if (!device.opened) throw new Error('InvalidStateError');
+      if (options.clearHaltError) throw options.clearHaltError;
+      if (direction === 'out') halted.delete(endpointNumber);
+    },
+    async transferOut(endpointNumber: number, data: Uint8Array<ArrayBuffer>) {
       calls.push(`transferOut(${endpointNumber})`);
       const owns = ({ alternate }: (typeof interfaces)[number]) => alternate.endpoints.some((endpoint) => endpoint.endpointNumber === endpointNumber && endpoint.direction === 'out');
       const owner = device.configuration?.interfaces.find(owns);
       if (!device.opened || !owner?.claimed) throw new Error('InvalidStateError');
+      if (halted.has(endpointNumber)) return { status: 'stall' as const, bytesWritten: 0 };
       transfers.push(data.slice());
       const status = options.statuses?.[transfers.length - 1] ?? 'ok';
+      if (status === 'stall') halted.add(endpointNumber);
       return { status, bytesWritten: status === 'ok' ? data.length : 0 };
     },
   } satisfies WebUsbDevice;
@@ -119,6 +129,7 @@ describe('createWebUsbSink', () => {
     expect(error.code).toBe('failed');
     expect(error.message).toContain('stall');
     expect(calls.filter((call) => call.startsWith('transferOut'))).toHaveLength(2);
+    expect(calls.slice(-2)).toEqual(['transferOut(2)', 'clearHalt(out,2)']);
   });
 
   it('U7: a rejected open fails with the cause and the device name', async () => {
@@ -136,5 +147,28 @@ describe('createWebUsbSink', () => {
     const bytes = new Uint8Array([0x1b, 0x40, 0x48, 0x69, 0x0a, 0x1d, 0x56, 0x00]);
     await createEscPosTransport({ sink: createWebUsbSink({ device }), profile }).print({ id: 'job-1', kind: 'test', bytes });
     expect(transfers).toEqual([bytes]);
+  });
+
+  it('U9: a stall clears the halt, so the next write on the same device prints', async () => {
+    const { device, transfers } = fakeDevice({ statuses: ['stall'] });
+    const sink = createWebUsbSink({ device });
+    expect((await rejection(sink.write(new Uint8Array([1])))).code).toBe('failed');
+    const bytes = new Uint8Array([0x1b, 0x40, 0x0a]);
+    await sink.write(bytes);
+    expect(transfers.at(-1)).toEqual(bytes);
+  });
+
+  it('U10: a rejected clearHalt does not replace the stall failure', async () => {
+    const { device, calls } = fakeDevice({ statuses: ['stall'], clearHaltError: new Error('gone') });
+    const error = await rejection(createWebUsbSink({ device }).write(new Uint8Array([1])));
+    expect(calls).toContain('clearHalt(out,2)');
+    expect(error.code).toBe('failed');
+    expect(error.message).toContain('stall');
+    expect(error.message).not.toContain('gone');
+  });
+
+  it('U11: chunkSize must be a positive integer', () => {
+    const { device } = fakeDevice();
+    for (const chunkSize of [0, -1, 1.5]) expect(() => createWebUsbSink({ device, chunkSize })).toThrow(RangeError);
   });
 });

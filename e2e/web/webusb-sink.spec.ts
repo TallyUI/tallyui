@@ -13,7 +13,7 @@ const repoRoot = path.resolve(__dirname, '../..');
 const escposDir = path.join(repoRoot, 'packages/pos/src/print/escpos');
 // Every member the sink's WebUsbDevice type names, by the WebUSB interface that declares it.
 const MEMBERS: Record<string, string[]> = {
-  USBDevice: ['opened', 'configuration', 'productName', 'open', 'selectConfiguration', 'claimInterface', 'transferOut'],
+  USBDevice: ['opened', 'configuration', 'productName', 'open', 'selectConfiguration', 'claimInterface', 'clearHalt', 'transferOut'],
   USBConfiguration: ['interfaces'],
   USBInterface: ['interfaceNumber', 'claimed', 'alternate'],
   USBAlternateInterface: ['endpoints'],
@@ -74,6 +74,7 @@ test.describe('WebUSB ESC/POS sink in Chromium', () => {
         async open() { device.opened = true; },
         async selectConfiguration() { if (!device.opened) fail(); device.configuration = configuration; },
         async claimInterface() { if (!device.opened || !device.configuration) fail(); usbInterface.claimed = true; },
+        async clearHalt() {},
         async transferOut(endpointNumber: number, data: Uint8Array) {
           if (!device.opened || !usbInterface.claimed || endpointNumber !== 2) fail();
           transfers.push(data.slice());
