@@ -14,7 +14,7 @@ export type { CurrencyFormat, CurrencyProviderProps } from './currency';
 
 // Tax
 export { TaxProvider, useTax, taxLogger, taxSettingsForLocation, createTaxContext, saleTaxContexts, taxDerivation } from './tax';
-export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate } from './tax';
+export { MICROS_PER_MINOR, ratePpmFromPercent, taxMicros, roundMicrosToMinor, computeOrderTax, taxLinesByRate, taxedLinesFor } from './tax';
 export type { TaxLineInput, OrderTaxTotals, RateTaxLine } from './tax';
 export type { TaxProviderProps } from './tax';
 export type { TaxRateMap, TaxContext, SaleTaxContext } from './tax';
