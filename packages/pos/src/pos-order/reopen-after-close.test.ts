@@ -286,6 +286,20 @@ describe('reopenRefusedOrder after close', () => {
       expect(changed.payments.map(({ id, method, amountMinor }) => ({ id, method, amountMinor }))).toEqual(saved.afterClose!.payments);
       expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
     });
+    it('B8a a changed fee tax line alone, the total, tax, legs and shipping kept, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      const snapshot = restored(await feeDraft());
+      const [fee] = snapshot.fees!;
+      const changed: Order = { ...snapshot, fees: [{ ...fee, taxLines: [...fee.taxLines, { ratePpm: 1, taxMicros: '0' }] }] };
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
+    it('B8b an added shipping line alone, the total, tax, legs and fees kept, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      const saved = await afterCloseDraft();
+      const scratch = restoreOrderDraft(saved, { currency, taxContext });
+      scratch.addShipping({ name: 'Post', amountMinor: 100 });
+      const changed: Order = { ...restored(saved), shipping: scratch.getSnapshot().shipping };
+      expect(changed.shipping).toHaveLength(1);
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
     it('B6d the pinned leg ids survive park and resume, and the unchanged draft still finalizes', async () => {
       const { order, saved } = await refusedFeeDraft();
       expect(saved.afterClose!.payments.map((payment) => payment.id)).toEqual(saved.payments.map((payment) => payment.id));
