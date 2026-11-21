@@ -121,7 +121,7 @@ export interface PosOrder {
    * Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   sessionId?: string;
-  /** Reserved for the closure that counted this order; a later PR writes it. */
+  /** The closed session whose closure already counted this sale: set by finalize on an after-close reopen (ADR-077), which then joins no session. */
   countedInClosureOf?: string;
   /**
    * Set only by `useSale`'s late-sale path (ADR-032): the session the sale was taken for, which

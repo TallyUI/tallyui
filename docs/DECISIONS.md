@@ -5059,7 +5059,7 @@ interface OrderCreatePayload {
         `coupon <code> not accepted at send`. A carried coupon whose lines are not all in the receipt's tax mode shows
         its shares on every line, and its last line takes what its other rows leave of its display row, so its rows
         add up to it even when tax rounded over lines and charges puts its shares a cent off.
-      - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
+      - Status: the closed-session part is implemented (PR B, D2). Until the Needs-attention reopen row lands, the explicit
         choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,
     2026-10-07; not checked on HPOS stores):
