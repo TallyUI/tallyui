@@ -76,7 +76,7 @@ export type {
 } from './order';
 
 // Receipt
-export { buildReceiptData, buildReceiptDataFromPosOrder, buildReceiptDataFromStoreOrder, RECEIPT_SCHEMA_VERSION } from './receipt';
+export { buildReceiptData, buildReceiptDataFromPosOrder, buildReceiptDataFromStoreOrder, RECEIPT_SCHEMA_VERSION, isCarriedCouponLabel } from './receipt';
 export type { ReceiptData, ReceiptLineItem, ReceiptConfig, ReceiptSoftware, ReceiptRegister, ReceiptFiscal } from './receipt';
 
 // Receipt templates

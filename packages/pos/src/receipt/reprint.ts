@@ -4,6 +4,7 @@ import { refundDueOf } from '../pos-order/refund-due';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
+import { carriedRows } from './carried-rows';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 import { wooGrossMinor } from './woo-gross';
@@ -48,9 +49,12 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
   const lineItems = order.lines.map((line, index): ReceiptLineItem => {
     const displayLine = display?.lines.find((row) => row.lineId === line.id);
     const displayAmountMinor = display ? displayLine?.amountMinor ?? 0 : line.taxInclusive !== undefined ? lineTotals[index]! + line.discountMinor : line.unitPriceMinor * line.quantity;
-    const displayDiscounts = display
+    const displayDiscounts = [...display
       ? (displayLine?.discounts ?? []).map((d) => ({ label: d.label ?? 'Discount', amountMinor: d.amountMinor }))
-      : line.discountMinor > 0 ? [{ label: 'Discount', amountMinor: line.discountMinor }] : [];
+      : line.discountMinor > 0 ? [{ label: 'Discount', amountMinor: line.discountMinor }] : [],
+    ...carriedRows(order.coupons, line.id, (id) => { const other = order.lines.find((row) => row.id === id);
+      return other ? other.taxInclusive ?? order.pricesIncludeTax : display ? display.taxInclusive : order.pricesIncludeTax; },
+    display ? display.taxInclusive : order.pricesIncludeTax, display?.coupons)];
     return {
       name: line.name,
       ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),

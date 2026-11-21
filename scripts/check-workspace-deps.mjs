@@ -92,6 +92,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'resolvePrinter',
   // customer editor (10.1d): pure form-values-to-store-call functions (10.1c), never a hook or the store.
   'toCustomerInput', 'toCustomerPatch', 'shipsToBilling',
+  // carried coupon rows (ADR-077, Front desk 2026-11-21): the pure test of a carried coupon's receipt label, never a hook or the store.
+  'isCarriedCouponLabel',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

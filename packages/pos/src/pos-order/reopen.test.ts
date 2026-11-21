@@ -52,7 +52,7 @@ function storedOrder(percentage = false, addresses: Pick<NonNullable<Order['cust
   builder.setCustomer({ id: '42', name: 'Buyer', email: 'buyer@example.com', ...addresses });
   builder.setNote('Keep the receipt');
   return { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 6 }, now: new Date('2026-10-06T12:00:00Z') }),
-    syncStatus: 'rejected', error, coupons: [{ code: 'save10', couponId: '7', discountMinor: 100, discountTaxMinor: 0 }] };
+    syncStatus: 'rejected', error };
 }
 async function draft(id: string): Promise<Order> {
   const row = await db.order_drafts.findOne(id).exec();
@@ -256,8 +256,23 @@ it.each([
   }
   const order: PosOrder = { ...finalizeOrder(make(true), { capabilities: { orderCreate: 6 } }), syncStatus: 'rejected', error };
   await db.pos_orders.insert(order);
-  const saved = await draft(await reopenRefusedOrder(order.id, deps(context)));
+  const refused = reopenRefusedOrder(order.id, deps(context));
+  await expect(refused).rejects.toBeInstanceOf(ReopenRefusedOrderError);
+  await expect(refused).rejects.toMatchObject({ reason: 'coupon_carry_inexact', toCollectMinor: make(false).totalMinor - make(true).totalMinor });
+  expect(await db.order_drafts.count().exec()).toBe(0);
+  expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBeUndefined();
+  const saved = await draft(await reopenRefusedOrder(order.id, deps(context), { withoutCoupons: true }));
   expect(saved.totalMinor).toBe(make(false).totalMinor);
+});
+
+it('refuses a coupon with no line shares by default and drops it only when asked', async () => {
+  const order: PosOrder = { ...storedOrder(), coupons: [{ code: 'save10', couponId: '7', discountMinor: 100, discountTaxMinor: 0 }] };
+  await db.pos_orders.insert(order);
+  await expect(reopenRefusedOrder(order.id, deps())).rejects.toMatchObject({ reason: 'coupon_carry_inexact' });
+  expect(await db.order_drafts.count().exec()).toBe(0);
+  expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBeUndefined();
+  const saved = await draft(await reopenRefusedOrder(order.id, deps(), { withoutCoupons: true }));
+  expect(saved.coupons).toBeUndefined();
 });
 
 it("keeps the stored tax rates when the store's rate has changed", async () => {
