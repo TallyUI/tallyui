@@ -715,6 +715,30 @@ describe('late sale', () => {
     }
   });
 
+  it("B12a: removing an after-close draft's counted leg says why it is refused (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => { result.current.removeTender('leg-1'); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it("B12b: a status change on an after-close draft's counted leg says why it is refused (ADR-077)", async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result } = await resumeAfterClose(db, { id: sessionId, sessions }, 'authorized');
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'captured')).toBe(false); });
+      expect(result.current.error).toBe(AFTER_CLOSE_PAYMENTS_CHANGED);
+    } finally {
+      await db.remove();
+    }
+  });
+
   it("the late order is stored pending with lateSessionId through a real outbox, and the closed session's closure doesn't count it", async () => {
     const { db, sessions, sessionId } = await withOpenSession();
     await db.addCollections({ closures: { schema: closureSchema } });
