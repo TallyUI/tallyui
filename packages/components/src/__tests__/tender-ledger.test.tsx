@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -51,9 +51,9 @@ describe('Cart tenderLedger', () => {
   it('reads Paid in full as the lead row once nothing is due', () => {
     start(2000);
     act(() => { sale.addTender({ method: 'cash', amountMinor: 2000 }); });
-    expect(text('tender-ledger-lead')).toBe('Paid in full');
+    expect(text('tender-ledger-lead')).toMatch(/^Paid in full · /);
     expect(screen.queryByTestId('tender-ledger-remaining')).toBeNull();
-    expect(screen.getAllByText('Paid in full')).toHaveLength(1);
+    expect(screen.getAllByText(/^Paid in full/)).toHaveLength(1);
   });
 
   it("titles each leg by its own method id's descriptor, else the id itself", () => {
@@ -202,5 +202,81 @@ describe('TenderLedger held legs (desk 2026-11-21)', () => {
     expectVoidable(held);
     expect(screen.getByTestId('tender-leg-leg-1')).toBeTruthy();
     expect(screen.queryByTestId('tender-leg-leg-1-void')).toBeNull();
+  });
+});
+
+describe('TenderLedger leg times', () => {
+  let db: RxDatabase<{ pos_drafts: RxCollection }> | undefined;
+  afterEach(async () => { vi.useRealTimers(); cleanup(); await db?.remove(); db = undefined; });
+  /** The device's short time, written out as the ledger must render it. */
+  const clock = (t: string | undefined) => new Date(t!).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  /** A €50 sale resumed from a draft whose legs are reopened (so startTender keeps them) and carry no takenAt: a leg from before the field. */
+  async function restored(payments: { method: 'cash' | 'external'; amountMinor: number; status?: 'pending' }[]) {
+    db = await createRxDatabase({ name: `legtimes${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'coffee', name: 'Coffee', unitPrice: { amount: 5000, currency: 'EUR' } });
+    payments.forEach((payment, index) => builder.addPayment({ id: `leg-${index + 1}`, ...payment, reopened: true }));
+    await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    let held!: ReturnType<typeof useSale>;
+    function Held({ drafts }: { drafts: RxCollection }) {
+      held = useSale(settings, { registerId: 'register-1', cashierRef: 'cashier', drafts });
+      return <><Tender sale={held} ledger={false} /><Cart sale={held} showTotal={false} tenderLedger={{}} /></>;
+    }
+    render(<TaxProvider {...taxProviderProps(settings)}><Held drafts={db.pos_drafts} /></TaxProvider>);
+    await act(async () => { expect(await held.resume(builder.getSnapshot().id)).toBeNull(); });
+    act(() => held.startTender('cash'));
+    return held;
+  }
+
+  it('P1 a leg with takenAt shows the time it was taken', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 21, 9, 42));
+    start(5000);
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
+    const { takenAt } = sale.order.payments[0];
+    expect(takenAt).toBeDefined();
+    expect(text(`tender-leg-${leg(0)}-time`)).toBe(clock(takenAt));
+  });
+
+  it('P2 a pending leg without takenAt shows no time', async () => {
+    const held = await restored([{ method: 'external', amountMinor: 1000, status: 'pending' }]);
+    expect(held.order.payments[0]).toMatchObject({ id: 'leg-1', status: 'pending' });
+    expect(held.order.payments[0].takenAt).toBeUndefined();
+    expect(screen.getByTestId('tender-leg-leg-1')).toBeTruthy();
+    expect(screen.queryByTestId('tender-leg-leg-1-time')).toBeNull();
+  });
+
+  it("P3 Paid in full names the last settled leg's time, not the first's", () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    start(2000);
+    vi.setSystemTime(new Date(2026, 10, 21, 10, 0));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
+    vi.setSystemTime(new Date(2026, 10, 21, 10, 7));
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1000 }); });
+    const [first, last] = sale.order.payments.map((payment) => clock(payment.takenAt));
+    expect(first).not.toBe(last);
+    expect(last).toBe(clock(new Date(2026, 10, 21, 10, 7).toISOString()));
+    expect(text('tender-ledger-lead')).toBe(`Paid in full · ${last}`);
+  });
+
+  it('P4 a fully paid sale whose settled legs have no takenAt reads plain Paid in full', async () => {
+    const held = await restored([{ method: 'cash', amountMinor: 3000 }, { method: 'external', amountMinor: 2000 }]);
+    expect(held.order.balanceDueMinor).toBe(0);
+    expect(held.order.payments.map((payment) => payment.takenAt)).toEqual([undefined, undefined]);
+    expect(text('tender-ledger-lead')).toBe('Paid in full');
+    expect(screen.queryByTestId('tender-leg-leg-1-time')).toBeNull();
+  });
+
+  it("P5 the pane's own ledger reads Paid in full with the time", () => {
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 2000 }); });
+    const pane = within(screen.getByTestId('tender-pane'));
+    expect(pane.getByTestId('tender-ledger')).toBeTruthy();
+    expect(pane.getByText(`Paid in full · ${clock(sale.order.payments[0].takenAt)}`)).toBeTruthy();
   });
 });

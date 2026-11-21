@@ -24,7 +24,7 @@ const [state, dispatch] = useReducer(tenderReducer, { methodId: 'cash', balanceM
 
 `TenderPane` is the pane inside [Tender](/docs/components/tender), laid out as WCPOS v2's. Use `Tender` unless the host keeps the tender reducer itself. It renders nothing outside the tender stage.
 
-The headline's caption reads To pay, or Remaining once money is paid (pending legs never count). The balance sits beside it when it differs from the entry, and the entry is the large figure underneath. Under the caption are the amount paid so far and any change. Each payment leg shows its method, amount and status, the next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
+The headline's caption reads To pay, or Remaining once money is paid (pending legs never count). The balance sits beside it when it differs from the entry, and the entry is the large figure underneath. Under the caption are the amount paid so far and any change. Each payment leg shows its method, amount and status, and a leg the till took shows the time it was taken; Paid in full names the time of the last payment. The next pending leg is marked Next, and Cancel payment shows where the method can void the leg.
 
 Pass `ledger={false}` when the host shows the legs in the cart column with Cart's `tenderLedger`, as WCPOS v2 does.
 

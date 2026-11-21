@@ -74,7 +74,7 @@ test.describe('Cart charges (order.create 5)', () => {
       if (size.width >= 768) {
         await expect(page.getByTestId('sale-charges-cart').getByTestId('tender-ledger-lead')).toContainText('Paid in full');
       } else {
-        await expect(pane.getByText('Paid in full', { exact: true })).toBeVisible();
+        await expect(pane.getByText(/^Paid in full · \d/)).toBeVisible();
         await expect(page.getByTestId('sale-charges-cart')).toHaveCount(0);
       }
       await pane.getByRole('button', { name: 'Complete sale' }).click();

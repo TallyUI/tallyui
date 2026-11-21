@@ -77,6 +77,7 @@
 	"pos_checkout.no_payments_yet": "No payments yet",
 	"pos_checkout.paid": "Paid",
 	"pos_checkout.paid_in_full": "Paid in full",
+	"pos_checkout.paid_in_full_at": "Paid in full · {time}",
 	"pos_checkout.paid_of_total": "{paid} of {total} paid",
 	"pos_checkout.part_payment_left": "Part payment · {left} left after this",
 	"pos_checkout.pick_amount_due": "This payment is {amount} for the picked items",
