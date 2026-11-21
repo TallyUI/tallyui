@@ -7,6 +7,8 @@ export { getStorage } from './storage';
 export { WEB_STORAGE_ENGINE, REQUIRED_MULTI_INSTANCE_BY_ENGINE } from './engine';
 export { STORAGE_WRITE_STALL_MS, STORAGE_READ_WATCHDOG_MS, isStorageWorkerFailure, withStorageWatchdog } from './storage-watchdog';
 export type { StorageHealth, StorageWatchdogOptions } from './storage-watchdog';
+export { measureCollectionBytes } from './collection-size';
+export type { CollectionSize, MeasureCollectionOptions } from './collection-size';
 
 export { startReplication } from './replication';
 export type { StartReplicationOptions, TallyReplicationState } from './replication';
