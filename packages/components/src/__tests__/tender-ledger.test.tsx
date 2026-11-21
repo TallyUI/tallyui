@@ -237,7 +237,26 @@ describe('TenderLedger leg times', () => {
     act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
     const { takenAt } = sale.order.payments[0];
     expect(takenAt).toBeDefined();
+    expect(takenAt).toBe(new Date(2026, 10, 21, 9, 42).toISOString());
     expect(text(`tender-leg-${leg(0)}-time`)).toBe(clock(takenAt));
+  });
+
+  it('P6 Paid in full names the settled leg\'s time when a later leg in order.payments does not count', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    start(2000);
+    vi.setSystemTime(new Date(2026, 10, 21, 10, 0));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 2000 }); });
+    vi.setSystemTime(new Date(2026, 10, 21, 10, 7));
+    let extra: string | null = null;
+    act(() => { extra = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    expect(extra).not.toBeNull(); // reachable: cash is still accepted once nothing is due
+    act(() => { expect(sale.voidTender(extra!)).toBe(true); });
+    const [settled, voided] = sale.order.payments;
+    expect(voided).toMatchObject({ id: extra, status: 'voided' });
+    expect(voided.takenAt).toBe(new Date(2026, 10, 21, 10, 7).toISOString());
+    expect(clock(settled.takenAt)).not.toBe(clock(voided.takenAt));
+    expect(sale.order.balanceDueMinor).toBe(0);
+    expect(text('tender-ledger-lead')).toBe(`Paid in full · ${clock(settled.takenAt)}`);
   });
 
   it('P2 a pending leg without takenAt shows no time', async () => {
