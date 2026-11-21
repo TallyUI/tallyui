@@ -75,8 +75,9 @@ export function Receipt(props: ReceiptProps) {
       {Object.entries(line.attributes ?? {}).map(([name, value]) => <Text key={name} className="text-muted-foreground">{`${name}: ${value}`}</Text>)}
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}
       {row(`${line.quantity} × ${money(line.unitPriceMinor)}`, money(line.displayAmountMinor))}
-      {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(`${order ? discountLabel(
-        order.lineItems[index].discounts[i], receipt.currency, formatMoney) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
+      {/* A row with no cart discount behind it (a carried coupon) prints under its own label. */}
+      {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(order && !order.lineItems[index].discounts[i] ? discount.label
+        : `${order ? discountLabel(order.lineItems[index].discounts[i], receipt.currency, formatMoney) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
     </View>)}
     {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
         the order discount appears once. order.display's figures (ADR-063; medusapos ADR 0008). */}

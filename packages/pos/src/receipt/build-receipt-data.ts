@@ -2,6 +2,7 @@ import type { Discount, SentOrder } from '../order/types';
 import { lockedRefundDueMinor } from '../pos-order/refund-due';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
+import { carriedRows } from './carried-rows';
 import type { ReceiptConfig, ReceiptData } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
 
@@ -57,7 +58,8 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
       // Line plus allocated order discounts, in the line's own mode; lineTotalMinor is already after it (ADR-062).
       ...(li.discountMinor > 0 ? { discountMinor: li.discountMinor } : {}),
       displayAmountMinor: order.display.lines[index].amountMinor,
-      displayDiscounts: order.display.lines[index].discounts.map((row, i) => ({ label: label(li.discounts[i]), amountMinor: row.amountMinor })),
+      displayDiscounts: [...order.display.lines[index].discounts.map((row, i) => ({ label: label(li.discounts[i]), amountMinor: row.amountMinor })),
+        ...carriedRows(order.coupons, li.id, li.taxInclusive, order.display.taxInclusive)],
     })),
     discounts: order.discounts.map((d) => ({
       label: label(d),

@@ -5030,6 +5030,24 @@ interface OrderCreatePayload {
       by `reopenRefusedOrder` with `session_closed`, and the order stays in Needs attention for a manual settle. The
       closed Z report has counted that cash, so carrying the payments would count it twice and dropping them would
       orphan it. The manual-settle wording is phase (e).
+    - **Amended (Front desk, 2026-11-21): a coupon refused at send.** "A paid sale refused at send for its coupon is
+      recorded at the amount charged. Reopen carries each coupon at its stored per-line amounts, priced at the coupon
+      step and sent as line discounts with no code; a sale whose session has closed and counted it is re-sent with its
+      original time and register and no session (so no late-sale correction counts it twice), marked locally as
+      counted in that closure, and the frozen closure is never altered." For a coupon sale this supersedes Q-d4b-2's
+      "the cashier collects the difference" and Q-d4b-3's "no coupons", and, for a closure that counted the order,
+      Q-d4b-5.
+      - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
+        attention must not be a dead end: today's drop reopen stays available there as an explicit, labelled choice
+        that shows the amount still to collect ("Reopen without the coupon: 2.00 to collect"). Never automatic, never
+        silent."
+      - In code: `reopenRefusedOrder` refuses with `coupon_carry_inexact` and `toCollectMinor` when the rebuilt sale
+        does not equal the stored one line by line, when a coupon has no per-line amounts (WooCommerce replay coupons
+        and orders stored before schema 13), or when the store takes order.create below 4. `{ withoutCoupons: true }`
+        is the explicit drop. Receipts show each carried coupon as a row on each line it priced, labelled
+        `coupon <code> not accepted at send`.
+      - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
+        choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,
     2026-10-07; not checked on HPOS stores):
     - A create refused with `woocommerce_rest_invalid_coupon` still leaves an order in WooCommerce. It is

@@ -244,6 +244,19 @@ describe('Receipt', () => {
     expect(screen.queryByLabelText(/^Order discount/)).toBeNull();
   });
 
+  it('prints a carried coupon row under its own label, without " off", after the cart discount', () => {
+    render(<SaleHarness capabilities={{ orderCreate: 2 }}>{() => null}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+    const [line] = sale.order.lineItems;
+    act(() => { sale.applyDiscount(line.id, { type: 'percentage', value: 10 }); });
+    const order = { ...sale.order, coupons: [{ code: 'save', couponId: 'c1', discountMinor: 80, discountTaxMinor: 0, carried: true as const,
+      lines: [{ lineId: line.id, discountMinor: 80, discountTaxMinor: 0, amountMinor: 80 }] }] };
+    cleanup();
+    render(<Receipt order={order} store={store} cashier="cashier" registerId="register-1" newSale={() => {}} />);
+    const labels = Array.from(document.querySelectorAll('[aria-label]'), (element) => element.getAttribute('aria-label'));
+    expect(labels.slice(1, 3)).toEqual([`10% off: −${money(250)}`, `coupon save not accepted at send: −${money(80)}`]);
+  });
+
   it('defaults taxLabel to `Tax ${ratePpm / 10000}%`, and a custom taxLabel replaces it', () => {
     render(<SaleHarness>{() => null}</SaleHarness>);
     act(() => sale.add(blue, traits));
