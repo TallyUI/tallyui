@@ -204,7 +204,7 @@ describe('store ids on reopened carts', () => {
 
 describe('an after-close draft (ADR-077, Front desk 2026-11-21)', () => {
   const afterClose: NonNullable<Order['afterClose']> = { sessionId: 's-1', createdAt: '2026-11-21T10:00:00.000Z', registerId: 'r-1',
-    payments: [{ method: 'cash', amountMinor: 1100 }] };
+    payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1100 }], taxMinor: 0, fees: [], shipping: [] };
   it('park and resume keeps afterClose; clear() drops it', () => {
     const builder = createOrderBuilder({ ...options, afterClose });
     builder.addLine(line);

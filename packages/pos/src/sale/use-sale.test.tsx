@@ -573,9 +573,9 @@ describe('late sale', () => {
     try {
       await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
       const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
-        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ method: 'cash', amountMinor: 1250 }] } });
+        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1250 }], taxMinor: 250, fees: [], shipping: [] } });
       builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
-      builder.addPayment({ method: 'cash', status: 'captured', amountMinor: 1250 });
+      builder.addPayment({ id: 'leg-1', method: 'cash', status: 'captured', amountMinor: 1250 });
       await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
       const onSaleCompleted = vi.fn();
       const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session: { id: sessionId, sessions } }));
