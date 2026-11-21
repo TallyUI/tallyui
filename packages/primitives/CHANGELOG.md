@@ -1,5 +1,24 @@
 # @tallyui/primitives
 
+## 4.0.0
+
+### Minor Changes
+
+- 6929703: On web, Escape now closes an open Select, DropdownMenu (an open sub menu first) and Combobox list through the same layer stack as Popover and Dialog, so one Escape closes only the topmost layer. Select and DropdownMenu `Content` now honour their `onEscapeKeyDown` prop, and Combobox `Content` gains it; call `event.preventDefault()` there to keep the list open. Native is unchanged.
+- 3dea768: On web, an open `Popover.Content` closes on Escape and on a pointerdown outside its content and trigger, and calls `onEscapeKeyDown` and `onPointerDownOutside` first (`preventDefault()` keeps it open). Only the topmost open popover or dialog reacts. With a `Popover.Overlay` mounted, an outside press is still the Overlay's to handle.
+
+### Patch Changes
+
+- 0b3edbb: Combobox's list opens under its input (or trigger), at least its width, inside a centred Dialog too.
+- 1455e76: A click on a Combobox input inside its trigger opens the list and leaves it open.
+- e19664f: Keep force-mounted popovers at their last position while closed and stop their dismissal listeners.
+  Fade the cart line keypad in and out over 200 ms, stopping keyboard input as soon as it closes.
+- 2b00532: Floating content: each popover, select or menu gets its own position style, so opening one no longer moves another.
+- ce450d7: Select, DropdownMenu, HoverCard, Tooltip and ContextMenu inside a centred Dialog open against their trigger on web.
+- 290cf51: On web, a Popover opened from inside a centred Dialog is placed against its trigger.
+- f1748d1: On web, floating content (Popover, Select, DropdownMenu, Tooltip, HoverCard, ContextMenu) is positioned beside its trigger inside the window instead of rendering in the page flow.
+- 968782d: Select: the open list is now at least as wide as its trigger, as in WCPOS v2.
+
 ## 3.20.1
 
 ## 3.20.0

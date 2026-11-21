@@ -1,5 +1,70 @@
 # @tallyui/core
 
+## 4.0.0
+
+### Major Changes
+
+- c83dcda: **4.0.0: the till's customer-display API takes a device key.** This is a breaking change for apps that implement `DisplaySignalling` or call `createTillPairing` or `createTillDisplayService`.
+
+  Migration:
+
+  - `DisplaySignalling`'s nine till methods take `TillDevice { deviceId, deviceKey }` in place of `deviceId`. Implement the new `registerDevice`, and handle the `device_refused` refusal.
+  - `createTillPairing` and `createTillDisplayService` take `device` (from `createTillDevice`) in place of `deviceId`.
+  - Store the device key next to the device id, and never replicate it. An existing till registers on first use and keeps its paired displays.
+
+### Minor Changes
+
+- fae1b1a: `@tallyui/core` adds `MoneyFormatProvider`, `useFormatMoney` and `useCurrencySymbol`. `@tallyui/pos`'s `CurrencyProvider` renders the provider, and every `@tallyui/components` money amount and money-input symbol now reads the store's money format when one is provided. Without a provider, nothing changes. `discountLabel` takes an optional formatter as its third argument.
+- 028c0e3: `ProductCategory` takes an optional `imageUrl`, the category's picture for browse tiles.
+- 3942708: `fnv1a32(text, { pad })`: the 32-bit FNV-1a hash the platform apps use for database names, as lowercase hex (inventory C22).
+- 81198d2: `formatMoney(money, locale, format)` takes an optional store money format (`MoneyFormat`: currency position, thousand and decimal separators, decimals, symbol), as WooCommerce stores set them; without one it reads exactly as before, through Intl. `@tallyui/pos`'s `CurrencyProvider` now formats through it, and its `CurrencyFormat` type is `MoneyFormat`.
+- fed2ec4: order.create version 10: a payment may carry `methodId`, the payment method's own id (shape-checked: 1–64, no NUL; refused below 10). New `wireMethodOf` and `legMethodId` helpers.
+- 1f40158: `ratePpmFromPercent` is exported from `@tallyui/core` and `@tallyui/core/server` (moved from `@tallyui/pos`, which still re-exports it), so servers can convert rate percentages without vendoring pos.
+- bc9a686: `reopenPayloadErrors` and `updatePayloadErrors` accept a `baseRevision` of up to 128 characters (ADR-090); a store revision is an opaque token, and WooCommerce's is 71. Ids stay at 64.
+- c9403ce: `@tallyui/core/server` now ships a CommonJS build beside the ESM one, so CommonJS backend plugins can `require('@tallyui/core/server')`. The `./server` export map gains a `require` condition (`dist/server/index.cjs`, types `dist/server/index.d.cts`); `import` resolves exactly as before. The main entry and `./rxdb` stay ESM-only.
+- b6e936c: **Breaking for DisplaySignalling implementers**
+
+  - The nine till methods take `TillDevice { deviceId, deviceKey }` in place of `deviceId`, and `registerDevice` and the `device_refused` refusal are new.
+  - `createTillPairing` and `createTillDisplayService` take `device` (from `createTillDevice`) in place of `deviceId`.
+  - Migration: a plugin adds the register route and checks the key on every till route; an app stores the key next to the device id (never replicated); an existing till registers on first use and keeps its paired displays.
+
+  A till now proves itself to the store with a key the store issued, so knowing a till's device id is no longer enough to act as that till on its customer displays.
+
+- d034d9f: A store can report the lines whose figures it computed differently with the new `line_figures_mismatch` warning, which `parseCommandResult` and `knownWarnings` accept. `moneyDivergence(order)` gives a sale's differing order figures and line ids, and the orders list counts the differing lines.
+- 82ec063: `ServerCapabilities.pluginContract` carries `/tally/v1/info`'s top-level `pluginContract`. The Medusa connector's `listOrders` sends register filters and 1-6 digit searches (display numbers) through the MedusaPOS plugin's `GET /tally/v1/orders` at plugin contract 3, reading the rows from the admin API so every order maps the same way; `medusaOrderFilters(capabilities)` gives the filter fields a store honours (#1114).
+- e48cac6: `minorToMajor` is exported from the `@tallyui/core` root and `minorUnitDigits` from `@tallyui/core/server`, so each money converter has one name everywhere. `currencyDecimals`, `moneyToMajor` and `@tallyui/pos`'s `minorToDecimal` are deprecated in their favour; nothing is removed.
+- ccb28e1: `normalizeMoneyText(text, format?)` reads a typed amount in the store's separators, and `useMoneyFormat()` returns the nearest MoneyFormatProvider's format (#672).
+- 1821a2c: order.create version 11: version 10 plus the customer's `billing` / `shipping` on a sale with no `taxAddress`, as informational fields. `SUPPORTED_ORDER_CREATE_VERSIONS` and the version types gain 11; `precheckCommand` accepts untaxed addresses at 11 and still refuses them at 9 and 10.
+- 74191f9: `@tallyui/core`: order.create version 12 is 11 plus `customer.taxIds`, a catalogue line's `sku` and order `meta`, as informational fields, with their shape and bound checks in `precheckCommand` and the `ORDER_TAX_IDS_MAX`, `ORDER_TAX_ID_TYPE_MAX`, `ORDER_TAX_ID_VALUE_MAX`, `ORDER_META_MAX`, `ORDER_META_KEY_MAX` and `ORDER_LINE_SKU_MAX` constants (ADR-092).
+
+  `@tallyui/pos`: the till sends a sale's tax ids, meta and edited catalogue SKU at order.create 12 (`INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION`, now `ORDER_CREATE_MAX_VERSION`) only when the store's cap allows it, and `pos_orders` goes to schema 18 (identity migration, one-way like 17) to store them and `attentionHandledFor`. `markAttentionHandled(orders, orderId)` marks a refused or warned order handled, and `needsAttention` leaves it out until a requeue gives it a new command id.
+
+- 0eb7640: order.create version 9 (#790): `OrderCreateCoupon.lines` (`OrderCreateCouponLine`) carries each coupon's share of each line. `SUPPORTED_ORDER_CREATE_VERSIONS` adds 9, `precheckCommand`, `payloadShapeErrors` and `payloadBoundErrors` check it (docs/contract/order-create-v9.md), and version 9 needs no `taxAddress`.
+- f5a739f: `order.reopen` version 1 (ADR-090), an online command that reopens a store order for editing. `@tallyui/core` adds the envelope, payload and result types, `reopenPayloadErrors` (the strict shape check), the `order.reopen` type in `validateBatch`, an optional `orderReopen` list in `precheckCommand`, the `reopen` result in `parseCommandResult`, the refusal codes (`payment_in_motion`, `order_state`, `revision_conflict`, `forbidden`), `SUPPORTED_ORDER_REOPEN_VERSIONS` and the `orderReopen` capability from `/tally/v1/info`. Nothing sends it yet.
+- 3b25108: `order.update` v1 (ADR-090): the contract for sending a reopened sale's whole new state. Types, a payload shape check (`updatePayloadErrors`), store ids on kept lines, fees and shipping (`storeLineId`) and on payments (`paymentId`), precheck, the `orderUpdate` capability and `SUPPORTED_ORDER_UPDATE_VERSIONS`. Nothing sends it yet.
+- 7a6075b: `@tallyui/core` adds the `ProductTerm` type and an optional `getTerms` product trait, so a connector can report a product's terms (facet values, tags, brands) each in its group; without it a product has no terms.
+  `@tallyui/pos` adds `productTerms`, `listTermGroups` (each group and term once, sorted by name like `listCategories`) and `hasTerm`.
+- 2cb63cb: ServerCapabilities.receiptEmail: parseInfoCapabilities reads `/tally/v1/info`'s `receiptEmail: { v: n }` (a safe integer above 0); a malformed value is left out with one warning.
+- 6e191c9: New exports the platform apps copied before: `deriveSessionFigures` and `deriveVariance` on `@tallyui/core`'s browser-safe main entry; `tenderLabel` and a new `syncStatusQuiet` predicate (true when `SyncStatus` would show only "Sales are up to date.") on `@tallyui/components`.
+- 2bdae98: Adds an optional, online `closures` connector surface (ADR-093): read the store's Z closures, append a recount and record a reprint. `Correction` and `ApproverCredentials` move to core (pos and the Woo connector re-export them); `Correction` gains `late_refund`, which `deriveSettled` counts on the refund side. The Woo connector implements it for WCPOS 2.0.
+- f51a692: A store order read now carries what a reopen needs to write the order back: the order's `revision`, an `id` on each fee, shipping line and payment record, and the recorded `taxStatus` on a fee or shipping line, a fee's `taxClass` and a shipping line's `methodId`. All new fields are optional. The WooCommerce connector fills them from the order resource and the WCPOS payment ledger.
+
+  An order list page now leaves out an order the connector cannot read and counts it in `unreadable`, instead of failing the whole page. An order whose payment record the connector cannot read carries `paymentRecordUnreadable`.
+
+- 28ba50e: StoreTaxRate gains optional `rules` for a backend's override-rate conditions.
+- cc6f6cf: `StoreSettings` gains `preventOverselling` and `StockLevel` gains `backorders` (`no` | `notify` | `yes`). The WooCommerce connector reads the store's `prevent_overselling` and each product's and variation's `backorders`, which WCPOS v2's stock guard needs. The product schema goes to version 3, so a till resyncs its products once.
+- 23a6813: `StoreSettings.moneyFormat` carries the store's own money format (core's `MoneyFormat`). The WooCommerce connector fills it from WCPOS's store row (currency position, thousand and decimal separators, decimals) and WooCommerce's currency symbol, so CAD reads `$`; pass it to `CurrencyProvider`'s `format`.
+
+### Patch Changes
+
+- e928f11: A display's check code is unique among its till's live pending pairings, and the in-memory reference server now rerolls only against that till.
+- ac46fa5: The `DisplaySignalling` docs now say the till's `deviceId` is a bearer secret on some backends (ADR-085, #753): an implementation never logs it, puts it in an error, a response or a display's view, or returns it to another device. The pairing and display service options say the same.
+- 61846d3: The tender pane offers every manual-capture payment method the host passes, records each as its wire method plus its own `methodId`, and labels ledger, takings and report rows with the method's title; takings and report rows key by kind and id (`legMethodId`), so two methods never merge. `takingsByMethod` returns an object with no prototype; read it with `Object.hasOwn`, not `hasOwnProperty`.
+- c9201a2: Internal tidy: `precheckCommand` builds its rejections through one helper, core uses `OrderCreatePayload` internally (the deprecated `OrderCreatePayloadV3` alias stays exported), and the order.create version docs now list version 6. Behaviour unchanged.
+- a171cf5: `precheckCommand` refuses an order.create 9 payload that carries a customer address without `taxAddress` (#790).
+
+  The order outbox treats an `unsupported_version` downgrade that would not go strictly lower, or would stay above the store's cap, as a terminal rejection instead of resending (#790).
+
 ## 3.20.1
 
 ## 3.20.0
