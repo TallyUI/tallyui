@@ -432,9 +432,9 @@ it('exports only the two reopenable refusal codes', () => {
   expect(REOPENABLE_CODES).toEqual(['coupon_invalid', 'total_mismatch']);
 });
 
-async function reopenedTakenAt() {
+async function reopenedTakenAt(takenAt = '2026-10-06T11:58:00.000Z') {
   const stored = storedOrder();
-  const order: PosOrder = { ...stored, payments: [{ ...stored.payments[0], takenAt: '2026-10-06T11:58:00.000Z' }, stored.payments[1]] };
+  const order: PosOrder = { ...stored, payments: [{ ...stored.payments[0], takenAt }, stored.payments[1]] };
   await db.pos_orders.insert(order);
   return (await draft(await reopenRefusedOrder(order.id, deps()))).payments;
 }
@@ -447,4 +447,10 @@ it('T8 reopen leaves a legacy stored leg without takenAt', async () => {
   const legacy = (await reopenedTakenAt())[1];
   expect(legacy).toMatchObject({ method: 'external', reopened: true });
   expect(legacy).not.toHaveProperty('takenAt');
+});
+
+it('reopen drops a stored takenAt that is not an ISO instant, keeping the leg', async () => {
+  const [leg] = await reopenedTakenAt('yesterday');
+  expect(leg).toMatchObject({ method: 'cash', amountMinor: storedOrder().payments[0].amountMinor, reopened: true });
+  expect(leg).not.toHaveProperty('takenAt');
 });

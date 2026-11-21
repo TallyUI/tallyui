@@ -2,6 +2,7 @@ import type { ServerCapabilities } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import { couponPricingBasis, createOrderBuilder, type StorePricedCoupon } from '../order/order-builder';
 import { writeOrderDraft } from '../order/order-drafts';
+import { isTakenAt } from '../order/taken-at';
 import type { Order } from '../order/types';
 import { readSession, type ClosureCollection, type RegisterSessionCollection } from '../register/session-store';
 import { readFresh } from '../rxdb';
@@ -128,7 +129,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor, reopened: true,
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
-      ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
+      ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
     });
     if (order.customer?.id && order.customer.name && customerRefusal(order.customer) === null) {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,
