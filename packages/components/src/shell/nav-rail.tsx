@@ -10,6 +10,8 @@ export interface NavRailProps {
   items: ShellNavItem[];
   activeId?: string;
   onNavigate: (id: string) => void;
+  /** Drawn at the foot of the rail, under the bottom items (a version line). */
+  footer?: React.ReactNode;
   className?: string;
   testID?: string;
 }
@@ -19,7 +21,7 @@ export interface NavRailProps {
  * plus 2 units each side (64 at Regular), so it follows the scale step as v2's does. Icon-only:
  * the label shows to the right on hover or keyboard focus, v2's web tooltip.
  */
-export function NavRail({ items, activeId, onNavigate, className, testID = 'nav-rail' }: NavRailProps) {
+export function NavRail({ items, activeId, onNavigate, footer, className, testID = 'nav-rail' }: NavRailProps) {
   const [hinted, setHinted] = React.useState<string | null>(null);
   const renderItem = (item: ShellNavItem) => (
     <View key={item.id} className="relative z-10">
@@ -53,6 +55,11 @@ export function NavRail({ items, activeId, onNavigate, className, testID = 'nav-
     >
       <View className="gap-2">{top.map(renderItem)}</View>
       {bottom.length > 0 && <View className="mt-auto gap-2">{bottom.map(renderItem)}</View>}
+      {footer != null && (
+        <View testID={`${testID}-footer`} className={cn('items-center', bottom.length > 0 ? 'mt-2' : 'mt-auto')}>
+          {footer}
+        </View>
+      )}
     </View>
   );
 }

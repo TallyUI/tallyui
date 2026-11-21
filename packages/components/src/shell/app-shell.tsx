@@ -23,6 +23,8 @@ export interface AppShellProps {
   onNavigate: (id: string) => void;
   /** Drawn above the page (a `RegisterBar`); its menu button opens the drawer on phones. */
   registerBar?: React.ReactNode;
+  /** Drawn at the foot of the rail on wide windows and of the drawer on phones (a version line). */
+  navFooter?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
   testID?: string;
@@ -34,6 +36,7 @@ export function AppShell({
   activeId,
   onNavigate,
   registerBar,
+  navFooter,
   children,
   className,
   testID = 'app-shell',
@@ -54,7 +57,7 @@ export function AppShell({
   return (
     <ShellContext.Provider value={shell}>
       <View testID={testID} className={cn('flex-1 bg-background', !phone && 'flex-row', className)}>
-        {!phone && <NavRail items={navItems} activeId={activeId} onNavigate={onNavigate} />}
+        {!phone && <NavRail items={navItems} activeId={activeId} onNavigate={onNavigate} footer={navFooter} />}
         {page}
         {phone && (
           <NavDrawer
@@ -63,6 +66,7 @@ export function AppShell({
             items={navItems}
             activeId={activeId}
             onNavigate={onNavigate}
+            footer={navFooter}
           />
         )}
       </View>

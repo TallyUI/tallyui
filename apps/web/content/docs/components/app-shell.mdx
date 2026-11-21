@@ -38,6 +38,7 @@ A window at least 768 wide and 480 tall gets the `NavRail`. Anything smaller, a 
 | `activeId` | `string` | --- | The `id` of the current page's item |
 | `onNavigate` | `(id: string) => void` | required | Called with the pressed item's `id` |
 | `registerBar` | `ReactNode` | --- | Drawn above the page, usually a `RegisterBar` |
+| `navFooter` | `ReactNode` | --- | Drawn at the foot of the rail on wide windows and of the drawer on phones, such as the app version |
 | `children` | `ReactNode` | --- | The page |
 | `className` | `string` | --- | Override root container styles |
 | `testID` | `string` | `'app-shell'` | Test identifier for the root |
