@@ -127,6 +127,25 @@ your app does.
 
 In Node.js environments (tests, server-side rendering), `getStorage()` returns in-memory storage automatically. No configuration needed.
 
+### Data size
+
+`measureCollectionBytes(collection, options?)` counts a collection's live documents and sums their
+logical data size: each document's UTF-8 JSON without RxDB's metadata, not the bytes on disk (no
+indexes, pages or WAL). Deleted documents are not counted. It reads every live document a page at a
+time, so run it on demand, never on mount or in a hot path; `signal` cancels it between pages.
+
+```tsx
+import { measureCollectionBytes } from '@tallyui/database';
+
+const { docs, bytes } = await measureCollectionBytes(db.products, { signal });
+
+// A storage screen: one row per collection.
+for (const collection of Object.values(db.collections)) {
+  const { docs, bytes } = await measureCollectionBytes(collection, { signal });
+  console.log(collection.name, docs, bytes);
+}
+```
+
 ## ReplicationAdapter Interface
 
 If you're building a custom connector, implement `ReplicationAdapter` for each collection:
