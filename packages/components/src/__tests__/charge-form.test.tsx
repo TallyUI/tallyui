@@ -18,7 +18,7 @@ describe('ChargeForm', () => {
     expect(screen.getByRole('button', { name: label }).getAttribute('aria-selected')).toBe('true');
     input('Name', ' Wrapping ');
     input('Amount', '1,50');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind, name: 'Wrapping', amountMinor: 150,
       taxStatus: undefined, taxClass: undefined });
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -32,7 +32,7 @@ describe('ChargeForm', () => {
       expect(screen.getByRole('group', { name })).toBeTruthy();
       input('Name', 'Wrapping');
       input('Amount', '1');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind, name: 'Wrapping', amountMinor: 100,
         taxStatus: undefined, taxClass: undefined });
     });
@@ -57,7 +57,7 @@ describe('ChargeForm', () => {
     render(<ChargeForm currency="EUR" onApply={onApply} onClose={onClose} />);
     input('Name', name);
     input('Amount', amount);
-    click('Apply');
+    click('Add to Cart');
     expect(screen.getByRole('alert').textContent).toBe(message);
     expect(onApply).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('ChargeForm', () => {
       render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
       input('Name', ' ');
       input('Amount', '1');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind, name }));
       cleanup();
     }
@@ -82,7 +82,7 @@ describe('ChargeForm', () => {
       render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
       input('Name', 'Bag');
       input('Amount', '-2');
-      click('Apply');
+      click('Add to Cart');
       expect(screen.getByRole('alert').textContent).toBe(message);
       expect(onApply).not.toHaveBeenCalled();
       cleanup();
@@ -95,7 +95,7 @@ describe('ChargeForm', () => {
       render(<ChargeForm currency="EUR" kind={kind} onApply={onApply} onClose={() => {}} />);
       input('Name', 'Bag');
       input('Amount', '0');
-      click('Apply');
+      click('Add to Cart');
       if (kind === 'fee') {
         expect(screen.getByRole('alert').textContent).toBe('Enter an amount greater than zero');
         expect(onApply).not.toHaveBeenCalled();
@@ -129,13 +129,13 @@ describe('ChargeForm', () => {
     click('Reduced');
     expect(screen.getByRole('switch', { name: 'No tax' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('button', { name: 'Reduced' }).getAttribute('aria-selected')).toBe('true');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 100, taxStatus: 'none', taxClass: 'reduced' });
     fireEvent.click(screen.getByRole('switch', { name: 'No tax' }));
     click('No class');
     expect(screen.getByRole('switch', { name: 'No tax' }).getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('button', { name: 'Reduced' }).getAttribute('aria-selected')).toBe('false');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply).toHaveBeenLastCalledWith({ kind: 'fee', name: 'Bag', amountMinor: 100, taxStatus: undefined, taxClass: undefined });
   });
 
@@ -151,7 +151,7 @@ describe('ChargeForm', () => {
     expect(screen.getByText("Shipping is taxed at the store's shipping tax class.")).toBeTruthy();
     input('Name', 'Delivery');
     input('Amount', '2');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
       taxStatus: undefined, taxClass: undefined });
     click('Custom item');
@@ -176,7 +176,7 @@ describe('ChargeForm', () => {
       input('Name', 'Delivery');
       input('Amount', '2');
       fireEvent.click(noTax());
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
         taxStatus: 'none', taxClass: undefined });
     });
@@ -185,7 +185,7 @@ describe('ChargeForm', () => {
       const onApply = mountShipping();
       input('Name', 'Delivery');
       input('Amount', '2');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
         taxStatus: undefined, taxClass: undefined });
     });
@@ -194,7 +194,7 @@ describe('ChargeForm', () => {
       const onApply = mountShipping({ initial: { name: 'Courier', amountMinor: 500, taxStatus: 'none' } });
       expect(noTax().getAttribute('aria-checked')).toBe('true');
       fireEvent.click(noTax());
-      click('Apply');
+      click('Save');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Courier', amountMinor: 500,
         taxStatus: undefined, taxClass: undefined });
     });
@@ -220,7 +220,7 @@ describe('ChargeForm', () => {
       const onApply = mountShipping({ lineTax: { none: true, classes: true },
         initial: { name: 'Delivery', amountMinor: 200, taxClass: 'reduced-rate' } });
       fireEvent.click(noTax());
-      click('Apply');
+      click('Save');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'shipping', name: 'Delivery', amountMinor: 200,
         taxStatus: 'none', taxClass: 'reduced-rate' });
     });
@@ -238,7 +238,7 @@ describe('ChargeForm', () => {
     render(<ChargeForm currency="EUR" onApply={onApply} onClose={onClose} />);
     input('Name', 'Bag');
     input('Amount', '1');
-    click('Apply');
+    click('Add to Cart');
     expect(screen.getByRole('alert').textContent).toBe('This sale is being saved. Retry to finish it.');
     expect(onClose).not.toHaveBeenCalled();
     click('Cancel');
@@ -265,7 +265,7 @@ describe('ChargeForm', () => {
     for (const currency of ['EUR', '€']) expect(screen.queryByText(currency)).toBeNull();
     input('Name', 'Bag');
     input('Amount', '12.34');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Bag', amountMinor: 1234 }));
   });
 
@@ -291,7 +291,7 @@ describe('ChargeForm', () => {
       expect(screen.getByTestId('charge-form-unit-percent').getAttribute('aria-selected')).toBe('true');
       expect(screen.getByTestId('charge-form-currency').textContent).toBe('%');
       input('Amount', '12,5');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith({ kind: 'fee', name: 'Fee', amountMinor: 0, percent: 12.5,
         taxStatus: undefined, taxClass: undefined });
       expect(Object.keys(onApply.mock.calls[0][0])).not.toContain('amountIncludesTax');
@@ -304,7 +304,7 @@ describe('ChargeForm', () => {
       click('Shipping');
       expect(screen.queryByRole('button', { name: '%' })).toBeNull();
       input('Amount', '3');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'shipping', amountMinor: 300 }));
       expect(Object.keys(onApply.mock.calls[0][0])).not.toContain('percent');
     });
@@ -315,7 +315,7 @@ describe('ChargeForm', () => {
         render(<ChargeForm currency="EUR" allowPercent onApply={onApply} onClose={() => {}} />);
         unit('percent');
         input('Amount', amount);
-        click('Apply');
+        click('Add to Cart');
         expect(screen.getByRole('alert').textContent).toBe(message);
         expect(onApply).not.toHaveBeenCalled();
       });
@@ -327,10 +327,10 @@ describe('ChargeForm', () => {
         click(kind);
         expect(includesTax()!.getAttribute('aria-checked')).toBe(String(store));
         input('Amount', '1');
-        click('Apply');
+        click('Add to Cart');
         expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
         fireEvent.click(includesTax()!);
-        click('Apply');
+        click('Add to Cart');
         expect(onApply.mock.lastCall![0]).toMatchObject({ amountIncludesTax: !store });
         fireEvent.click(includesTax()!);
       }
@@ -345,13 +345,13 @@ describe('ChargeForm', () => {
       expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Amount' }).value).toBe('10');
       expect(screen.getByTestId('charge-form-unit-percent').getAttribute('aria-selected')).toBe('true');
       expect(includesTax()).toBeNull();
-      click('Apply');
+      click('Save');
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10 });
       expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
       unit('amount');
       expect(includesTax()!.getAttribute('aria-checked')).toBe('false');
       input('Amount', '2');
-      click('Apply');
+      click('Save');
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 200 });
       expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('percent');
     });
@@ -360,7 +360,7 @@ describe('ChargeForm', () => {
       const onApply = vi.fn().mockReturnValue(null);
       render(<ChargeForm currency="EUR" kind="fee"
         initial={{ name: 'Service', amountMinor: 500, percent: 10, amountIncludesTax: false }} onApply={onApply} onClose={() => {}} />);
-      click('Apply');
+      click('Save');
       expect(onApply.mock.lastCall![0]).toMatchObject({ percent: 10, amountIncludesTax: false });
     });
 
@@ -372,7 +372,7 @@ describe('ChargeForm', () => {
       unit('percent');
       expect(includesTax()).toBeNull();
       input('Amount', '10');
-      click('Apply');
+      click('Add to Cart');
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 10 });
       expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
       unit('amount');
@@ -386,7 +386,7 @@ describe('ChargeForm', () => {
       expect(includesTax()!.getAttribute('aria-checked')).toBe('true');
       unit('percent');
       input('Amount', '5');
-      click('Apply');
+      click('Save');
       expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 0, percent: 5 });
       expect(Object.keys(onApply.mock.lastCall![0])).not.toContain('amountIncludesTax');
     });
@@ -407,7 +407,7 @@ describe('ChargeForm reads the store money format (#1086)', () => {
   it('CF1: COMMA reads a grouped fee', () => {
     const onApply = mount(COMMA);
     input('Amount', '1.234,50');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply.mock.lastCall![0]).toMatchObject({ kind: 'fee', amountMinor: 123450 });
   });
 
@@ -417,7 +417,7 @@ describe('ChargeForm reads the store money format (#1086)', () => {
   ] as const)('%s: refuses %j in %j %s', (_id, format, currency, text) => {
     const onApply = mount(format, { currency });
     input('Amount', text);
-    click('Apply');
+    click('Add to Cart');
     expect(screen.getByRole('alert').textContent).toBe('Enter a number.');
     expect(onApply).not.toHaveBeenCalled();
   });
@@ -425,12 +425,12 @@ describe('ChargeForm reads the store money format (#1086)', () => {
   it("CF4: without a provider '1,5' is 150 and '1.234,50' is refused", () => {
     const onApply = mount();
     input('Amount', '1,5');
-    click('Apply');
+    click('Add to Cart');
     expect(onApply.mock.lastCall![0]).toMatchObject({ amountMinor: 150 });
     cleanup();
     const refused = mount();
     input('Amount', '1.234,50');
-    click('Apply');
+    click('Add to Cart');
     expect(screen.getByRole('alert').textContent).toBe('Enter a number.');
     expect(refused).not.toHaveBeenCalled();
   });
@@ -439,7 +439,7 @@ describe('ChargeForm reads the store money format (#1086)', () => {
     const onApply = mount(COMMA, { initial: { name: 'Wrap', amountMinor: 1250 } });
     expect(amount().value).toBe('12,50');
     input('Amount', amount().value + '5');
-    click('Apply');
+    click('Save');
     expect(screen.getByRole('alert').textContent).toBe('Use at most 2 decimal places.');
     expect(onApply).not.toHaveBeenCalled();
   });
@@ -447,8 +447,30 @@ describe('ChargeForm reads the store money format (#1086)', () => {
   it('CF6: COMMA reads a grouped negative fee as negative', () => {
     const onApply = mount(COMMA);
     input('Amount', '-1.234,50');
-    click('Apply');
+    click('Add to Cart');
     expect(screen.getByRole('alert').textContent).toBe('A fee cannot be negative. Use Add Discount instead.');
     expect(onApply).not.toHaveBeenCalled();
+  });
+
+  describe('submit label', () => {
+    it('L1: reads Add to Cart when adding', () => {
+      mount();
+      expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    });
+
+    it('L2: reads Save when editing', () => {
+      mount(undefined, { initial: { name: 'Wrap', amountMinor: 100 } });
+      expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Add to Cart' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+    });
+
+    it('L3: reads the add label from the app catalogue', () => {
+      render(<I18nProvider locale="en" resources={{ en: { 'common.add_to_cart': 'Into the cart' } }}>
+        <ChargeForm currency="EUR" onApply={() => null} onClose={() => {}} /></I18nProvider>);
+      expect(screen.getByRole('button', { name: 'Into the cart' })).toBeTruthy();
+    });
   });
 });
