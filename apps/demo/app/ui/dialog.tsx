@@ -16,6 +16,8 @@ import {
 
 export default function DialogScreen() {
   const [controlled, setControlled] = useState(false);
+  const [switchA, setSwitchA] = useState(false);
+  const [switchB, setSwitchB] = useState(false);
 
   return (
     <>
@@ -232,6 +234,27 @@ export default function DialogScreen() {
                   </ComboboxContent>
                 </Combobox>
               </VStack>
+            </DialogContent>
+          </Dialog>
+        </VStack>
+
+        <VStack className="gap-3">
+          <Text className="text-lg font-bold">Switch Dialogs</Text>
+          <Dialog open={switchA} onOpenChange={setSwitchA}>
+            <DialogTrigger asChild>
+              <Button variant="outline"><Text>Open switch A</Text></Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Switch A</DialogTitle>
+              <Button onPress={() => { setSwitchA(false); setSwitchB(true); }}><Text>Open B</Text></Button>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={switchB} onOpenChange={setSwitchB}>
+            <DialogContent>
+              <DialogTitle>Switch B</DialogTitle>
+              <Input>
+                <Input.Field testID="switch-b-note" />
+              </Input>
             </DialogContent>
           </Dialog>
         </VStack>
