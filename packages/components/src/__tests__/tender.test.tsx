@@ -79,7 +79,7 @@ describe('Tender', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'T-9' } });
     click(`Take ${money(1250)} in Card terminal`);
     expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 1000 }, { method: 'external', amountMinor: 1250, reference: 'T-9' }]);
-    expect(screen.getByText('Paid in full')).toBeTruthy();
+    expect(screen.getByText(/^Paid in full · /)).toBeTruthy();
   });
 
   it('shows Cancel payment only where canVoidLeg allows; voiding strikes the leg and restores the balance', () => {
@@ -442,6 +442,8 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
   const host = [own('pos_cash', 'Till cash', 'cash'), own('cheque', 'Cheque', 'other'), own('stripe_terminal', 'Stripe reader', 'card', 'device')];
   /** A ledger row reads its title, then the amount and status. */
   const ledgerRow = (index: number) => text(`tender-leg-${leg(index)}`);
+  const legTime = (index: number) =>
+    new Date(sale.order.payments[index].takenAt!).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   it('records the default cash and card legs with no methodId at all', () => {
     start(3000);
@@ -467,7 +469,7 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     click(`Take ${money(2500)} in Till cash`);
     expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'pos_cash', amountMinor: 3000 }]);
     expect(text('tender-change')).toBe(`Change ${money(500)}`);
-    expect(ledgerRow(0)).toBe(`Till cash${money(3000)}CapturedCancel payment`);
+    expect(ledgerRow(0)).toBe(`Till cash${money(3000)}Captured${legTime(0)}Cancel payment`);
   });
 
   it("takes the host's cheque as an external leg under its own id, titled in the ledger", () => {
@@ -475,7 +477,7 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     fireEvent.click(screen.getByTestId('tender-method-cheque'));
     click(`Take ${money(2500)} in Cheque`);
     expect(sale.order.payments).toMatchObject([{ method: 'external', methodId: 'cheque', amountMinor: 2500 }]);
-    expect(ledgerRow(0)).toBe(`Cheque${money(2500)}CapturedCancel payment`);
+    expect(ledgerRow(0)).toBe(`Cheque${money(2500)}Captured${legTime(0)}Cancel payment`);
   });
 
   it('gives no change from a non-cash method that claims change: no hint, no cash chips, the no-change warning and no Take, as for the card', () => {
