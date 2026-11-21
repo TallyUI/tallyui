@@ -16,6 +16,8 @@ export type StoreOrdersRangeQuery = Omit<ListOrdersQuery, 'page' | 'perPage'>;
 
 /** The most `ListOrdersQuery.perPage` allows. */
 const PER_PAGE = 100;
+// The error a read ends with when a page says `hasMore: true` but adds no new order and no unreadable one.
+const STALLED = 'listOrders answered hasMore: true with a page that added no new order';
 
 type Read = {
   connector: TallyConnector;
@@ -61,8 +63,12 @@ async function readPages(
  * - Orders are deduplicated by id as pages land; the first copy stays. `unreadable` sums the pages' `unreadable`.
  * - A page with `hasMore: false` finishes: `complete: true`, `progress: null`, `orders` in `listOrders`' own order.
  * - A rejection stops the read: `error` is what was thrown, `progress` is `null`, the orders read so far stay.
+ * - A page with `hasMore: true` that adds no new order and no unreadable one also stops the read, with an `Error`, so
+ *   a store that repeats itself cannot page forever.
  * - A `query` that differs by value, or a new `connector` or `context`, abandons the read and starts again from
  *   page 1, showing none of the old orders; an equal new object changes nothing. Unmounting abandons the read.
+ *   So keep `connector` and `context` the same objects across renders: a new object each render restarts the read on
+ *   every render.
  *
  * Offset paging over a live store can repeat a row, which is dropped, or push a row past a page boundary mid-read,
  * which is then missed until the next read. Nothing is cached, so opening the screen again corrects it.
@@ -90,6 +96,7 @@ export function useStoreOrdersInRange(
         seen.add(order.id);
         return true;
       });
+      if (page.hasMore && fresh.length === 0 && !page.unreadable) throw new Error(STALLED);
       publish({
         ...current,
         orders: [...current.orders, ...fresh],
