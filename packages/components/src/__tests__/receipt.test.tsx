@@ -354,6 +354,13 @@ describe('Receipt with a prebuilt receipt', () => {
     expect(newSale).toHaveBeenCalledTimes(1);
   });
 
+  it('prints a reprinted carried coupon row without " off", and the other row with it', () => {
+    const line = { ...receipt.lineItems[0], displayDiscounts: [{ label: 'Discount', amountMinor: 100 }, { label: 'coupon save not accepted at send', amountMinor: 80 }] };
+    render(<Receipt receipt={{ ...receipt, lineItems: [line] }} newSale={() => {}} />);
+    expect(screen.getByLabelText(`Discount off: −${formatMoney({ amount: 100, currency: 'USD' })}`)).toBeTruthy();
+    expect(screen.getByLabelText(`coupon save not accepted at send: −${formatMoney({ amount: 80, currency: 'USD' })}`)).toBeTruthy();
+  });
+
   it('labels a payment the till does not take by its method and shows change when there is some', () => {
     render(<Receipt receipt={{ ...receipt, payments: [{ method: 'Bank', amountMinor: 886 }, { method: 'cash', amountMinor: 900 }], changeDueMinor: 14,
       header: { ...receipt.header, cashier: 'Bob' } }} newSale={() => {}} />);

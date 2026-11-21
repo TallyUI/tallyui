@@ -6,6 +6,7 @@ import { finalizeOrder } from '../pos-order/finalize';
 import { receiptTemplateData } from '../receipt-template/template-data';
 import type { TaxContext } from '../tax/types';
 import { buildReceiptData } from './build-receipt-data';
+import { carriedCouponLabel, isCarriedCouponLabel } from './carried-rows';
 import { buildReceiptDataFromPosOrder } from './reprint';
 import type { ReceiptData } from './types';
 
@@ -83,5 +84,12 @@ describe.each([true, false])('carried coupon receipt rows (pricesIncludeTax: %s)
     const { stored } = sale(pricesIncludeTax, one, true);
     const data = receiptTemplateData(buildReceiptDataFromPosOrder(stored, config));
     for (const line of data.lines) expect(line.discounts.map((row) => row.label)).toContain(label('save'));
+  });
+});
+
+describe('isCarriedCouponLabel', () => {
+  it('is true for a carried coupon label and false for every other row', () => {
+    expect(isCarriedCouponLabel(carriedCouponLabel('save'))).toBe(true);
+    for (const text of ['Discount', '10%', 'coupon save']) expect(isCarriedCouponLabel(text)).toBe(false);
   });
 });

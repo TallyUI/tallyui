@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
-import { buildReceiptData, noteDelivery, type ReceiptData, type SentOrder } from '@tallyui/pos';
+import { buildReceiptData, isCarriedCouponLabel, noteDelivery, type ReceiptData, type SentOrder } from '@tallyui/pos';
 import type { PosOrder } from '@tallyui/pos';
 import { injectPrintStyle } from './print-style';
 import { discountLabel } from './discount-form';
@@ -76,7 +76,7 @@ export function Receipt(props: ReceiptProps) {
       {/* Before any discount, then the line's own discounts as sub-rows (TallyUI ADR-063); they add up to the subtotal. */}
       {row(`${line.quantity} × ${money(line.unitPriceMinor)}`, money(line.displayAmountMinor))}
       {/* A row with no cart discount behind it (a carried coupon) prints under its own label. */}
-      {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row(order && !order.lineItems[index].discounts[i] ? discount.label
+      {line.displayDiscounts.map((discount, i) => <View key={i} className="pl-4">{row((order && !order.lineItems[index].discounts[i]) || (!order && isCarriedCouponLabel(discount.label)) ? discount.label
         : `${order ? discountLabel(order.lineItems[index].discounts[i], receipt.currency, formatMoney) : discount.label} off`, `−${money(discount.amountMinor)}`)}</View>)}
     </View>)}
     {/* Each discount appears once in the totals: line discounts are itemised under their lines and summed once here;
