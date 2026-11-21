@@ -74,7 +74,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     } else if (!session || session.status !== 'open') throw new ReopenRefusedOrderError(orderId, 'session_closed');
   }
   const existing = await deps.drafts.findOne(orderId).exec();
-  const parked = existing ? JSON.parse(String(existing.data)) as Order : undefined;
+  const parked = existing && (afterClose || options?.withoutCoupons) ? JSON.parse(String(existing.data)) as Order : undefined;
   // Parked while the session was open, its money is in the closed closure: it is not re-sent after close.
   if (afterClose && parked && !parked.afterClose) throw new ReopenRefusedOrderError(orderId, 'session_closed');
   if (parked && options?.withoutCoupons && parked.coupons?.some((coupon) => coupon.carried)) {

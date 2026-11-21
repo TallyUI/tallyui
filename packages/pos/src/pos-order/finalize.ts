@@ -165,8 +165,10 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   const { afterClose } = order;
+  // It finalizes at the total the closure counted, so it gives no change (a removed fee or shipping line would).
   if (afterClose && (order.payments.length !== afterClose.payments.length || order.payments.some((payment, i) =>
-    payment.method !== afterClose.payments[i].method || payment.amountMinor !== afterClose.payments[i].amountMinor))) {
+    payment.method !== afterClose.payments[i].method || payment.amountMinor !== afterClose.payments[i].amountMinor)
+    || order.totalMinor !== afterClose.payments.reduce((sum, payment) => sum + payment.amountMinor, 0))) {
     throw new Error(AFTER_CLOSE_PAYMENTS_CHANGED);
   }
   // An after-close sale keeps its original register; the till finalizing it now is not where it was taken.

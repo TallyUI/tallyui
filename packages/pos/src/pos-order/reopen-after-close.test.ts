@@ -38,8 +38,8 @@ beforeEach(async () => {
 });
 afterEach(async () => { await db.remove(); });
 
-/** The two-line sale of reopen-carry's E1, priced by the store, paid in cash; without its coupon when `coupons` is false. */
-function build(coupons = true): Order {
+/** The two-line sale of reopen-carry's E1, priced by the store, paid in cash; without its coupon when `coupons` is false, with a fee when `fee`. */
+function build(coupons = true, fee = false): Order {
   const builder = createOrderBuilder({ currency, taxContext });
   builder.addLine({ productId: 'p1', name: 'Shirt', unitPrice: { amount: 1000, currency }, quantity: 2 });
   const second = builder.addLine({ productId: 'p2', name: 'Cap', unitPrice: { amount: 500, currency } });
@@ -47,6 +47,7 @@ function build(coupons = true): Order {
   const ids = builder.getSnapshot().lineItems.map((line) => line.id);
   if (coupons) builder.setCoupons(['save'], { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
     priced: new Map([['save', { couponId: 'c1', lines: [{ lineId: ids[0], amountMinor: 120 }, { lineId: ids[1], amountMinor: 30 }] }]]) });
+  if (fee) builder.addFee({ name: 'Service', amountMinor: 200 });
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
   return builder.getSnapshot();
 }
@@ -56,9 +57,9 @@ const open = () => openSession(db.register_sessions, {
 });
 /** A refused sale stamped into a session, `whileOpen` run on it, then that session's state as `state` gives it. */
 async function refusedIn(state: 'listed' | 'unlisted' | 'no-closure' | 'counting', coupons = true,
-  whileOpen?: (order: PosOrder) => Promise<unknown>) {
+  whileOpen?: (order: PosOrder) => Promise<unknown>, fee = false) {
   const session = await open();
-  const order: PosOrder = { ...finalizeOrder(build(coupons), { capabilities, registerId, now: new Date('2026-11-21T10:00:00.000Z') }),
+  const order: PosOrder = { ...finalizeOrder(build(coupons, fee), { capabilities, registerId, now: new Date('2026-11-21T10:00:00.000Z') }),
     sessionId: session.id, syncStatus: 'rejected', error: { code: coupons ? 'coupon_invalid' : 'total_mismatch', message: 'x' } };
   await db.pos_orders.insert(order);
   await whileOpen?.(order);
@@ -222,6 +223,28 @@ describe('reopenRefusedOrder after close', () => {
     it('the unchanged draft finalizes', async () => {
       const saved = await afterCloseDraft();
       expect(finalizeOrder(saved, { capabilities, now }).totalMinor).toBe(saved.totalMinor);
+    });
+    async function feeDraft() {
+      const { order } = await refusedIn('listed', true, undefined, true);
+      expect(order.fees).toHaveLength(1);
+      return draft(await reopenRefusedOrder(order.id, deps()));
+    }
+    it('B4a a removed fee, paid again in cash at the original amount, refuses AFTER_CLOSE_PAYMENTS_CHANGED', async () => {
+      const saved = await feeDraft();
+      const builder = restoreOrderDraft(saved, { currency, taxContext });
+      const before = builder.getSnapshot();
+      builder.removeFee(before.fees![0].id);
+      builder.removePayment(before.payments[0].id);
+      builder.addPayment({ method: 'cash', amountMinor: before.payments[0].amountMinor });
+      const changed = builder.getSnapshot();
+      expect(changed.totalMinor).toBeLessThan(before.totalMinor);
+      expect(changed.payments.map(({ method, amountMinor }) => ({ method, amountMinor }))).toEqual(saved.afterClose!.payments);
+      expect(() => finalizeOrder(changed, { capabilities, now })).toThrow(AFTER_CLOSE_PAYMENTS_CHANGED);
+    });
+    it('B4b the unchanged fee sale finalizes at the sum of the payments the closure counted', async () => {
+      const saved = await feeDraft();
+      const successor = finalizeOrder(restored(saved), { capabilities, now });
+      expect(successor.totalMinor).toBe(saved.afterClose!.payments.reduce((sum, payment) => sum + payment.amountMinor, 0));
     });
   });
 });
