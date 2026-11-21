@@ -473,4 +473,67 @@ describe('ChargeForm reads the store money format (#1086)', () => {
       expect(screen.getByRole('button', { name: 'Into the cart' })).toBeTruthy();
     });
   });
+
+  describe('SKU row', () => {
+    const sku = (props: Partial<ChargeFormProps> = {}) => {
+      const onApply = vi.fn().mockReturnValue(null);
+      render(<ChargeForm currency="EUR" kind="custom" onApply={onApply} onClose={() => {}} {...props} />);
+      return onApply;
+    };
+    const addRow = () => screen.queryByTestId('charge-form-add-sku');
+    const field = () => screen.queryByTestId('charge-form-sku-input');
+
+    it('K1: the add-row opens the field and the trimmed SKU is sent', () => {
+      const onApply = sku({ sku: true });
+      expect(addRow()).toBeTruthy();
+      expect(field()).toBeNull();
+      fireEvent.click(addRow()!);
+      expect(field()).toBeTruthy();
+      expect(addRow()).toBeNull();
+      fireEvent.change(field()!, { target: { value: ' MISC-1 ' } });
+      input('Name', 'Gift');
+      input('Amount', '2');
+      click('Add to Cart');
+      expect(onApply.mock.calls[0][0]).toMatchObject({ kind: 'custom', name: 'Gift', amountMinor: 200, sku: 'MISC-1' });
+    });
+
+    it('K2: a closed or blank field sends no sku key', () => {
+      const closed = sku({ sku: true });
+      input('Amount', '2');
+      click('Add to Cart');
+      expect(closed.mock.calls[0][0]).not.toHaveProperty('sku');
+      cleanup();
+      const blank = sku({ sku: true });
+      fireEvent.click(addRow()!);
+      fireEvent.change(field()!, { target: { value: '  ' } });
+      input('Amount', '2');
+      click('Add to Cart');
+      expect(blank.mock.calls[0][0]).not.toHaveProperty('sku');
+    });
+
+    it('K3: the fee kind has no add-row', () => {
+      sku({ sku: true, kind: 'fee' });
+      expect(addRow()).toBeNull();
+    });
+
+    it('K4: without sku there is no add-row', () => {
+      sku();
+      expect(addRow()).toBeNull();
+    });
+
+    it('K5: an edited charge with a SKU opens the field and saves it unchanged', () => {
+      const onApply = sku({ sku: true, initial: { name: 'Gift wrap', amountMinor: 200, sku: 'GW-1' } });
+      expect(addRow()).toBeNull();
+      expect((field() as HTMLInputElement).value).toBe('GW-1');
+      click('Save');
+      expect(onApply.mock.calls[0][0]).toMatchObject({ sku: 'GW-1' });
+    });
+
+    it('K6: without sku, an edited charge keeps its own SKU', () => {
+      const onApply = sku({ initial: { name: 'Gift wrap', amountMinor: 200, sku: 'GW-1' } });
+      expect(addRow()).toBeNull();
+      click('Save');
+      expect(onApply.mock.calls[0][0]).toMatchObject({ sku: 'GW-1' });
+    });
+  });
 });
