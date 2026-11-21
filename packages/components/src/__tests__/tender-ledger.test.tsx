@@ -1,6 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
+import { canVoidLeg, createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, useSale, writeOrderDraft, type Order } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { Tender } from '../sale/tender';
@@ -123,5 +127,80 @@ describe('TenderLedger confirmVoid', () => {
     fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`));
     expect(question().getByText(`Void ${money(1500)} on Card terminal`)).toBeTruthy();
     expect(money(1500)).toBe('€15.00');
+  });
+});
+
+describe('TenderLedger held legs (desk 2026-11-21)', () => {
+  let db: RxDatabase<{ pos_drafts: RxCollection }> | undefined;
+  afterEach(async () => { cleanup(); await db?.remove(); db = undefined; });
+  const taxContext = { getTaxRatePpm: () => 0, pricesIncludeTax: false };
+  /** A €50 sale paid by one captured leg, written as a draft, resumed and tendered: how a reopened or after-close sale reaches the till. */
+  async function resumed(leg: { method: 'cash' | 'external'; reopened?: true }, afterClose = false) {
+    db = await createRxDatabase({ name: `heldlegs${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext, ...(afterClose ? { afterClose: { sessionId: 'closed-session',
+      createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: leg.method, amountMinor: 5000 }],
+      taxMinor: 0, fees: [], shipping: [] } } : {}) });
+    builder.addLine({ productId: 'coffee', name: 'Coffee', unitPrice: { amount: 5000, currency: 'EUR' } });
+    builder.addPayment({ id: 'leg-1', ...leg, amountMinor: 5000 });
+    await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    let held!: ReturnType<typeof useSale>;
+    function Held({ drafts }: { drafts: RxCollection }) {
+      held = useSale(settings, { registerId: 'register-1', cashierRef: 'cashier', drafts });
+      return <Tender sale={held} />;
+    }
+    render(<TaxProvider {...taxProviderProps(settings)}><Held drafts={db.pos_drafts} /></TaxProvider>);
+    await act(async () => { expect(await held.resume(builder.getSnapshot().id)).toBeNull(); });
+    act(() => held.startTender('cash'));
+    return held;
+  }
+  /** use-sale-locked-legs.test.tsx's reopenedBuilder (tender.test.tsx's reopen): a store order whose €50 leg the store holds. */
+  function locked() {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
+    builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 5000, currency: 'EUR' } });
+    builder.addPayment({ id: 'leg-1', method: 'external', amountMinor: 5000, reference: 'Cash', storePaymentId: 'p1', locked: true });
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
+    act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+    act(() => sale.startTender('cash'));
+    return sale;
+  }
+  /** The leg is one Cancel payment would void (manual, void-capable, captured): only the held-leg guard hides it. */
+  function expectVoidable(held: { order: Order }) {
+    const [only] = held.order.payments;
+    expect(only.id).toBe('leg-1');
+    expect(canVoidLeg(only, paymentMethodOf(only.method === 'cash' ? 'cash' : 'external'))).toBe(true);
+  }
+
+  it.each(['cash', 'external'] as const)('L1 a live captured %s leg has Cancel payment', (method) => {
+    start(5000);
+    act(() => { sale.addTender({ method, amountMinor: 1000 }); });
+    expect(canVoidLeg(sale.order.payments[0], paymentMethodOf(method))).toBe(true);
+    expect(screen.getByTestId(`tender-leg-${leg(0)}-void`)).toBeTruthy();
+  });
+
+  it('L1 a reopened leg has no Cancel payment', async () => {
+    const held = await resumed({ method: 'cash', reopened: true });
+    expect(held.order.payments[0].reopened).toBe(true);
+    expectVoidable(held);
+    expect(screen.getByTestId('tender-leg-leg-1')).toBeTruthy();
+    expect(screen.queryByTestId('tender-leg-leg-1-void')).toBeNull();
+  });
+
+  it('L1 a locked leg has no Cancel payment', () => {
+    const held = locked();
+    expect(held.order.payments[0].locked).toBe(true);
+    expectVoidable(held);
+    expect(screen.getByTestId('tender-leg-leg-1')).toBeTruthy();
+    expect(screen.queryByTestId('tender-leg-leg-1-void')).toBeNull();
+  });
+
+  it("L1 a leg in the after-close closure's payments has no Cancel payment", async () => {
+    const held = await resumed({ method: 'cash' }, true);
+    expect(held.order.afterClose?.payments.map((payment) => payment.id)).toEqual(['leg-1']);
+    expect(held.order.payments[0].reopened).toBeUndefined();
+    expectVoidable(held);
+    expect(screen.getByTestId('tender-leg-leg-1')).toBeTruthy();
+    expect(screen.queryByTestId('tender-leg-leg-1-void')).toBeNull();
   });
 });
