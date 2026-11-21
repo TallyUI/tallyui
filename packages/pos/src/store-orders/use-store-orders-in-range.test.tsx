@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { StoreOrder, StoreOrderPage, SyncContext, TallyConnector } from '@tallyui/core';
@@ -136,6 +137,64 @@ describe('useStoreOrdersInRange', () => {
     expect(result.current).toEqual({ ...IDLE, progress: { downloaded: 0, total: null } });
   });
 
+  it('S6c shows no old read on a switch back', async () => {
+    const q1Page1 = deferred<StoreOrderPage>();
+    const { listOrders, connector } = fakeConnector(q1Page1.promise, deferred<StoreOrderPage>().promise);
+    const q2: StoreOrdersRangeQuery = { ...query, status: 'completed' };
+    const { result, rerender } = renderHook(({ q }) => useStoreOrdersInRange(connector, context, q), {
+      initialProps: { q: query },
+    });
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(1));
+    await act(async () => q1Page1.resolve({ orders: [A], hasMore: true, total: 5 }));
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(2));
+    expect(ids(result.current.orders)).toEqual(['A']);
+
+    rerender({ q: q2 });
+    rerender({ q: query });
+    expect(result.current).toEqual({ ...IDLE, progress: { downloaded: 0, total: null } });
+    await act(async () => {});
+    expect(result.current).toEqual({ ...IDLE, progress: { downloaded: 0, total: null } });
+  });
+
+  it('S6d keeps the new read when the old one lands late', async () => {
+    const q2: StoreOrdersRangeQuery = { ...query, status: 'completed' };
+    for (const settle of ['resolve', 'reject'] as const) {
+      const d1 = deferred<StoreOrderPage>();
+      const { listOrders, connector } = fakeConnector(d1.promise, Promise.resolve({ orders: [B], hasMore: false }));
+      const { result, rerender } = renderHook(({ q }) => useStoreOrdersInRange(connector, context, q), {
+        initialProps: { q: query },
+      });
+      await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(1));
+
+      rerender({ q: q2 });
+      await waitFor(() => expect(result.current.complete).toBe(true));
+      expect(ids(result.current.orders)).toEqual(['B']);
+
+      await act(async () => {
+        if (settle === 'resolve') d1.resolve({ orders: [A], hasMore: true });
+        else d1.reject(new Error('late'));
+      });
+      expect(ids(result.current.orders)).toEqual(['B']);
+      expect(result.current).toMatchObject({ complete: true, error: null });
+    }
+  });
+
+  it('S6e starts again on a new context', async () => {
+    const { listOrders, connector } = fakeConnector(Promise.resolve({ orders: [A], hasMore: false }));
+    const { result, rerender } = renderHook(({ ctx }) => useStoreOrdersInRange(connector, ctx, query), {
+      initialProps: { ctx: context },
+    });
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(listOrders).toHaveBeenCalledTimes(1);
+
+    const context2: SyncContext = { ...context };
+    rerender({ ctx: context2 });
+    expect(result.current).toEqual({ ...IDLE, progress: { downloaded: 0, total: null } });
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(2));
+    const [calledContext] = listOrders.mock.lastCall as unknown as [SyncContext];
+    expect(calledContext).toBe(context2);
+  });
+
   it('S7 is idle and calls nothing without a query, a context or listOrders', async () => {
     const { listOrders, connector } = fakeConnector();
     const cases = [
@@ -156,6 +215,14 @@ describe('useStoreOrdersInRange', () => {
 
     unmount();
     await act(async () => page1.resolve({ orders: [A], hasMore: true }));
+    expect(listOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it('S9 makes one page-1 call under StrictMode', async () => {
+    const { listOrders, connector } = fakeConnector();
+    renderHook(() => useStoreOrdersInRange(connector, context, query), { wrapper: StrictMode });
+
+    await act(async () => {});
     expect(listOrders).toHaveBeenCalledTimes(1);
   });
 });

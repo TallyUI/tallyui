@@ -40,8 +40,11 @@ async function readPages(
   onPage: (page: StoreOrderPage, first: boolean) => void,
 ): Promise<void> {
   for (let page = 1; ; page++) {
-    // A synchronous throw counts as a rejection.
-    const result = await Promise.resolve().then(() => connector.listOrders!(context, { ...query, page, perPage: PER_PAGE }));
+    // Yield first so a read abandoned before its call (StrictMode's double effect) calls nothing. A synchronous
+    // throw from `listOrders` still counts as a rejection, since this is an async function.
+    await Promise.resolve();
+    if (!live()) return;
+    const result = await connector.listOrders!(context, { ...query, page, perPage: PER_PAGE });
     if (!live()) return;
     onPage(result, page === 1);
     if (!result.hasMore) return;
@@ -97,9 +100,11 @@ export function useStoreOrdersInRange(
     }).catch((error: unknown) => {
       if (live) publish({ ...current, status: 'error', error });
     });
-    // Abandons the read in flight on a new connector, context or query value, or on unmount.
+    // Abandons the read in flight on a new connector, context or query value, or on unmount, and clears its published
+    // value so a switch back cannot show it; the memo's check covers the render before this cleanup runs.
     return () => {
       live = false;
+      setRead(null);
     };
   }, [connector, context, key]);
 
