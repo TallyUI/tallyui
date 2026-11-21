@@ -148,7 +148,7 @@ describe('reopenRefusedOrder carries store-priced coupons at the amounts charged
     expect(successor.coupons?.[0].carried).toBe(true);
   });
 
-  describe('E4 before schema 19 (no amountMinor)', () => {
+  describe('E4 stored shares only (no amountMinor)', () => {
     const strip = (order: PosOrder) => {
       for (const coupon of order.coupons ?? []) for (const line of coupon.lines ?? []) delete line.amountMinor;
       return order;
@@ -254,4 +254,22 @@ describe('reopenRefusedOrder carries store-priced coupons at the amounts charged
     expect(saved.lineItems).toHaveLength(2);
     expect(saved.totalMinor - saved.payments.reduce((sum, p) => sum + p.amountMinor, 0)).toBe(toCollectMinor);
   });
+
+  it.each([false, true])('G6 a line two coupons priced carries when its shares are exact and refuses when they are not: inclusive = %s',
+    async (pricesIncludeTax) => {
+      const fixture: Fixture = { ...twoCoupons(pricesIncludeTax), codes: { a: [[0, 7], [1, 7]], b: [[1, 7]] } }, order = stored(fixture);
+      const onSecond = (coupon: NonNullable<PosOrder['coupons']>[number]) => coupon.lines!.filter((l) => l.lineId === order.lines[1].id);
+      if (pricesIncludeTax) {
+        expect(order.coupons!.flatMap(onSecond).reduce((sum, l) => sum + l.discountMinor + l.discountTaxMinor, 0)).not.toBe(14);
+        await db.pos_orders.insert(order);
+        await expectInexact(order, fixture.context, undefined, effect(fixture));
+        return;
+      }
+      await db.pos_orders.insert(order);
+      const saved = await draft(await reopenRefusedOrder(order.id, deps(fixture.context)));
+      expectSameFigures(saved, order);
+      expect(saved.coupons!.flatMap((coupon) => coupon.lines!.filter((l) => l.lineId === saved.lineItems[1].id))
+        .reduce((sum, l) => sum + l.amountMinor!, 0)).toBe(14);
+      expect(saved.coupons!.map(({ code, carried }) => ({ code, carried }))).toEqual([{ code: 'a', carried: true }, { code: 'b', carried: true }]);
+    });
 });

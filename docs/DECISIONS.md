@@ -5045,11 +5045,15 @@ interface OrderCreatePayload {
       - In code: `reopenRefusedOrder` refuses with `coupon_carry_inexact` and `toCollectMinor` when the rebuilt sale
         does not equal the stored one line by line, when a coupon has no per-line amounts (WooCommerce replay coupons
         and orders stored before schema 13) or names a line the order does not hold, or when the store takes
-        order.create below 4. A carried line's amount is its stored amountMinor, else, on a line only one coupon priced
-        (outside WooCommerce rounding), the coupon total the stored line holds (unit price × quantity − discounts −
-        net), else its stored shares. `{ withoutCoupons: true }` is the explicit drop. `{ withoutCoupons: true }`
-        against a parked carried draft refuses `carried_draft_exists` rather than return it. Receipts show each carried
-        coupon as a row on each line it priced, labelled `coupon <code> not accepted at send`.
+        order.create below 4 (or its capabilities are not known). A carried line's amount is its stored amountMinor,
+        else, on a line only one coupon priced (outside WooCommerce rounding), the coupon total the stored line holds
+        (unit price × quantity − discounts − net), else its stored shares. A line several coupons priced in a store
+        whose prices include tax can therefore refuse: its shares are split ex-tax and tax separately and need not sum
+        to what was charged, and a remainder would prove the line but not each coupon's part. `{ withoutCoupons: true }`
+        is the explicit drop. `{ withoutCoupons: true }` against a parked carried draft refuses `carried_draft_exists`
+        rather than return it. Receipts show each carried coupon as a row on each line it priced, labelled
+        `coupon <code> not accepted at send`. A carried coupon whose lines are not all in the receipt's tax mode shows
+        its shares on every line, so its rows add up to its total.
       - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
         choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,

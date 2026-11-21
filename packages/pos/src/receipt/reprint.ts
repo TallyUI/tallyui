@@ -52,7 +52,9 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     const displayDiscounts = [...display
       ? (displayLine?.discounts ?? []).map((d) => ({ label: d.label ?? 'Discount', amountMinor: d.amountMinor }))
       : line.discountMinor > 0 ? [{ label: 'Discount', amountMinor: line.discountMinor }] : [],
-    ...carriedRows(order.coupons, line.id, line.taxInclusive ?? order.pricesIncludeTax, display ? display.taxInclusive : order.pricesIncludeTax)];
+    ...carriedRows(order.coupons, line.id, (id) => { const other = order.lines.find((row) => row.id === id);
+      return other ? other.taxInclusive ?? order.pricesIncludeTax : display ? display.taxInclusive : order.pricesIncludeTax; },
+    display ? display.taxInclusive : order.pricesIncludeTax)];
     return {
       name: line.name,
       ...(line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),

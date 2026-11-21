@@ -85,6 +85,16 @@ describe.each([true, false])('carried coupon receipt rows (pricesIncludeTax: %s)
     const data = receiptTemplateData(buildReceiptDataFromPosOrder(stored, config));
     for (const line of data.lines) expect(line.discounts.map((row) => row.label)).toContain(label('save'));
   });
+
+  it('R6 a coupon over lines in both tax modes adds up', () => {
+    const { snapshot, stored } = sale(pricesIncludeTax, { save: [[0, 125], [1, 71]] }, true);
+    if (pricesIncludeTax) {
+      const share = stored.coupons![0].lines!.find((l) => l.lineId === stored.lines[0].id)!;
+      expect(share.discountMinor + share.discountTaxMinor).not.toBe(125);
+    }
+    expectCarried(buildReceiptData(snapshot, config), snapshot.display.coupons!);
+    expectCarried(buildReceiptDataFromPosOrder(stored, config), stored.display!.coupons!);
+  });
 });
 
 describe('isCarriedCouponLabel', () => {
