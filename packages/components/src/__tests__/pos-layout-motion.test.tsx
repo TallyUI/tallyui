@@ -66,3 +66,32 @@ it('C6: a fade cut short by a layout change does not leave the column faded', as
   rerender(<POSLayout layout="split" {...slots} renderCheckout={renderCheckout} />);
   expect(screen.getByTestId('pos-column-fade').style.opacity).not.toBe('0');
 });
+
+it('C7: a new columnKey fades the split column', async () => {
+  const { rerender } = await act(async () => render(
+    <POSLayout layout="split" {...slots} renderCheckout={renderCheckout} columnKey="tender" />,
+  ));
+  expect(Animated.timing).not.toHaveBeenCalled();
+  rerender(<POSLayout layout="split" {...slots} renderCheckout={renderCheckout} columnKey="receipt:1" />);
+  expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    toValue: 1, duration: 200,
+  }));
+  expect(screen.getByTestId('pos-column-fade').style.opacity).toBe('0');
+});
+
+it('C8: an unchanged columnKey does not fade', async () => {
+  const { rerender } = await act(async () => render(
+    <POSLayout layout="split" {...slots} renderCheckout={renderCheckout} columnKey="receipt:1" />,
+  ));
+  rerender(<POSLayout layout="split" {...slots} renderCheckout={renderCheckout} columnKey="receipt:1" />);
+  expect(Animated.timing).not.toHaveBeenCalled();
+});
+
+it('C9: stacked ignores a new columnKey', async () => {
+  const { rerender } = await act(async () => render(
+    <POSLayout layout="stacked" {...slots} renderCheckout={renderCheckout} columnKey="tender" />,
+  ));
+  expect(Animated.timing).not.toHaveBeenCalled();
+  rerender(<POSLayout layout="stacked" {...slots} renderCheckout={renderCheckout} columnKey="receipt:1" />);
+  expect(Animated.timing).not.toHaveBeenCalled();
+});
