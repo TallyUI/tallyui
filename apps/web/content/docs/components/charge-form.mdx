@@ -27,6 +27,8 @@ Pass `kind` to open the form on one kind without the selector, as WCPOS v2's car
 
 As in WCPOS v2's Add Fee and Add Shipping, `allowPercent` adds a currency-or-% unit toggle to the fee kind, and `pricesIncludeTax` adds an Amount Includes Tax switch to the fee and shipping kinds that starts at the store's tax mode. The switch is hidden on a percent fee, which is always of the cart in the store's mode, and `amountIncludesTax` is then not sent. `percent` and `amountIncludesTax` reach `onApply` only when they carry a value.
 
+As in WCPOS v2's Misc product dialog, `sku` adds a "+ SKU" row to the custom kind, and the SKU reaches `onApply` only when one is entered.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -37,8 +39,9 @@ As in WCPOS v2's Add Fee and Add Shipping, `allowPercent` adds a currency-or-% u
 | `shippingTaxFromStore` | `boolean` | --- | For shipping, replaces tax controls with a store tax class notice and omits tax overrides from the submitted charge, unless `shippingNoTax` is set |
 | `shippingNoTax` | `boolean` | --- | With `shippingTaxFromStore`, the shipping kind also shows the No tax switch and sends `taxStatus: 'none'` when it is on; the tax class stays the store's |
 | `kind` | `'fee' \| 'shipping' \| 'custom'` | --- | Fixes the form to one kind, hides the kind selector, and names the form Add fee, Add shipping, or Add custom item; without it the form opens on Fee with the selector |
-| `initial` | `{ name: string; amountMinor: number; taxStatus?: 'taxable' \| 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean }` | --- | Edits that charge: the form is prefilled and titled `Edit <name>` |
+| `initial` | `{ name: string; amountMinor: number; taxStatus?: 'taxable' \| 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean; sku?: string }` | --- | Edits that charge: the form is prefilled and titled `Edit <name>` |
+| `sku` | `boolean` | --- | On the custom kind, shows the "+ SKU" row after the tax rows; pressing it shows the SKU field, and a SKU entered is sent in `onApply` as `sku` |
 | `allowPercent` | `boolean` | --- | Shows the amount-unit toggle (currency symbol or %) on the fee kind; a percent fee applies with `amountMinor` 0 and `percent` |
 | `pricesIncludeTax` | `boolean` | --- | The store's tax mode; given, the fee and shipping kinds show the Amount Includes Tax switch, starting at this value, and `amountIncludesTax` is sent only when the switch differs from it; on a percent fee the switch is hidden and `amountIncludesTax` is not sent |
-| `onApply` | `(charge: { kind: 'fee' \| 'shipping' \| 'custom'; name: string; amountMinor: number; taxStatus?: 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean }) => string \| null` | required | Receives the charge with a trimmed name and amount in minor units; return a refusal or `null` once applied |
+| `onApply` | `(charge: { kind: 'fee' \| 'shipping' \| 'custom'; name: string; amountMinor: number; taxStatus?: 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean; sku?: string }) => string \| null` | required | Receives the charge with a trimmed name and amount in minor units; return a refusal or `null` once applied |
 | `onClose` | `() => void` | required | Called on Cancel or after `onApply` returns `null` |

@@ -18,19 +18,24 @@ export interface ChargeFormProps {
    * Add Miscellaneous Product entries); absent, the form opens on Fee with the row. */
   kind?: 'fee' | 'shipping' | 'custom';
   /** Given, the form edits that charge: prefilled, titled `Edit <name>` as v2's record dialog. */
-  initial?: { name: string; amountMinor: number; taxStatus?: 'taxable' | 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean };
+  initial?: { name: string; amountMinor: number; taxStatus?: 'taxable' | 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean;
+    sku?: string };
+  /** On the custom kind, shows v2's "+ SKU" add-row after the tax rows; pressing it shows the SKU field. */
+  sku?: boolean;
   /** Shows the amount-unit toggle (currency symbol or %) on the fee kind, as v2's AmountUnitToggle. */
   allowPercent?: boolean;
   /** The store's tax mode. Given, the fee and shipping kinds show the "Amount Includes Tax" switch (not on a percent fee), which starts at this
    * value (Desk Q4: default = store tax mode, ADR-075). */
   pricesIncludeTax?: boolean;
   onApply: (charge: { kind: 'fee' | 'shipping' | 'custom'; name: string; amountMinor: number;
-    taxStatus?: 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean }) => string | null;
+    taxStatus?: 'none'; taxClass?: string; percent?: number; amountIncludesTax?: boolean;
+    sku?: string }) => string | null;
   onClose: () => void;
 }
 
 const NAME_LABEL_ID = 'charge-form-name-label';
 const AMOUNT_LABEL_ID = 'charge-form-amount-label';
+const SKU_LABEL_ID = 'charge-form-sku-label';
 
 const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center justify-center';
 /** A blank name takes v2's default for the kind: add-fee.tsx:71 (`pos_cart.fee`), add-shipping.tsx:73
@@ -38,7 +43,7 @@ const button = 'rounded-md border border-border px-3 py-2 min-h-11 items-center 
 const DEFAULT_NAME: Record<'fee' | 'shipping' | 'custom', string> = { fee: 'Fee', shipping: 'Shipping', custom: 'Product' };
 
 /** `onApply` returns a refusal to show inline, or null once applied. */
-export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, shippingNoTax, kind: fixedKind, initial, allowPercent,
+export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore, shippingNoTax, kind: fixedKind, initial, sku, allowPercent,
   pricesIncludeTax, onApply, onClose }: ChargeFormProps) {
   const currencySymbol = useCurrencySymbol();
   const format = useMoneyFormat();
@@ -54,7 +59,10 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
   const [noTax, setNoTax] = useState(initial?.taxStatus === 'none');
   const [includesTax, setIncludesTax] = useState(initial?.amountIncludesTax ?? pricesIncludeTax ?? false);
   const [taxClass, setTaxClass] = useState(initial?.taxClass ?? '');
+  const [skuText, setSkuText] = useState(initial?.sku ?? '');
+  const [skuOpen, setSkuOpen] = useState(Boolean(initial?.sku));
   const [error, setError] = useState<string | null>(null);
+  const showSku = Boolean(sku) && kind === 'custom';
   const storeShipping = kind === 'shipping' && shippingTaxFromStore;
   const showNoTax = storeShipping ? shippingNoTax : lineTax?.none;
   const showUnit = Boolean(allowPercent) && kind === 'fee';
@@ -81,6 +89,7 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
       ...(percentMode ? { percent: parsed } : !showUnit && initial?.percent !== undefined ? { percent: initial.percent } : {}),
       ...(percentMode ? {} : showIncludesTax ? includesTax !== pricesIncludeTax ? { amountIncludesTax: includesTax } : {}
         : initial?.amountIncludesTax !== undefined ? { amountIncludesTax: initial.amountIncludesTax } : {}),
+      ...(showSku ? skuText.trim() ? { sku: skuText.trim() } : {} : initial?.sku ? { sku: initial.sku } : {}),
     });
     setError(refused);
     if (refused === null) onClose();
@@ -130,6 +139,15 @@ export function ChargeForm({ currency, lineTax, taxClasses, shippingTaxFromStore
         </Pressable>)}
       </View> : null}
     </>}
+    {/* v2's "+ SKU" add-row (add-misc-product.tsx) on the custom item. */}
+    {showSku ? skuOpen ? <>
+      <Label nativeID={SKU_LABEL_ID}>{t('common.sku')}</Label>
+      <TextInput testID="charge-form-sku-input" accessibilityLabelledBy={SKU_LABEL_ID} accessibilityLabel={t('common.sku')}
+        value={skuText} onChangeText={setSkuText}
+        className="min-w-0 rounded-md border border-border bg-background px-3 py-2 text-foreground" />
+    </> : <Pressable testID="charge-form-add-sku" accessibilityRole="button" onPress={() => setSkuOpen(true)}
+      className={`${button} bg-card self-start`}>
+      <Text className="text-foreground">{`+ ${t('common.sku')}`}</Text></Pressable> : null}
     {error ? <Text accessibilityRole="alert" className="text-destructive">{error}</Text> : null}
     <View className="flex-row gap-2">
       <Pressable accessibilityRole="button" onPress={apply} className={`${button} bg-primary`}>
