@@ -739,6 +739,29 @@ describe('late sale', () => {
     }
   });
 
+  it('B13a: a zero-total after-close draft starts tender with no refusal and completes (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+        createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [], taxMinor: 0, fees: [], shipping: [] } });
+      builder.addLine({ productId: 'gift', variantId: 'free', name: 'Gift', unitPrice: { amount: 0, currency: 'EUR' } });
+      await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+      const onSaleCompleted = vi.fn();
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session: { id: sessionId, sessions } }));
+      await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+      act(() => result.current.startTender('external'));
+      expect(result.current.error).toBeNull();
+      expect(result.current.stage.kind).toBe('tender');
+      expect(result.current.order.payments).toEqual([]);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
   it("the late order is stored pending with lateSessionId through a real outbox, and the closed session's closure doesn't count it", async () => {
     const { db, sessions, sessionId } = await withOpenSession();
     await db.addCollections({ closures: { schema: closureSchema } });

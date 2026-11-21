@@ -516,7 +516,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (afterCloseChanged(current)) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
     const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
-    if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
+    if (current.afterClose) setTender(null); // its legs are all counted
+    else if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
     else setTender(method === 'external' && current.totalMinor - heldMinor > 0 ? { method, amountMinor: current.totalMinor - heldMinor } : null);
     stageNow.current = { kind: 'tender', method }; // 5.2 backlog F4: a same-tick setCustomer/setAddresses sees the tender
     setStage(stageNow.current);
