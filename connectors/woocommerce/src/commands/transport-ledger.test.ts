@@ -137,7 +137,7 @@ describe('WCPOS 2.0 payment ledger', () => {
   });
   it('ledgerPayments absent: /site 2.0.4 selects ledger, 1.10.20 legacy, unreadable /site is retry with no push; /site read once per transport', async () => {
     const ledger = store({ queue: { site: [json(500, {})] } });
-    expect(await ledger.transport.send([order()])).toEqual({ kind: 'retry', reason: 'store_version_unknown' });
+    expect(await ledger.transport.send([order()])).toEqual({ kind: 'retry', reason: 'status_500' });
     expect(await ledger.transport.send([order()])).toEqual(applied);
     expect(await ledger.transport.send([order()])).toEqual(applied);
     expect(ledger.calls.map(({ path }) => path)).toEqual(['site', 'site', 'push/orders', 'orders/115/payments', 'push/orders', 'orders/115/payments']);
@@ -222,5 +222,29 @@ describe('WCPOS 2.0 payment ledger: amendment 2', () => {
     expect(calls.map(({ path }) => path)).toEqual(['push/orders', 'orders/115/payments', 'push/orders', 'orders/115/payments']);
     expect(recorded).toEqual([{ id: uuid(5), revision: 'r2' }]);
     expect(revision()).toBe('r2');
+  });
+});
+
+describe('an unreadable /site', () => {
+  it('W1: a 404 /site is retry status_404 each time, with no push; a readable /site then pushes', async () => {
+    const { calls, transport } = store({ queue: { site: [json(404, { code: 'rest_no_route' }), json(404, {}), json(404, {})] } });
+    for (let i = 0; i < 3; i += 1) expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'status_404' });
+    expect(await transport.send([order()])).toEqual(applied);
+    expect(calls.map(({ path }) => path)).toEqual(['site', 'site', 'site', 'site', 'push/orders', 'orders/115/payments']);
+  });
+  it('W2: no answer from /site is retry network, with no push', async () => {
+    const { calls, transport } = store({ lose: { site: 1 } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'network' });
+    expect(calls.map(({ path }) => path)).toEqual(['site']);
+  });
+  it('W3: a 503 /site is retry status_503 honouring Retry-After', async () => {
+    const { calls, transport } = store({ queue: { site: [json(503, {}, { 'Retry-After': '30' })] } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'status_503', retryAfterMs: 30000 });
+    expect(calls.map(({ path }) => path)).toEqual(['site']);
+  });
+  it('W4: a 2xx /site without a version stays store_version_unknown, with no retryAfterMs', async () => {
+    const { calls, transport } = store({ queue: { site: [json(200, {}, { 'Retry-After': '30' })] } });
+    expect(await transport.send([order()])).toStrictEqual({ kind: 'retry', reason: 'store_version_unknown' });
+    expect(calls.map(({ path }) => path)).toEqual(['site']);
   });
 });

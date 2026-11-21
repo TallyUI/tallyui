@@ -21,7 +21,9 @@ export interface WooCommandTransportOptions {
    * absent means closed, so a sale still carrying coupons is refused with `coupon_invalid` and no request is made. */
   acceptsCoupons?: boolean | (() => boolean | Promise<boolean>);
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
-   * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`. */
+   * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
+   * it can, `send` retries with what `/site` answered: `network` or `timeout` with no answer, `status_<n>` for a non-2xx
+   * answer (`status_404` when the plugin is missing), `store_version_unknown` for a 2xx without a readable version. */
   ledgerPayments?: boolean | (() => boolean | Promise<boolean>);
 }
 
@@ -257,12 +259,15 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
   const { call, retry } = createWooCall(options);
   // WCPOS 2.0.0 and later (its pre-releases too) take money only through the ledger; 1.10.x and the fork have none.
   let siteLedger: boolean | undefined;
-  const ledgerStore = async (): Promise<boolean | undefined> => {
+  // Until /site gives a readable version, its answer is returned so that `send` can retry with it.
+  const ledgerStore = async (): Promise<boolean | Answer> => {
     if (options.ledgerPayments !== undefined) return capability(options.ledgerPayments);
     if (siteLedger === undefined) {
-      const version = (await call('site', { method: 'GET' })).body?.wcpos_version;
+      const site = await call('site', { method: 'GET' });
+      const version = site.body?.wcpos_version;
       const major = typeof version === 'string' ? /^(\d+)\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.trim())?.[1] : undefined;
-      if (major !== undefined) siteLedger = Number(major) >= 2;
+      if (major === undefined) return site;
+      siteLedger = Number(major) >= 2;
     }
     return siteLedger;
   };
@@ -270,7 +275,8 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     async send(batch, context) {
       if (batch.length === 0) return { kind: 'results', results: [] };
       const ledger = await ledgerStore();
-      if (ledger === undefined) return { kind: 'retry', reason: 'store_version_unknown' };
+      if (typeof ledger !== 'boolean') return ledger.status >= 200 && ledger.status < 300
+        ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const results: CommandResult[] = [];
