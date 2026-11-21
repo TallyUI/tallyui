@@ -168,21 +168,27 @@ export function referenceReason(value: string | undefined): 'long' | 'nul' | nul
 }
 
 /**
+ * True when an after-close order (one carrying `afterClose`) no longer matches what its closure counted; false without
+ * `afterClose`. It finalizes with the legs, fees, shipping and tax the closure counted, at the legs' sum, so it gives
+ * no change (a removed fee or shipping line would), and no new leg of the same amount finalizes uncounted.
+ */
+export function afterCloseChanged(order: Order): boolean {
+  const { afterClose } = order;
+  return !!afterClose && (order.payments.length !== afterClose.payments.length || order.payments.some((payment, i) =>
+    payment.id !== afterClose.payments[i].id
+    || payment.method !== afterClose.payments[i].method || payment.amountMinor !== afterClose.payments[i].amountMinor)
+    || order.totalMinor !== afterClose.payments.reduce((sum, payment) => sum + payment.amountMinor, 0)
+    || order.taxMinor !== afterClose.taxMinor || !sameCharges(order.fees, afterClose.fees) || !sameCharges(order.shipping, afterClose.shipping));
+}
+
+/**
  * Turns a fully paid builder Order into a pending PosOrder without mutating it. The PosOrder holds the sent form,
  * frozen: line names and v3 discount labels are cut to PAYLOAD_STRING_MAX with NUL stripped (`cutText`), and a
  * customer email or id the shape check would refuse is left out, so `toOrderCreateEnvelope` sends it unchanged.
  */
 export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosOrder {
   const { afterClose } = order;
-  // It finalizes with the legs, fees, shipping and tax the closure counted, at the legs' sum, so it gives no change
-  // (a removed fee or shipping line would), and no new leg of the same amount finalizes uncounted.
-  if (afterClose && (order.payments.length !== afterClose.payments.length || order.payments.some((payment, i) =>
-    payment.id !== afterClose.payments[i].id
-    || payment.method !== afterClose.payments[i].method || payment.amountMinor !== afterClose.payments[i].amountMinor)
-    || order.totalMinor !== afterClose.payments.reduce((sum, payment) => sum + payment.amountMinor, 0)
-    || order.taxMinor !== afterClose.taxMinor || !sameCharges(order.fees, afterClose.fees) || !sameCharges(order.shipping, afterClose.shipping))) {
-    throw new Error(AFTER_CLOSE_PAYMENTS_CHANGED);
-  }
+  if (afterCloseChanged(order)) throw new Error(AFTER_CLOSE_PAYMENTS_CHANGED);
   // An after-close sale keeps its original register; the till finalizing it now is not where it was taken.
   const registerId = afterClose ? afterClose.registerId : options.registerId;
   if ((order.fees?.length || order.shipping?.length || order.lineItems.some((line) => line.custom))

@@ -9,7 +9,7 @@ import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
-import { MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
+import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
@@ -428,6 +428,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (locked()) return;
     const taxIdsRefused = tender && taxIdsRefusal();
     if (taxIdsRefused) return setError(taxIdsRefused);
+    // An after-close sale's money is what its closure counted, so the sale takes and gives none (ADR-077).
+    if (tender && builderNow.current.getSnapshot().afterClose) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     const builder = builderNow.current;
     for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
     droppedReferences.current.clear();
@@ -511,6 +513,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const current = builderNow.current.getSnapshot();
     if (!current.lineItems.length) return;
     if (couponsUnpriced()) return setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING);
+    if (afterCloseChanged(current)) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
     const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
     if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
@@ -846,6 +849,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
       const taxIdsRefused = taxIdsRefusal();
       if (taxIdsRefused) { setError(taxIdsRefused); return null; }
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
@@ -875,7 +879,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
-      if (payment && countedLeg(payment)) return false;
+      if (payment && countedLeg(payment)) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return false; }
       const changed = builderNow.current.setPaymentStatus(paymentId, status);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
@@ -885,7 +889,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     voidTender(paymentId: string): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
-      if (payment?.locked || (payment && countedLeg(payment))) return false;
+      if (payment && countedLeg(payment)) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return false; }
+      if (payment?.locked) return false;
       if (locked()) return false;
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
       builderNow.current.setPaymentStatus(paymentId, 'voided');
@@ -897,7 +902,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     removeTender(paymentId: string): void {
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
-      if (payment?.locked || (payment && countedLeg(payment))) return;
+      if (payment && countedLeg(payment)) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
+      if (payment?.locked) return;
       if (locked()) return;
       if (!payment) return;
       builderNow.current.removePayment(paymentId);
