@@ -147,6 +147,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.status !== undefined ? { status: payment.status } : {}),
       ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
       ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
+      ...(payment.reopened !== undefined ? { reopened: payment.reopened } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
     });

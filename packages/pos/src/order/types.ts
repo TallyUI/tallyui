@@ -179,6 +179,8 @@ export interface Payment {
   storePaymentId?: string;
   /** A leg the store already holds: never removed or moved, only sent back with its storePaymentId */
   locked?: true;
+  /** A leg copied from a refused order when it was reopened (reopenRefusedOrder): its money was already taken, so tender keeps it. Draft-only: finalize drops it. */
+  reopened?: true;
   method: string;
   /** The payment method's own id on the platform, kept for labels and takings (`legMethodId`); `method` decides cash. */
   methodId?: string;

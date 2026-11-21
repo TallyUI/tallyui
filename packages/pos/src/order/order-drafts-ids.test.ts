@@ -46,6 +46,15 @@ describe('restoreOrderDraft keeps every id and createdAt (#742)', () => {
     expect(Object.keys(payment!.units!)).toEqual(restored.lineItems.map((line) => line.id));
   });
 
+  it("H3: keeps a reopened leg's flag through a JSON draft round trip; a leg without it restores without the key", () => {
+    const builder = sale();
+    const id = builder.addPayment({ method: 'external', amountMinor: 300, reopened: true });
+    const saved = JSON.parse(JSON.stringify(builder.getSnapshot())) as Order;
+    const restored = restoreOrderDraft(saved, { currency: 'EUR', taxContext }).getSnapshot();
+    expect(restored.payments.find((leg) => leg.id === id)?.reopened).toBe(true);
+    expect(restored.payments.find((leg) => leg.id !== id)).not.toHaveProperty('reopened');
+  });
+
   it('T3a: keeps the ids of every line, discount, fee, shipping line and payment, and createdAt', async () => {
     const saved = sale().getSnapshot();
     expect(new Set(allIds(saved)).size).toBe(7);
