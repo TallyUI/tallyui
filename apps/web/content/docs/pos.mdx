@@ -81,6 +81,8 @@ const result = computeOrderTax(
 roundMicrosToMinor(taxMicros(1100, ratePpm, true)); // 100
 ```
 
+Before you split a sale's tax by rate with `taxLinesByRate`, pass its lines and its fees and shipping through `taxedLinesFor`. It marks each with the tax mode its tax was rounded in: a fee keeps its own `amountIncludesTax` unless the store rounds as WooCommerce does.
+
 ## Currency Formatting
 
 Currency formatting uses `Intl.NumberFormat` under the hood, with a caching layer so formatters are only created once per currency/locale pair.

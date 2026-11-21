@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { recordedTaxByRate, taxedLinesFor } from './taxed-lines';
+import { taxedLinesFor as entryTaxedLinesFor } from '../index';
 
 describe('taxedLinesFor', () => {
   it.each([false, true])('uses the store mode %s for WooCommerce lines with netMicros', (pricesIncludeTax) => {
@@ -79,5 +80,19 @@ describe('recordedTaxByRate', () => {
 
   it('returns undefined without taxByRate', () => {
     expect(recordedTaxByRate({ lines: [] })).toBeUndefined();
+  });
+});
+
+describe('taxedLinesFor from the package entry', () => {
+  it('is the same function as the module export', () => {
+    expect(entryTaxedLinesFor).toBe(taxedLinesFor);
+  });
+
+  it('keeps a fee amountIncludesTax unless the store rounds as WooCommerce does', () => {
+    const fee = { name: 'Fee', amountMinor: 500, amountIncludesTax: true };
+    expect(entryTaxedLinesFor([], [fee], false)).toEqual([{ ...fee, taxInclusive: true }]);
+    expect(entryTaxedLinesFor([], [fee], false, { granularity: 'woocommerce', roundAtSubtotal: false })).toEqual([
+      { ...fee, taxInclusive: false },
+    ]);
   });
 });
