@@ -124,7 +124,8 @@ export function LinePopover({ kind, lineName, currency, value, onApply, quickDis
     {mounted ? <Popover.Portal forceMount>
       <Popover.Overlay testID={`${kind}-popover-overlay`} style={StyleSheet.absoluteFill} />
       <Popover.Content forceMount testID={`${kind}-popover`} align={price ? 'end' : 'start'} sideOffset={4}
-        aria-labelledby={titleId} aria-describedby={undefined} onEscapeKeyDown={() => { discard.current = true; }}>
+        aria-labelledby={titleId} aria-describedby={undefined} onEscapeKeyDown={() => { discard.current = true; }}
+        pointerEvents={open ? 'auto' : 'none'}>
         <Animated.View className="w-64 rounded-md border border-border bg-popover p-4 shadow-md"
           style={{ opacity: panel, transform: Platform.OS === 'web' ? [{ translateY: panel.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }] : undefined }}
           pointerEvents={open ? 'auto' : 'none'}>
