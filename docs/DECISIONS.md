@@ -4930,8 +4930,9 @@ interface OrderCreatePayload {
       The WooCommerce lane confirms the store's codes.
     - **R4, a different store total is never accepted silently.** A store that checks the envelope's grand total
       before it creates the order, and computes a different one (coupon rules or rounding drift), refuses with
-      `total_mismatch` and its totals (`OrderCreateTotalMismatchData`). The reopen then offers the sale back without
-      coupons, as for `coupon_invalid`. A minor-unit tolerance needs evidence from the store lane first.
+      `total_mismatch` and its totals (`OrderCreateTotalMismatchData`). The reopen then treats it as for
+      `coupon_invalid`: store-priced coupons are carried when the carry is exact, else it refuses and offers the sale
+      back without them. A minor-unit tolerance needs evidence from the store lane first.
     - **The R4 exception, a store that creates before it can compare.** WooCommerce creates the order, completed
       and paid, before the till sees its total. There the result stays `applied`, with `serverRefs` and the v5
       `total_mismatch` warning, and the order shows in needs-attention. There is no reopen, because the store already
@@ -5053,7 +5054,8 @@ interface OrderCreatePayload {
         is the explicit drop. `{ withoutCoupons: true }` against a parked carried draft refuses `carried_draft_exists`
         rather than return it. Receipts show each carried coupon as a row on each line it priced, labelled
         `coupon <code> not accepted at send`. A carried coupon whose lines are not all in the receipt's tax mode shows
-        its shares on every line, so its rows add up to its total.
+        its shares on every line, and its last line takes what its other rows leave of its display row, so its rows
+        add up to it even when tax rounded over lines and charges puts its shares a cent off.
       - Status: the closed-session part lands in PR B (D2). Until the Needs-attention reopen row lands, the explicit
         choice exists only at the pos API; that row is queued directly after PR B, not parked.
   - **A WooCommerce-side item: the refused create's leftover order** (the WooCommerce lane's probe on the dev store,

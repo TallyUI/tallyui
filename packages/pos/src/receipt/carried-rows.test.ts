@@ -117,6 +117,30 @@ it('R7 a carried coupon whose lines are all in the display mode shows each line\
   }
 });
 
+it('R8 a carried coupon\'s rows add up to its display row with a taxed fee', () => {
+  const builder: OrderBuilder = createOrderBuilder({ currency: 'GBP', taxContext: taxContext(true) });
+  const ids = [
+    builder.addLine({ productId: 'p1', name: 'Inclusive', unitPrice: { amount: 1199, currency: 'GBP', taxInclusive: true } }),
+    builder.addLine({ productId: 'p2', name: 'Exclusive', unitPrice: { amount: 733, currency: 'GBP', taxInclusive: false } }),
+  ];
+  builder.applyLineDiscount(ids[0], { type: 'percentage', value: 10 });
+  builder.addFee({ name: 'Service', amountMinor: 499 });
+  builder.setCoupons(['save'], { kind: 'store-priced', carried: true, basis: couponPricingBasis(builder.getSnapshot()),
+    priced: new Map([['save', { couponId: 'c0', lines: [{ lineId: ids[0], amountMinor: 97 }, { lineId: ids[1], amountMinor: 43 }] }]]) });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const snapshot: Order = builder.getSnapshot();
+  let nextId = 0;
+  const stored = finalizeOrder(snapshot, { capabilities: { orderCreate: 12 }, now: new Date('2026-11-21T10:00:00.000Z'),
+    newId: () => `019f6d2e-7800-7000-8000-${String(++nextId).padStart(12, '0')}` });
+  expect(BigInt(stored.fees![0].taxMicros)).not.toBe(0n);
+  expect(stored.coupons![0].lines!.reduce((sum, l) => sum + l.discountMinor + l.discountTaxMinor, 0)).not.toBe(stored.display!.coupons![0].amountMinor);
+  for (const [receipt, coupons] of [[buildReceiptData(snapshot, config), snapshot.display.coupons!],
+    [buildReceiptDataFromPosOrder(stored, config), stored.display!.coupons!]] as const) {
+    expectCarried(receipt, coupons);
+    expect(rowsOf(receipt).filter((row) => row.label === label('save')).reduce((sum, row) => sum + row.amountMinor, 0)).toBe(coupons[0].amountMinor);
+  }
+});
+
 describe('isCarriedCouponLabel', () => {
   it('is true for a carried coupon label and false for every other row', () => {
     expect(isCarriedCouponLabel(carriedCouponLabel('save'))).toBe(true);

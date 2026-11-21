@@ -60,7 +60,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
       displayAmountMinor: order.display.lines[index].amountMinor,
       displayDiscounts: [...order.display.lines[index].discounts.map((row, i) => ({ label: label(li.discounts[i]), amountMinor: row.amountMinor })),
         ...carriedRows(order.coupons, li.id, (id) => order.lineItems.find((line) => line.id === id)?.taxInclusive ?? order.display.taxInclusive,
-          order.display.taxInclusive)],
+          order.display.taxInclusive, order.display.coupons)],
     })),
     discounts: order.discounts.map((d) => ({
       label: label(d),
