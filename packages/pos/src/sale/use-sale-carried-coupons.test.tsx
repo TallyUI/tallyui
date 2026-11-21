@@ -16,15 +16,15 @@ const currency = 'EUR', code = 'refused-save';
 const taxProps = { pricesIncludeTax: true, ratesPpm: { default: 190000 } };
 const taxContext = createTaxContext(taxProps);
 type SaleOptions = NonNullable<Parameters<typeof useSale>[1]>;
-function draft(): Order {
+function draft(options: { taxClass?: string; unpaid?: boolean } = {}): Order {
   const builder = createOrderBuilder({ currency, taxContext });
-  const first = builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Inclusive',
+  const first = builder.addLine({ productId: 'p1', variantId: 'v1', name: 'Inclusive', taxClass: options.taxClass,
     unitPrice: { amount: 1190, currency, taxInclusive: true } });
   const second = builder.addLine({ productId: 'p2', name: 'Exclusive',
     unitPrice: { amount: 500, currency, taxInclusive: false } });
   builder.setCoupons([code], { kind: 'store-priced', carried: true, basis: couponPricingBasis(builder.getSnapshot()),
     priced: new Map([[code, { couponId: 'promo_1', lines: [{ lineId: first, amountMinor: 100 }, { lineId: second, amountMinor: 50 }] }]]) });
-  builder.addPayment({ method: 'cash', status: 'captured', amountMinor: builder.getSnapshot().totalMinor });
+  if (!options.unpaid) builder.addPayment({ method: 'cash', status: 'captured', amountMinor: builder.getSnapshot().totalMinor });
   return builder.getSnapshot();
 }
 const figures = ({ subtotalMinor, discountMinor, taxMinor, totalMinor, display, coupons }: Order) =>
@@ -109,6 +109,26 @@ describe('useSale carried coupons', () => {
     expect(result.current.saving).toBe(false);
     expect(onSaleCompleted).not.toHaveBeenCalled();
     expect(await db.pos_orders.find().exec()).toHaveLength(0);
+  });
+
+  it('U6: an unpaid carried draft becomes stale only when the resumed tax rate changes', async () => {
+    const saved = draft({ taxClass: 'standard', unpaid: true });
+    expect(saved.payments).toEqual([]);
+    expect(saved.lineItems[0].taxFromClass).toBe(true);
+    expect(saved.lineItems[0].taxLines[0].ratePpm).toBe(190000);
+    for (const ratePpm of [190000, 200000]) {
+      const { result, unmount } = await resume(saved, {
+        taxContextFor: () => ({ taxContext: createTaxContext({ ...taxProps, ratesPpm: { default: 190000, standard: ratePpm } }),
+          location: { taxBasedOn: 'base', addressUsed: 'base', location: { country: 'DE', state: '', city: '', postcode: '' } } }),
+      });
+      expect(result.current.order.lineItems[0].taxLines[0].ratePpm).toBe(ratePpm);
+      expect(result.current.order.couponPricesStale).toBe(ratePpm === 200000 ? true : undefined);
+      if (ratePpm === 200000) {
+        await act(async () => { await result.current.startTender('cash'); });
+        expect(result.current.error).toBe(COUPON_CARRY_STALE);
+      }
+      unmount();
+    }
   });
 
   it('retax keeps carried coupons and marks them stale even when the new context has the same rates', async () => {

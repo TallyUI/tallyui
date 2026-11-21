@@ -150,6 +150,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.units !== undefined ? { units: payment.units } : {}),
     });
   }
+  if (saved.coupons?.some((c) => c.carried) && !saved.coupons.every((c) => c.carried)) throw new Error('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');
   if (saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried)) {
     builder.setCoupons(saved.coupons.map((c) => c.code), { kind: 'store-priced', carried: true,
       priced: new Map(saved.coupons.map((c) => [c.code, { couponId: c.couponId,

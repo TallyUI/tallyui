@@ -60,6 +60,14 @@ describe('carried coupon drafts', () => {
     expect(restored.couponPricesStale).toBe(true);
   });
 
+  it('D4: refuses a draft mixing carried and redeemable coupons', () => {
+    const saved = sale().getSnapshot();
+    const mixed = { ...saved, coupons: [...saved.coupons!,
+      { code: 'redeemable', couponId: 'promo_2', discountMinor: 0, discountTaxMinor: 0 }] };
+    expect(() => restoreOrderDraft(mixed, { currency, taxContext }))
+      .toThrow('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');
+  });
+
   it('D3: a quantity edit stays stale through write and restore, and finalize refuses it', async () => {
     const builder = sale();
     builder.updateQuantity(builder.getSnapshot().lineItems[0].id, 2);

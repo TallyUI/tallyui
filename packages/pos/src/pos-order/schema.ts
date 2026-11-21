@@ -70,7 +70,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       code: { type: 'string', minLength: 1, maxLength: 255 }, couponId: { type: 'string', minLength: 1, maxLength: 64 },
       discountMinor: { type: 'integer', minimum: 0 }, discountTaxMinor: { type: 'integer', minimum: 0 },
-      carried: { type: 'boolean' },
+      carried: { type: 'boolean', enum: [true] },
       lines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
         lineId: { type: 'string', minLength: 1, maxLength: 36 }, discountMinor: { type: 'integer', minimum: 0 },
         discountTaxMinor: { type: 'integer', minimum: 0 },

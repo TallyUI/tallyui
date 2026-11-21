@@ -1049,7 +1049,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const carriedDraft = !!saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried);
       const keep = !carriedDraft && !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
       const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
-        keepTaxRates: carriedDraft || keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
+        keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
       let n = 0;
       // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
       // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).

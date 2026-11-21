@@ -25,6 +25,8 @@ it('validates schema-19 carried coupon amounts and countedInClosureOf', async ()
         lines: [{ lineId: plain.lines[0].id, discountMinor: 10, discountTaxMinor: 0, amountMinor: 10 }] }] };
     await pos_orders.insert(order);
     expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(order);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(),
+      coupons: [{ ...order.coupons![0], carried: false }] } as unknown as PosOrder)).rejects.toMatchObject({ code: 'VD2' });
   } finally { await db.remove(); }
 });
 
