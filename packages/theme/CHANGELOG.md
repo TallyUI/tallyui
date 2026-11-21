@@ -1,5 +1,7 @@
 # @tallyui/theme
 
+## 4.0.1
+
 ## 4.0.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @tallyui/pos
 
+## 4.0.1
+
+### Patch Changes
+
+- af47cbc: A reopened refused sale keeps the payments it already took when the cashier tenders the rest.
+  - @tallyui/core@4.0.1
+
 ## 4.0.0
 
 ### Major Changes
