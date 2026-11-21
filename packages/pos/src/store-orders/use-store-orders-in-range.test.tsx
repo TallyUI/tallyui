@@ -195,6 +195,33 @@ describe('useStoreOrdersInRange', () => {
     expect(calledContext).toBe(context2);
   });
 
+  it('S6f returns no old order on any render after a query change', async () => {
+    const q1Page1 = deferred<StoreOrderPage>();
+    const { listOrders, connector } = fakeConnector(q1Page1.promise, deferred<StoreOrderPage>().promise);
+    const q2: StoreOrdersRangeQuery = { ...query, status: 'completed' };
+    const renders: ReturnType<typeof useStoreOrdersInRange>[] = [];
+    const { rerender } = renderHook(
+      ({ q }) => {
+        const value = useStoreOrdersInRange(connector, context, q);
+        renders.push(value);
+        return value;
+      },
+      { initialProps: { q: query } },
+    );
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(1));
+    await act(async () => q1Page1.resolve({ orders: [A], hasMore: true, total: 5 }));
+    await waitFor(() => expect(listOrders).toHaveBeenCalledTimes(2));
+    expect(ids(renders[renders.length - 1].orders)).toEqual(['A']);
+
+    const from = renders.length;
+    rerender({ q: q2 });
+    expect(renders.length).toBeGreaterThan(from);
+    for (const value of renders.slice(from)) {
+      expect(value.orders).toEqual([]);
+      expect(value.complete).toBe(false);
+    }
+  });
+
   it('S7 is idle and calls nothing without a query, a context or listOrders', async () => {
     const { listOrders, connector } = fakeConnector();
     const cases = [
