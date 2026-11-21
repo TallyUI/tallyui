@@ -22,7 +22,7 @@ import { ProductVariantPicker } from '@tallyui/components';
 />
 ```
 
-Renders each variant option as a labeled group of chip-style buttons. The active value in each group is highlighted. Selections are tracked as a key-value record.
+Renders each variant option as a labeled group of chip-style buttons. The active value in each group is highlighted. Selections are tracked as a key-value record. Values listed in `dimmed` are drawn faded but stay pressable, as in WCPOS v2, so the cashier can still see and pick every value.
 
 ## Props
 
@@ -39,6 +39,7 @@ Renders each variant option as a labeled group of chip-style buttons. The active
 interface VariantOption {
   name: string;
   values: string[];
+  dimmed?: string[]; // values no variant takes with the other picks; drawn faded, still pressable
 }
 ```
 

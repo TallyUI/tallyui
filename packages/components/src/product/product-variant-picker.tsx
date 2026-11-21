@@ -5,6 +5,8 @@ import { cn } from '@tallyui/theme';
 export interface VariantOption {
   name: string;
   values: string[];
+  /** Values in this group that no variant takes with the other current picks; drawn dimmed, still pressable. */
+  dimmed?: string[];
 }
 
 export interface ProductVariantPickerProps extends Omit<ViewProps, 'children'> {
@@ -36,10 +38,12 @@ export function ProductVariantPicker({
               return (
                 <Pressable
                   key={value}
+                  testID={`variant-option-${option.name}-${value}`}
                   onPress={() => handleSelect(option.name, value)}
                   className={cn(
                     'rounded-lg border px-3 py-1.5',
                     active ? 'border-primary bg-primary/10' : 'border-border bg-card',
+                    option.dimmed?.includes(value) && 'opacity-50',
                   )}
                 >
                   <Text
