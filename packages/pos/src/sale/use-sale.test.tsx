@@ -2109,7 +2109,7 @@ describe('app configuration outside the order.create bounds', () => {
         expect.objectContaining({ level: 'warn', data: { reason: 'it contains a NUL character', method: 'external' } })]);
       await act(async () => { await result.current.complete(); });
       expect(onSaleCompleted).toHaveBeenCalledTimes(1);
-      expect(onSaleCompleted.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), method: 'external', amountMinor: total }]);
+      expect(onSaleCompleted.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), takenAt: expect.any(String), method: 'external', amountMinor: total }]);
       const stored: PosOrder = onSaleCompleted.mock.calls[0][0];
       expect(stored.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: stored.payments[0].id }]);
       expect(stored.payments[0].id).not.toBe(result.current.order.payments[0].id);
