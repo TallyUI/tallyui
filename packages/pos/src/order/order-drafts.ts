@@ -4,6 +4,7 @@ import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
 import { capturedMinor } from '../tender/payment-legs';
 import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
+import { isTakenAt } from './taken-at';
 import type { Order } from './types';
 
 /** Apps create their drafts collection with this schema. */
@@ -150,7 +151,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.reopened !== undefined ? { reopened: payment.reopened } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
-      ...(payment.takenAt !== undefined ? { takenAt: payment.takenAt } : {}),
+      ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
     });
   }
   if (saved.coupons?.some((c) => c.carried) && !saved.coupons.every((c) => c.carried)) throw new Error('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');

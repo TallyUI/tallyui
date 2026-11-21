@@ -886,3 +886,15 @@ describe("finalizeOrder stores the customer's tax ids clean (#1064)", () => {
       .toThrow(TAX_IDS_INVALID);
   });
 });
+
+describe('finalizeOrder payment takenAt', () => {
+  it('keeps a valid instant and drops one that is not an ISO instant, keeping the payment', () => {
+    const builder = sale();
+    builder.addPayment({ method: 'cash', amountMinor: 1000, takenAt: '2026-11-21T10:15:00.000Z' });
+    builder.addPayment({ method: 'external', amountMinor: builder.getSnapshot().totalMinor - 1000, reference: 'T-1', takenAt: 'yesterday' });
+    const [kept, dropped] = finalizeOrder(builder.getSnapshot()).payments;
+    expect(kept).toMatchObject({ method: 'cash', amountMinor: 1000, takenAt: '2026-11-21T10:15:00.000Z' });
+    expect(dropped).toMatchObject({ method: 'external', reference: 'T-1' });
+    expect(dropped).not.toHaveProperty('takenAt');
+  });
+});

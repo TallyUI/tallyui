@@ -43,4 +43,12 @@ describe('restoreOrderDraft payment takenAt', () => {
     const restored = await parkAndResume(sale());
     expect(restored.payments[1]).not.toHaveProperty('takenAt');
   });
+
+  it('drops a takenAt that is not an ISO instant, keeping the leg', async () => {
+    const order = sale();
+    const restored = await parkAndResume({ ...order, payments: order.payments.map((p, i) => i ? { ...p, takenAt: 'yesterday' } : p) });
+    expect(restored.payments[0]).toMatchObject({ takenAt: '2026-11-21T10:15:00.000Z' });
+    expect(restored.payments[1]).toMatchObject({ method: 'cash', amountMinor: 600 });
+    expect(restored.payments[1]).not.toHaveProperty('takenAt');
+  });
 });

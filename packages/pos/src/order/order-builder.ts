@@ -189,7 +189,8 @@ export interface OrderBuilder {
   applyOrderDiscount(discount: Discount): void;
   removeDiscount(discountId: string): void;
   addPayment(payment: Omit<Payment, 'id'> & { id?: string }): string;
-  setPaymentStatus(paymentId: string, status: PaymentLegStatus): boolean;
+  /** Moves a leg's status; `takenAt` is set on the leg only on a move to captured. */
+  setPaymentStatus(paymentId: string, status: PaymentLegStatus, takenAt?: string): boolean;
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
@@ -816,10 +817,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       return id;
     },
 
-    setPaymentStatus(paymentId, status) {
+    setPaymentStatus(paymentId, status, takenAt) {
       const payment = payments.find((p) => p.id === paymentId);
       if (!payment || payment.locked || !canMoveLeg(legStatus(payment), status)) return false;
-      payments = payments.map((p) => p.id === paymentId ? { ...p, status } : p);
+      const stamp = status === 'captured' && takenAt !== undefined ? { takenAt } : {};
+      payments = payments.map((p) => p.id === paymentId ? { ...p, status, ...stamp } : p);
       emit();
       return true;
     },
