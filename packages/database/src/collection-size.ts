@@ -14,6 +14,9 @@ export interface MeasureCollectionOptions { pageSize?: number; signal?: AbortSig
  *
  * It reads every live document, a page at a time, so run it on demand, never on mount or in a hot
  * path. `signal` cancels it between pages.
+ *
+ * The pages are not one snapshot: a document written or removed while the walk runs may be missed
+ * or counted, so under concurrent writes the totals are approximate.
  */
 export async function measureCollectionBytes<T>(
   collection: RxCollection<T>,
