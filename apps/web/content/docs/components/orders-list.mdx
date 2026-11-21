@@ -21,6 +21,8 @@ import { OrdersList } from '@tallyui/components';
 
 Renders Recent orders and a Needs attention section when applicable, with expandable line and payment details, sync status, and warnings. Eligible rejected orders have a Retry action that calls `onRetry`.
 
+With `onReopen`, a sale the store refused with `coupon_invalid` or `total_mismatch` shows a "Reopen" button in Needs attention instead of no action. It calls `onReopen(order)`. When the coupons can't be carried at the amounts charged, the row offers "Reopen without the coupon: `amount` to collect", which calls `onReopen(order, { withoutCoupons: true })`; the till never drops the coupons on its own. A reopened sale stays in Needs attention, marked "Reopened as a parked sale.", with a Resume button when `onResume` is passed.
+
 `OrderSyncNotices` renders one sale's sync notices on their own, for an app's own order screen: `<OrderSyncNotices order={order} stuck={outbox.state.stuck}>{retry}</OrderSyncNotices>`. Its `children` go where OrdersList puts Retry, between the notes and the store's warnings.
 
 ## Server order history
@@ -60,3 +62,6 @@ Without `history`, the list renders exactly as before, with `orders` in the give
 | `footer` | `ReactNode` | --- | App content rendered after the order sections |
 | `stuck` | `OutboxState['stuck']` | --- | Outbox entries that make pending orders need attention and supply each order's waiting-since time |
 | `history` | `OrderHistoryRow[]` | --- | The store's orders, shown read-only in Recent; a row is hidden while an outbox order has its `clientOrderId` as `id` |
+| `onOpen` | `(row: PosOrder \| OrderHistoryRow) => void` | --- | Adds an Open button to each row, outbox order or history row, that passes it to the app |
+| `onReopen` | `(order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>` | --- | Adds Reopen to a Needs attention row the store refused with a reopenable code; the app wires `reopenRefusedOrder` |
+| `onResume` | `(order: PosOrder) => void` | --- | Adds Resume to a reopened row in Needs attention; the app resumes the parked sale |

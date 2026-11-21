@@ -17,6 +17,7 @@ import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 import { offeredMethods, tenderOf } from './offered-methods';
+import { heldTillLeg } from './held-leg';
 import { TenderLedger } from './tender-ledger';
 import { pickFigure } from './use-tender';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
@@ -105,7 +106,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
   const [onlyLeg] = order.payments;
   // startTender('external') records the card leg for the total: its reference is edited in place, as before.
-  const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0;
+  const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0
+    && !heldTillLeg(order, onlyLeg);
   const hint = partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
@@ -240,7 +242,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
 
     {refused.length > 0 ? <>
       <Text testID="tender-store-holds" className="text-foreground">{t('pos_checkout.store_holds_payment', { amount: money(refusedMinor) })}</Text>
-      {refused.map((id) => <Pressable key={id} testID={`tender-leg-${id}-remove`} accessibilityRole="button" onPress={() => sale.removeTender(id)} className={button}>
+      {refused.filter((id) => !order.payments.some((leg) => leg.id === id && heldTillLeg(order, leg))).map((id) => <Pressable key={id} testID={`tender-leg-${id}-remove`} accessibilityRole="button" onPress={() => sale.removeTender(id)} className={button}>
         <Text className="text-center text-foreground">{t('pos_checkout.remove_payment')}</Text>
       </Pressable>)}
     </> : null}

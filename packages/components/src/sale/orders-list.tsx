@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { extrasNotSent, isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { extrasNotSent, isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -29,6 +29,8 @@ const REFUSAL_SENTENCES = new Map([
   ['invalid_quantity', "The online store refused this sale: a quantity or a discount on it isn't allowed."],
   ['underpaid', 'The online store refused this sale: the payments add up to less than the total.'],
   ['unsupported_currency', "The online store refused this sale: the store doesn't take this currency."],
+  ['coupon_invalid', "The online store refused this sale: a coupon on it isn't valid now. Reopen it to sell it again."],
+  ['total_mismatch', "The online store refused this sale: its total didn't match the store's. Reopen it to sell it again."],
 ]);
 // Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
@@ -103,17 +105,47 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * (medusapos: the feedback link). The router and session redirect stay in the app. `stuck` is the outbox's
  * `state.stuck` (`useOrderOutbox`): those pending orders need attention too, each with its own entry's reason and since.
  * `onOpen` adds an Open button to each row that passes its order to the app.
- * `history` adds read-only store order rows to Recent (ADR-052 amendment 1). */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen }: {
+ * `history` adds read-only store order rows to Recent (ADR-052 amendment 1).
+ * `onReopen` adds Reopen to a Needs attention row the store refused with a reopenable code (`REOPENABLE_CODES`), not yet
+ * reopened and with no store order: the app wires `reopenRefusedOrder`. When it refuses `coupon_carry_inexact` with a
+ * `toCollectMinor`, the row offers "Reopen without the coupon", which calls it again with `{ withoutCoupons: true }`.
+ * `onResume` adds Resume to a reopened row; the app resumes the parked sale, whose draft id is the order's id. */
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
+  onReopen?: (order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>;
+  onResume?: (order: PosOrder) => void;
 }) {
   const formatMoney = useFormatMoney();
   const hintId = useId();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
+  /** Each row's Reopen: in flight, the inexact refusal's amount to collect, or the reason it was refused (null: none given). */
+  const reopening = useRef(new Set<string>());
+  const [reopens, setReopens] = useState(new Map<string, { busy?: true; toCollectMinor?: number; failed?: string | null }>());
+  const setReopen = (id: string, state?: { busy?: true; toCollectMinor?: number; failed?: string | null }) => setReopens((current) => {
+    const next = new Map(current);
+    if (state) next.set(id, state); else next.delete(id);
+    return next;
+  });
+  async function reopen(order: PosOrder, options?: { withoutCoupons: true }) {
+    if (!onReopen || reopening.current.has(order.id)) return;
+    reopening.current.add(order.id);
+    setReopen(order.id, { ...reopens.get(order.id), busy: true });
+    try {
+      await onReopen(order, options);
+      setReopen(order.id);
+    } catch (error) {
+      const reason = (error as { reason?: unknown } | undefined)?.reason;
+      const toCollectMinor = (error as { toCollectMinor?: unknown } | undefined)?.toCollectMinor;
+      setReopen(order.id, reason === 'coupon_carry_inexact' && typeof toCollectMinor === 'number' ? { toCollectMinor }
+        : { failed: typeof reason === 'string' ? reason : null });
+    } finally {
+      reopening.current.delete(order.id);
+    }
+  }
   const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {
     for (const id of retrying.current) {
@@ -151,6 +183,10 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const refundDueMinor = refundDueOf(order);
           const key = `${section.title}:${order.id}`;
           const isExpanded = expanded.has(key);
+          const attention = section.title === 'Needs attention';
+          const reopenable = attention && !!onReopen && order.syncStatus === 'rejected' && REOPENABLE_CODES.includes(order.error?.code ?? '')
+            && order.storeOrderId === undefined && order.reopenedAt === undefined;
+          const reopenState = reopens.get(order.id);
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
             {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
@@ -193,6 +229,29 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">Retry</Text>
               </Pressable> : null}
+            {/* Reopen needs a reopenable code, which Retry never resends (NOT_REQUEUEABLE), so the two never show together. */}
+            {attention && order.reopenedAt !== undefined ? <>
+              <Text testID={`order-${order.id}-reopened`} className="text-muted-foreground">Reopened as a parked sale.</Text>
+              {onResume ? <Pressable accessibilityRole="button" accessibilityLabel={`Resume order ${orderReference(order)}`}
+                testID={`order-${order.id}-resume`} onPress={() => onResume(order)} className="rounded-md bg-primary px-4 py-2">
+                <Text className="text-center font-semibold text-primary-foreground">Resume</Text>
+              </Pressable> : null}
+            </> : null}
+            {reopenable && reopenState?.failed !== undefined ? <Text testID={`order-${order.id}-reopen-error`} className="text-muted-foreground">
+              {reopenState.failed ? `This sale can't be reopened here (${reopenState.failed}).` : "This sale can't be reopened here."}
+            </Text> : reopenable ? <>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Reopen order ${orderReference(order)}`} testID={`order-${order.id}-reopen`}
+                disabled={reopenState?.busy} onPress={() => reopen(order)} className="rounded-md bg-primary px-4 py-2">
+                <Text className="text-center font-semibold text-primary-foreground">Reopen</Text>
+              </Pressable>
+              {/* The inexact carry's choice is offered, never taken (desk 2026-11-21): its amount is the refusal's toCollectMinor. */}
+              {reopenState?.toCollectMinor !== undefined ? <Pressable accessibilityRole="button" testID={`order-${order.id}-reopen-without-coupon`}
+                disabled={reopenState.busy} onPress={() => reopen(order, { withoutCoupons: true })} className="rounded-md border border-border px-4 py-2">
+                <Text className="text-center font-semibold text-foreground">
+                  {`Reopen without the coupon: ${formatMoney({ amount: reopenState.toCollectMinor, currency: order.currency })} to collect`}
+                </Text>
+              </Pressable> : null}
+            </> : null}
             </OrderSyncNotices>
           </View>
           );

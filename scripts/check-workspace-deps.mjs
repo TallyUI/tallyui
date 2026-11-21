@@ -94,6 +94,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'toCustomerInput', 'toCustomerPatch', 'shipsToBilling',
   // carried coupon rows (ADR-077, Front desk 2026-11-21): the pure test of a carried coupon's receipt label, never a hook or the store.
   'isCarriedCouponLabel',
+  // Needs attention's Reopen (desk 2026-11-21): the pure list of refusal codes a till may reopen, never a hook or the store.
+  'REOPENABLE_CODES',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;

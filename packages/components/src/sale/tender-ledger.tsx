@@ -10,6 +10,7 @@ import { canVoidLeg, countsTowardPaid, legStatus, type PaymentLegStatus, type us
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
@@ -59,7 +60,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
         </View>
         {leg.reference ? <Text className="text-sm text-muted-foreground">{leg.reference}</Text> : null}
         {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
-        {descriptor && canVoidLeg(leg, descriptor) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
+        {descriptor && canVoidLeg(leg, descriptor) && !heldTillLeg(order, leg) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
           onPress={() => (confirmVoid ? setAsking(leg.id) : sale.voidTender(leg.id))} className="self-start min-h-11 justify-center px-2">
           <Text className="text-destructive">{t('pos_checkout.cancel_payment')}</Text>
         </Pressable> : null}
