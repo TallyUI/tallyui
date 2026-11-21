@@ -37,6 +37,7 @@ import type { PosOrder } from './types';
  * Version 16 adds a payment's optional methodId (ruling A, 2026-11-18) and lets sentVersion and downgradedFrom be 10 (order.create version 10), and changes nothing else. Its migration is the identity. It is one-way like version 15.
  * Version 17 lets sentVersion and downgradedFrom be 11 (order.create version 11, ADR-086 d2 amended 2026-11-19), and changes nothing else. Its migration is the identity. It is one-way like version 16.
  * Version 18 adds the customer's `taxIds`, the order's `meta`, a line's `catalogueSku` and `attentionHandledFor` (ADR-092), and lets sentVersion and downgradedFrom be 12 (order.create version 12), and changes nothing else. Its migration is the identity. It is one-way like version 17.
+ * Version 19 adds a store-priced coupon's `carried` flag and its lines' `amountMinor` (a coupon the store refused at send, carried at the amount charged), and the order's `countedInClosureOf`, and changes nothing else. Its migration is the identity. It is one-way like version 18.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -46,7 +47,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 18, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 19, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -65,12 +66,15 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     note: { type: 'string' }, meta: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] } },
     registerId: { type: 'string' }, sessionId: { type: 'string', maxLength: 36 }, cashierRef: { type: 'string' },
+    countedInClosureOf: { type: 'string', maxLength: 36 },
     coupons: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       code: { type: 'string', minLength: 1, maxLength: 255 }, couponId: { type: 'string', minLength: 1, maxLength: 64 },
       discountMinor: { type: 'integer', minimum: 0 }, discountTaxMinor: { type: 'integer', minimum: 0 },
+      carried: { type: 'boolean' },
       lines: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
         lineId: { type: 'string', minLength: 1, maxLength: 36 }, discountMinor: { type: 'integer', minimum: 0 },
         discountTaxMinor: { type: 'integer', minimum: 0 },
+        amountMinor: { type: 'integer', minimum: 0 },
       }, required: ['lineId', 'discountMinor', 'discountTaxMinor'] } },
     }, required: ['code', 'couponId', 'discountMinor', 'discountTaxMinor'] } },
     lines: { type: 'array', items: {
@@ -214,5 +218,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity } };
 }

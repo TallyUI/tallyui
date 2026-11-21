@@ -20,6 +20,7 @@ export function startCouponUsageRefetch(deps: {
         || !(now() - Date.parse(order.updatedAt) < APPLIED_USE_GRACE_MS)) continue;
       handled.add(order.id);
       for (const coupon of order.coupons) {
+        if (coupon.carried) continue;
         const id = Number(coupon.couponId);
         if (Number.isInteger(id)) ids.add(id);
       }

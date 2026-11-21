@@ -37,6 +37,12 @@ beforeEach(async () => {
 afterEach(async () => { await db.remove(); });
 
 describe('createSaleCouponSource', () => {
+  it('does not count a pending order whose coupon is carried', async () => {
+    await db.coupons.insert({ ...coupon, usage_count: 1, used_by: ['5'] });
+    await db.pos_orders.insert(order({ coupons: [{ ...appliedCoupon, carried: true }], customer: { id: '7' } }));
+    expect(await source.find('save10')).toMatchObject({ usage_count: 1, used_by: ['5'] });
+  });
+
   it('copies only CouponInput fields present on the document, with defaults for usage', async () => {
     await db.coupons.insert({ ...coupon, description: 'Not a CouponInput field' });
     const result = await source.find('save10');

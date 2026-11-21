@@ -43,6 +43,21 @@ beforeEach(async () => {
 afterEach(async () => { runners.forEach((runner) => runner.stop()); await db.remove(); });
 
 describe('startCouponUsageRefetch', () => {
+  it('collects no id from an applied order whose coupon is carried', async () => {
+    await db.coupons.bulkInsert([coupon, coupon2]);
+    const updatedAt = new Date().toISOString();
+    await db.pos_orders.bulkInsert([
+      order({ syncStatus: 'applied', updatedAt, coupons: [{ ...appliedCoupon, carried: true }] }),
+      order({ syncStatus: 'applied', updatedAt, coupons: [appliedCoupon2] }),
+    ]);
+    runners.push(startCouponUsageRefetch({ orders: db.pos_orders, coupons: db.coupons, enqueue, reSync }));
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+    expect(enqueue.mock.calls[0][0]).toEqual([
+      { key: 'coupon-102', local: expect.objectContaining({ id: 102 }), refreshOnly: true },
+    ]);
+    expect(reSync).toHaveBeenCalledTimes(1);
+  });
+
   it('enqueues a pending order only once it applies', async () => {
     await db.coupons.insert(coupon);
     const doc = await db.pos_orders.insert(order({ coupons: [appliedCoupon] }));

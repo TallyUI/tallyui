@@ -21,7 +21,8 @@ export interface PosOrderCoupon {
   couponId: string; // the connector's coupon id, as a string
   discountMinor: number; // the coupon's discount, ex tax, in integer minor units
   discountTaxMinor: number; // its tax, in integer minor units
-  /** Present only on a store-priced coupon (#790), in stored `lines` order, with no zero entries;
+  carried?: true;
+  /** Present only on a store-priced coupon (#790), in stored `lines` order, with no zero entries unless a carried amountMinor is non-zero;
    * absent on WooCommerce replay coupons and on every order stored before schema 13. */
   lines?: PosOrderCouponLine[];
 }
@@ -30,6 +31,7 @@ export interface PosOrderCouponLine {
   lineId: string; // the stored line's id
   discountMinor: number; // tax-exclusive, integer minor units
   discountTaxMinor: number; // integer minor units
+  amountMinor?: number;
 }
 
 export interface PosOrderLine {
@@ -119,6 +121,8 @@ export interface PosOrder {
    * Sent at `order.create` version 3 as the payload's `sessionId` (the stamped or late session, one field).
    */
   sessionId?: string;
+  /** Reserved for the closure that counted this order; a later PR writes it. */
+  countedInClosureOf?: string;
   /**
    * Set only by `useSale`'s late-sale path (ADR-032): the session the sale was taken for, which
    * refused the stamp after the money was taken. Such an order has no `sessionId`, so no closure

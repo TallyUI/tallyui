@@ -148,7 +148,7 @@ describe('from version 6', () => {
     const after = await open(name, storage, posOrderCollection());
     try {
       const { pos_orders } = await after.added;
-      expect(pos_orders.schema.version).toBe(18);
+      expect(pos_orders.schema.version).toBe(19);
       expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
     } finally {
       await after.db.remove();
@@ -168,7 +168,7 @@ it('keeps a pending version-7 order byte for byte through the identity migration
   const after = await open(name, storage, posOrderCollection());
   try {
     const { pos_orders } = await after.added;
-    expect(pos_orders.schema.version).toBe(18);
+    expect(pos_orders.schema.version).toBe(19);
     expect((await pos_orders.findOne(order.id).exec())?.toJSON()).toStrictEqual(original);
   } finally { await after.db.remove(); }
 });
@@ -193,7 +193,7 @@ it('keeps pending and applied version-8 orders with fees, shipping, a custom lin
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const pos_orders = await addPosOrderCollection(db);
-    expect(pos_orders.schema.version).toBe(18);
+    expect(pos_orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await pos_orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -230,7 +230,7 @@ it('keeps pending and applied version-9 orders with coupons, line attributes and
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const pos_orders = await addPosOrderCollection(db);
-    expect(pos_orders.schema.version).toBe(18);
+    expect(pos_orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await pos_orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -263,7 +263,7 @@ it('keeps pending and applied version-10 orders with a note byte for byte throug
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const pos_orders = await addPosOrderCollection(db);
-    expect(pos_orders.schema.version).toBe(18);
+    expect(pos_orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await pos_orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -297,7 +297,7 @@ it('keeps pending and applied version-11 orders with a note and a customer byte 
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const pos_orders = await addPosOrderCollection(db);
-    expect(pos_orders.schema.version).toBe(18);
+    expect(pos_orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await pos_orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -356,7 +356,7 @@ it('keeps pending and applied version-12 orders with store-priced coupons, a not
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(18);
+    expect(orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -388,7 +388,7 @@ it('keeps pending and applied version-13 orders byte for byte through the identi
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(18);
+    expect(orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
@@ -721,7 +721,41 @@ describe('from version 17', () => {
   describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 17 }));
 });
 
-it("M1 keeps pending and applied version-17 orders byte for byte through the identity migration to version 18, then stores order.create 12's fields (ADR-092)", async () => {
+describe('from version 18', () => {
+  describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 18 }));
+
+  it('M1 preserves store-priced coupon lines byte for byte at 19, then stores carried fields and countedInClosureOf', async () => {
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: true } });
+    const lineId = builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1190, currency: 'EUR' } });
+    builder.setCoupons(['c'], { kind: 'store-priced', basis: couponPricingBasis(builder.getSnapshot()),
+      priced: new Map([['c', { couponId: '1', lines: [{ lineId, amountMinor: 100 }] }]]) });
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const pending = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12 } });
+    const applied: PosOrder = { ...pending, id: uuidv7(), syncStatus: 'applied', serverRefs: { orderId: 'server-1', totalMinor: pending.totalMinor } };
+    const name = `posmigrate${uuidv7().replaceAll('-', '')}`, before = await open(name, storage, olderCollection(18));
+    expect((await (await before.added).pos_orders.bulkInsert(structuredClone([pending, applied]))).error).toEqual([]);
+    await before.db.close();
+    const originals = await Promise.all([pending, applied].map((original) => olderDocument(storage, name, original.id, 18)));
+    const db = await createRxDatabase({ name, storage, multiInstance: false });
+    try {
+      const orders = await addPosOrderCollection(db);
+      expect(orders.schema.version).toBe(19);
+      for (const [index, original] of [pending, applied].entries()) {
+        const migrated = await orders.findOne(original.id).exec();
+        expect(migrated?.toJSON()).toStrictEqual(original);
+        expect(migrated?.toJSON(true)._meta).toEqual(originals[index]._meta);
+      }
+      const carried: PosOrder = { ...pending, id: uuidv7(), countedInClosureOf: uuidv7(),
+        coupons: pending.coupons!.map((coupon) => ({ ...coupon, carried: true,
+          lines: coupon.lines!.map((line) => ({ ...line, amountMinor: 100 })) })) };
+      await orders.insert(carried);
+      expect((await orders.findOne(carried.id).exec())?.toJSON()).toStrictEqual(carried);
+    } finally { await db.remove(); }
+  });
+});
+
+it("M1 keeps pending and applied version-17 orders byte for byte through the identity migration to version 19, then stores order.create 12's fields (ADR-092)", async () => {
   const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
   const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: false } });
   builder.addLine({ productId: 'p', name: 'Item', sku: 'SKU-1', unitPrice: { amount: 1000, currency: 'EUR' } });
@@ -737,7 +771,7 @@ it("M1 keeps pending and applied version-17 orders byte for byte through the ide
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(18);
+    expect(orders.schema.version).toBe(19);
     for (const [index, original] of [pending, applied].entries()) {
       const migrated = await orders.findOne(original.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(original);
