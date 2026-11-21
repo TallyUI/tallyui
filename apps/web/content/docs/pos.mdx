@@ -313,6 +313,28 @@ function Sale() {
 }
 ```
 
+### Store orders in a range
+
+`useStoreOrdersInRange(connector, context, query)` reads every store order matching `query` from `connector.listOrders`, one page of 100 after another, and returns `orders`, `progress`, `unreadable`, `error` and `complete`. While pages are still being fetched, `progress` is WCPOS v2's `{ downloaded, total }`, with `total` the store's count or `null` when it gives none; it is `null` when idle, finished or failed. Nothing is stored or cached, so opening the screen again re-reads: a row pushed past a page boundary mid-read is missed until then, and a repeated row is dropped.
+
+```tsx
+import { useMemo } from 'react';
+import { useStoreOrdersInRange } from '@tallyui/pos';
+import type { SyncContext, TallyConnector } from '@tallyui/core';
+import { Text } from '@tallyui/components';
+
+declare const connector: TallyConnector, context: SyncContext;
+declare const todayStart: string, tomorrowStart: string; // the store's today, as UTC ISO instants
+
+function OrdersToday() {
+  const query = useMemo(() => ({ dateRange: { after: todayStart, before: tomorrowStart } }), []);
+  const { progress } = useStoreOrdersInRange(connector, context, query);
+  if (!progress) return null;
+  const { downloaded, total } = progress;
+  return <Text>Downloading orders — {total === null ? downloaded : `${downloaded} of ${total}`}</Text>;
+}
+```
+
 ## Repositories
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:
