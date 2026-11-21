@@ -22,10 +22,13 @@ import { Breadcrumb } from './breadcrumb';
 import { CategoryTile, TileStack } from '../product/category-tile';
 import { useT } from '../i18n';
 import { SearchInput } from '../input';
-import { VStack } from '../ui';
+import { VStack, IconButton, PlusIcon } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
 import { useMinTarget } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
+
+// ProductTable's add column (product-table.tsx ACTION_WIDTH), so a variant row's + sits under its parent row's +.
+const VARIANT_ADD_WIDTH = 56;
 
 // Below either number the window is a phone (v2 packages/components/src/lib/device.ts:15-24), and the search
 // field is not capped: v2 caps it only at wide widths (packages/components/src/page-bar/index.tsx:138-139).
@@ -162,8 +165,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
    * viewfinder, decoder and readiness; its useBarcodeScanner then handles camera scans like device scans. */
   cameraScanner?: Omit<CameraScannerPanelProps, 'onClose'>;
   /** v2's table row extras in table view: thumbnail leads the row, addButton ends it with the + (> for a product
-   * with variants) that does what a row press does. Default: neither. */
-  tableRow?: { thumbnail?: boolean; addButton?: boolean };
+   * with variants) that does what a row press does. With expand and thumbnail, a product with more than one variant
+   * has its thumbnail show or hide its variants as rows under it: option chips, price, stock and a + that adds that
+   * variant as the list chooser does. Default: none. */
+  tableRow?: { thumbnail?: boolean; addButton?: boolean; expand?: boolean };
   /** v2's rows between the chips and the products (its ListColumn `rows`): notices such as "Price check only until
    * the register is open.", rendered under the header and above the grid, table or category tiles. Default none. */
   rowsSlot?: ReactNode;
@@ -270,6 +275,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // The chooser is live (medusapos ADR 0007): it holds only the chosen product's id and derives its choices
   // from the current entries below, so an open chooser shows each reconcile pass as it lands.
   const [chooserId, setChooserId] = useState<string | null>(null);
+  // The product ids whose table rows are expanded (local, never saved).
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [width, setWidth] = useState(0);
   const [loadingHeight, setLoadingHeight] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
@@ -365,6 +372,25 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     else if (variationsStyle === 'drill' && state.view !== 'table' && variants.length > 1) {
       closePicker(); setChooserId(null); setDrillId(traits.getId(product));
     } else { closePicker(); setChooserId(traits.getId(product)); }
+  }
+
+  function variantRows(product: Doc) {
+    const variants = entries.filter((entry) => traits.getId(entry.product) === traits.getId(product));
+    if (variants.length === 0) return <Text className="px-3 py-1.5 text-sm text-muted-foreground">No variants to show.</Text>;
+    return variants.map((entry) => (
+      <View key={entry.variant.id} testID={`variation-row-${entry.variant.id}`} className="flex-row items-center gap-3 border-t border-border px-3 py-1.5">
+        <View testID={`variation-row-${entry.variant.id}-chips`} className="min-w-0 flex-1 flex-row flex-wrap gap-1">
+          {chipsOf(entry).map((chip, index) => <Text key={index} className="rounded bg-foreground/12 px-1.5 text-xs font-bold text-foreground">{chip}</Text>)}
+        </View>
+        <Text className="text-sm text-foreground">{variantPriceLabel(entry.variant, currency) ?? '—'}</Text>
+        <Text className="text-xs text-muted-foreground">{STOCK_STATUS_LABELS[entry.variant.stock.status] ?? STOCK_STATUS_LABELS.unknown}</Text>
+        <View style={{ width: VARIANT_ADD_WIDTH }} className="flex-none items-center">
+          <IconButton testID={`variation-row-add-${entry.variant.id}`} accessibilityLabel="Add to cart" onPress={() => select(entry)}>
+            <View className="text-muted-foreground"><PlusIcon size={18} /></View>
+          </IconButton>
+        </View>
+      </View>
+    ));
   }
 
   // The variations popover (#719): the one open popover's product id, and each product's current entries in order.
@@ -502,6 +528,13 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
+          isExpanded={tableRow?.expand ? (doc) => expandedIds.has(traits.getId(doc)) : undefined}
+          onToggleExpand={tableRow?.expand ? (doc) => setExpandedIds((current) => {
+            const key = traits.getId(doc), next = new Set(current);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+          }) : undefined}
+          renderExpanded={tableRow?.expand ? variantRows : undefined}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : drillEntries.length > 0 ? <LevelWrap level onBack={() => setDrillId(null)}>
         {/* v2 drill-in.tsx:44-68: "Products › name" above the variant tiles; at phone width the Breadcrumb drops the separator. */}
