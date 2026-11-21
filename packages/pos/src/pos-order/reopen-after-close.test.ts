@@ -100,6 +100,12 @@ describe('reopenRefusedOrder after close', () => {
     expect((await db.pos_orders.findOne(order.id).exec())!.reopenedAt).toBe(now.toISOString());
   });
 
+  it('H6 after close every copied leg keeps its id and carries reopened: true', async () => {
+    const { order } = await refusedIn('listed');
+    const saved = await draft(await reopenRefusedOrder(order.id, deps()));
+    expect(saved.payments.map(({ id, reopened }) => ({ id, reopened }))).toEqual(order.payments.map(({ id }) => ({ id, reopened: true })));
+  });
+
   it('E5b the successor keeps its original time and register, joins no session and is marked counted in that closure', async () => {
     const { order, sessionId } = await refusedIn('listed');
     const saved = await draft(await reopenRefusedOrder(order.id, deps()));

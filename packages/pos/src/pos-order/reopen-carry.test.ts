@@ -273,3 +273,31 @@ describe('reopenRefusedOrder carries store-priced coupons at the amounts charged
       expect(saved.coupons!.map(({ code, carried }) => ({ code, carried }))).toEqual([{ code: 'a', carried: true }, { code: 'b', carried: true }]);
     });
 });
+
+describe('reopenRefusedOrder marks the legs it copies as reopened', () => {
+  it.each([['carried', undefined], ['withoutCoupons', { withoutCoupons: true } as const]] as const)(
+    'H6 in-session (%s): every copied leg carries reopened: true', async (_name, options) => {
+      const fixture = twoLines(false), order = stored(fixture);
+      await db.pos_orders.insert(order);
+      const saved = await draft(await reopenRefusedOrder(order.id, deps(fixture.context), options));
+      expect(saved.payments).toHaveLength(order.payments.length);
+      expect(saved.payments.map((payment) => payment.reopened)).toEqual(order.payments.map(() => true));
+    });
+
+  it('H7 a finalized reopened draft stores no reopened key, and its payload equals the same order without the flag', async () => {
+    const fixture = twoLines(false), order = stored(fixture);
+    await db.pos_orders.insert(order);
+    const saved = await draft(await reopenRefusedOrder(order.id, deps(fixture.context)));
+    expect(saved.payments.every((payment) => payment.reopened === true)).toBe(true);
+    const counter = () => { let n = 0; return () => `00000000-0000-7000-8000-${String(++n).padStart(12, '0')}`; };
+    const finalize = (from: Order) => finalizeOrder(restoreOrderDraft(from, { currency, taxContext: fixture.context }).getSnapshot(),
+      { capabilities, now, newId: counter() });
+    const successor = finalize(saved);
+    expect(successor.totalMinor - successor.payments.reduce((sum, p) => sum + p.amountMinor, 0)).toBe(0);
+    for (const payment of successor.payments) expect(payment).not.toHaveProperty('reopened');
+    const plain = finalize({ ...saved, payments: saved.payments.map(({ reopened: _reopened, ...payment }) => payment) });
+    expect(successor).toStrictEqual(plain);
+    expect(JSON.stringify(toOrderCreateEnvelope(successor, 'device', 1, { maxVersion: 12 }).payload))
+      .toBe(JSON.stringify(toOrderCreateEnvelope(plain, 'device', 1, { maxVersion: 12 }).payload));
+  });
+});

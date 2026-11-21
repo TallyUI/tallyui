@@ -154,7 +154,7 @@ export interface PosOrder {
   serverFailures?: PosOrderServerFailures;
   error?: CommandError;
   updatedAt: string;
-  /** When the till reopened this refused order as a parked sale (ADR-077 d4b). Needs attention hides it, and it stays as the record of the refusal. */
+  /** When the till reopened this refused order as a parked sale (ADR-077 d4b). Needs attention keeps it until its finalized successor is in the list (`replacedOrderIds`), and it stays as the record of the refusal. */
   reopenedAt?: string;
   /** The commandId whose refusal the cashier marked handled (tally-woo 03, ADR-092 6f); the logic comes in a later PR. */
   attentionHandledFor?: string;

@@ -125,7 +125,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     });
     for (const payment of order.payments) builder.addPayment({
       // After close each leg keeps the refused order's id, so finalize knows it for the leg that closure counted.
-      ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor,
+      ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor, reopened: true,
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
     });
