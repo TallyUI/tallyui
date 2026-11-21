@@ -4931,8 +4931,8 @@ interface OrderCreatePayload {
     - **R4, a different store total is never accepted silently.** A store that checks the envelope's grand total
       before it creates the order, and computes a different one (coupon rules or rounding drift), refuses with
       `total_mismatch` and its totals (`OrderCreateTotalMismatchData`). The reopen then treats it as for
-      `coupon_invalid`: store-priced coupons are carried when the carry is exact, else it refuses and offers the sale
-      back without them. A minor-unit tolerance needs evidence from the store lane first.
+      `coupon_invalid`: store-priced coupons are carried when the carry is exact, else it refuses with
+      `coupon_carry_inexact`; dropping them is the explicit `withoutCoupons` choice. A minor-unit tolerance needs evidence from the store lane first.
     - **The R4 exception, a store that creates before it can compare.** WooCommerce creates the order, completed
       and paid, before the till sees its total. There the result stays `applied`, with `serverRefs` and the v5
       `total_mismatch` warning, and the order shows in needs-attention. There is no reopen, because the store already
@@ -5036,7 +5036,8 @@ interface OrderCreatePayload {
       step and sent as line discounts with no code; a sale whose session has closed and counted it is re-sent with its
       original time and register and no session (so no late-sale correction counts it twice), marked locally as
       counted in that closure, and the frozen closure is never altered." For a coupon sale this supersedes Q-d4b-2's
-      "the cashier collects the difference" and Q-d4b-3's "no coupons". The closed-session part will supersede Q-d4b-5
+      "the cashier collects the difference" and Q-d4b-3's "no coupons" as the default; the explicit `withoutCoupons`
+      drop keeps them. The closed-session part will supersede Q-d4b-5
       for a closure that counted the order; until it lands (PR B, D2), a coupon sale in a closed session still refuses
       `session_closed`.
       - When the carry cannot be proven exact: "refuse the automatic carry with coupon_carry_inexact, but Needs
