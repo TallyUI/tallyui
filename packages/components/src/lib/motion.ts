@@ -10,6 +10,8 @@ export const POPOVER_FADE = 200;
 export const PANEL_SLIDE_OUT = 200;
 // WCPOS v2 packages/components/src/lib/motion.ts:33-34.
 export const EASE_EXIT = Easing.bezier(0.4, 0, 1, 1);
+// WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx:64-69: a pressed Remove waits this long before the row flies.
+export const ARM = 120;
 // WCPOS v2 packages/components/src/lib/motion.ts:27.
 export const EASE_POINTS = [0.2, 0.7, 0.2, 1] as const;
 // WCPOS v2 packages/components/src/lib/motion.ts:28.

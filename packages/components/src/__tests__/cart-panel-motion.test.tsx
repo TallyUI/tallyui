@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
-import { AccessibilityInfo, Animated, Text } from 'react-native';
+import { useState } from 'react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { AccessibilityInfo, Animated, Pressable, Text } from 'react-native';
 import { CartPanel } from '../cart/cart-panel';
 import { EASE, EASE_EXIT } from '../lib/motion';
 
@@ -9,6 +10,13 @@ type Done = (result: { finished: boolean }) => void;
 const fake = (cb?: Done) => { cb?.({ finished: true }); };
 let start: (cb?: Done) => void = fake;
 const animation = () => ({ start: (cb?: Done) => start(cb), stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation;
+
+function MarkRow({ id }: { id: string }) {
+  const [marked, setMarked] = useState(false);
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Mark ${id}`} onPress={() => setMarked(true)}>
+    <Text>{marked ? `${id} marked` : id}</Text>
+  </Pressable>;
+}
 
 function panel(items: Item[], identity = 'order-1', pulseKey: (item: Item) => number = (item) => item.quantity) {
   return <CartPanel items={items} pulseKey={pulseKey} identity={identity}
@@ -85,6 +93,20 @@ describe('CartPanel motion', () => {
     act(() => held.shift()!({ finished: true }));
     expect(screen.queryByTestId('cart-row-a')).toBeNull();
     expect(screen.getByText('Empty')).toBeTruthy();
+  });
+
+  it('the ghost keeps the row state and is hidden while the live row is not', async () => {
+    const rows = (items: Item[]) => <CartPanel items={items} pulseKey={(item) => item.quantity} renderItem={(item) => <MarkRow id={item.id} />} />;
+    const { rerender } = render(rows([{ id: 'a', quantity: 1 }, { id: 'b', quantity: 1 }]));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Mark a' }));
+    const held: Done[] = [];
+    start = (cb) => { if (cb) held.push(cb); };
+    rerender(rows([{ id: 'b', quantity: 1 }]));
+    expect(within(screen.getByTestId('cart-row-a')).getByText('a marked')).toBeTruthy();
+    expect(screen.getByTestId('cart-row-a').getAttribute('aria-hidden')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Mark a' })).toBeNull();
+    expect(screen.getByTestId('cart-row-b').getAttribute('aria-hidden')).toBeNull();
   });
 
   it('under reduced motion nothing animates and a removed line goes at once', async () => {
