@@ -248,7 +248,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
-  function heldLeg(p: Order['payments'][number]) { return !!p.locked || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id)); }
+  // An after-close sale's closure counted these legs, and finalize refuses any change to them: they are held like a locked leg.
+  function countedLeg(p: { id: string }) { return !!builderNow.current.getSnapshot().afterClose?.payments.some((leg) => leg.id === p.id); }
+  function heldLeg(p: Order['payments'][number]) { return !!p.locked || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -872,6 +874,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       if (locked()) return false;
+      const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
+      if (payment && countedLeg(payment)) return false;
       const changed = builderNow.current.setPaymentStatus(paymentId, status);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
@@ -881,7 +885,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     voidTender(paymentId: string): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
-      if (payment?.locked) return false;
+      if (payment?.locked || (payment && countedLeg(payment))) return false;
       if (locked()) return false;
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
       builderNow.current.setPaymentStatus(paymentId, 'voided');
@@ -893,7 +897,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     removeTender(paymentId: string): void {
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
-      if (payment?.locked) return;
+      if (payment?.locked || (payment && countedLeg(payment))) return;
       if (locked()) return;
       if (!payment) return;
       builderNow.current.removePayment(paymentId);

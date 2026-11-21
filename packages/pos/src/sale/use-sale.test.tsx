@@ -592,6 +592,55 @@ describe('late sale', () => {
     }
   });
 
+  /** The after-close draft above (captured cash leg-1 of 1250, counted by its closure), written to pos_drafts and resumed. */
+  async function resumeAfterClose(db: Awaited<ReturnType<typeof withOpenSession>>['db'], session: { id: string; sessions: RegisterSessionCollection }) {
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext, afterClose: { sessionId: 'closed-session',
+      createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [{ id: 'leg-1', method: 'cash', amountMinor: 1250 }], taxMinor: 250, fees: [], shipping: [] } });
+    builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Shirt', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.addPayment({ id: 'leg-1', method: 'cash', status: 'captured', amountMinor: 1250 });
+    await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    const onSaleCompleted = vi.fn();
+    const { result } = renderSale(pricing, saleOpts({ onSaleCompleted, drafts: db.pos_drafts, session }));
+    await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+    return { result, onSaleCompleted };
+  }
+  const countedLeg = { id: 'leg-1', method: 'cash', amountMinor: 1250, status: 'captured' };
+
+  it('B9a: tender on an after-close draft keeps the counted leg and takes nothing more (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result, onSaleCompleted } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => result.current.startTender('external'));
+      act(() => result.current.startTender('cash'));
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+      expect(result.current.order.balanceDueMinor).toBe(0);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
+  it('B9b: remove, void and status changes on an after-close draft\'s counted leg are refused (ADR-077)', async () => {
+    const { db, sessions, sessionId } = await withOpenSession();
+    try {
+      const { result, onSaleCompleted } = await resumeAfterClose(db, { id: sessionId, sessions });
+      act(() => result.current.removeTender('leg-1'));
+      act(() => { expect(result.current.voidTender('leg-1')).toBe(false); });
+      act(() => { expect(result.current.setTenderStatus('leg-1', 'failed')).toBe(false); });
+      expect(result.current.order.payments).toHaveLength(1);
+      expect(result.current.order.payments[0]).toMatchObject(countedLeg);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.error).toBeNull();
+      expect(onSaleCompleted.mock.calls[0][0]).toMatchObject({ countedInClosureOf: 'closed-session' });
+    } finally {
+      await db.remove();
+    }
+  });
+
   it("the late order is stored pending with lateSessionId through a real outbox, and the closed session's closure doesn't count it", async () => {
     const { db, sessions, sessionId } = await withOpenSession();
     await db.addCollections({ closures: { schema: closureSchema } });
