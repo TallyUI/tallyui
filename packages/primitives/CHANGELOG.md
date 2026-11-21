@@ -1,5 +1,11 @@
 # @tallyui/primitives
 
+## 4.1.0
+
+### Patch Changes
+
+- 26573b4: `PortalHost` keys each portal by name, so a closing dialog no longer remounts a dialog opened while it animates out.
+
 ## 4.0.1
 
 ## 4.0.0

@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-medusa",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "type": "module",
   "description": "MedusaJS v2 connector for Tally UI",
   "main": "./dist/index.js",

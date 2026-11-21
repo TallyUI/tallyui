@@ -1,5 +1,11 @@
 # @tallyui/connector-woocommerce
 
+## 4.1.0
+
+### Patch Changes
+
+- @tallyui/core@4.1.0
+
 ## 4.0.1
 
 ### Patch Changes
