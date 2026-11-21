@@ -5040,8 +5040,8 @@ interface OrderCreatePayload {
       drop keeps them. The closed-session part supersedes Q-d4b-5 for a closure that counted the order. It is
       implemented: a carried reopen whose closed session's closure lists the order is drafted *after close* and
       finalized with its original `createdAt` and `registerId`, `countedInClosureOf` set and no session, and finalize
-      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payments are the ones that closure counted. The Front desk
-      ruling of 2026-11-21: "After-close reopen only for the exact carry, and finalize refuses
+      refuses `AFTER_CLOSE_PAYMENTS_CHANGED` unless its payments are the ones that closure counted and its total is
+      their sum, so it gives no change. The Front desk ruling of 2026-11-21: "After-close reopen only for the exact carry, and finalize refuses
       AFTER_CLOSE_PAYMENTS_CHANGED unless payments match the refused order's in count, method and amount. An inexact
       carry or a drop after close stays refused (session_closed); it goes to the Needs-attention row for a manager,
       never a silent uncounted payment." and "a closed session whose closure does NOT list the order still refuses
