@@ -247,4 +247,18 @@ describe('an unreadable /site', () => {
     expect(await transport.send([order()])).toStrictEqual({ kind: 'retry', reason: 'store_version_unknown' });
     expect(calls.map(({ path }) => path)).toEqual(['site']);
   });
+  it('W5: an expired token on a new transport asks for sign-in rather than retrying', async () => {
+    const { calls, transport } = store({ queue: { site: [json(401, { code: 'rest_not_logged_in' }), json(401, { code: 'rest_not_logged_in' })] } });
+    for (let i = 0; i < 2; i += 1) expect(await transport.send([order()])).toStrictEqual({ kind: 'unauthorized' });
+    expect(calls.map(({ path }) => path)).toEqual(['site', 'site']);
+    expect(await transport.send([order()])).toEqual(applied);
+  });
+  it('W6: a 403 rest_forbidden /site is unauthorized', async () => {
+    const { transport } = store({ queue: { site: [json(403, { code: 'rest_forbidden' })] } });
+    expect(await transport.send([order()])).toStrictEqual({ kind: 'unauthorized' });
+  });
+  it('W7: a 403 /site with another code stays retry status_403', async () => {
+    const { transport } = store({ queue: { site: [json(403, { code: 'some_waf_block' })] } });
+    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'status_403' });
+  });
 });
