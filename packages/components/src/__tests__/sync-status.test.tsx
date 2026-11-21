@@ -680,3 +680,58 @@ describe('SyncStatus', () => {
     });
   });
 });
+
+describe('store_version_unknown', () => {
+  const versionLine = "The online store didn't say which POS plugin version it runs.";
+  const lines = (container: HTMLElement) => Array.from(container.querySelectorAll('[dir]')).map((element) => element.textContent);
+  const at = () => { vi.useFakeTimers(); const now = Date.now(); vi.setSystemTime(now); return now; };
+  it('shows the line below "Retrying in 5 s.", outside the live region, with no reason code', () => {
+    const now = at();
+    const { container } = render(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'store_version_unknown',
+      nextAttemptAt: now + 5000 }} />);
+    expect(lines(container)).toEqual(['1 sale waiting to sync', 'Retrying in 5 s.', versionLine]);
+    const shown = screen.getByText(versionLine);
+    expect([shown.getAttribute('aria-live'), shown.getAttribute('aria-label')]).toEqual([null, null]);
+    expect(label()).toBe('1 sale waiting to sync');
+    expect(container.textContent).not.toContain('store_version_unknown');
+  });
+  it('keeps the line while sending', () => {
+    const now = at();
+    const { container } = render(<SyncStatus state={{ pending: 1, sending: true, lastRetryReason: 'store_version_unknown',
+      nextAttemptAt: now + 5000 }} />);
+    expect(lines(container)).toEqual(['1 sale waiting to sync', 'Sending…', versionLine]);
+  });
+  it.each<[string, OutboxState, OutboxState?]>([
+    ['status_503', { pending: 1, sending: false, lastRetryReason: 'status_503' }],
+    ['offline', { pending: 1, sending: false, lastRetryReason: 'offline' }],
+    ['a refused batch', { pending: 1, sending: false, lastRetryReason: 'store_version_unknown', refused: { status: 413, reason: 'status_413' } }],
+    ['backendMissing', { pending: 1, sending: false, lastRetryReason: 'store_version_unknown', backendMissing: { since: 1 } }],
+    ['nothing waiting', { pending: 0, sending: false, lastRetryReason: 'store_version_unknown' }],
+    ['refused sales', { pending: 1, sending: false, lastRetryReason: 'store_version_unknown', rejected: 1 }],
+  ])('shows no line with %s', (_name, state) => {
+    const now = at();
+    const { container } = render(<SyncStatus state={{ ...state, nextAttemptAt: now + 5000 }} />);
+    expect(container.textContent).not.toContain('POS plugin version');
+  });
+  it('follows the outbox shown: the till updates when only they wait, else the sales', () => {
+    const now = at();
+    const reason = { lastRetryReason: 'store_version_unknown', nextAttemptAt: now + 5000 };
+    const { container } = render(<SyncStatus state={{ pending: 0, sending: false }} registerState={{ pending: 1, sending: false, ...reason }} />);
+    expect(lines(container)).toEqual(['1 till update waiting to sync', 'Retrying in 5 s.', versionLine]);
+    cleanup();
+    const sales = render(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'status_503', nextAttemptAt: now + 5000 }}
+      registerState={{ pending: 1, sending: false, ...reason }} />);
+    expect(sales.container.textContent).not.toContain('POS plugin version');
+  });
+  it('shows the line below the stuck sentence and the retry line', () => {
+    const now = at();
+    const since = now - 60_000;
+    const { container } = render(<SyncStatus state={{ pending: 1, sending: false, lastRetryReason: 'store_version_unknown',
+      nextAttemptAt: now + 5000, stuck: { commandIds: ['a'], since, reason: 'store_version_unknown',
+        orders: [{ commandId: 'a', since, reason: 'store_version_unknown' }] } }} />);
+    const shown = lines(container);
+    expect(shown).toHaveLength(3);
+    expect(shown[0]).toContain("haven't reached the online store since");
+    expect(shown.slice(1)).toEqual(['Retrying in 5 s.', versionLine]);
+  });
+});
