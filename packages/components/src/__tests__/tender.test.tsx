@@ -142,6 +142,20 @@ describe('Tender', () => {
     expect(screen.getByRole('textbox', { name: 'Terminal reference' })).toBeTruthy();
   });
 
+  it("offers the pre-fill's reference input beside a kept voided leg", () => {
+    start(1500);
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    const voided = sale.order.payments[0];
+    act(() => sale.cancelTender());
+    act(() => sale.startTender('external'));
+    expect(sale.order.payments).toHaveLength(2);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'REF-7' } });
+    expect(sale.order.payments[0]).toEqual(voided);
+    expect(sale.order.payments[1]).toMatchObject({ method: 'external', amountMinor: 1500, reference: 'REF-7' });
+  });
+
   describe('Continue after a failed save (the Front desk, 2026-09-27)', () => {
     const stub = (canContinue: boolean) => ({
       stage: { kind: 'tender', method: 'external' }, error: 'The sale could not be saved: flush failed', canContinue,
@@ -511,11 +525,11 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(disabled('tender-take')).toBe(true);
   });
 
-  it("keeps the leg's methodId when its reference is edited", () => {
+  it("records a host method's reference typed before Take, with its methodId", () => {
     start(1500, 'cash', host);
-    // Only an unstamped leg's reference is edited in place (a taken one is kept as taken: ADR-072 d3, amended 2026-11-22).
-    act(() => sale.setTender({ method: 'external', methodId: 'cheque', amountMinor: 1500 }));
+    fireEvent.click(screen.getByTestId('tender-method-cheque'));
     fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'CHQ-12' } });
+    click(`Take ${money(1500)} in Cheque`);
     expect(sale.order.payments).toMatchObject([{ method: 'external', methodId: 'cheque', amountMinor: 1500, reference: 'CHQ-12' }]);
   });
 

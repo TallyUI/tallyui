@@ -104,10 +104,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
-  const [onlyLeg] = order.payments;
-  // startTender('external')'s unstamped card leg for the total: its reference is edited in place; a taken leg is kept as taken.
-  const cardReference = order.payments.length === 1 && onlyLeg.method === 'external' && legStatus(onlyLeg) === 'captured' && balance === 0
-    && !heldTillLeg(order, onlyLeg) && onlyLeg.takenAt === undefined;
+  const unstamped = order.payments.filter((leg) => leg.takenAt === undefined && !heldTillLeg(order, leg));
+  const [prefill] = unstamped;
+  // startTender('external')'s one unstamped card leg for the rest, beside any kept taken or voided legs: its reference is edited in place.
+  const cardReference = unstamped.length === 1 && prefill.method === 'external' && legStatus(prefill) === 'captured' && balance === 0;
   const hint = partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
@@ -175,7 +175,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
 
     {/* cardReference holds only for an external leg; the edit keeps that leg's method and its own methodId. */}
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
-      value={onlyLeg.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', ...(onlyLeg.methodId !== undefined ? { methodId: onlyLeg.methodId } : {}), amountMinor: onlyLeg.amountMinor, reference: text })}
+      value={prefill.reference ?? ''} onChangeText={(text) => sale.setTender({ method: 'external', ...(prefill.methodId !== undefined ? { methodId: prefill.methodId } : {}), amountMinor: prefill.amountMinor, reference: text })}
       className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
 
     {balance > 0 ? <View testID="tender-entry" className="gap-3">
@@ -202,7 +202,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
         ))}
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
-      {method?.id === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
+      {method && wireMethodOf(method) === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {state.splitView && !plan ? <>
         <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">

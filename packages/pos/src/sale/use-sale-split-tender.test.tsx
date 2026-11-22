@@ -151,6 +151,21 @@ describe('useSale split tender', () => {
     }
   });
 
+  it('a taken leg kept by Back and Pay keeps its dropped-reference warning', async () => {
+    const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
+    const { result } = renderSale({ onSaleCompleted });
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, reference: 'bad\u0000reference' }); });
+    const external = result.current.order.payments[0];
+    expect(external).toMatchObject({ method: 'external', amountMinor: 500, takenAt: expect.any(String) });
+    expect(external.status ?? 'captured').toBe('captured');
+    act(() => result.current.cancelTender());
+    act(() => result.current.setTender({ method: 'cash', amountMinor: 1750 }));
+    await act(async () => { await result.current.complete(); });
+    const stored = onSaleCompleted.mock.calls[0][0];
+    expect(stored.payments.map((payment) => payment.method)).toEqual(['external', 'cash']);
+    expect(stored.localWarnings).toEqual([{ code: 'payment_reference_dropped', paymentId: stored.payments[0].id }]);
+  });
+
   it('records every dropped reference in payment order', async () => {
     const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
     const { result } = renderSale({ onSaleCompleted });

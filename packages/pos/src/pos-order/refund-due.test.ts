@@ -88,11 +88,13 @@ describe('cashToReturn (ADR-072 d3, amended 2026-11-22)', () => {
   const taken = (id: string, amountMinor: number) => ({ id, method: 'cash', amountMinor, takenAt: at });
 
   it('lists a captured, taken cash leg', () => {
-    expect(cashToReturn({ payments: [taken('c1', 500)] })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }], totalMinor: 500 });
+    expect(cashToReturn({ totalMinor: 500, changeDueMinor: 0, payments: [taken('c1', 500)] })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }], totalMinor: 500 });
   });
 
   it('leaves out voided, external, locked, reopened, closure-counted and unstamped legs', () => {
     const order = {
+      totalMinor: 2100,
+      changeDueMinor: 0,
       afterClose: { payments: [{ id: 'counted' }] },
       payments: [
         { ...taken('voided', 100), status: 'voided' as const },
@@ -108,6 +110,21 @@ describe('cashToReturn (ADR-072 d3, amended 2026-11-22)', () => {
 
   it('sums two listed legs, in payment order', () => {
     const payments = [taken('c1', 500), { ...taken('card', 900), method: 'external' }, taken('c2', 250)];
-    expect(cashToReturn({ payments })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }, { id: 'c2', amountMinor: 250 }], totalMinor: 750 });
+    expect(cashToReturn({ totalMinor: 1650, changeDueMinor: 0, payments })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }, { id: 'c2', amountMinor: 250 }], totalMinor: 750 });
+  });
+
+  it('nets the change the till already gave off the cash leg', () => {
+    expect(cashToReturn({ totalMinor: 1500, changeDueMinor: 500, payments: [taken('c1', 2000)] })).toEqual({ legs: [{ id: 'c1', amountMinor: 1500 }], totalMinor: 1500 });
+  });
+
+  it('takes the change off the last cash legs first, keeping ledger order', () => {
+    expect(cashToReturn({ totalMinor: 1500, changeDueMinor: 500, payments: [taken('c1', 1000), taken('c2', 1000)] }))
+      .toEqual({ legs: [{ id: 'c1', amountMinor: 1000 }, { id: 'c2', amountMinor: 500 }], totalMinor: 1500 });
+  });
+
+  it('nets only change beyond the store refund due, and drops a leg left at 0', () => {
+    const payments = [{ ...taken('store', 1200), locked: true as const }, taken('c1', 300)];
+    expect(lockedRefundDueMinor({ totalMinor: 1000, payments })).toBe(200);
+    expect(cashToReturn({ totalMinor: 1000, changeDueMinor: 500, payments })).toEqual({ legs: [], totalMinor: 0 });
   });
 });

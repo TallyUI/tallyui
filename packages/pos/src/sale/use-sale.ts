@@ -438,8 +438,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     // An after-close sale's money is what its closure counted, so the sale takes and gives none (ADR-077).
     if (tender && builderNow.current.getSnapshot().afterClose) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
-    droppedReferences.current.clear();
+    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) { builder.removePayment(payment.id); droppedReferences.current.delete(payment.id); }
     setError(null);
     if (tender) addOne(tender, false);
   }
