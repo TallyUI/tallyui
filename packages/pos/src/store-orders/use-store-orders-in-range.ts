@@ -60,7 +60,8 @@ async function readPages(
  * - `progress` is `{ downloaded, total }` while pages are fetched: `{ downloaded: 0, total: null }` until the first
  *   page lands, then `total` is that page's `total` (`null` when the store gives no count) and stays fixed for the
  *   read. `downloaded` is always `orders.length + unreadable`.
- * - Orders are deduplicated by id as pages land; the first copy stays. `unreadable` sums the `unreadable` of the pages that add a new order id; a page that adds none adds nothing to it.
+ * - Orders are deduplicated by id as pages land; the first copy stays. `unreadable` sums the `unreadable` of the first
+ *   page and of each later page that adds a new order id; a later page that adds none adds nothing to it.
  * - A page with `hasMore: false` finishes: `complete: true`, `progress: null`, `orders` in `listOrders`' own order.
  * - A rejection stops the read: `error` is what was thrown, `progress` is `null`, the orders read so far stay.
  * - A page with `hasMore: true` that adds no new order id also stops the read, with an `Error`, even when it reports
@@ -100,7 +101,7 @@ export function useStoreOrdersInRange(
       publish({
         ...current,
         orders: [...current.orders, ...fresh],
-        unreadable: current.unreadable + (fresh.length > 0 ? (page.unreadable ?? 0) : 0),
+        unreadable: current.unreadable + (first || fresh.length > 0 ? (page.unreadable ?? 0) : 0),
         total: first ? (page.total ?? null) : current.total,
         status: page.hasMore ? 'reading' : 'complete',
       });

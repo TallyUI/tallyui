@@ -360,4 +360,17 @@ describe('stalled read', () => {
     expect(ids(result.current.orders)).toEqual(['A', 'B']);
     expect(result.current.unreadable).toBe(2);
   });
+
+  it('T8 counts the unreadable rows of a first page that has no readable order', async () => {
+    const { listOrders, connector } = fakeConnector(
+      Promise.resolve({ orders: [], unreadable: 2, hasMore: false, total: 2 }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.complete).toBe(true));
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.orders).toEqual([]);
+    expect(result.current.unreadable).toBe(2);
+    expect(listOrders).toHaveBeenCalledTimes(1);
+  });
 });
