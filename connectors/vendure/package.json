@@ -1,6 +1,6 @@
 {
   "name": "@tallyui/connector-vendure",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "type": "module",
   "description": "Vendure connector for Tally UI",
   "main": "./dist/index.js",
