@@ -135,6 +135,7 @@ function PrinterValue({ printers, printerId, autoPrinterName, onPrinterChange }:
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+const SEND_FAILED = 'Could not send the receipt.';
 
 /** The sent/queued line, drawn by ReceiptEmailForm after a send and by ReceiptSheet in the form's place. */
 function EmailSentLine({ queued }: { queued: boolean }) {
@@ -170,10 +171,10 @@ export function ReceiptEmailForm({ email, onDone }: ReceiptEmailFormProps): JSX.
       if (typeof result === 'string' || result === null) refusal = result;
       else { setSending(true); refusal = await result; }
     } catch (cause) {
-      refusal = cause instanceof Error ? cause.message : 'Could not send the receipt.';
+      refusal = cause instanceof Error ? cause.message : SEND_FAILED;
     }
     setSending(false);
-    if (refusal !== null) return setError(refusal);
+    if (refusal !== null) return setError(refusal || SEND_FAILED);
     setSent(email.offline ? 'queued' : 'sent');
     onDone?.(Boolean(email.offline));
   };
