@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorUnauthorizedError, type StoreOrder } from '@tallyui/core';
+import { ConnectorUnauthorizedError, UnsupportedOrderFilterError, type StoreOrder } from '@tallyui/core';
 import { createVendureConnector } from './index';
 import type { VendureOrder } from './orders';
 import { createVendureOrders, toVendureStoreOrder } from './store-orders';
@@ -172,6 +172,31 @@ describe('Vendure store orders', () => {
     expect(JSON.parse(spy.mock.calls.at(-1)![1]!.body as string).variables.options.filter).not.toHaveProperty('_or');
   });
 
+  it.each([
+    ['status', { status: 'completed' }],
+    ['customerId', { customerId: 'c1' }],
+    ['cashierId', { cashierId: 'u1' }],
+    ['registerId', { registerId: 'r1' }],
+    ['paymentMethod', { paymentMethod: 'cash' }],
+    ['storeId', { storeId: 's1' }],
+    ['createdVia', { createdVia: 'pos' }],
+    ['dateRange', { dateRange: { after: '2026-11-01T00:00:00.000Z' } }],
+  ] as const)('refuses a %s filter without a request', async (field, query) => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no request expected'));
+    const refusal = createVendureOrders().listOrders(context, query);
+    await expect(refusal).rejects.toBeInstanceOf(UnsupportedOrderFilterError);
+    await expect(refusal).rejects.toMatchObject({ fields: [field] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty status, which would otherwise read the whole store', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no request expected'));
+    const refusal = createVendureOrders().listOrders(context, { status: '' });
+    await expect(refusal).rejects.toBeInstanceOf(UnsupportedOrderFilterError);
+    await expect(refusal).rejects.toMatchObject({ fields: ['status'] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('reads without plugin fields and applies the channel tax setting', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(Response.json({ data: { orders: { items: [plainFixture], totalItems: 1 } } }))
@@ -219,6 +244,7 @@ describe('Vendure store orders', () => {
     const connector = createVendureConnector({ pricesIncludeTax: true, tallyFields: false });
     expect(connector.listOrders).toBeTypeOf('function');
     expect(connector.getOrders).toBeTypeOf('function');
+    expect(connector.orderFilters).toBeUndefined();
     expect((await connector.listOrders!(context)).orders[0]!.pricesIncludeTax).toBe(true);
     expect(JSON.parse(spy.mock.calls[0]![1]!.body as string).query).not.toContain('customFields');
   });
