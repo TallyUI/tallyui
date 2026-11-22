@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AccessibilityInfo, Animated, Text, View } from 'react-native';
 import { CartLineStrip } from '../cart/cart-line-strip';
-import { ARM, EASE_EXIT, PANEL_SLIDE_OUT } from '../lib/motion';
+import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK } from '../lib/motion';
 
 type Done = (result: { finished: boolean }) => void;
 const fake = (cb?: Done) => { cb?.({ finished: true }); };
@@ -10,6 +10,9 @@ let start: (cb?: Done) => void = fake;
 let held: Done[] = [];
 const animation = () => ({ start: (cb?: Done) => start(cb), stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation;
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+// react-native-web's useHover listens for pointerenter and pointerleave on the Pressable's node (modules/useHover/index.js).
+const hover = (on: boolean) => fireEvent[on ? 'pointerEnter' : 'pointerLeave'](screen.getByTestId('cart-line-total'), { pointerType: 'mouse' });
+const peeked = () => vi.mocked(Animated.spring).mock.calls.filter(([, config]) => config.toValue === -PEEK).length;
 const springs = (config: object) => expect(Animated.spring).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining(config));
 
 async function strip(onEdit = vi.fn(), onRemove = vi.fn(), rowWidth?: number) {
@@ -163,5 +166,44 @@ describe('CartLineStrip', () => {
     expect(Animated.spring).toHaveBeenCalledTimes(count);
     click('Edit Bag');
     expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it('H1: hovering the Total peeks the row, and hovering out brings it back', async () => {
+    await strip();
+    hover(true);
+    springs({ toValue: -PEEK });
+    hover(false);
+    springs({ toValue: 0 });
+  });
+
+  it('H2: with reduced motion, hover springs nothing and the row stays at rest', async () => {
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    await strip();
+    hover(true);
+    hover(false);
+    expect(Animated.spring).not.toHaveBeenCalled();
+    // The row's second child is the body that slides (react-native-web writes { translateX: 0 } as translateX(0px), StyleSheet/preprocess.js).
+    expect((screen.getByTestId('cart-line-row').children[1] as HTMLElement).style.transform).toBe('translateX(0px)');
+  });
+
+  it('H3: an open strip does not peek, and hovering out does not close it', async () => {
+    await strip();
+    click('Edit total of Bag');
+    hover(true);
+    expect(peeked()).toBe(0);
+    hover(false);
+    springs({ toValue: -160 });
+    expect(screen.getByRole('button', { name: 'Remove Bag' })).toBeTruthy();
+  });
+
+  it('H4: a leaving row ignores hover', async () => {
+    await strip(undefined, undefined, 300);
+    start = (cb) => { if (cb) held.push(cb); };
+    click('Edit total of Bag');
+    click('Remove Bag');
+    const count = vi.mocked(Animated.spring).mock.calls.length;
+    hover(true);
+    hover(false);
+    expect(Animated.spring).toHaveBeenCalledTimes(count);
   });
 });
