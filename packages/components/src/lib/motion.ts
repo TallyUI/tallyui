@@ -20,3 +20,5 @@ export const EASE = Easing.bezier(...EASE_POINTS);
 export const CROSSFADE = 200;
 // Reanimated 4.7.1 withTiming's default easing (src/animation/timing.ts:91), which v2's accordion chevron uses.
 export const TIMING_EASE = Easing.inOut(Easing.quad);
+export const PLUS_WIDTH = 48; // WCPOS v2 packages/core/src/screens/main/pos/cart/tab-window.ts:3.
+export const NEW_TAB_WIDTH = 112; // WCPOS v2 packages/core/src/screens/main/pos/cart/tab-window.ts:5: the + cell unfolded into "+ New".

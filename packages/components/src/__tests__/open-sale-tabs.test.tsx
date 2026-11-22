@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AccessibilityInfo, Animated } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import type { OpenSale } from '@tallyui/pos';
+import { CROSSFADE, EASE, NEW_TAB_WIDTH, PLUS_WIDTH } from '../lib/motion';
 import { OpenSaleTabs } from '../sale/open-sale-tabs';
 
 const sale = (id: string, extra: Partial<OpenSale> = {}): OpenSale => ({
@@ -174,5 +176,75 @@ describe('OpenSaleTabs age', () => {
     expect(screen.queryByTestId('open-sale-tab-a-age')).toBeNull();
     act(() => { vi.advanceTimersByTime(60_000); });
     expect(screen.getByTestId('open-sale-tab-a-age').textContent).toBe('1 h');
+  });
+});
+
+describe('OpenSaleTabs + cell motion', () => {
+  type Done = (result: { finished: boolean }) => void;
+  let held: Done[] = [];
+  const animation = () => ({ start: (cb?: Done) => { if (cb) held.push(cb); }, stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation;
+  const timed = (toValue: number) => expect(Animated.timing).toHaveBeenCalledWith(expect.anything(),
+    expect.objectContaining({ toValue, duration: CROSSFADE, easing: EASE, useNativeDriver: false }));
+  const label = () => screen.queryByTestId('new-sale-tab-label');
+  // Renders one sale, open when `current`, and returns a switch to rerender it open or not (false is the blank cart).
+  async function tabs(current: boolean) {
+    const ui = (open: boolean) => <OpenSaleTabs sales={[sale('a', { current: open })]} currency="EUR" onSelect={vi.fn()} onNew={vi.fn()} />;
+    const view = render(ui(current));
+    await act(async () => {});
+    return (open: boolean) => view.rerender(ui(open));
+  }
+
+  beforeEach(() => {
+    held = [];
+    vi.spyOn(Animated, 'timing').mockImplementation(animation);
+    vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('T1: onto the blank cart the + cell widens and New fades in; back, it narrows and New fades out', async () => {
+    const to = await tabs(true);
+    to(false);
+    expect(Animated.timing).toHaveBeenCalledTimes(2);
+    timed(NEW_TAB_WIDTH);
+    timed(1);
+    vi.mocked(Animated.timing).mockClear();
+    to(true);
+    expect(Animated.timing).toHaveBeenCalledTimes(2);
+    timed(PLUS_WIDTH);
+    timed(0);
+  });
+
+  it('T2: New stays mounted until its fade out finishes', async () => {
+    const to = await tabs(false);
+    expect(label()?.textContent).toBe('New');
+    to(true);
+    expect(label()?.textContent).toBe('New');
+    act(() => held.forEach((done) => done({ finished: false })));
+    expect(label()).not.toBeNull();
+    act(() => held.forEach((done) => done({ finished: true })));
+    expect(label()).toBeNull();
+  });
+
+  it.each([
+    ['reduced', () => vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true)],
+    ['unknown', () => vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockReturnValue(new Promise<boolean>(() => {}))],
+  ])('T3: %s motion jumps: no timing, and New mounts and unmounts at once', async (_, motion) => {
+    motion();
+    const to = await tabs(true);
+    expect(label()).toBeNull();
+    to(false);
+    expect(label()?.textContent).toBe('New');
+    to(true);
+    expect(label()).toBeNull();
+    expect(Animated.timing).not.toHaveBeenCalled();
+  });
+
+  it('T4: the first render animates nothing, blank or not', async () => {
+    await tabs(false);
+    expect(label()?.textContent).toBe('New');
+    cleanup();
+    await tabs(true);
+    expect(label()).toBeNull();
+    expect(Animated.timing).not.toHaveBeenCalled();
   });
 });
