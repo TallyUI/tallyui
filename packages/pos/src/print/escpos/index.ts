@@ -7,6 +7,8 @@ export { createEscPosTransport } from './transport';
 export type { EscPosSink, EscPosTransportOptions } from './transport';
 export { createEpsonEposSink, createStarWebPrntSink, networkSinkFor } from './network-sinks';
 export type { NetworkSinkOptions } from './network-sinks';
+export { createWebUsbSink } from './usb-sink';
+export type { WebUsbDevice, WebUsbSinkOptions } from './usb-sink';
 export { canOpenDrawer, openDrawerJob } from './drawer';
 export { renderEscpos, encodeThermalTemplate } from './render-escpos';
 export type { RenderEscposOptions } from './render-escpos';
