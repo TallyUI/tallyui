@@ -6885,6 +6885,9 @@ interface OrderCreatePayload {
   1. **Zero remainder.** When the remainder rounds to 0, the entry's `paymentId` is the last leg in `order.payments`
      that counts toward paid, whatever its method: that leg left the remainder, so voiding it clears the entry. With
      no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
+     While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
+     leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
+     pane shows no rounding.
   2. **Storage.** `pos_orders` goes to version 21 with an identity migration; an unrounded order is stored byte for
      byte as before, with no `cashRoundings` key.
   3. **The capability, not a version.** `ServerCapabilities.cashRounding` is set only by a connector that carries the
