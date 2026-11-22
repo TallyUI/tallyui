@@ -126,7 +126,7 @@ describe('useSale reopened legs', () => {
     expect(result.current.order.balanceDueMinor).toBe(toCollectMinor);
   });
 
-  it('H4 a 4.0.0 draft, whose leg has no reopened flag, behaves as before: a cash tender with nothing held removes it', async () => {
+  it('H4 a 4.0.0 draft, whose leg has no reopened flag, still holds its leg on resume (F3)', async () => {
     const order = await refused();
     const { saved } = await reopenWithoutCoupons(order);
     const old: Order = { ...saved, payments: saved.payments.map(({ reopened: _reopened, ...payment }) => payment) };
@@ -137,8 +137,10 @@ describe('useSale reopened legs', () => {
     expect(result.current.order.payments).toHaveLength(1);
     await act(async () => { await result.current.startTender('cash'); });
     expect(result.current.error).toBeNull();
-    expect(result.current.order.payments).toEqual([]);
-    expect(result.current.order.balanceDueMinor).toBe(result.current.order.totalMinor);
+    expect(result.current.order.payments).toHaveLength(1);
+    expect(result.current.order.payments[0]).toMatchObject({ id: old.payments[0].id, amountMinor: old.payments[0].amountMinor });
+    expect(result.current.order.payments[0]).not.toHaveProperty('reopened');
+    expect(result.current.order.balanceDueMinor).toBe(result.current.order.totalMinor - old.payments[0].amountMinor);
   });
 
   it('H5 split legs: the cash and the external leg both survive the tender, and the balance due is the total less both', async () => {
