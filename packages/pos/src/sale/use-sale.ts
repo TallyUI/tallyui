@@ -264,8 +264,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
     || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || taken(p); }
   function taken(p: Order['payments'][number]) { return takenLeg(p) || resumedTakenIds.current.includes(p.id); }
-  /** The live sale holds a captured taken payment: newSale, openStoreOrder, resume and the empty-sale resets refuse it with SALE_PARTLY_PAID (row 516). */
-  function holdsTakenPayment() { return builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt !== undefined); }
+  /** The live sale holds a captured taken payment (row 517's `taken`): newSale, openStoreOrder, resume and the empty-sale resets refuse it with SALE_PARTLY_PAID (row 516). */
+  function holdsTakenPayment() { return builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -1060,8 +1060,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * pending completion are unchanged.
      */
     newSale() {
-      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current
-        && builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p))) return setError(SALE_PARTLY_PAID);
+      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current && holdsTakenPayment()) return setError(SALE_PARTLY_PAID);
       resetSale();
     },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
@@ -1167,6 +1166,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (builderNow.current === builder) {
         applied.current = kept;
         resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
+        // A pre-4.2 leg voided before the park carries no takenAt and holds no money the till still has: it is dropped (desk, 23 Nov).
         resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
         if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
