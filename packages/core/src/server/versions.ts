@@ -11,8 +11,12 @@
  * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092).
  */
 export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-/** The till's capability for the contract versions shared by all five register commands; a server passes its own. */
-export const SUPPORTED_REGISTER_VERSIONS: readonly number[] = [1]
+/**
+ * The till's capability for the contract versions shared by all five register commands; a server passes its own.
+ * The till builds 1 (every command), 2 (session.open, contract ≥ 2) and 3 (session.open and closure.submit,
+ * contract ≥ 3; ADR-082).
+ */
+export const SUPPORTED_REGISTER_VERSIONS: readonly number[] = [1, 2, 3]
 /** The till's capability for order.refund versions (ADR-080); a server passes its own. */
 export const SUPPORTED_ORDER_REFUND_VERSIONS: readonly number[] = [1]
 /** The till's capability for order.reopen versions (ADR-090); a server passes its own. */
