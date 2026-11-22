@@ -64,7 +64,7 @@ async function readPages(
  * - A page with `hasMore: false` finishes: `complete: true`, `progress: null`, `orders` in `listOrders`' own order.
  * - A rejection stops the read: `error` is what was thrown, `progress` is `null`, the orders read so far stay.
  * - A page with `hasMore: true` that adds no new order and no unreadable one also stops the read, with an `Error`, so
- *   a store that repeats itself cannot page forever.
+ *   a store that keeps repeating a page stops, unless that page reports unreadable orders.
  * - A `query` that differs by value, or a new `connector` or `context`, abandons the read and starts again from
  *   page 1, showing none of the old orders; an equal new object changes nothing. Unmounting abandons the read.
  *   So keep `connector` and `context` the same objects across renders: a new object each render restarts the read on
