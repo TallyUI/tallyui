@@ -70,6 +70,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   useEffect(() => {
     if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
+  const legsKey = order.payments.map((leg) => `${leg.id}:${legStatus(leg)}`).join(',');
+  useEffect(() => setRefusal(false), [legsKey]);
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
@@ -123,7 +125,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = figures.appliedMinor <= 0 || noChange || pickRefused;
+  const cannotTake = figures.appliedMinor <= 0 || noChange || pickRefused || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;

@@ -900,6 +900,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const changed = builderNow.current.setPaymentStatus(paymentId, status, status === 'captured' ? new Date().toISOString() : undefined);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
+      // A leg moved, so the due changed: a stale NOTHING_DUE goes (row 502).
+      if (changed) setError((current) => current === NOTHING_DUE ? null : current);
       return changed;
     },
     /** The leg stays in order.payments as voided and counts nothing; removeTender removes only a leg that took no money. Refused on the receipt. */
