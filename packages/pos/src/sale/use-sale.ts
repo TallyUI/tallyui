@@ -296,7 +296,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
   function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
   function carriedCoupon() { return builderNow.current.getSnapshot().coupons?.some((coupon) => coupon.carried); }
-  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
+  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()` after newSale's guard, on the default customer.
   function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: SaleTax) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
@@ -892,7 +892,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
       return changed;
     },
-    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. Refused on the receipt. */
+    /** The leg stays in order.payments as voided and counts nothing; removeTender removes only a leg that took no money. Refused on the receipt. */
     voidTender(paymentId: string): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);

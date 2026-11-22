@@ -4206,7 +4206,7 @@ interface OrderCreatePayload {
       as a set, not one id.
   - **`setTender` keeps its single-payment meaning for existing apps.** It replaces **all** payments with the one
     given (or none). `startTender('external')` still sets one card payment of the total.
-    - **Amended 2026-11-22 (Front desk):** a taken leg (status `captured` with `takenAt`, or `voided` after capture) is never removed, only voided. `setTender`, `startTender` and `cancelTender` keep it, `removeTender` refuses it, and the cash to return is listed once each cash leg records its change (row to follow), as in WCPOS v2's cancel-payment view. A voided taken leg stays on the order as the record (on the sale; the completed order carries only the legs that count toward paid). Uncaptured legs (pending, authorized, failed, and `setTender`'s unstamped pre-filled leg) keep this decision. A resumed paid draft's parked live legs are held the same way until the sale resets (row 328 F3, #1208). A captured leg whose offered method cannot void it is kept and shown as refund-only; the sale completes or parks. `newSale` refuses an unfinished sale holding a captured taken payment, as `closeSale` does.
+    - **Amended 2026-11-22 (Front desk):** a taken leg (status `captured` with `takenAt`, or `voided` after capture) is never removed, only voided. `setTender`, `startTender` and `cancelTender` keep it, `removeTender` refuses it, and the cash to return is listed once each cash leg records its change (row to follow), as in WCPOS v2's cancel-payment view. A voided taken leg stays on the order as the record (on the sale; the completed order carries only the legs that count toward paid). Uncaptured legs (pending, authorized, failed, and `setTender`'s unstamped pre-filled leg) keep this decision. A resumed paid draft's parked live legs are held the same way until the sale resets (row 328 F3, #1208). A captured leg whose offered method cannot void it is kept, with no Cancel payment offered; the sale completes or parks. `newSale` refuses an unfinished sale holding a captured taken payment, as `closeSale` does.
   - **`complete()` stays gated on `balanceDueMinor === 0`.**
   - **No schema change for split tender itself:** `PosOrder.payments[]` and the payload already carry several. The
     receipt already lists each payment and the change.
@@ -4873,7 +4873,7 @@ interface OrderCreatePayload {
       them: (d3c)'s sale re-applies the codes with fresh coupon data, so an expired or changed coupon is refused
       then, not replayed from the draft.
       - **Amended 2026-11-19 (Front desk):** a draft with a live or captured leg keeps its parked coupon amounts on resume, as it keeps its parked prices; no re-price until the legs are voided, after which the normal automatic re-price applies. A reopened draft whose legs are all locked re-prices on resume as before.
-      - **Amended 2026-11-22 (Front desk):** the draft also keeps its parked tax rates, under every granularity, so the total never moves under taken money.
+      - **Amended 2026-11-22 (Front desk):** the draft's lines keep their parked tax rates, under every granularity (fees and shipping: row 497).
     - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
       `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
       exactly as before.
