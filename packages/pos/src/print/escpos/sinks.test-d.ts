@@ -64,10 +64,12 @@ describe('ESC/POS sink device types', () => {
 });
 
 describe('ESC/POS sink calls fit the real device methods', () => {
+  it('open', () => expectTypeOf<Parameters<WebUsbDevice['open']>>().toExtend<Parameters<USBDevice<null>['open']>>());
   it('selectConfiguration', () => expectTypeOf<Parameters<WebUsbDevice['selectConfiguration']>>().toExtend<Parameters<USBDevice<null>['selectConfiguration']>>());
   it('claimInterface', () => expectTypeOf<Parameters<WebUsbDevice['claimInterface']>>().toExtend<Parameters<USBDevice<null>['claimInterface']>>());
   it('clearHalt', () => expectTypeOf<Parameters<WebUsbDevice['clearHalt']>>().toExtend<Parameters<USBDevice<null>['clearHalt']>>());
   it('transferOut', () => expectTypeOf<Parameters<WebUsbDevice['transferOut']>>().toExtend<Parameters<USBDevice<null>['transferOut']>>());
+  it('connect', () => expectTypeOf<Parameters<SinkGatt['connect']>>().toExtend<Parameters<BluetoothRemoteGATTServer['connect']>>());
   it('getPrimaryService', () => expectTypeOf<Parameters<SinkGatt['getPrimaryService']>>().toExtend<Parameters<BluetoothRemoteGATTServer['getPrimaryService']>>());
   it('getCharacteristic', () => expectTypeOf<Parameters<SinkService['getCharacteristic']>>().toExtend<Parameters<BluetoothRemoteGATTService['getCharacteristic']>>());
   it('writeValueWithResponse', () => expectTypeOf<Parameters<SinkCharacteristic['writeValueWithResponse']>>().toExtend<Parameters<BluetoothRemoteGATTCharacteristic['writeValueWithResponse']>>());
