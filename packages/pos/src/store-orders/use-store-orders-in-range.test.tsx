@@ -284,18 +284,20 @@ describe('stalled read', () => {
     expect(listOrders).toHaveBeenCalledTimes(1);
   });
 
-  it('T3 carries on when a repeat page has unreadable rows', async () => {
-    const { listOrders, connector } = fakeConnector(
-      Promise.resolve({ orders: [A], hasMore: true }),
-      Promise.resolve({ orders: [A], unreadable: 1, hasMore: true }),
-      Promise.resolve({ orders: [B], hasMore: false }),
-    );
+  it('T3 ends with an error when a store repeats a hasMore page that reports unreadable rows', async () => {
+    const listOrders = vi.fn<() => Promise<StoreOrderPage>>().mockResolvedValue({ orders: [A], unreadable: 1, hasMore: true });
+    const connector = { listOrders } as unknown as TallyConnector;
     const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
-    await waitFor(() => expect(result.current.complete).toBe(true));
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
 
-    expect(ids(result.current.orders)).toEqual(['A', 'B']);
+    expect((result.current.error as Error).message).toBe(STALLED);
+    expect(ids(result.current.orders)).toEqual(['A']);
     expect(result.current.unreadable).toBe(1);
-    expect(listOrders).toHaveBeenCalledTimes(3);
+    expect(result.current.progress).toBeNull();
+    expect(result.current.complete).toBe(false);
+    expect(listOrders).toHaveBeenCalledTimes(2);
+    await act(async () => {});
+    expect(listOrders).toHaveBeenCalledTimes(2);
   });
 
   it('T4 completes when the last page adds nothing new', async () => {
@@ -317,5 +319,45 @@ describe('stalled read', () => {
     expect(second.result.current.error).toBeNull();
     expect(ids(second.result.current.orders)).toEqual(['A']);
     expect(repeat.listOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('T5 ends with an error on a hasMore page of only unreadable rows', async () => {
+    const { listOrders, connector } = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [], unreadable: 3, hasMore: true }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error));
+
+    expect((result.current.error as Error).message).toBe(STALLED);
+    expect(result.current.unreadable).toBe(0);
+    expect(ids(result.current.orders)).toEqual(['A']);
+    expect(listOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('T6 completes without counting unreadable rows on a last page that adds no new id', async () => {
+    const { listOrders, connector } = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [A], unreadable: 2, hasMore: false }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.complete).toBe(true));
+
+    expect(result.current.error).toBeNull();
+    expect(ids(result.current.orders)).toEqual(['A']);
+    expect(result.current.unreadable).toBe(0);
+    expect(listOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('T7 still counts unreadable rows on a later page that adds a new id', async () => {
+    const { connector } = fakeConnector(
+      Promise.resolve({ orders: [A], hasMore: true }),
+      Promise.resolve({ orders: [A, B], unreadable: 2, hasMore: false }),
+    );
+    const { result } = renderHook(() => useStoreOrdersInRange(connector, context, query));
+    await waitFor(() => expect(result.current.complete).toBe(true));
+
+    expect(ids(result.current.orders)).toEqual(['A', 'B']);
+    expect(result.current.unreadable).toBe(2);
   });
 });
