@@ -410,11 +410,11 @@ The `taxLabels` config maps tax rates in ppm (100000 = 10%) to human-readable la
 
 **The app owns the device.** The USB sink opens, configures and claims the device when it needs to, and never closes it. The Bluetooth sink connects GATT when the link is down, and never disconnects. The app keeps the device between jobs and releases it.
 
-**Which USB interface.** The USB sink writes to the printer-class interface when the device has one. Otherwise it writes to the first interface with a bulk OUT endpoint.
+**Which USB interface.** The USB sink writes to the first printer-class interface that has a bulk OUT endpoint. Otherwise it writes to the first interface with a bulk OUT endpoint.
 
-**Bluetooth pacing.** The Bluetooth sink writes 20-byte chunks, 20 ms apart, the last with response, then waits 300 ms before the write resolves.
+**Bluetooth pacing.** By default the Bluetooth sink writes 20-byte chunks (the `chunkSize` option changes the size), 20 ms apart, the last with response, then waits 300 ms before the write resolves. An empty write sends nothing and skips the wait. A characteristic without `writeWithoutResponse` gets every chunk with response.
 
-**No timeout on a write.** Neither sink sets a timeout. A printer that never accepts the bytes leaves the job pending.
+**No timeout on a write.** Neither sink sets a timeout, so a job waits as long as the browser's USB transfer or GATT write does.
 
 **Errors.** A device the sink cannot print to is a `PrintError`.
 
