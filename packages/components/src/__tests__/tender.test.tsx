@@ -509,6 +509,20 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(ledgerRow(0)).toBe(`Cheque${money(2500)}Captured${legTime(0)}Cancel payment`);
   });
 
+  it("keeps the host's methodId when a reference is typed into the pre-fill beside a kept voided leg", () => {
+    start(1500, 'cash', host);
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    const voided = sale.order.payments[0];
+    act(() => sale.cancelTender());
+    act(() => sale.startTender('external'));
+    act(() => sale.setTender({ method: 'external', methodId: 'cheque', amountMinor: 1500 }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'REF-9' } });
+    expect(sale.order.payments[0]).toEqual(voided);
+    expect(sale.order.payments[1]).toMatchObject({ method: 'external', methodId: 'cheque', reference: 'REF-9' });
+  });
+
   it('gives no change from a non-cash method that claims change: no hint, no cash chips, the no-change warning and no Take, as for the card', () => {
     const cheque = own('cheque', 'Cheque', 'other');
     const changingCheque = { ...cheque, capabilities: { ...cheque.capabilities, change: true } };

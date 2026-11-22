@@ -33,19 +33,3 @@ export function tillLegsTheStoreRefuses(order: { storeOrder?: unknown; totalMino
   const lockedMinor = sum(captured.filter((payment) => payment.locked).map((payment) => payment.amountMinor));
   return lockedMinor >= order.totalMinor ? captured.filter((payment) => !payment.locked).map((payment) => payment.id) : [];
 }
-
-/** The cash this sale took that goes back if it is cancelled (ADR-072 d3, amended 2026-11-22; v2's cancel-payment view, return_cash):
- * each captured, taken cash leg the till holds (not locked, not reopened, not counted by an after-close closure), and their sum,
- * net of the change the till already gave (changeDueMinor beyond the store's refund due), taken off the last cash legs first. */
-export function cashToReturn(order: { totalMinor: number; changeDueMinor: number; afterClose?: { payments: readonly { id: string }[] }; payments: readonly Pick<Payment, 'id' | 'method' | 'amountMinor' | 'status' | 'takenAt' | 'locked' | 'reopened'>[] }): { legs: { id: string; amountMinor: number }[]; totalMinor: number } {
-  const listed = order.payments.filter((leg) => leg.method === 'cash' && countsTowardPaid(leg) && leg.takenAt !== undefined && !leg.locked && !leg.reopened
-    && !order.afterClose?.payments.some((counted) => counted.id === leg.id)).map((leg) => ({ id: leg.id, amountMinor: leg.amountMinor }));
-  let change = order.changeDueMinor - Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
-  for (const leg of [...listed].reverse()) {
-    const taken = Math.min(change, leg.amountMinor);
-    leg.amountMinor -= taken;
-    change -= taken;
-  }
-  const legs = listed.filter((leg) => leg.amountMinor > 0);
-  return { legs, totalMinor: sum(legs.map((leg) => leg.amountMinor)) };
-}
