@@ -200,18 +200,20 @@ describe('useSale taxContextFor (#722)', () => {
     expect(money(retaxed)).toEqual(money(built));
   });
 
-  it('refuses a customer with other rates once cash is taken, and re-taxes after the tender is cancelled, as cancelTender drops every leg', () => {
+  it('refuses a customer with other rates once cash is taken, and re-taxes once the cash is voided and the tender cancelled', () => {
     const { result } = renderSale();
     addLines(result);
     act(() => result.current.startTender('cash'));
-    act(() => { result.current.addTender({ method: 'cash', amountMinor: 500 }); });
+    let cash: string | null = null;
+    act(() => { cash = result.current.addTender({ method: 'cash', amountMinor: 500 }); });
     expect(result.current.order.paidMinor).toBe(500);
     act(() => result.current.setCustomer(nzCustomer));
     expect(result.current.error).toBe(CUSTOMER_RETAX_REFUSED);
     expect(result.current.order.customer).toBeNull();
     expect(rateCodes(result.current.order)).toEqual([['AU-GST-1'], ['AU-GST-1']]);
+    act(() => { expect(result.current.voidTender(cash!)).toBe(true); }); // a taken leg is voided, never dropped (ADR-072 d3, amended 2026-11-22)
     act(() => result.current.cancelTender());
-    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.order.payments).toMatchObject([{ id: cash, status: 'voided' }]);
     act(() => result.current.setCustomer(nzCustomer));
     expect(rateCodes(result.current.order)).toEqual([['NZ-GST-1'], ['NZ-GST-1']]);
   });

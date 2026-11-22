@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
-import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus } from '../tender/payment-legs';
+import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus, takenLeg } from '../tender/payment-legs';
 import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
@@ -42,6 +42,8 @@ export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sal
  * "Cancel the payment" names the leg's button, `pos_checkout.cancel_payment` ("Cancel payment") in packages/components.
  */
 export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the payment before changing the sale.';
+/** removeTender refuses a taken leg with this: it is voided, never removed (ADR-072 d3, amended 2026-11-22). */
+export const PAYMENT_TAKEN = 'This payment was taken. Void it instead of removing it.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
 export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
@@ -248,11 +250,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
-  const resumedLegIds = useRef<readonly string[]>([]); // a resumed draft's parked live legs, held until the sale resets (ADR-077 d3, amended 2026-11-19; row 328 F3)
+  const resumedLegIds = useRef<readonly string[]>([]); // a resumed draft's parked live legs, held until the sale resets (ADR-072 d3, amended 2026-11-22; row 328 F3)
   // An after-close sale's closure counted these legs, and finalize refuses any change to them: they are held like a locked leg.
   function countedLeg(p: { id: string }) { return !!builderNow.current.getSnapshot().afterClose?.payments.some((leg) => leg.id === p.id); }
   function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
-    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)); }
+    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || takenLeg(p); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -294,7 +296,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   /** startTender's and complete()'s check: the live order's coupon prices are stale or being priced again. */
   function couponsUnpriced() { return !!(builderNow.current.getSnapshot().couponPricesStale || repricing.current); }
   function carriedCoupon() { return builderNow.current.getSnapshot().coupons?.some((coupon) => coupon.carried); }
-  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()`, on the default customer.
+  // newSale()'s body (see its doc comment for the guards): `newSale()` is `resetSale()` after newSale's guard, on the default customer.
   function resetSale(customer: CustomerSummary | null = defaulted(), restored?: OrderBuilder, restoredTax?: SaleTax) {
     if (inFlight.current && !pending.current) return setError(SALE_SAVING);
     if (pending.current && confirmed.current !== pending.current) {
@@ -436,8 +438,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     // An after-close sale's money is what its closure counted, so the sale takes and gives none (ADR-077).
     if (tender && builderNow.current.getSnapshot().afterClose) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     const builder = builderNow.current;
-    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) builder.removePayment(payment.id);
-    droppedReferences.current.clear();
+    for (const payment of builder.getSnapshot().payments) if (!heldLeg(payment)) { builder.removePayment(payment.id); droppedReferences.current.delete(payment.id); }
     setError(null);
     if (tender) addOne(tender, false);
   }
@@ -520,7 +521,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (couponsUnpriced()) return setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING);
     if (afterCloseChanged(current)) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     tenderSession.current ??= { session: options?.session ?? opts.session }; // a repeat call mid-tender keeps the pin
-    const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) ? payment.amountMinor : 0), 0);
+    const heldMinor = current.payments.reduce((sum, payment) => sum + (heldLeg(payment) && legStatus(payment) !== 'voided' ? payment.amountMinor : 0), 0);
     if (current.afterClose) setTender(null); // its legs are all counted
     else if (heldMinor === 0) setTender(method === 'external' ? { method, amountMinor: current.totalMinor } : null);
     else setTender(method === 'external' && current.totalMinor - heldMinor > 0 ? { method, amountMinor: current.totalMinor - heldMinor } : null);
@@ -891,7 +892,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
       return changed;
     },
-    /** The leg stays in order.payments as voided and counts nothing; removeTender still removes a leg outright. Refused on the receipt. */
+    /** The leg stays in order.payments as voided and counts nothing; removeTender removes only a leg that took no money. Refused on the receipt. */
     voidTender(paymentId: string): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; } // a finished sale's legs stay
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
@@ -912,6 +913,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (payment?.locked) return;
       if (locked()) return;
       if (!payment) return;
+      if (takenLeg(payment)) return setError(PAYMENT_TAKEN);
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
       clearStaleError();
@@ -1010,9 +1012,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * save still in flight carries on in the background, a throw logged at error) and starts the new
      * sale outright — from the receipt, or an idle cart, there's nothing pending to abandon. Abandoning
      * clears the screen, never the record (the Front desk, 2026-09-25). `newSale()` never deletes,
-     * updates or requeues `pos_orders` itself.
+     * updates or requeues `pos_orders` itself. An unfinished sale that still holds a taken payment is refused
+     * with SALE_PARTLY_PAID, changing nothing, as `closeSale` refuses it; the receipt and a confirmed stored
+     * pending completion are unchanged.
      */
-    newSale() { resetSale(); },
+    newSale() {
+      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current
+        && builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt !== undefined)) return setError(SALE_PARTLY_PAID);
+      resetSale();
+    },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
     async park(): Promise<string | null> {
       if (locked()) return SALE_SAVING;

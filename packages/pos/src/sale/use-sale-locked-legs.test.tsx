@@ -332,8 +332,9 @@ describe('useSale locked legs', () => {
     expect(result.current.order.payments).toEqual([lockedLeg]);
     act(() => { result.current.addTender({ method: 'cash', amountMinor: 100 }); });
     expect(result.current.order.payments).toHaveLength(2);
+    const cash = result.current.order.payments[1];
     act(() => { result.current.cancelTender(); });
-    expect(result.current.order.payments).toEqual([lockedLeg]);
+    expect(result.current.order.payments).toEqual([lockedLeg, cash]); // the taken cash stays (ADR-072 d3, amended 2026-11-22)
     expect(result.current.stage.kind).toBe('cart');
   });
 

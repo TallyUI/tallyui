@@ -127,6 +127,35 @@ describe('Tender', () => {
     expect(sale.stage.kind).toBe('receipt');
   });
 
+  it('offers no reference input for a taken card leg for the total: it is kept as taken (ADR-072 d3, amended 2026-11-22)', () => {
+    start(1500);
+    act(() => { expect(sale.addTender({ method: 'external', amountMinor: 1500 })).not.toBeNull(); });
+    expect(sale.order.payments).toMatchObject([{ method: 'external', amountMinor: 1500, takenAt: expect.any(String) }]);
+    expect(sale.order.balanceDueMinor).toBe(0);
+    expect(screen.queryByRole('textbox', { name: 'Terminal reference' })).toBeNull();
+  });
+
+  it("still offers the reference input for startTender('external')'s unstamped pre-fill", () => {
+    start(1500, 'external');
+    expect(sale.order.payments).toHaveLength(1);
+    expect(sale.order.payments[0].takenAt).toBeUndefined();
+    expect(screen.getByRole('textbox', { name: 'Terminal reference' })).toBeTruthy();
+  });
+
+  it("offers the pre-fill's reference input beside a kept voided leg", () => {
+    start(1500);
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    const voided = sale.order.payments[0];
+    act(() => sale.cancelTender());
+    act(() => sale.startTender('external'));
+    expect(sale.order.payments).toHaveLength(2);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'REF-7' } });
+    expect(sale.order.payments[0]).toEqual(voided);
+    expect(sale.order.payments[1]).toMatchObject({ method: 'external', amountMinor: 1500, reference: 'REF-7' });
+  });
+
   describe('Continue after a failed save (the Front desk, 2026-09-27)', () => {
     const stub = (canContinue: boolean) => ({
       stage: { kind: 'tender', method: 'external' }, error: 'The sale could not be saved: flush failed', canContinue,
@@ -387,7 +416,7 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     expect(500 + 800).toBe(sale.order.changeDueMinor);
   });
 
-  it('gate 36c: the store holds the total, so a till leg blocks Complete until it is removed from the pane', () => {
+  it('gate 36c: the store holds the total, so a till leg blocks Complete until it is voided from the pane (ADR-072 d3, amended 2026-11-22)', () => {
     reopen(1000);
     act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
     act(() => sale.startTender('cash'));
@@ -397,8 +426,8 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     expect(cash).not.toBeNull();
     expect(disabled('tender-complete')).toBe(true);
     expect(text('tender-store-holds')).toBe(`The store already holds this sale's payment. Remove the ${money(500)} taken here to finish.`);
-    fireEvent.click(screen.getByTestId(`tender-leg-${cash}-remove`));
-    expect(sale.order.payments.map((payment) => payment.id)).not.toContain(cash);
+    fireEvent.click(screen.getByTestId(`tender-leg-${cash}-refused-void`));
+    expect(sale.order.payments.find((payment) => payment.id === cash)?.status).toBe('voided');
     expect(screen.queryByTestId('tender-store-holds')).toBeNull();
     expect(disabled('tender-complete')).toBe(false);
     expect(text('tender-refund-due')).toBe(`Refund due ${money(200)}`);
@@ -480,6 +509,20 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(ledgerRow(0)).toBe(`Cheque${money(2500)}Captured${legTime(0)}Cancel payment`);
   });
 
+  it("keeps the host's methodId when a reference is typed into the pre-fill beside a kept voided leg", () => {
+    start(1500, 'cash', host);
+    let cash: string | null = null;
+    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    const voided = sale.order.payments[0];
+    act(() => sale.cancelTender());
+    act(() => sale.startTender('external'));
+    act(() => sale.setTender({ method: 'external', methodId: 'cheque', amountMinor: 1500 }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'REF-9' } });
+    expect(sale.order.payments[0]).toEqual(voided);
+    expect(sale.order.payments[1]).toMatchObject({ method: 'external', methodId: 'cheque', reference: 'REF-9' });
+  });
+
   it('gives no change from a non-cash method that claims change: no hint, no cash chips, the no-change warning and no Take, as for the card', () => {
     const cheque = own('cheque', 'Cheque', 'other');
     const changingCheque = { ...cheque, capabilities: { ...cheque.capabilities, change: true } };
@@ -496,11 +539,11 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     expect(disabled('tender-take')).toBe(true);
   });
 
-  it("keeps the leg's methodId when its reference is edited", () => {
+  it("records a host method's reference typed before Take, with its methodId", () => {
     start(1500, 'cash', host);
     fireEvent.click(screen.getByTestId('tender-method-cheque'));
-    click(`Take ${money(1500)} in Cheque`);
     fireEvent.change(screen.getByRole('textbox', { name: 'Terminal reference' }), { target: { value: 'CHQ-12' } });
+    click(`Take ${money(1500)} in Cheque`);
     expect(sale.order.payments).toMatchObject([{ method: 'external', methodId: 'cheque', amountMinor: 1500, reference: 'CHQ-12' }]);
   });
 

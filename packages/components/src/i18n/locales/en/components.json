@@ -86,7 +86,6 @@
 	"pos_checkout.pick_more": "One more {name}",
 	"pos_checkout.refund_due": "Refund due {amount}",
 	"pos_checkout.remaining": "Remaining",
-	"pos_checkout.remove_payment": "Remove payment",
 	"pos_checkout.return_cash": "Return {amount} cash to the customer",
 	"pos_checkout.rounded_from": "Rounded from {amount}",
 	"pos_checkout.split": "Split",

@@ -46,3 +46,8 @@ export function canMoveLeg(from: PaymentLegStatus, to: PaymentLegStatus): boolea
 export function canVoidLeg(leg: { status?: PaymentLegStatus }, method: PaymentMethodDescriptor): boolean {
   return method.capabilities.void && (isInMotion(leg) || (legStatus(leg) === 'captured' && method.capture.mode === 'manual'));
 }
+
+/** Money was taken (captured, or voided after capture): the leg is never removed (ADR-072 d3, amended 2026-11-22). */
+export function takenLeg(leg: { status?: PaymentLegStatus; takenAt?: string }): boolean {
+  return (legStatus(leg) === 'captured' || legStatus(leg) === 'voided') && leg.takenAt !== undefined;
+}
