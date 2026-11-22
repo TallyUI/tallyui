@@ -54,7 +54,7 @@ On a 2.0.x store (`ledgerPayments`, or `/site` `wcpos_version` 2 or later, read 
 
 ## Cash rounding
 
-Each `cashRoundings` entry on a sale is sent as a fee line `{ name: 'Rounding', total: <signed amount>, tax_status: 'none', tax_class: '' }`, after the sale's own fees. The app passes `acceptsCashRounding` to `createWooCommandTransport` from `ServerCapabilities.cashRounding`. Without it, or on a WCPOS 2.0 store, a sale carrying `cashRoundings` is refused as `invalid_payload` with `cash_rounding_unsupported`, and no request is made: the field is never dropped.
+Each `cashRoundings` entry on a sale is sent as a fee line `{ name: 'Rounding', total: <signed amount>, tax_status: 'none', tax_class: '' }`, after the sale's own fees. The app must pass `acceptsCashRounding` to `createWooCommandTransport` from `ServerCapabilities.cashRounding`. Without it, or on a WCPOS 2.0 store, a sale carrying `cashRoundings` is refused as `invalid_payload` with `cash_rounding_unsupported`, and no request is made: the field is never dropped.
 
 ## Customers
 

@@ -23,7 +23,8 @@ export interface WooCommandTransportOptions {
   /** True when the store carries cash rounding (`ServerCapabilities.cashRounding`, ADR-094): the fork's `order_create_v5` stores
    * declare it; stock stores do not, as nothing has been proven there. Pass it from `cashRounding` as `acceptsCoupons` is passed
    * from `coupons`. Read at push time; absent means closed, so a sale carrying `cashRoundings` is refused as `invalid_payload`
-   * with `cash_rounding_unsupported` and no request is made. A WCPOS 2.0 (ledger) store refuses it whatever this says. */
+   * with `cash_rounding_unsupported` and no request is made. On a WCPOS 2.0 (ledger) store the transport refuses it whatever
+   * this says. */
   acceptsCashRounding?: boolean | (() => boolean | Promise<boolean>);
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
    * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
