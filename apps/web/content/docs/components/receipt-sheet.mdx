@@ -49,7 +49,7 @@ The Template row shows a picker when there is more than one template, the templa
 
 Pass `email` and Email Receipt opens WCPOS v2's email form inside the sheet, between the preview and the footer: an "Email Address" field prefilled from `defaultAddress`, a "Save email to the customer" switch (off) when `saveToCustomer` is set, v2's offline notice when `offline` is set, and Send, which reads "Send when online" when offline. Each opening starts from `defaultAddress` with the switch off; closing the sheet closes the form.
 
-Send refuses an address that is not `name@domain` (one `@`, no spaces) inline ("Enter an email address."). Otherwise it calls `onSend({ address, saveToCustomer })` with the trimmed address. The sheet sends nothing: the app sends or queues the receipt in `onSend` and returns `null` to close the form, or a message to show in it. While a returned promise is pending, Send shows a spinner and cannot be pressed; an `Error` that `onSend` throws or rejects with shows its message, and anything else thrown shows "Could not send the receipt.". When `email` is given it takes the place of `onEmail`, which is then not called. After `null`, the sheet shows "Email sent" in the form's place, or "Receipt email queued" when `offline` is set (keys `receipt.email_sent` and `receipt.email_queued`, testID `receipt-email-sent`), until the form opens again or the sheet closes. The same form is exported as [ReceiptEmailForm](/docs/components/receipt-email-form) for apps that draw the receipt inline.
+Send refuses an address that is not `name@domain` (one `@`, no spaces) inline ("Enter an email address."). Otherwise it calls `onSend({ address, saveToCustomer })` with the trimmed address. The sheet sends nothing: the app sends or queues the receipt in `onSend` and returns `null` to close the form, or a message to show in it. While a returned promise is pending, Send shows a spinner and cannot be pressed; an `Error` that `onSend` throws or rejects with shows its message (anything else thrown or rejected shows "Could not send the receipt."). When `email` is given it takes the place of `onEmail`, which is then not called. After `null`, the sheet shows "Email sent" in the form's place, or "Receipt email queued" when `offline` is set (keys `receipt.email_sent` and `receipt.email_queued`, testID `receipt-email-sent`), until the form opens again or the sheet closes. The same form is exported as [ReceiptEmailForm](/docs/components/receipt-email-form) for apps that draw the receipt inline.
 
 ```tsx
 <ReceiptSheet
@@ -113,7 +113,7 @@ interface ReceiptSheetEmail {
   offline?: boolean;
   /** Draws "Save email to the customer" (default off). */
   saveToCustomer?: boolean;
-  /** Sends or queues the receipt. Returns a refusal to show, or null once sent or queued; the form then closes. */
+  /** Sends or queues the receipt. Returns a refusal to show, or null once sent or queued; the form then shows "Email sent", or "Receipt email queued" when offline. */
   onSend: (input: { address: string; saveToCustomer: boolean }) => Promise<string | null> | string | null;
 }
 ```
