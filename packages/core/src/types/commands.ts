@@ -455,6 +455,8 @@ export interface OrderCreatePayload {
   taxMinor: number;
   totalMinor: number;
   payments: OrderCreatePayment[];
+  /** ADR-094: each cash leg's signed rounding, in minor units, already summed into `totalMinor`; sent at the order's content version, only for an order that has one, and only to a store whose connector declares `cashRounding` (a server without it refuses the field). */
+  cashRoundings?: Array<{ paymentId: string; minor: number }>;
   /** Version 3+; both or neither. */
   display?: OrderCreateDisplay;
   /** Version 3+; both or neither. */

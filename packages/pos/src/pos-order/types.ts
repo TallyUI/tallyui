@@ -1,5 +1,5 @@
 import type { CommandError, CommandServerRefs, CommandWarning, OrderAddress, OrderCreateLine, PaymentMethodKind, TaxRounding } from '@tallyui/core';
-import type { DisplayTotals, FeeLine, ShippingLine } from '../order/types';
+import type { CashRounding, DisplayTotals, FeeLine, ShippingLine } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
 
@@ -107,6 +107,8 @@ export interface PosOrder {
   /** What the store owes back on a reopened sale whose locked payments exceed its new total, in minor units (pos_orders v15, ADR-090). `finalizeOrder` writes it on every reopened sale, 0 when nothing is due; absent on a till sale. */
   refundDueMinor?: number;
   payments: PosOrderPayment[];
+  /** ADR-094: the cash rounding entries, keyed by this order's payment ids and counted in totalMinor. Absent when empty. */
+  cashRoundings?: CashRounding[];
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
   customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress;
     /** The sale's tax ids (pos_orders v18, ADR-092), sent at order.create 12; `label` is kept on the till and is not sent. */
