@@ -16,7 +16,7 @@ export type StoreOrdersRangeQuery = Omit<ListOrdersQuery, 'page' | 'perPage'>;
 
 /** The most `ListOrdersQuery.perPage` allows. */
 const PER_PAGE = 100;
-// The error a read ends with when a page says `hasMore: true` but adds no new order and no unreadable one.
+/** The error a read ends with when a page says `hasMore: true` but adds no new order and no unreadable one. */
 const STALLED = 'listOrders answered hasMore: true with a page that added no new order';
 
 type Read = {
