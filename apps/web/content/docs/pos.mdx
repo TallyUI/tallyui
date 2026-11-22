@@ -81,7 +81,7 @@ const result = computeOrderTax(
 roundMicrosToMinor(taxMicros(1100, ratePpm, true)); // 100
 ```
 
-Before you split a sale's tax by rate with `taxLinesByRate`, pass its lines and its fees and shipping through `taxedLinesFor`. It marks each with the tax mode its tax was rounded in: a fee keeps its own `amountIncludesTax` unless the store rounds as WooCommerce does.
+Before you split a sale's tax by rate with `taxLinesByRate`, pass its lines and its fees and shipping through `taxedLinesFor`. It marks each with the tax mode its tax was rounded in: a fee keeps its own `amountIncludesTax`, or the store's mode if it has none, unless the store rounds as WooCommerce does.
 
 ## Currency Formatting
 
@@ -337,7 +337,7 @@ function OrdersToday() {
 }
 ```
 
-Keep `connector` and `context` the same objects across renders, from state, a ref or `useMemo`: a new object restarts the read. A page that says there is more but adds no new order ends the read with an error, so a store that repeats itself cannot page forever.
+Keep `connector` and `context` the same objects across renders, from state, a ref or `useMemo`: a new object restarts the read. A page that says there is more but adds no new order and no unreadable one ends the read with an error, so a store that repeats itself cannot page forever.
 
 ## Repositories
 
