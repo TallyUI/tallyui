@@ -4,10 +4,11 @@ import { createEscPosTransport, createWebUsbSink, PrintError, type PrinterProfil
 
 type Endpoint = { endpointNumber: number; direction: 'in' | 'out'; type: 'bulk' | 'interrupt' | 'isochronous' };
 // interfaces: one endpoint list per interface number, default interface 0 with bulk OUT endpoint 2.
+// classes: one interface class per interface number, default 7 (printer) for every interface.
 // statuses: each transferOut's status in turn, default 'ok'.
 interface FakeOptions {
   opened?: boolean; configured?: boolean; claimed?: number[]; openError?: Error; clearHaltError?: Error;
-  interfaces?: Endpoint[][]; statuses?: ('ok' | 'stall' | 'babble')[];
+  interfaces?: Endpoint[][]; classes?: number[]; statuses?: ('ok' | 'stall' | 'babble')[];
 }
 
 // Enforces what Chromium's WebUSB enforces: configuring and claiming need an open device, a transfer needs its
@@ -18,7 +19,10 @@ function fakeDevice(options: FakeOptions = {}) {
   const transfers: Uint8Array[] = [];
   const halted = new Set<number>();
   const interfaces = (options.interfaces ?? [[{ endpointNumber: 2, direction: 'out', type: 'bulk' }]]).map(
-    (endpoints, interfaceNumber) => ({ interfaceNumber, claimed: options.claimed?.includes(interfaceNumber) ?? false, alternate: { endpoints } }),
+    (endpoints, interfaceNumber) => ({
+      interfaceNumber, claimed: options.claimed?.includes(interfaceNumber) ?? false,
+      alternate: { interfaceClass: options.classes?.[interfaceNumber] ?? 7, endpoints },
+    }),
   );
   const configuration = { interfaces };
   const device = {
@@ -170,5 +174,23 @@ describe('createWebUsbSink', () => {
   it('U11: chunkSize must be a positive integer', () => {
     const { device } = fakeDevice();
     for (const chunkSize of [0, -1, 1.5]) expect(() => createWebUsbSink({ device, chunkSize })).toThrow(RangeError);
+  });
+
+  it('U12: prefers the printer-class interface over an earlier vendor interface with bulk OUT', async () => {
+    const { device, calls } = fakeDevice({
+      interfaces: [[{ endpointNumber: 1, direction: 'out', type: 'bulk' }], [{ endpointNumber: 2, direction: 'out', type: 'bulk' }]],
+      classes: [0xff, 7],
+    });
+    await createWebUsbSink({ device, chunkSize: 4 }).write(bytesOf(10));
+    expect(calls).toEqual(['open', 'selectConfiguration(1)', 'claimInterface(1)', 'transferOut(2)', 'transferOut(2)', 'transferOut(2)']);
+  });
+
+  it('U13: a printer-class interface without bulk OUT falls back to the first interface with one', async () => {
+    const { device, calls } = fakeDevice({
+      interfaces: [[{ endpointNumber: 1, direction: 'in', type: 'bulk' }], [{ endpointNumber: 3, direction: 'out', type: 'bulk' }]],
+      classes: [7, 0xff],
+    });
+    await createWebUsbSink({ device, chunkSize: 4 }).write(bytesOf(10));
+    expect(calls).toEqual(['open', 'selectConfiguration(1)', 'claimInterface(1)', 'transferOut(3)', 'transferOut(3)', 'transferOut(3)']);
   });
 });
