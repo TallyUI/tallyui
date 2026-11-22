@@ -118,6 +118,8 @@ describe('useSale removal and restore (#1095)', () => {
     await act(async () => { await result.current.complete(); });
     expect(result.current.stage.kind).toBe('receipt');
     unchanged(removal, SALE_FINISHED);
+    act(() => { result.current.newSale(); });
+    unchanged(removal, RESTORE_STALE);
   });
 
   it('T4b: refuses, changing nothing, after park then a resume of that same draft', async () => {
@@ -168,31 +170,103 @@ describe('useSale removal and restore (#1095)', () => {
     expect(result.current.order.display).toEqual(before.display);
   });
 
-  it('T7: a line restored after a customer change ends up as if it had never been removed (desk ruling 2)', () => {
-    const rate = (ratePpm: number): TaxContext => ({ pricesIncludeTax: false, getTaxRatePpm: () => ratePpm });
+  const rate = (ratePpm: number): TaxContext => ({ pricesIncludeTax: false, getTaxRatePpm: () => ratePpm });
+  const location = {} as SaleTaxContext['location'];
+  const A: CustomerSummary = { id: 'A', name: 'Ana' }, B: CustomerSummary = { id: 'B', name: 'Ben' };
+  /** restore() refuses with RESTORE_STALE and the order is the snapshot taken just before it. */
+  function voided(result: Sale, removal: SaleRemoval) {
+    const before = result.current.order;
+    expect(restore(result, removal)).toBe(RESTORE_STALE);
+    expect(result.current.order).toEqual(before);
+  }
+
+  it('T7: a removal is voided by a customer change that moves the rates (desk ruling, 22 Nov)', () => {
     const contexts = { A: rate(100000), B: rate(250000) };
-    const location = {} as SaleTaxContext['location'];
     const taxContextFor = (customer: CustomerSummary | null): SaleTaxContext => ({ taxContext: customer?.id === 'B' ? contexts.B : contexts.A, location });
-    const A: CustomerSummary = { id: 'A', name: 'Ana' }, B: CustomerSummary = { id: 'B', name: 'Ben' };
-    const twoLines = (result: Sale) => {
-      act(() => { result.current.setCustomer(A); result.current.add(entries[0], traits); result.current.add(entries[1], traits); });
-      expect(result.current.order.lineItems.every((line) => line.taxFromClass)).toBe(true);
-      return result.current.order.lineItems.map((line) => line.id);
-    };
-    const control = renderSale({ taxContextFor }).result;
-    twoLines(control);
-    act(() => { control.current.setCustomer(B); });
     const test = renderSale({ taxContextFor }).result;
-    const ids = twoLines(test);
-    const old = test.current.order.lineItems[1].taxLines;
+    act(() => { test.current.setCustomer(A); test.current.add(entries[0], traits); test.current.add(entries[1], traits); });
+    expect(test.current.order.lineItems.every((line) => line.taxFromClass)).toBe(true);
+    const ids = test.current.order.lineItems.map((line) => line.id);
     const removal = removeLine(test, ids[1]);
     act(() => { test.current.setCustomer(B); });
     expect(test.current.error).toBeNull();
-    expect(restore(test, removal)).toBeNull();
-    const strip = (order: Order) => order.lineItems.map(({ id: _id, ...line }) => line);
-    expect(strip(test.current.order)).toEqual(strip(control.current.order));
-    expect(totals(test.current.order)).toEqual(totals(control.current.order));
-    expect(test.current.order.lineItems[1].taxLines).not.toEqual(old);
+    voided(test, removal);
+    expect(test.current.order.lineItems).toHaveLength(1);
+  });
+
+  it('T10: a same-rates customer change voids it, and so does going back to Guest', () => {
+    const { result } = renderSale();
+    let removal = removeLine(result, addThree(result)[1]);
+    act(() => { result.current.setCustomer({ id: 'A', name: 'Ana' }); });
+    voided(result, removal);
+    act(() => { result.current.newSale(); });
+    act(() => { result.current.setCustomer(A); });
+    removal = removeLine(result, addThree(result)[1]);
+    act(() => { result.current.setCustomer(null); });
+    expect(result.current.order.customer).toBeNull();
+    voided(result, removal);
+  });
+
+  it('T11: setAddresses voids it', () => {
+    const { result } = renderSale();
+    act(() => { result.current.setCustomer(A); });
+    const removal = removeLine(result, addThree(result)[1]);
+    act(() => { expect(result.current.setAddresses({ country: 'AU', state: 'VIC' }, undefined)).toBe(true); });
+    voided(result, removal);
+  });
+
+  it('T12: setTaxIds voids it', () => {
+    const { result } = renderSale();
+    act(() => { result.current.setCustomer(A); });
+    const removal = removeLine(result, addThree(result)[1]);
+    act(() => { expect(result.current.setTaxIds([{ type: 'eu_vat', value: 'DE123', country: 'DE', label: 'VAT' }])).toBe(true); });
+    voided(result, removal);
+  });
+
+  it('T13: refused or no-op customer calls keep it', () => {
+    const { result } = renderSale();
+    const ids = addThree(result);
+    const removal = removeLine(result, ids[1]);
+    act(() => {
+      expect(result.current.setAddresses({ country: 'AU', state: 'VIC' }, undefined)).toBe(false);
+      expect(result.current.setTaxIds([{ type: 'eu_vat', value: 'DE123', country: 'DE', label: 'VAT' }])).toBe(false);
+    });
+    act(() => { result.current.setCustomer({ id: 'A', name: 'Ana', email: 'a'.repeat(250) + '@store.test' }); });
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.order.customer).toBeNull();
+    expect(restore(result, removal)).toBeNull();
+    expect(result.current.order.lineItems.map((line) => line.id)).toEqual(ids);
+  });
+
+  it('T14: a re-tax on cancelTender voids it; a cancelTender with no re-tax keeps it', () => {
+    const contexts = { A: rate(100000), B: rate(250000) };
+    const fnA = (): SaleTaxContext => ({ taxContext: contexts.A, location });
+    const fnB = (): SaleTaxContext => ({ taxContext: contexts.B, location });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider>;
+    }
+    type Options = Parameters<typeof useSale>[1];
+    const options: Options = { registerId: 'register-1', cashierRef: 'cashier@store.test',
+      capabilities: { orderCreate: 3 }, drafts: db.pos_drafts, taxContextFor: fnA };
+    const render = () => renderHook((opts: Options) => useSale(pricing, opts), { wrapper: Wrapper, initialProps: options });
+    // Sale 1: a newer taxContextFor mid-sale, then cancelTender re-taxes the cart on it.
+    const first = render();
+    const removal = removeLine(first.result, addThree(first.result)[1]);
+    const old = first.result.current.order.lineItems.map((line) => line.taxLines);
+    first.rerender({ ...options, taxContextFor: fnB });
+    act(() => { first.result.current.startTender('cash'); });
+    act(() => { first.result.current.cancelTender(); });
+    expect(first.result.current.order.lineItems.map((line) => line.taxLines)).not.toEqual(old);
+    voided(first.result, removal);
+    // Sale 2: the same with no new function; cancelTender does not re-tax and the undo works.
+    const second = render();
+    const ids = addThree(second.result);
+    const kept = removeLine(second.result, ids[1]);
+    act(() => { second.result.current.startTender('cash'); });
+    act(() => { second.result.current.cancelTender(); });
+    expect(restore(second.result, kept)).toBeNull();
+    expect(second.result.current.order.lineItems.map((line) => line.id)).toEqual(ids);
+    expect(second.result.current.order.lineItems[1].id).toBe(ids[1]);
   });
 
   it('T8: with a live leg taken after the remove, restore refuses with SALE_HAS_PAYMENT and changes nothing', () => {

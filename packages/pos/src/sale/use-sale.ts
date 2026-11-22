@@ -71,7 +71,7 @@ export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. C
 export const META_INVALID = 'A custom field needs a name of at most 255 characters that does not start with "_", and a sale takes at most 50.';
 /** ADR-092 6b: updateLine's refusal once the sale left the cart; a line's name, SKU and regular price change only in the cart. */
 export const LINE_EDIT_REFUSED = 'A line can only be edited in the cart. Cancel the payment to edit it, or start a new order.';
-/** #1095: restore()'s refusal of a removal whose sale moved on (reset, parked, finished) or that is already back. */
+/** #1095: restore()'s refusal of a removal whose sale moved on (reset, parked, resumed, finished), whose customer changed or whose sale was re-taxed since, or that is already back. */
 export const RESTORE_STALE = 'This item can no longer be put back. Add it again.';
 /** Taken by `removal()` before a remove; pass it to `restore()`. Hosts never build one. */
 export type SaleRemoval = { readonly kind: 'line' | 'fee' | 'shipping'; readonly id: string; readonly item: LineItem | ChargeLine;
@@ -248,7 +248,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const repricing = useRef<Promise<string | null> | null>(null);
   const [couponsRepricing, setCouponsRepricing] = useState(false);
   const generation = useRef(0);
-  const saleEpoch = useRef(0); // #1095: bumped by every resetSale (new sale, park, resume, switch); a removal from an older epoch is stale.
+  // #1095: a removal from an older epoch is stale; bumped by every resetSale (new sale, park, resume, switch, receipt exit)
+  // and every accepted customer change (setCustomer, setAddresses, setTaxIds).
+  const removalEpoch = useRef(0);
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
@@ -320,7 +322,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     keptCoupons.current = undefined; keptLegIds.current = []; resumedLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
-    saleEpoch.current++;
+    removalEpoch.current++;
     setBuilder(next);
     setOrder(next.getSnapshot());
     // Live at once, so a resume() in the same tick (switchSale) sees the cart before the next render.
@@ -659,20 +661,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const order = builderNow.current.getSnapshot();
       const list: readonly (LineItem | ChargeLine)[] = kind === 'line' ? order.lineItems : kind === 'fee' ? order.fees ?? [] : order.shipping ?? [];
       const index = list.findIndex((item) => item.id === id);
-      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext, epoch: saleEpoch.current };
+      return index < 0 ? null : { kind, id, item: list[index], index, orderId: order.id, taxContext: taxNow.current.taxContext, epoch: removalEpoch.current };
     },
-    /** #1095, v2's Undo: puts a removal back at its old index (clamped), re-taxed when the sale's rates moved since; returns a refusal or null. */
+    /** #1095, v2's Undo: puts a removal back at its old index (clamped); returns a refusal or null. Any customer change, a re-tax, a reset (park, resume, new sale) or the receipt voids it (RESTORE_STALE). */
     restore(removal: SaleRemoval): string | null {
       const held = editRefusal(); if (held) return held;
-      const order = builderNow.current.getSnapshot(), moved = removal.taxContext !== taxNow.current.taxContext;
-      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id || removal.epoch !== saleEpoch.current) return RESTORE_STALE;
+      const order = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || removal.orderId !== order.id || removal.epoch !== removalEpoch.current
+        || removal.taxContext !== taxNow.current.taxContext) return RESTORE_STALE;
       const ids = [removal.item, ...(removal.kind === 'line' ? (removal.item as LineItem).discounts : [])].map((entry) => entry.id);
       if ([...order.lineItems.flatMap((li) => [li, ...li.discounts]), ...order.fees ?? [], ...order.shipping ?? [], ...order.discounts, ...order.payments]
         .some((entry) => ids.includes(entry.id))) return RESTORE_STALE; // already back
-      // A re-tax runs only as retaxFor allows it (stage and busy are refused above).
-      if (moved && (capturedMinor(order.payments) !== 0 || order.payments.some(isInMotion) || keptCodes())) return RESTORE_STALE;
       builderNow.current.restoreItem(removal.kind, removal.item, removal.index);
-      if (moved) retax(builderNow.current.getSnapshot().customer, taxNow.current);
       return null;
     },
     /** A line's discount, or the order's without a line; returns the refusal to show, or null once applied. */
@@ -763,6 +763,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (same) taxNow.current = same;
         builderNow.current.setCustomer(customer);
       }
+      removalEpoch.current++;
       setError((current) => current !== null && (CUSTOMER_REFUSALS.includes(current) || current === CUSTOMER_RETAX_REFUSED || current === TAX_IDS_INVALID) ? null : current); // any other error stays
     },
     /**
@@ -786,6 +787,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (same) taxNow.current = same;
         builderNow.current.setCustomer(next);
       }
+      removalEpoch.current++;
       setError((current) => current === ADDRESS_CHANGE_REFUSED ? null : current); // any other error stays
       return true;
     },
@@ -801,6 +803,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (!cleaned) { setError(TAX_IDS_INVALID); return false; }
       const { taxIds: _taxIds, ...rest } = customer;
       builderNow.current.setCustomer(cleaned.length ? { ...rest, taxIds: cleaned } : rest);
+      removalEpoch.current++;
       setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
       return true;
     },
