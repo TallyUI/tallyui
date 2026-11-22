@@ -50,16 +50,18 @@ export interface WebBluetoothSinkOptions {
 
 // v2's chunk size: 20 bytes is the payload of one write at BLE's default ATT MTU of 23 (3 bytes go to the header).
 const BLE_CHUNK_SIZE = 20;
-// v2's pause between chunks: a write without response is not acknowledged, so the pause keeps the sink from
-// outrunning the printer.
+// v2's pause between chunks, found on a Netum NT-1809; the sink paces writes itself.
 const BLE_CHUNK_PAUSE_MS = 20;
-// v2's settle after the last chunk: its response says the printer has the bytes, not that it has printed them, so
-// the sink waits for the printer to drain before the next job.
+// v2's settle, found on a Netum NT-1809: the sink gives the printer 300 ms after the last chunk before resolving.
 const BLE_SETTLE_MS = 300;
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** The first known print profile's characteristic that takes writes; each probe that rejects moves on to the next. */
+/**
+ * The first known print profile's characteristic that takes writes; each probe that rejects moves on to the next. A
+ * characteristic with `writeWithoutResponse` but not `write` is skipped, because the last chunk always goes with
+ * response.
+ */
 async function printCharacteristic(gatt: WebBluetoothGattServer) {
   for (const [service, characteristic] of PRINT_PROFILES) {
     try {
@@ -89,7 +91,12 @@ export function createWebBluetoothSink({ device, chunkSize = BLE_CHUNK_SIZE }: W
       // Read the link and probe on every write, so a write after the link drops reconnects and finds the service again.
       if (!gatt.connected) await step('connect', () => gatt.connect());
       const target = await printCharacteristic(gatt);
-      if (!target) throw new PrintError('unsupported', `${name()}: no known print service was found; nothing was written`);
+      if (!target && !gatt.connected) {
+        throw new PrintError('failed', `${name()}: the link dropped while finding the print service; nothing was written`);
+      }
+      if (!target) {
+        throw new PrintError('unsupported', `${name()}: no known print service was found; nothing was written; is BLUETOOTH_PRINT_SERVICES in optionalServices?`);
+      }
       for (let i = 0; i < bytes.length; i += chunkSize) {
         // slice, not subarray: each write gets its own ArrayBuffer-backed copy.
         const chunk = bytes.slice(i, i + chunkSize);

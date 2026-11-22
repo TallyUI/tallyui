@@ -402,6 +402,47 @@ const receipt = buildReceiptData(order, {
 
 The `taxLabels` config maps tax rates in ppm (100000 = 10%) to human-readable labels. If a rate doesn't have a label, it falls back to "Tax X%" formatting.
 
+## Receipt printers
+
+`createWebUsbSink` and `createWebBluetoothSink` are ESC/POS sinks for `createEscPosTransport`, for a printer attached to the browser.
+
+**The device comes from the app.** The app gets it from `navigator.usb.requestDevice` or `navigator.bluetooth.requestDevice`, called from a user gesture such as a click handler; `navigator.usb.getDevices` can return a USB device already granted. For Bluetooth, the app lists `BLUETOOTH_PRINT_SERVICES` in `optionalServices`. The sinks never call `navigator.usb` or `navigator.bluetooth` themselves.
+
+**The app owns the device.** The USB sink opens, configures and claims the device when it needs to, and never closes it. The Bluetooth sink connects GATT when the link is down, and never disconnects. The app keeps the device between jobs and releases it.
+
+**Which USB interface.** The USB sink writes to the printer-class interface when the device has one. Otherwise it writes to the first interface with a bulk OUT endpoint.
+
+**Bluetooth pacing.** The Bluetooth sink writes 20-byte chunks, 20 ms apart, the last with response, then waits 300 ms before the write resolves.
+
+**No timeout on a write.** Neither sink sets a timeout. A printer that never accepts the bytes leaves the job pending.
+
+**Errors.** A device the sink cannot print to is a `PrintError`.
+
+```ts
+import {
+  createEscPosTransport,
+  createWebBluetoothSink,
+  createWebUsbSink,
+  type PrinterProfile,
+  type WebBluetoothDevice,
+  type WebUsbDevice,
+} from '@tallyui/pos';
+
+// From navigator.usb.requestDevice in a click handler, or navigator.usb.getDevices.
+declare const usbDevice: WebUsbDevice;
+// From navigator.bluetooth.requestDevice in a click handler, with BLUETOOTH_PRINT_SERVICES in optionalServices.
+declare const bluetoothDevice: WebBluetoothDevice;
+
+const usbPrinter: PrinterProfile = { id: 'usb-1', name: 'Front counter', connectionType: 'usb', columns: 48 };
+const bluetoothPrinter: PrinterProfile = { id: 'ble-1', name: 'Mobile', connectionType: 'bluetooth', columns: 32 };
+
+const usbTransport = createEscPosTransport({ sink: createWebUsbSink({ device: usbDevice }), profile: usbPrinter });
+const bluetoothTransport = createEscPosTransport({
+  sink: createWebBluetoothSink({ device: bluetoothDevice }),
+  profile: bluetoothPrinter,
+});
+```
+
 ## Logging
 
 `createLogger` provides structured logging with scopes and pluggable sinks. Each sink controls which log levels and scopes it listens to.

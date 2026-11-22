@@ -81,7 +81,7 @@ function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
 describe.each([
   { page: 'index.mdx', count: 1 },
   { page: 'integration.mdx', count: 8 },
-  { page: 'pos.mdx', count: 13 },
+  { page: 'pos.mdx', count: 14 },
 ])('$page snippets', ({ page, count }) => {
   const mdxPath = path.join(repoRoot, 'apps/web/content/docs', page);
   const mdx = readFileSync(mdxPath, 'utf8');

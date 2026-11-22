@@ -16,7 +16,7 @@ export interface WebUsbDevice {
     readonly interfaces: readonly {
       readonly interfaceNumber: number;
       readonly claimed: boolean;
-      readonly alternate: { readonly endpoints: readonly WebUsbEndpoint[] };
+      readonly alternate: { readonly interfaceClass: number; readonly endpoints: readonly WebUsbEndpoint[] };
     }[];
   } | null;
   readonly productName?: string | null;
@@ -36,13 +36,19 @@ export interface WebUsbSinkOptions {
 // Keeps a single transfer bounded; it is not a pacing control (each transfer is awaited, so the device sets the pace).
 const USB_CHUNK_SIZE = 4096;
 
-/** The first interface with a bulk OUT endpoint, and that endpoint's number. */
+// The USB printer class code (bInterfaceClass 7).
+const USB_PRINTER_CLASS = 7;
+
+/**
+ * The interface to print to, and its bulk OUT endpoint's number: the first printer-class interface with a bulk OUT
+ * endpoint, or, when there is none, the first interface of any class with a bulk OUT endpoint.
+ */
 function bulkOut(device: WebUsbDevice) {
-  for (const usbInterface of device.configuration?.interfaces ?? []) {
+  const candidates = (device.configuration?.interfaces ?? []).flatMap((usbInterface) => {
     const endpoint = usbInterface.alternate.endpoints.find(({ direction, type }) => direction === 'out' && type === 'bulk');
-    if (endpoint) return { usbInterface, endpointNumber: endpoint.endpointNumber };
-  }
-  return null;
+    return endpoint ? [{ usbInterface, endpointNumber: endpoint.endpointNumber }] : [];
+  });
+  return candidates.find(({ usbInterface }) => usbInterface.alternate.interfaceClass === USB_PRINTER_CLASS) ?? candidates[0] ?? null;
 }
 
 export function createWebUsbSink({ device, chunkSize = USB_CHUNK_SIZE }: WebUsbSinkOptions): EscPosSink {

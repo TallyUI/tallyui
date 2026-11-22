@@ -14,7 +14,8 @@ type Properties = { write: boolean; writeWithoutResponse: boolean };
 interface FakeProfile { service: string; characteristic: string; properties: Properties }
 // profiles: the services the device has, default P1 with write and writeWithoutResponse.
 // failChunk: the 1-based chunk whose write rejects.
-interface FakeOptions { profiles?: FakeProfile[]; connected?: boolean; connectError?: Error; failChunk?: number }
+// dropOnProbe: the link drops on the first getPrimaryService, which rejects.
+interface FakeOptions { profiles?: FakeProfile[]; connected?: boolean; connectError?: Error; failChunk?: number; dropOnProbe?: boolean }
 
 const profile = ([service, characteristic]: readonly [string, string], properties: Properties = { write: true, writeWithoutResponse: true }) => (
   { service, characteristic, properties }
@@ -27,6 +28,7 @@ function fakeDevice(options: FakeOptions = {}) {
   const writes: { characteristic: string; response: boolean; bytes: Uint8Array }[] = [];
   const profiles = options.profiles ?? [profile(P1)];
   let chunks = 0;
+  let probes = 0;
   const characteristicOf = ({ characteristic, properties }: FakeProfile) => {
     const write = async (response: boolean, value: Uint8Array<ArrayBuffer>) => {
       calls.push(`${response ? 'writeValueWithResponse' : 'writeValueWithoutResponse'}(${value.length})`);
@@ -51,12 +53,14 @@ function fakeDevice(options: FakeOptions = {}) {
     },
     async getPrimaryService(service: string) {
       calls.push(`getPrimaryService(${service})`);
+      if (options.dropOnProbe && ++probes === 1) gatt.connected = false;
       if (!gatt.connected) throw new Error('NetworkError: GATT Server is disconnected');
       const matches = profiles.filter((entry) => entry.service === service);
       if (matches.length === 0) throw new Error('NotFoundError: no such service');
       return {
         async getCharacteristic(characteristic: string) {
           calls.push(`getCharacteristic(${characteristic})`);
+          if (!gatt.connected) throw new Error('NetworkError: GATT Server is disconnected');
           const match = matches.find((entry) => entry.characteristic === characteristic);
           if (!match) throw new Error('NotFoundError: no such characteristic');
           return characteristicOf(match);
@@ -205,5 +209,23 @@ describe('createWebBluetoothSink', () => {
 
   it('B12: BLUETOOTH_PRINT_SERVICES lists the four services in probe order', () => {
     expect(BLUETOOTH_PRINT_SERVICES).toEqual([P1[0], P2[0], P3[0], P4[0]]);
+  });
+
+  it('B13: empty bytes connect and probe, write nothing and skip the settle', async () => {
+    const { device, calls } = fakeDevice();
+    let resolved = false;
+    const done = createWebBluetoothSink({ device }).write(new Uint8Array(0)).then(() => { resolved = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolved).toBe(true);
+    expect(calls).toEqual(['connect', `getPrimaryService(${P1[0]})`, `getCharacteristic(${P1[1]})`]);
+    await done;
+  });
+
+  it('B14: a link that drops while probing fails, and writes nothing', async () => {
+    const { device, calls } = fakeDevice({ dropOnProbe: true });
+    const error = await rejection(createWebBluetoothSink({ device }).write(bytesOf(5)));
+    expect(error.code).toBe('failed');
+    expect(error.message).toContain('Counter BLE');
+    expect(writeCalls(calls)).toEqual([]);
   });
 });

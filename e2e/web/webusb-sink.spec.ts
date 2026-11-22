@@ -16,7 +16,7 @@ const MEMBERS: Record<string, string[]> = {
   USBDevice: ['opened', 'configuration', 'productName', 'open', 'selectConfiguration', 'claimInterface', 'clearHalt', 'transferOut'],
   USBConfiguration: ['interfaces'],
   USBInterface: ['interfaceNumber', 'claimed', 'alternate'],
-  USBAlternateInterface: ['endpoints'],
+  USBAlternateInterface: ['interfaceClass', 'endpoints'],
   USBEndpoint: ['endpointNumber', 'direction', 'type'],
 };
 let bundle = '';

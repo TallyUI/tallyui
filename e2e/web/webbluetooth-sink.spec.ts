@@ -98,6 +98,7 @@ test.describe('Web Bluetooth ESC/POS sink in Chromium', () => {
     expect(result.lengths).toEqual([20, 20, 5]);
     expect(result.responses).toEqual([false, false, true]);
     expect(result.equal).toBe(true);
-    expect(result.settle).toBeGreaterThanOrEqual(300);
+    // performance.now() is coarsened, so a 300 ms settle may measure a fraction under 300: allow 1 ms.
+    expect(result.settle).toBeGreaterThanOrEqual(299);
   });
 });
