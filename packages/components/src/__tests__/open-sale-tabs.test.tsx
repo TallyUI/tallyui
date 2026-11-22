@@ -247,4 +247,25 @@ describe('OpenSaleTabs + cell motion', () => {
     expect(label()).toBeNull();
     expect(Animated.timing).not.toHaveBeenCalled();
   });
+
+  it("T5: the + cell renders the width and New's opacity it ends on", async () => {
+    // react-native-web renders the Animated values as inline DOM styles; the Pressable's parent is the width wrapper.
+    const width = () => screen.getByTestId('new-sale-tab').parentElement?.style.width;
+    const opacity = () => label()?.parentElement?.style.opacity;
+    await tabs(true);
+    expect(width()).toBe(`${PLUS_WIDTH}px`);
+    cleanup();
+    await tabs(false);
+    expect(width()).toBe(`${NEW_TAB_WIDTH}px`);
+    expect(opacity()).toBe('1');
+    cleanup();
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    const to = await tabs(true);
+    to(false);
+    expect(width()).toBe(`${NEW_TAB_WIDTH}px`);
+    expect(opacity()).toBe('1');
+    to(true);
+    expect(width()).toBe(`${PLUS_WIDTH}px`);
+    expect(label()).toBeNull();
+  });
 });
