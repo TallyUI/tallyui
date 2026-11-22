@@ -165,9 +165,12 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   // Kept only with a display row per coupon; a draft parked stale keeps its figures but stays stale (basis '' never matches).
   if (options.keepCoupons && saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length) {
     const restored = builder.getSnapshot();
+    // The kept lines carry their parked rates (order-builder keptOn), so the basis must too: a Woo line re-derives today's rate (F5).
+    const parkedRates = new Map(saved.lineItems.map((li) => [li.id, li.taxLines]));
+    const keptBasis = couponPricingBasis({ ...restored, lineItems: restored.lineItems.map((li) => ({ ...li, taxLines: parkedRates.get(li.id) ?? li.taxLines })) });
     builder.setCoupons(saved.coupons.map((coupon) => coupon.code), { kind: 'kept', coupons: saved.coupons,
       displayRows: saved.display.coupons.map((row) => row.amountMinor), lines: new Map(saved.lineItems.map((li) => [li.id, li])),
-      basis: saved.couponPricesStale ? '' : couponPricingBasis(restored), linesBasis: couponPricingBasis({ ...restored, customer: null }),
+      basis: saved.couponPricesStale ? '' : keptBasis, linesBasis: couponPricingBasis({ ...restored, customer: null }),
       legIds: saved.payments.filter(isLiveLeg).map((p) => p.id) });
   }
   return builder;
