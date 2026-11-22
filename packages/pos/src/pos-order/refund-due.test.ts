@@ -3,7 +3,7 @@ import { createOrderBuilder } from '../order/order-builder';
 import type { Order } from '../order/types';
 import { countsTowardPaid } from '../tender/payment-legs';
 import { finalizeOrder } from './finalize';
-import { lockedRefundDueMinor, refundDueOf, tillLegsTheStoreRefuses } from './refund-due';
+import { cashToReturn, lockedRefundDueMinor, refundDueOf, tillLegsTheStoreRefuses } from './refund-due';
 
 describe('refund-due', () => {
   it('uses the stored refundDueMinor over the payments', () => {
@@ -80,5 +80,34 @@ describe('tillLegsTheStoreRefuses (ADR-090 gate 36c)', () => {
     expect(() => finalize(held)).toThrow('the store already holds the new total');
     expect(tillLegsTheStoreRefuses(partPaid)).toEqual([]);
     expect(() => finalize(partPaid)).not.toThrow();
+  });
+});
+
+describe('cashToReturn (ADR-072 d3, amended 2026-11-22)', () => {
+  const at = '2026-11-22T00:00:00.000Z';
+  const taken = (id: string, amountMinor: number) => ({ id, method: 'cash', amountMinor, takenAt: at });
+
+  it('lists a captured, taken cash leg', () => {
+    expect(cashToReturn({ payments: [taken('c1', 500)] })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }], totalMinor: 500 });
+  });
+
+  it('leaves out voided, external, locked, reopened, closure-counted and unstamped legs', () => {
+    const order = {
+      afterClose: { payments: [{ id: 'counted' }] },
+      payments: [
+        { ...taken('voided', 100), status: 'voided' as const },
+        { ...taken('card', 200), method: 'external' },
+        { ...taken('locked', 300), locked: true as const },
+        { ...taken('reopened', 400), reopened: true as const },
+        taken('counted', 500),
+        { id: 'unstamped', method: 'cash', amountMinor: 600, status: 'captured' as const },
+      ],
+    };
+    expect(cashToReturn(order)).toEqual({ legs: [], totalMinor: 0 });
+  });
+
+  it('sums two listed legs, in payment order', () => {
+    const payments = [taken('c1', 500), { ...taken('card', 900), method: 'external' }, taken('c2', 250)];
+    expect(cashToReturn({ payments })).toEqual({ legs: [{ id: 'c1', amountMinor: 500 }, { id: 'c2', amountMinor: 250 }], totalMinor: 750 });
   });
 });

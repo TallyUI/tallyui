@@ -276,14 +276,14 @@ manager.newOrder();
 | Cart | `holdsStoreOrder(orderId)` | Resolves whether the live sale or a readable parked draft holds this store order. |
 | Cart | `openStoreOrder(order)` | Loads a reopened store order into an empty sale; returns a refusal or `null`. |
 | Tender | `startTender(method, options?)` | Starts `cash` or `external` tender and pins `options.session` or the hook's session; repeated calls keep the first pin. |
-| Tender | `setTender(tender)` | Replaces unlocked payments, except a resumed paid draft's taken legs, with one tender, or clears them for `null`. |
+| Tender | `setTender(tender)` | Replaces unlocked payments, except taken payments and a resumed paid draft's live legs, with one tender, or clears them for `null`; a taken payment is kept until voided. |
 | Tender | `addTender(tender)` | Adds a cash or external payment, recording `takenAt` at once unless it enters `pending` or `authorized`; external amounts are capped at the balance less payments in motion, and only cash gives change. A cash payment for picked `units` may carry `tenderedMinor` (an integer at least its `amountMinor`; `amountMinor` must be at most the balance less payments in motion), and it stores `changeMinor`. |
 | Tender | `setTenderStatus(paymentId, status)` | Sets `authorized`, `captured` or `failed`; records `takenAt` on a move to `captured`; returns whether the status changed. |
 | Tender | `voidTender(paymentId)` | Voids an eligible payment, keeping its record but counting nothing; returns whether it was voided. Refuses with `SALE_FINISHED` on the receipt. |
-| Tender | `removeTender(paymentId)` | Removes an unlocked payment and its dropped-reference warning. Refuses with `SALE_FINISHED` on the receipt. |
-| Tender | `cancelTender()` | Clears unlocked payments, except a resumed paid draft's taken legs, and returns to the cart. |
+| Tender | `removeTender(paymentId)` | Removes an unlocked payment that took no money, and its dropped-reference warning. Refuses with `PAYMENT_TAKEN` a taken payment (void it instead) and with `SALE_FINISHED` on the receipt. |
+| Tender | `cancelTender()` | Clears unlocked payments, except taken payments and a resumed paid draft's live legs, and returns to the cart. |
 | Completion | `complete()` | Finalizes, saves and shows the receipt, recording `takenAt` on a new payment that has none (the pre-filled tender); refuses payments in motion with `PAYMENT_IN_MOTION`. Retry reuses the same pending order. |
-| Completion | `newSale()` | Starts an empty sale; a pending save must be confirmed stored before it can be abandoned, and its stored record is kept. |
+| Completion | `newSale()` | Starts an empty sale; a pending save must be confirmed stored before it can be abandoned, and its stored record is kept. Refuses with `SALE_PARTLY_PAID` an unfinished sale that holds a taken payment. |
 | Completion | `continueSale()` | Starts a new sale only for a confirmed stored pending completion, without redelivering it or showing its receipt. |
 
 For an Undo on the "removed from cart" toast, take `sale.removal('line', id)` (or `'fee'`, `'shipping'`) before the remove (`remove`, `removeFee`, `removeShipping`), then pass it to `sale.restore(removal)`. The item goes back at its old index, or at the end when the list is now shorter, with its own price, quantity, discounts and meta. When the customer's tax rates changed in between, the cart is re-taxed as a customer change does, so the restored item ends up as the items that stayed, never on the old customer's rates. `restore()` returns the cart's refusals (`SALE_HAS_PAYMENT`, `SALE_FINISHED`, `SALE_SAVING`), `RESTORE_STALE` outside the cart, once the sale was reset, parked, resumed or completed, or when the item is already back, or `null`.

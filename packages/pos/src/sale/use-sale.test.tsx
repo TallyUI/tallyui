@@ -27,7 +27,7 @@ import {
 } from '../register';
 import { registerSessionCreator } from '../register/schemas';
 import { catalogueEntries } from './catalogue';
-import { DISCOUNTS_UNSUPPORTED, HUNG_SAVE_CHECK_MS, SALE_SAVING, saleLogger, useSale } from './use-sale';
+import { DISCOUNTS_UNSUPPORTED, HUNG_SAVE_CHECK_MS, PAYMENT_TAKEN, SALE_PARTLY_PAID, SALE_SAVING, saleLogger, useSale } from './use-sale';
 
 const traits = medusaConnector.traits.product;
 const product = {
@@ -180,6 +180,48 @@ describe('sale', () => {
     expect(result.current.order.id).not.toBe(before.id);
     expect(result.current.order.lineItems).toEqual([]);
     expect(result.current.order.payments).toEqual([]);
+  });
+
+  it.each(['cart', 'tender'] as const)('S1: newSale() refuses an unfinished sale in the %s stage holding a taken cash leg with SALE_PARTLY_PAID, changing nothing', (kind) => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    act(() => result.current.startTender('cash'));
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 1000 })).toEqual(expect.any(String)); });
+    if (kind === 'cart') act(() => result.current.cancelTender());
+    const before = result.current.order;
+    const stage = result.current.stage;
+    expect(stage.kind).toBe(kind);
+    act(() => result.current.newSale());
+    expect(result.current.error).toBe(SALE_PARTLY_PAID);
+    expect(result.current.order).toBe(before);
+    expect(result.current.stage).toEqual(stage);
+  });
+
+  it('S2: on the receipt of a sale paid by a taken cash leg, newSale() starts the next sale', async () => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    act(() => result.current.startTender('cash'));
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: result.current.order.totalMinor })).toEqual(expect.any(String)); });
+    expect(result.current.order.payments[0].takenAt).toEqual(expect.any(String));
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.stage.kind).toBe('receipt');
+    act(() => result.current.newSale());
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("S4: newSale() resets a sale whose only leg is setTender's unstamped pre-fill", () => {
+    const { result } = renderSale(pricing);
+    addSaleLines(result);
+    act(() => result.current.startTender('external'));
+    expect(result.current.order.payments).toEqual([expect.not.objectContaining({ takenAt: expect.anything() })]);
+    act(() => result.current.newSale());
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.error).toBeNull();
   });
 
   it('shows the frozen sent line name on the receipt after complete', async () => {
@@ -1305,6 +1347,26 @@ describe('complete() is idempotent for one tender', () => {
     }
   });
 
+  it.each(['newSale', 'continueSale'] as const)('S3: %s() still starts a new sale from a confirmed stored pending completion whose builder holds a taken leg', async (call) => {
+    const { result, unmount, stored } = await renderWithOutbox({ after: 1 });
+    try {
+      act(() => { result.current.sale.add(entries[0], traits); result.current.sale.add(entries[1], traits); });
+      act(() => result.current.sale.startTender('cash'));
+      act(() => { expect(result.current.sale.addTender({ method: 'cash', amountMinor: result.current.sale.order.totalMinor })).toEqual(expect.any(String)); });
+      expect(result.current.sale.order.payments[0].takenAt).toEqual(expect.any(String));
+      await act(async () => { await result.current.sale.complete(); });
+      expect(await stored()).toHaveLength(1);
+      await waitFor(() => expect(result.current.sale.canContinue).toBe(true));
+      act(() => result.current.sale[call]());
+      expect(result.current.sale.stage.kind).toBe('cart');
+      expect(result.current.sale.order.lineItems).toEqual([]);
+      expect(result.current.sale.order.payments).toEqual([]);
+      expect(result.current.sale.error).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
   it('a save that throws before storing: canContinue stays false, and continueSale() and newSale() change nothing', async () => {
     const answers: boolean[] = [];
     const { result, unmount, completed, stored } = await renderWithOutbox({ before: 1 }, {},
@@ -2265,11 +2327,11 @@ describe('a tender change clears the stale sale error (#650)', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('removeTender of a leg clears it', async () => {
+  it('removeTender of a taken leg refuses with PAYMENT_TAKEN and keeps it (ADR-072 d3, amended 2026-11-22)', async () => {
     const { result, leg } = await underpaid('cash');
     act(() => result.current.removeTender(leg.id));
-    expect(result.current.order.payments).toEqual([]);
-    expect(result.current.error).toBeNull();
+    expect(result.current.order.payments).toEqual([leg]);
+    expect(result.current.error).toBe(PAYMENT_TAKEN);
   });
 
   it('addTender whose reference is dropped shows the dropped-reference message', async () => {

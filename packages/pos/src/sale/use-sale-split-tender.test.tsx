@@ -8,7 +8,7 @@ import { heldUnitsByLine } from '../tender';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { catalogueEntries } from './catalogue';
-import { SALE_SAVING, useSale } from './use-sale';
+import { PAYMENT_TAKEN, SALE_SAVING, useSale } from './use-sale';
 
 const traits = medusaConnector.traits.product;
 const entries = catalogueEntries([{
@@ -80,7 +80,7 @@ describe('useSale split tender', () => {
     expect(result.current.order.payments).toEqual([]);
   });
 
-  it('removes one tender and leaves unknown ids alone', () => {
+  it('refuses removing a taken tender with PAYMENT_TAKEN and leaves unknown ids alone (ADR-072 d3, amended 2026-11-22)', () => {
     const { result } = renderSale();
     act(() => {
       result.current.addTender({ method: 'external', amountMinor: 1000 });
@@ -88,28 +88,38 @@ describe('useSale split tender', () => {
     });
     const [card, cash] = result.current.order.payments;
     act(() => result.current.removeTender(card.id));
-    expect(result.current.order.payments).toEqual([cash]);
-    expect(result.current.order.balanceDueMinor).toBe(750);
+    expect(result.current.error).toBe(PAYMENT_TAKEN);
+    expect(result.current.order.payments).toEqual([card, cash]);
     const before = result.current.order;
     act(() => result.current.removeTender('unknown'));
     expect(result.current.order).toBe(before);
   });
 
-  it('setTender replaces every payment and clears dropped-reference warnings', async () => {
-    const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
-    const { result } = renderSale({ onSaleCompleted });
+  it.each(['pending', 'authorized'] as const)('N4: removes a %s tender, which took no money (desk Q4)', (status) => {
+    const { result } = renderSale();
     act(() => {
-      result.current.addTender({ method: 'external', amountMinor: 1000, reference: 'bad\u0000reference' });
+      result.current.addTender({ method: 'external', amountMinor: 1000, status });
+      result.current.addTender({ method: 'cash', amountMinor: 500 });
+    });
+    const [card, cash] = result.current.order.payments;
+    act(() => result.current.removeTender(card.id));
+    expect(result.current.error).toBeNull();
+    expect(result.current.order.payments).toEqual([cash]);
+    expect(result.current.order.balanceDueMinor).toBe(1750);
+  });
+
+  it('setTender keeps taken payments: a tender is added beside them and null clears neither', () => {
+    const { result } = renderSale();
+    act(() => {
+      result.current.addTender({ method: 'external', amountMinor: 1000 });
       result.current.addTender({ method: 'cash', amountMinor: 1500 });
     });
+    const taken = result.current.order.payments;
     act(() => result.current.setTender({ method: 'cash', amountMinor: 2250 }));
-    expect(result.current.order.payments).toMatchObject([{ method: 'cash', amountMinor: 2250 }]);
+    expect(result.current.order.payments).toMatchObject([taken[0], taken[1], { method: 'cash', amountMinor: 2250 }]);
     expect(result.current.error).toBeNull();
     act(() => result.current.setTender(null));
-    expect(result.current.order.payments).toEqual([]);
-    act(() => result.current.setTender({ method: 'cash', amountMinor: 2250 }));
-    await act(async () => { await result.current.complete(); });
-    expect(onSaleCompleted.mock.calls[0][0].localWarnings).toBeUndefined();
+    expect(result.current.order.payments).toEqual(taken);
   });
 
   it.each([false, true])('keeps a dropped-reference warning only while its payment remains (removed: %s)', async (removed) => {
@@ -117,7 +127,8 @@ describe('useSale split tender', () => {
     const { result } = renderSale({ onSaleCompleted });
     act(() => {
       result.current.addTender({ method: 'cash', amountMinor: 1000 });
-      result.current.addTender({ method: 'external', amountMinor: 500, reference: 'bad\u0000reference' });
+      // A taken leg is never removed (ADR-072 d3, amended 2026-11-22), so the removed case drops a pending one.
+      result.current.addTender({ method: 'external', amountMinor: 500, reference: 'bad\u0000reference', ...(removed ? { status: 'pending' as const } : {}) });
     });
     const external = result.current.order.payments[1];
     expect(external).toMatchObject({ method: 'external', amountMinor: 500 });
@@ -180,6 +191,35 @@ describe('useSale split tender', () => {
     const { result } = renderSale();
     act(() => result.current.startTender('external'));
     expect(result.current.order.payments).toMatchObject([{ method: 'external', amountMinor: 2250 }]);
+  });
+
+  it('N1: Back then Pay keeps a taken cash leg and pre-fills the card for the rest', () => {
+    const { result } = renderSale();
+    let cash: string | null = null;
+    act(() => { result.current.startTender('cash'); cash = result.current.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => result.current.cancelTender());
+    act(() => result.current.startTender('external'));
+    expect(result.current.order.payments).toMatchObject([{ id: cash, method: 'cash', amountMinor: 500 }, { method: 'external', amountMinor: 1750 }]);
+    expect(result.current.order.payments).toHaveLength(2);
+  });
+
+  it('N2: a voided taken leg is kept on Back and Pay, and counts nothing toward the card pre-fill', () => {
+    const { result } = renderSale();
+    let cash: string | null = null;
+    act(() => { result.current.startTender('cash'); cash = result.current.addTender({ method: 'cash', amountMinor: 500 }); });
+    act(() => { expect(result.current.voidTender(cash!)).toBe(true); });
+    act(() => result.current.cancelTender());
+    act(() => result.current.startTender('external'));
+    expect(result.current.order.payments).toMatchObject([{ id: cash, method: 'cash', status: 'voided' }, { method: 'external', amountMinor: 2250 }]);
+    expect(result.current.order.payments).toHaveLength(2);
+  });
+
+  it('N3: Back drops startTender(\'external\')\'s unstamped pre-fill', () => {
+    const { result } = renderSale();
+    act(() => result.current.startTender('external'));
+    expect(result.current.order.payments[0].takenAt).toBeUndefined();
+    act(() => result.current.cancelTender());
+    expect(result.current.order.payments).toEqual([]);
   });
 });
 
@@ -267,7 +307,7 @@ describe('payment units (#1133 prerequisite 2)', () => {
     expect(result.current.order.payments[0]).not.toHaveProperty('units');
   });
 
-  it.each(['Back', 'void'])('P2-U3(f): refuses over-allocation and frees units after %s', (release) => {
+  it.each(['Back', 'void'])('P2-U3(f): refuses over-allocation; %s keeps the taken leg, and only its void frees the units (ADR-072 d3, amended 2026-11-22)', (release) => {
     const { result } = renderSale();
     const lineId = result.current.order.lineItems[0].id;
     act(() => { result.current.setQuantity(lineId, 3); result.current.startTender('cash'); });
@@ -286,15 +326,18 @@ describe('payment units (#1133 prerequisite 2)', () => {
     if (release === 'Back') {
       act(() => result.current.cancelTender());
       act(() => result.current.startTender('cash'));
-      expect(result.current.order.payments.some((payment) => payment.id === first)).toBe(false);
+      expect(result.current.order.payments.some((payment) => payment.id === first)).toBe(true);
+      expect(result.current.order.balanceDueMinor).toBe(result.current.order.totalMinor - 300 - 150);
     } else {
       act(() => { expect(result.current.voidTender(first!)).toBe(true); });
       expect(result.current.order.payments[0].status).toBe('voided');
     }
     act(() => {
-      expect(result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } })).not.toBeNull();
+      const again = result.current.addTender({ method: 'cash', amountMinor: 300, units: { [lineId]: 2 } });
+      if (release === 'Back') expect(again).toBeNull();
+      else expect(again).not.toBeNull();
     });
-    expect(result.current.order.payments).toHaveLength(release === 'Back' ? 1 : 3);
+    expect(result.current.order.payments).toHaveLength(release === 'Back' ? 2 : 3);
   });
 
   it('P2-U3(g): a failed leg\'s units are free to take again', () => {

@@ -51,9 +51,10 @@ describe('useSale payment takenAt', () => {
     at(later);
     act(() => { result.current.addTender({ method: 'cash', amountMinor: 750 }); });
     expect(result.current.order.payments.map((payment) => payment.takenAt)).toEqual([first, later]);
+    // The taken legs stay (ADR-072 d3, amended 2026-11-22); setTender's leg is added beside them, unstamped.
     act(() => { result.current.setTender({ method: 'external', amountMinor: 1250 }); });
-    expect(result.current.order.payments).toHaveLength(1);
-    expect(result.current.order.payments[0]).not.toHaveProperty('takenAt');
+    expect(result.current.order.payments.map((payment) => payment.takenAt)).toEqual([first, later, undefined]);
+    expect(result.current.order.payments[2]).not.toHaveProperty('takenAt');
   });
 
   it('T2 keeps takenAt on a leg whose reference is dropped', () => {

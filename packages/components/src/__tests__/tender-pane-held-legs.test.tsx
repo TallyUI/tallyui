@@ -49,8 +49,8 @@ describe('TenderPane held legs: the terminal reference', () => {
   });
 });
 
-describe('TenderPane held legs: Remove payment (ADR-090 gate 36c)', () => {
-  it('P2 among the legs the store refuses, Remove shows for a live leg and not for a reopened one', () => {
+describe('TenderPane held legs: Cancel payment (ADR-090 gate 36c; ADR-072 d3, amended 2026-11-22)', () => {
+  it('P2 among the legs the store refuses, Cancel payment shows for a live leg and not for a reopened one, and voids it', () => {
     // tender.test.tsx's reopen(): a store order whose locked €10 leg covers the total, plus a reopened €5 cash leg.
     const builder = createOrderBuilder({ currency: 'EUR', taxContext, storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
     builder.addLine({ productId: 'coffee', name: 'Coffee', storeLineId: '7', unitPrice: { amount: 1000, currency: 'EUR' } });
@@ -65,10 +65,10 @@ describe('TenderPane held legs: Remove payment (ADR-090 gate 36c)', () => {
     expect(live).not.toBeNull();
     expect(tillLegsTheStoreRefuses(sale.order)).toEqual([reopened, live]);
     expect(screen.getByTestId('tender-store-holds')).toBeTruthy();
-    expect(screen.getByTestId(`tender-leg-${live}-remove`)).toBeTruthy();
-    expect(screen.queryByTestId(`tender-leg-${reopened}-remove`)).toBeNull();
-    fireEvent.click(screen.getByTestId(`tender-leg-${live}-remove`));
-    expect(sale.order.payments.map((payment) => payment.id)).not.toContain(live);
+    expect(screen.getByTestId(`tender-leg-${live}-refused-void`)).toBeTruthy();
+    expect(screen.queryByTestId(`tender-leg-${reopened}-refused-void`)).toBeNull();
+    fireEvent.click(screen.getByTestId(`tender-leg-${live}-refused-void`));
+    expect(sale.order.payments.find((payment) => payment.id === live)?.status).toBe('voided');
     expect(sale.order.payments.map((payment) => payment.id)).toContain(reopened);
   });
 });

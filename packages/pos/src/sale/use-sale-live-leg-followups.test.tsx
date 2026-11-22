@@ -587,7 +587,7 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.order.payments).toHaveLength(2);
   });
 
-  it('T29: with the kept coupons, a voided parked leg is not held while another stays live: Pay tenders total minus the live leg', async () => {
+  it('T29: with the kept coupons, a voided parked leg stays as the record but counts nothing while another stays live: Pay tenders total minus the live leg', async () => {
     const shop = store();
     const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
     const { result } = renderSale({ discountCodes: shop.codes, onSaleCompleted });
@@ -607,7 +607,7 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.order.couponPricesStale ?? false).toBe(false);
     act(() => { result.current.startTender('external'); });
     await settle();
-    expect(result.current.order.payments).toEqual([kept, expect.objectContaining({ method: 'external', amountMinor: 780 })]);
+    expect(result.current.order.payments).toEqual([kept, expect.objectContaining({ id: voided.id, status: 'voided' }), expect.objectContaining({ method: 'external', amountMinor: 780 })]);
     await act(async () => { await result.current.complete(); });
     expect(result.current.error).toBeNull();
     expect(result.current.stage.kind).toBe('receipt');
@@ -764,7 +764,8 @@ describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () =
   it('R5: the hold ends with the sale: the next sale, even one carrying the same leg, has no held legs', async () => {
     const { result, cash } = await completed();
     act(() => { result.current.add(entries[0], traits); }); // the receipt's add starts the next sale
-    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100 })).toEqual(expect.any(String)); });
+    // Pending, so takenLeg never holds it (ADR-072 d3, amended 2026-11-22): only a held id could keep it.
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'pending' })).toEqual(expect.any(String)); });
     act(() => { result.current.startTender('external'); });
     await settle();
     const total = result.current.order.totalMinor;
@@ -775,7 +776,7 @@ describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () =
     const builder = createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }),
       storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
     builder.addLine({ productId: 'shirt', name: 'Shirt', storeLineId: '7', unitPrice: { amount: 1000, currency: 'GBP' } });
-    builder.addPayment({ ...cash });
+    builder.addPayment({ ...cash, takenAt: undefined }); // unstamped, so takenLeg cannot hold it: only resumedLegIds could
     act(() => { expect(result.current.openStoreOrder(builder.getSnapshot())).toBeNull(); });
     act(() => { result.current.startTender('external'); });
     await settle();
