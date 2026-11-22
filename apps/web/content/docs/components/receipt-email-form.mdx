@@ -30,7 +30,7 @@ function ReceiptView({ order, online }) {
 }
 ```
 
-It draws the form [ReceiptSheet](/docs/components/receipt-sheet) draws: an "Email Address" field prefilled from `defaultAddress`, a "Save email to the customer" switch (off) when `saveToCustomer` is set, v2's offline notice when `offline` is set, and Send, which reads "Send when online" when offline. Send refuses an address without an `@` inline ("Enter an email address.") and otherwise calls `onSend({ address, saveToCustomer })` with the trimmed address. A returned string, or a rejected promise's message, shows as an alert in the form; while a promise is pending Send shows a spinner and cannot be pressed.
+It draws the form [ReceiptSheet](/docs/components/receipt-sheet) draws: an "Email Address" field prefilled from `defaultAddress`, a "Save email to the customer" switch (off) when `saveToCustomer` is set, v2's offline notice when `offline` is set, and Send, which reads "Send when online" when offline. Send refuses an address that is not `name@domain` (one `@`, no spaces) inline ("Enter an email address.") and otherwise calls `onSend({ address, saveToCustomer })` with the trimmed address. A returned string shows as an alert in the form, and so does the message of an `Error` that `onSend` throws or rejects with (anything else thrown shows "Could not send the receipt."); while a promise is pending Send shows a spinner and cannot be pressed.
 
 After `onSend` returns `null`, the form draws "Email sent" in its own place, or "Receipt email queued" when `offline` is set (keys `receipt.email_sent` and `receipt.email_queued`, testID `receipt-email-sent`), and calls `onDone`. It keeps showing that line until it is unmounted; give it a new `key` to send again.
 

@@ -32,7 +32,7 @@ export interface ReceiptSheetEmail {
   offline?: boolean;
   /** Draws "Save email to the customer" (default off). */
   saveToCustomer?: boolean;
-  /** Sends or queues the receipt. Returns a refusal to show, or null once sent or queued; the form then closes. */
+  /** Sends or queues the receipt. Returns a refusal to show, or null once sent or queued; the form then shows "Email sent", or "Receipt email queued" when offline. */
   onSend: (input: { address: string; saveToCustomer: boolean }) => Promise<string | null> | string | null;
 }
 
