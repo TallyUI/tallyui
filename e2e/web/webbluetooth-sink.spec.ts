@@ -22,6 +22,9 @@ const MEMBERS: Record<string, string[]> = {
 };
 let bundle = '';
 
+// Chromium on Linux hides Web Bluetooth by default (CI showed 'bluetooth' in navigator false); this flag is for that.
+test.use({ launchOptions: { args: ['--enable-experimental-web-platform-features'] } });
+
 test.beforeAll(({ browserName: _browserName }, testInfo) => {
   // Resolved exactly as e2e/storage-sqlite/page/build-and-serve.mjs resolves it.
   const esbuild = createRequire(path.join(repoRoot, 'packages/storage-sqlite/package.json'))('esbuild');
