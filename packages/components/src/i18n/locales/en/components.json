@@ -91,6 +91,7 @@
 	"pos_checkout.remaining": "Remaining",
 	"pos_checkout.return_cash": "Return {amount} cash to the customer",
 	"pos_checkout.rounded_from": "Rounded from {amount}",
+	"pos_checkout.rounding": "Rounding",
 	"pos_checkout.split": "Split",
 	"pos_checkout.split_the_rest": "Split the rest",
 	"pos_checkout.status_authorized": "Authorized",

@@ -11,7 +11,7 @@ import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
 it('validates schema-19 carried coupon amounts and countedInClosureOf', async () => {
-  expect(posOrderSchema.version).toBe(20);
+  expect(posOrderSchema.version).toBe(21);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -184,7 +184,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(20);
+  expect(posOrderSchema.version).toBe(21);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -243,7 +243,7 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–12', a
 });
 
 it("stores schema-20's payment takenAt and refuses one over 40 characters", async () => {
-  expect(posOrderSchema.version).toBe(20);
+  expect(posOrderSchema.version).toBe(21);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -261,7 +261,7 @@ it("stores schema-20's payment takenAt and refuses one over 40 characters", asyn
 });
 
 it("M2 stores schema-18 tax ids, meta, a line's catalogueSku and attentionHandledFor, closed (ADR-092)", async () => {
-  expect(posOrderSchema.version).toBe(20);
+  expect(posOrderSchema.version).toBe(21);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {

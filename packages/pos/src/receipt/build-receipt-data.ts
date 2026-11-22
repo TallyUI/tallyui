@@ -29,6 +29,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
   const customer = order.customer?.name || order.customer?.email;
   const refundDueMinor = lockedRefundDueMinor(order);
+  const roundingMinor = (order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0);
 
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
@@ -68,6 +69,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
     })),
     fees: (order.display.fees ?? []).map(({ name, amountMinor }) => ({ name, amountMinor })),
     shipping: (order.display.shipping ?? []).map(({ name, amountMinor }) => ({ name, amountMinor })),
+    ...(roundingMinor !== 0 ? { rounding: { name: 'Rounding', amountMinor: roundingMinor } } : {}),
     orderDiscountMinor: order.display.orderDiscountMinor,
     totals: {
       taxInclusive: order.display.taxInclusive,

@@ -39,9 +39,10 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 
 `readWooCapabilities` (the connector's `capabilities`) runs when the till signs in or restores a session. The app keeps the result with the session.
 - **`GET wcpos/v2/stores`** gives the tax rounding (`tax_round_at_subtotal`). A failed or malformed read returns `undefined`: nothing new is known, and the stored capabilities stay.
-- **`GET wcpos/v2/status`.** The strings in its `capabilities` decide two fields:
+- **`GET wcpos/v2/status`.** The strings in its `capabilities` decide three fields:
   - `order_create_v5` makes `orderCreate` 8 when the coupons gate passes, else 5; with a `capabilities` list that lacks it, `orderCreate` is 3. Only the TallyUI fork of the plugin advertises it. When `/status` answers with no `capabilities` list at all (stock WCPOS 1.10.x), the `/site` version decides instead: a plain `1.10.N` with N ≥ 20 gives 7 (never 8: no tax address), anything else gives 3. A plain `2.0.N` with N ≥ 4 whose `capabilities` list lacks `order_create_v5` (or that has no list) gets 6 (never 7 or 8: no note or tax address proven). A failed `/status` read gives 3.
   - `order_payments_list` sets `multiplePayments`.
+  - `order_create_v5` also sets `cashRounding` (ADR-094): only the fork was shown to take a tax-none signed `Rounding` fee line, with tax off and on, exclusive and inclusive. Stock stores and a failed `/status` leave the key out.
 - **`GET wcpos/v2/site`.** Its `wcpos_version` decides `coupons` (ADR-077, ruling R3). It is true only for woocommerce-pos 1.9.0 or later; a 1.9.0 pre-release does not count. Any failed or unclear read gives false, and the till then refuses to apply a coupon. On a store with no `capabilities` list it also decides `orderCreate` (above).
 - **`lineTax`** is always `{ none: true, classes: true }`.
 - **Unauthorised reads.** A 401 or 403 from `/stores` or `/status` throws `ConnectorUnauthorizedError`. A 401 or 403 from `/site` only closes the coupon gate.
@@ -50,6 +51,10 @@ The incremental pull can miss an edit: a `modified_after` that over-excludes (in
 ## Order push on WCPOS 2.0
 
 On a 2.0.x store (`ledgerPayments`, or `/site` `wcpos_version` 2 or later, read once per transport) the sale is pushed `pending` with no money keys, then paid with one `POST orders/<id>/payments` per payment (`pos_cash` with `tendered`, or `pos_card`), each sent with the revision the last answer gave; a free sale is closed with `POST orders/<id>/close`. The sale counts as applied only after the last of those calls succeeds. A retry replays the push by its mutation id and each payment by its id. A money call the store refuses is rejected with a message naming the order it created, since that order now exists unpaid. On 1.10.x and the fork, the push body is unchanged.
+
+## Cash rounding
+
+Each `cashRoundings` entry on a sale is sent as a fee line `{ name: 'Rounding', total: <signed amount>, tax_status: 'none', tax_class: '' }`, after the sale's own fees. The app must pass `acceptsCashRounding` to `createWooCommandTransport` from `ServerCapabilities.cashRounding`. Without it, or on a WCPOS 2.0 store, a sale carrying `cashRoundings` is refused as `invalid_payload` with `cash_rounding_unsupported`, and no request is made: the field is never dropped.
 
 ## Customers
 

@@ -41,6 +41,8 @@ export interface Order {
   /** TallyUI#709: present (true) only when store-priced coupons are set and couponPricingBasis(order) no longer equals their basis. */
   couponPricesStale?: true;
   payments: Payment[];
+  /** ADR-094: a cash leg that settles the sale at a rounded due records the signed difference here, counted in totalMinor; only entries whose leg counts toward paid are built in. Absent when empty. */
+  cashRoundings?: CashRounding[];
   customer: CustomerSummary | null;
   note: string;
   /** The sale's order meta, WooCommerce's custom fields (ADR-092 6d). Set with `useSale().setMeta`, parked with the draft,
@@ -172,6 +174,9 @@ export interface AppliedDiscount extends Discount {
   id: string;
   amountMinor: number;        // an order discount: its own-mode amount, allocated across the lines
 }
+
+/** ADR-094: one cash rounding, the signed minor units its leg (`paymentId`) settled the sale above (+) or below (-) its due. */
+export interface CashRounding { paymentId: string; minor: number }
 
 export interface Payment {
   id: string;

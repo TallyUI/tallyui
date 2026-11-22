@@ -6870,3 +6870,36 @@ interface OrderCreatePayload {
   5. **Blind figures.** Figures a store withholds from the signed-in user are absent, never zero.
   6. **Money.** Every amount is in integer minor units, as elsewhere in core; a connector converts the store's
      decimals both ways.
+
+## ADR-094 Cash rounding is an order field
+
+- **Date:** 2026-11-22 · **Status:** Accepted (front desk, 2026-11-22; the gate amended the same day to the
+  `cashRounding` capability) · **Relates to:** ADR-048 (its note that the Vendure surcharge mechanism can later carry
+  cash rounding; nothing in ADR-048 is amended here), ADR-038 and ADR-070 (the order.create contract and its strict
+  payloads). WCPOS v2 is the reference for features and taste.
+- **Decision** (Front desk, 2026-11-22, verbatim): "Cash rounding is an order field, not a fee and not change: a cash
+  leg that settles the sale at a rounded due records the signed difference as an entry in cashRoundings
+  {paymentId, minor}, counted in totalMinor. Part payments and non-cash legs are never rounded. A remainder that
+  rounds to zero closes the sale. An entry lives while its leg counts toward paid and clears when the leg is voided or
+  fails; it is never re-derived under taken money. Each connector carries it its platform's way." A till rounds only
+  against a store whose connector declares the cashRounding capability.
+- **Details:**
+  1. **Zero remainder.** When the remainder rounds to 0, the entry's `paymentId` is the last leg in `order.payments`
+     that counts toward paid, whatever its method: that leg left the remainder, so voiding it clears the entry. With
+     no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
+     While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
+     leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
+     pane shows no rounding.
+  2. **Storage.** `pos_orders` goes to version 21 with an identity migration; an unrounded order is stored byte for
+     byte as before, with no `cashRoundings` key.
+  3. **The capability, not a version.** `ServerCapabilities.cashRounding` is set only by a connector that carries the
+     entry. There is no order.create 13 and `ORDER_CREATE_MAX_VERSION` stays 12: `cashRoundings` rides at the
+     order's content version. Without the flag the till is unchanged, finalize refuses an order with entries, and
+     `precheckCommand` refuses an order.create (or an order.update's create part) carrying `cashRoundings` as
+     `invalid_payload` rather than dropping the field, since a dropped entry is a wrong total.
+  4. **Refunds** of the rounding are not decided; nothing refunds or re-figures it separately.
+  5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
+     plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
+     refused at finalize.
+- **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
+  version.

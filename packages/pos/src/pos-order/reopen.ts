@@ -124,13 +124,19 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       ...(shipping.taxStatus !== undefined ? { taxStatus: shipping.taxStatus } : {}),
       ...(shipping.methodId !== undefined ? { methodId: shipping.methodId } : {}),
     });
-    for (const payment of order.payments) builder.addPayment({
+    const legIds = new Map<string, string>();
+    for (const payment of order.payments) legIds.set(payment.id, builder.addPayment({
       // After close each leg keeps the refused order's id, so finalize knows it for the leg that closure counted.
       ...(afterClose ? { id: payment.id } : {}), method: payment.method, amountMinor: payment.amountMinor, reopened: true,
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
-    });
+    }));
+    // ADR-094: each entry follows its leg's new id; an entry whose stored leg is not found is dropped.
+    for (const entry of order.cashRoundings ?? []) {
+      const paymentId = legIds.get(entry.paymentId);
+      if (paymentId) builder.addCashRounding({ paymentId, minor: entry.minor });
+    }
     if (order.customer?.id && order.customer.name && customerRefusal(order.customer) === null) {
       builder.setCustomer({ id: order.customer.id, name: order.customer.name,
         ...(order.customer.email !== undefined ? { email: order.customer.email } : {}),

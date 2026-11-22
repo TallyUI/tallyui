@@ -392,7 +392,7 @@ describe('readWooCapabilities', () => {
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
       multiplePayments: false,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
     });
     expect(fetchMock.mock.calls).toEqual([
       [`${context.baseUrl}/stores`, { method: 'GET', headers: context.headers, signal: context.signal }],
@@ -434,7 +434,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
     });
   });
 
@@ -443,7 +443,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: true,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -465,7 +465,7 @@ describe('readWooCapabilities', () => {
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: true },
       multiplePayments: false,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
     });
   });
 
@@ -527,7 +527,7 @@ describe('readWooCapabilities', () => {
       .mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
-      multiplePayments: false, coupons: false, lineTax: { none: true, classes: true },
+      multiplePayments: false, coupons: false, lineTax: { none: true, classes: true }, cashRounding: true,
     });
   });
 
@@ -604,7 +604,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
       registerApproval: { thresholdMinor },
     });
   });
@@ -708,7 +708,7 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 8, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments: false,
       coupons: true,
-      lineTax: { none: true, classes: true },
+      lineTax: { none: true, classes: true }, cashRounding: true,
       register: 3,
     });
     expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/stores'))).toHaveLength(1);
@@ -717,6 +717,47 @@ describe('readWooCapabilities', () => {
   it.each([[false], ['yes'], [undefined]])('T9: leaves register out for register_sessions %j', async (register_sessions) => {
     storesBody = [{ ...stores[0], register_sessions }];
     expect(await readWooCapabilities(context)).not.toHaveProperty('register');
+  });
+
+  // ADR-094 PR B: only the fork's order_create_v5 store was proven to take a tax-none Rounding fee line (22 Nov fork proofs).
+  it.each([
+    [['order_create_v5'], 8],
+    [['order_create_v5', 'order_payments_list'], 8],
+  ])('W1: declares cashRounding for capabilities %j (with coupons, order version %i)', async (capabilities, orderCreate) => {
+    statusBody = { capabilities };
+    siteBody = { wcpos_version: '1.10.20' };
+    const caps = await readWooCapabilities(context);
+    expect(caps).toMatchObject({ orderCreate, coupons: true, cashRounding: true });
+  });
+
+  it('W1: declares cashRounding on the fork without the coupons gate', async () => {
+    statusBody = { capabilities: ['order_create_v5'] };
+    siteBody = { wcpos_version: '1.8.99' };
+    expect(await readWooCapabilities(context)).toMatchObject({ orderCreate: 5, coupons: false, cashRounding: true });
+  });
+
+  it.each([
+    ['stock 1.10.20 with no array', {}, '1.10.20'],
+    ['stock 1.10.27 with no array', {}, '1.10.27'],
+    ['stock 2.0.4 with no array', {}, '2.0.4'],
+    ['stock 2.0.4 with an array', { capabilities: ['products_id_fast_path'] }, '2.0.4'],
+    ['an array without order_create_v5', { capabilities: ['order_payments_list'] }, '1.10.20'],
+    ['an empty array', { capabilities: [] }, '1.10.20'],
+  ])('W2: leaves cashRounding out for %s', async (_name, body, wcpos_version) => {
+    statusBody = body;
+    siteBody = { wcpos_version };
+    const caps = await readWooCapabilities(context);
+    expect(caps).toBeDefined();
+    expect('cashRounding' in caps!).toBe(false);
+  });
+
+  it.each(['HTTP 500', 'network'])('W2: leaves cashRounding out when /status fails (%s)', async (failure) => {
+    fetchMock.mockResolvedValueOnce(Response.json(stores));
+    if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('network'));
+    else fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    const caps = await readWooCapabilities(context);
+    expect(caps).toMatchObject({ orderCreate: 3 });
+    expect('cashRounding' in caps!).toBe(false);
   });
 });
 
