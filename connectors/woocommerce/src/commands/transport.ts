@@ -277,7 +277,7 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
       if (batch.length === 0) return { kind: 'results', results: [] };
       const ledger = await ledgerStore();
       if (typeof ledger !== 'boolean') {
-        // As the register transport does (register-transport.ts:61): an expired or refused token asks for sign-in.
+        // As the register transport's shared() does: an expired or refused token asks for sign-in.
         if (ledger.status === 401 || (ledger.status === 403 && ledger.body?.code === 'rest_forbidden')) return { kind: 'unauthorized' };
         return ledger.status >= 200 && ledger.status < 300
           ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
