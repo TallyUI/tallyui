@@ -136,12 +136,24 @@ function PrinterValue({ printers, printerId, autoPrinterName, onPrinterChange }:
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
 
-/** v2's email.tsx (MIT, WCPOS) inline: it mounts fresh on each open, so it starts from defaultAddress, switch off, no error. */
-function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queued: boolean) => void }) {
+export interface ReceiptEmailFormProps {
+  email: ReceiptSheetEmail;
+  /** Called once after `onSend` returns null, with true when `email.offline` was set (queued). */
+  onDone?: (queued: boolean) => void;
+}
+
+/**
+ * v2's email.tsx (MIT, WCPOS) inline, the form ReceiptSheet draws: "Email Address" prefilled from `defaultAddress`,
+ * the save switch (off), the offline notice and Send. After `onSend` returns null it shows "Email sent" or
+ * "Receipt email queued" in its own place and calls `onDone`. Remount it (for example with a new `key`) to send again.
+ */
+export function ReceiptEmailForm({ email, onDone }: ReceiptEmailFormProps): JSX.Element {
+  const t = useT();
   const [text, setText] = useState(email.defaultAddress ?? '');
   const [save, setSave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<'sent' | 'queued' | null>(null);
   const send = async () => {
     if (sending) return;
     const address = text.trim();
@@ -156,8 +168,11 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queue
       refusal = cause instanceof Error ? cause.message : 'Could not send the receipt.';
     }
     setSending(false);
-    if (refusal === null) onDone(Boolean(email.offline)); else setError(refusal);
+    if (refusal !== null) return setError(refusal);
+    setSent(email.offline ? 'queued' : 'sent');
+    onDone?.(Boolean(email.offline));
   };
+  if (sent) return <Text testID="receipt-email-sent" className="py-2 text-sm text-foreground">{t(sent === 'queued' ? 'receipt.email_queued' : 'receipt.email_sent')}</Text>;
   return (
     <View testID="receipt-email-form" className="gap-2 py-2">
       <Text className="text-sm font-medium text-foreground">Email Address</Text>
@@ -186,12 +201,17 @@ function EmailForm({ email, onDone }: { email: ReceiptSheetEmail; onDone: (queue
 export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates, templateId, onTemplateChange,
   printerLabel = 'Browser print dialog', printers, printerId, autoPrinterName, onPrinterChange,
   onPrint, printing = false, printed = false, onEmail, email, onDownloadPdf, downloadingPdf = false, children }: ReceiptSheetProps): JSX.Element {
-  const t = useT();
-  const [sent, setSent] = useState<'sent' | 'queued' | null>(null);
+  const [sent, setSent] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [formKey, setFormKey] = useState(0);
   // Closing the sheet closes the form too, so it opens fresh next time.
-  if (!open && (emailOpen || sent)) { setEmailOpen(false); setSent(null); }
-  const onEmailPress = email ? () => { setSent(null); setEmailOpen((was) => !was); } : onEmail;
+  if (!open && emailOpen) { setEmailOpen(false); setSent(false); }
+  // With the sent line showing, Email Receipt remounts a fresh form; otherwise it toggles the form.
+  const onEmailPress = email ? () => {
+    if (!sent) setEmailOpen((was) => !was);
+    setSent(false);
+    setFormKey((key) => key + 1);
+  } : onEmail;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="right" testID="receipt-dialog" className="flex-col" showClose>
@@ -214,8 +234,7 @@ export function ReceiptSheet({ open, onOpenChange, title = 'Receipt', templates,
         </View>
         {/* v2 draws its own WebView preview with zoom and loading states; here the app's preview is the child. */}
         <ScrollView className="flex-1" contentContainerClassName="pb-2">{children}</ScrollView>
-        {email && emailOpen ? <EmailForm email={email} onDone={(queued) => { setEmailOpen(false); setSent(queued ? 'queued' : 'sent'); }} /> : null}
-        {email && sent ? <Text testID="receipt-email-sent" className="py-2 text-sm text-foreground">{t(sent === 'queued' ? 'receipt.email_queued' : 'receipt.email_sent')}</Text> : null}
+        {email && emailOpen ? <ReceiptEmailForm key={formKey} email={email} onDone={() => setSent(true)} /> : null}
         {/* v2's footer also has Sync order, which TallyUI does not have. `email` draws v2's form above, and the app sends. Download PDF is drawn when `onDownloadPdf` is given. */}
         <DialogFooter bordered className="gap-2" testID="receipt-footer">
           <DialogClose asChild>

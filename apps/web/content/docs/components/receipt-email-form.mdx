@@ -1,0 +1,41 @@
+---
+title: ReceiptEmailForm
+description: ReceiptEmailForm is WCPOS v2's receipt email form, the one ReceiptSheet draws, for apps that draw the receipt inline.
+---
+
+## Import
+
+```tsx
+import { ReceiptEmailForm } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { useState } from 'react';
+
+function ReceiptView({ order, online }) {
+  const [round, setRound] = useState(0);
+  return (
+    <>
+      <ReceiptPreview items={order.items} subtotal={order.subtotal} tax={order.tax} total={order.total} />
+      <ReceiptEmailForm
+        key={round}
+        email={{ defaultAddress: order.billing.email, offline: !online, onSend: ({ address }) => sendReceipt(order.id, address) }}
+      />
+      <Button onPress={() => setRound((n) => n + 1)}><Text>Email again</Text></Button>
+    </>
+  );
+}
+```
+
+It draws the form [ReceiptSheet](/docs/components/receipt-sheet) draws: an "Email Address" field prefilled from `defaultAddress`, a "Save email to the customer" switch (off) when `saveToCustomer` is set, v2's offline notice when `offline` is set, and Send, which reads "Send when online" when offline. Send refuses an address without an `@` inline ("Enter an email address.") and otherwise calls `onSend({ address, saveToCustomer })` with the trimmed address. A returned string, or a rejected promise's message, shows as an alert in the form; while a promise is pending Send shows a spinner and cannot be pressed.
+
+After `onSend` returns `null`, the form draws "Email sent" in its own place, or "Receipt email queued" when `offline` is set (keys `receipt.email_sent` and `receipt.email_queued`, testID `receipt-email-sent`), and calls `onDone`. It keeps showing that line until it is unmounted; give it a new `key` to send again.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `email` | `ReceiptSheetEmail` | required | The address, offline and save options and `onSend`; the shape is on [ReceiptSheet](/docs/components/receipt-sheet) |
+| `onDone` | `(queued: boolean) => void` | — | Called once after a send, with `true` when it was queued offline |
