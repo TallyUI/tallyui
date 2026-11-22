@@ -62,7 +62,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
     .reduce((sum: bigint, line, index) => sum + (object(line) ? discount(line.discountMinor, `lines[${index}].discountMinor`) : 0n), 0n)
   const orderDiscount = discount(payload.discountMinor, 'discountMinor')
   if (errors.length === 0) check(orderDiscount === lineDiscounts, 'discountMinor', 'the sum of lines[].discountMinor')
-  // ADR-094: signed cash roundings, at any version, at most one per payment the payload can carry.
+  // ADR-094: signed cash roundings, at any version, at most 16 entries.
   if (payload.cashRoundings !== undefined) {
     const entries = payload.cashRoundings
     check(Array.isArray(entries) && entries.length <= 16, 'cashRoundings', 'an array of at most 16 entries')

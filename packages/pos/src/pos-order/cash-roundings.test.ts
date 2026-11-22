@@ -7,6 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { ServerCapabilities } from '@tallyui/core';
 import { payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
+import { deriveExpected, paymentLedgerRows } from '../register/expected';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { addPosOrderCollection } from './open';
@@ -27,6 +28,23 @@ const carries: ServerCapabilities = { orderCreate: 12, cashRounding: true };
 it.each([{ orderCreate: 12 }, { orderCreate: 12, cashRounding: false }])('F1: finalize refuses a rounded sale for a store whose connector does not declare cashRounding (%j)', (capabilities) => {
   expect(() => finalizeOrder(rounded(), { capabilities })).toThrow(
     'finalize: cash rounding needs a store whose connector declares the cashRounding capability');
+});
+
+it('R8d: addCashRounding keeps one entry per leg, summed, and drops it when the sum is 0', () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+  builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 3125, currency: 'EUR' } });
+  const leg = builder.addPayment({ method: 'cash', amountMinor: 3128, tenderedMinor: 3128, changeMinor: 0 });
+  builder.addCashRounding({ paymentId: leg, minor: 5 });
+  builder.addCashRounding({ paymentId: leg, minor: -2 });
+  expect(builder.getSnapshot().cashRoundings).toEqual([{ paymentId: leg, minor: 3 }]);
+  builder.addCashRounding({ paymentId: leg, minor: -3 });
+  expect(builder.getSnapshot()).not.toHaveProperty('cashRoundings');
+});
+
+it('R10b: the drawer expects the float plus the rounded due in cash (paymentLedgerRows into deriveExpected)', () => {
+  const posOrder = finalizeOrder(rounded(), { capabilities: carries });
+  const ledgerRowsBySession = paymentLedgerRows([{ ...posOrder, sessionId: 's1' }]);
+  expect(deriveExpected({ session: { id: 's1', countedFloatMinor: 5000 }, movements: [], ledgerRowsBySession }).cash).toBe(5000 + 3130);
 });
 
 describe('F2: the wire', () => {

@@ -10,7 +10,7 @@ const COPY = {
   discount: 'Discount', total_tax: 'Tax', included_tax: 'Tax included', total: 'Total', paid_so_far: 'Paid so far',
   present_card: 'Please present your card', approved: 'Approved', declined: 'Declined',
   try_another_card: 'Please try another card or ask staff', paid_in_full: 'Paid in full', change: 'Change',
-  thank_you: 'Thank you', tendered: 'Tendered',
+  thank_you: 'Thank you', tendered: 'Tendered', rounding: 'Rounding',
 };
 
 const CARD = { started: 'bg-primary', approved: 'bg-success', complete: 'bg-success', declined: 'bg-destructive' };
@@ -67,7 +67,7 @@ export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
         {row(t('subtotal'), money(receipt.totals.subtotalMinor))}
         {receipt.fees.map((charge, index) => row(charge.name, money(charge.amountMinor), `fee-${index}`))}
         {receipt.shipping.map((charge, index) => row(charge.name, money(charge.amountMinor), `shipping-${index}`))}
-        {receipt.rounding ? row(receipt.rounding.name, money(receipt.rounding.amountMinor), 'rounding') : null}
+        {receipt.rounding ? row(t('rounding'), money(receipt.rounding.amountMinor), 'rounding') : null}
         {receipt.totals.discountMinor > 0 ? row(t('discount'), `-${money(receipt.totals.discountMinor)}`) : null}
         {receipt.totals.taxMinor > 0 ? row(t(receipt.totals.taxInclusive ? 'included_tax' : 'total_tax'), money(receipt.totals.taxMinor)) : null}
         {total}

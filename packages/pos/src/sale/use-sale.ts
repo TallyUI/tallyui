@@ -863,7 +863,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (rounding && tender.method !== 'cash') return null;
       // ADR-094: a cash leg is rounded only against a store whose connector declares cashRounding; otherwise, BASE's leg.
-      const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true ? rounding : null;
+      // A leg in motion means this cash leg does not settle the sale, so nothing rounds: BASE's row 500 leg.
+      const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true
+        && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor < 0 || (tender.amountMinor === 0 && !rule)) return null;
       if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
       const taxIdsRefused = taxIdsRefusal();

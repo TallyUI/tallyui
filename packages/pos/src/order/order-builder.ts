@@ -843,7 +843,13 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     },
 
     addCashRounding(entry) {
-      cashRoundings = [...cashRoundings, { paymentId: entry.paymentId, minor: entry.minor }];
+      // One entry per leg: a second entry on a leg is summed into the first, and a sum of 0 removes it.
+      const prior = cashRoundings.find((e) => e.paymentId === entry.paymentId);
+      if (!prior) cashRoundings = [...cashRoundings, { paymentId: entry.paymentId, minor: entry.minor }];
+      else {
+        const minor = prior.minor + entry.minor;
+        cashRoundings = minor === 0 ? cashRoundings.filter((e) => e !== prior) : cashRoundings.map((e) => (e === prior ? { ...e, minor } : e));
+      }
       emit();
     },
 

@@ -180,13 +180,13 @@ it('R6: voiding the rounded cash leg clears its entry', () => {
   expect(sale.order).toMatchObject({ totalMinor: 3125, balanceDueMinor: 3125 });
 });
 
-it('R7: a pending card leg makes the zero-remainder Take unreachable; its failure leaves no entry', () => {
+it('R7: with a pending card leg the zero cash Take is BASE\'s no-op (no error); its failure leaves no entry', () => {
   start(2, rounding(down), carries);
   let cardId: string | null = null;
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 3120, status: 'pending' }); });
-  // No leg counts toward paid while the card is pending, so the zero remainder has nothing to round against.
+  // A leg is in motion, so nothing rounds (Amendment 3): a zero cash amount is BASE's no-op, with no error.
   act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: down })).toBeNull(); });
-  expect(sale.error).toBe(NOTHING_TO_ROUND_AGAINST);
+  expect(sale.error).toBeNull();
   act(() => { expect(sale.setTenderStatus(cardId!, 'failed')).toBe(true); });
   expect(sale.order).not.toHaveProperty('cashRoundings');
   expect(sale.order.totalMinor).toBe(3125);
@@ -206,6 +206,39 @@ it('R7: an entry on a pending leg is dead, stays dead when it fails, and lives o
   expect(builder.getSnapshot().totalMinor).toBe(3125);
   builder.setPaymentStatus(second, 'captured', '2026-11-22T10:00:00.000Z');
   expect(builder.getSnapshot()).toMatchObject({ totalMinor: 3120, paidMinor: 3120, balanceDueMinor: 0, cashRoundings: [{ paymentId: second, minor: -5 }] });
+});
+
+it('R7c: with a leg in motion the cash Take is not rounded: BASE\'s net leg, and no entry when the pending leg fails', () => {
+  start(2, rounding(nearest), carries);
+  enter(1000);
+  press('tender-take');
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0 }]);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
+  enter(2130);
+  press('tender-take');
+  // By hand, use-sale.ts's non-rule path: due = 3125 - 1000 - 2123 (in motion) = 2, so the leg is min(2130, 2) = 2,
+  // tendered 2130, change 2130 - 2 = 2128.
+  expect(sale.order.payments).toHaveLength(3);
+  expect(sale.order.payments[2]).toMatchObject({ method: 'cash', amountMinor: 2, tenderedMinor: 2130, changeMinor: 2128 });
+  expect(sale.order).not.toHaveProperty('cashRoundings');
+  act(() => { expect(sale.setTenderStatus(cardId!, 'failed')).toBe(true); });
+  expect(sale.order).not.toHaveProperty('cashRoundings');
+  expect(sale.order.totalMinor).toBe(3125);
+});
+
+it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 on the card leg', () => {
+  start(2, rounding(nearest), carries);
+  enter(1000);
+  press('tender-take');
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123 }); });
+  expect(sale.order.balanceDueMinor).toBe(2);
+  expect(text('tender-entry-amount')).toBe(money(0));
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(2);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cardId, minor: -2 }]);
+  expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
 });
 
 it('R8: reopen keeps the stored entries as stored', async () => {
