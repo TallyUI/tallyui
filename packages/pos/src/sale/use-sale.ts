@@ -31,8 +31,8 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
- * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a kept
- * paid draft's parked legs, and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
+ * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a resumed
+ * paid draft's taken legs, and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
  * sale stays on the till until it is paid or its paid legs are voided.
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
@@ -248,9 +248,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const stopped = useRef<{ order: Order; reason: string } | null>(null);
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
+  const resumedLegIds = useRef<readonly string[]>([]); // a resumed draft's parked live legs, held until the sale resets (ADR-077 d3, amended 2026-11-19; row 328 F3)
   // An after-close sale's closure counted these legs, and finalize refuses any change to them: they are held like a locked leg.
   function countedLeg(p: { id: string }) { return !!builderNow.current.getSnapshot().afterClose?.payments.some((leg) => leg.id === p.id); }
-  function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id)); }
+  function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
+    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -311,7 +313,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     taxNow.current = tax;
     applied.current.clear();
-    keptCoupons.current = undefined; keptLegIds.current = [];
+    keptCoupons.current = undefined; keptLegIds.current = []; resumedLegIds.current = [];
     appliedWith.current = null;
     generation.current++;
     saleEpoch.current++;
@@ -1111,6 +1113,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       if (builderNow.current === builder) {
         applied.current = kept;
+        resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
         if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
         generation.current++;
