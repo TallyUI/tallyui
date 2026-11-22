@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import type { TaxRounding } from '@tallyui/core';
-import { orderDraftSchema, writeOrderDraft, type Order } from '../order';
+import { createOrderBuilder, orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { PAYLOAD_STRING_MAX } from '../pos-order/command';
 import { isLiveLeg } from '../order/order-builder';
 import { posOrderCollection } from '../pos-order';
@@ -683,5 +683,102 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     act(() => { expect(result.current.setTenderStatus(third, 'failed')).toBe(true); });
     expect(result.current.error).toBe(dropped);
     expect(result.current.order.lineItems[0].quantity).toBe(1);
+  });
+});
+
+describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `saleresumedlegs${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  /** A paid draft with no coupon: one line, a captured cash leg of 500, parked and resumed. */
+  async function resumedPaid(overrides: Partial<SaleOptions> = {}) {
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProps} rounding={perOrder}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale({ currency: 'GBP' }, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 6 }, drafts: db.pos_drafts, ...overrides,
+    }), { wrapper: Wrapper });
+    const { result } = hook;
+    act(() => { result.current.add(entries[0], traits); });
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 500 })).toEqual(expect.any(String)); });
+    const draftId = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    expect(result.current.order.coupons ?? []).toEqual([]);
+    const [cash] = result.current.order.payments;
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'cash', amountMinor: 500 })]);
+    return { ...hook, cash, total: result.current.order.totalMinor };
+  }
+
+  it('R1: Pay by card keeps the resumed cash leg and tenders only the balance', async () => {
+    const { result, cash, total } = await resumedPaid();
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash, expect.objectContaining({ method: 'external', amountMinor: total - 500 })]);
+  });
+
+  it('R2: Pay by cash keeps exactly the resumed cash leg', async () => {
+    const { result, cash } = await resumedPaid();
+    act(() => { result.current.startTender('cash'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash]);
+  });
+
+  it('R3: Back after Pay by card drops the Pay leg and keeps the resumed leg', async () => {
+    const { result, cash, total } = await resumedPaid();
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash]);
+    expect(result.current.order.balanceDueMinor).toBe(total - 500);
+  });
+
+  /** R4's sale: the resumed draft paid by card and completed into pos_orders. */
+  async function completed() {
+    const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
+    const hook = await resumedPaid({ onSaleCompleted });
+    act(() => { hook.result.current.startTender('external'); });
+    await settle();
+    await act(async () => { await hook.result.current.complete(); });
+    expect(hook.result.current.error).toBeNull();
+    expect(hook.result.current.stage.kind).toBe('receipt');
+    return hook;
+  }
+
+  it('R4: complete stores both legs, adding up to the total', async () => {
+    const { total } = await completed();
+    type Stored = { totalMinor: number; payments: Order['payments'] };
+    const rows = (await db.pos_orders.find().exec()).map((doc) => doc.toJSON() as unknown as Stored);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payments.map(({ method, amountMinor }) => [method, amountMinor])).toEqual([['cash', 500], ['external', total - 500]]);
+    expect(rows[0].payments.reduce((sum, { amountMinor }) => sum + amountMinor, 0)).toBe(total);
+  });
+
+  it('R5: the hold ends with the sale: the next sale, even one carrying the same leg, has no held legs', async () => {
+    const { result, cash } = await completed();
+    act(() => { result.current.add(entries[0], traits); }); // the receipt's add starts the next sale
+    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100 })).toEqual(expect.any(String)); });
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    const total = result.current.order.totalMinor;
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: total })]);
+    // A later sale carrying the resumed leg's id (a store order) does not hold it: only resetSale's clear ends the hold.
+    act(() => { result.current.cancelTender(); });
+    act(() => { result.current.newSale(); });
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }),
+      storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', storeLineId: '7', unitPrice: { amount: 1000, currency: 'GBP' } });
+    builder.addPayment({ ...cash });
+    act(() => { expect(result.current.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: result.current.order.totalMinor })]);
   });
 });
