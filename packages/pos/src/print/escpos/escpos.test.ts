@@ -169,6 +169,25 @@ describe('createEscPosTransport', () => {
     expect(writes).toEqual([Uint8Array.from([2])]);
   });
 
+  it('passes a PrintError from the sink through unchanged', async () => {
+    const refusal = new PrintError('unsupported', 'Counter has no bulk OUT endpoint to print to');
+    const transport = createEscPosTransport({ sink: { write: async () => { throw refusal; } }, profile });
+    await expect(transport.print({ id: 'a', kind: 'test', bytes: Uint8Array.from([1]) })).rejects.toBe(refusal);
+    const queue = createPrintQueue({ transportFor: () => transport });
+    await expect(queue.print('p1', { id: 'b', kind: 'test', bytes: Uint8Array.from([2]) })).rejects.toMatchObject({
+      name: 'PrintError', code: 'unsupported', message: 'Counter has no bulk OUT endpoint to print to',
+    });
+  });
+
+  it('keeps a failed PrintError from the sink as it is, cause included', async () => {
+    const cause = new Error('stall');
+    const lost = new PrintError('failed', 'Counter: transferOut failed: stall', { cause });
+    const transport = createEscPosTransport({ sink: { write: async () => { throw lost; } }, profile });
+    const caught = await transport.print({ id: 'a', kind: 'test', bytes: Uint8Array.from([1]) }).catch((error: unknown) => error);
+    expect(caught).toBe(lost);
+    expect((caught as PrintError).cause).toBe(cause);
+  });
+
   it('refuses a Star printer and a job with nothing to print', async () => {
     const write = async () => undefined;
     const star = createEscPosTransport({ sink: { write }, profile: { ...profile, language: 'star-line' } });
