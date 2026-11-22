@@ -1,4 +1,4 @@
-export { Cart } from './cart';
+export { Cart, PickStepper } from './cart';
 export { OrderNoteSheet, type OrderNoteSheetProps } from './order-note-sheet';
 export { CartBar } from './cart-bar';
 export { Tender, SplitTender } from './tender';

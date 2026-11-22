@@ -255,8 +255,10 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
 /** A fee or shipping row on the picker's read-only bill: the row alone, no Edit or Remove strip. */
 const ReadOnlyStrip = ({ children }: Parameters<typeof CartLineStrip>[0]) => <>{children((content) => content)}</>;
 
-/** Cart's `picker` stepper, v2's `− n of unpaid +` (tender/unit-stepper.tsx), with what the picked units add under it. */
-function PickStepper({ picker, id, name, unpaid, currency }: { picker: NonNullable<Parameters<typeof Cart>[0]['picker']>;
+/** WCPOS v2's `− n of unpaid +` stepper (tender/unit-stepper.tsx), the one Cart's `picker` draws in each pickable line's
+ * quantity cell, with what the picked units add under it. An app cart built on CartPanel and CartLine passes it as
+ * CartLine's `quantitySlot` (with `picking`), with the same `picker` object Cart takes. */
+export function PickStepper({ picker, id, name, unpaid, currency }: { picker: NonNullable<Parameters<typeof Cart>[0]['picker']>;
   id: string; name: string; unpaid: number; currency: string }) {
   const t = useT();
   const formatMoney = useFormatMoney();
