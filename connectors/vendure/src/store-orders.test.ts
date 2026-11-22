@@ -132,7 +132,7 @@ describe('Vendure store orders', () => {
 
   it('lists the first page newest first with detail fields', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: { orders: { items: [fixture], totalItems: 10 } } }));
-    await expect(createVendureOrders().listOrders(context)).resolves.toStrictEqual({ orders: [toVendureStoreOrder(fixture, false)], hasMore: true });
+    await expect(createVendureOrders().listOrders(context)).resolves.toStrictEqual({ orders: [toVendureStoreOrder(fixture, false)], hasMore: true, total: 10 });
     const sent = JSON.parse(spy.mock.calls[0]![1]!.body as string);
     expect(sent.variables).toStrictEqual({ options: {
       skip: 0, take: 25, sort: { orderPlacedAt: 'DESC', id: 'DESC' }, filter: { orderPlacedAt: { isNull: false } },
@@ -144,11 +144,13 @@ describe('Vendure store orders', () => {
   it('pages, clamps and searches', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(Response.json({ data: { orders: { items: [fixture], totalItems: 21 } } }))
+      .mockResolvedValueOnce(Response.json({ data: { orders: { items: Array.from({ length: 10 }, () => fixture), totalItems: 21 } } }))
       .mockResolvedValueOnce(Response.json({ data: { orders: { items: Array.from({ length: 10 }, () => fixture), totalItems: 21 } } }));
     const { listOrders } = createVendureOrders();
-    await expect(listOrders(context, { page: 3, perPage: 10 })).resolves.toStrictEqual({ orders: [toVendureStoreOrder(fixture, false)], hasMore: false });
+    await expect(listOrders(context, { page: 3, perPage: 10 })).resolves.toStrictEqual({ orders: [toVendureStoreOrder(fixture, false)], hasMore: false, total: 21 });
     expect(JSON.parse(spy.mock.calls[0]![1]!.body as string).variables.options).toMatchObject({ skip: 20, take: 10 });
     expect((await listOrders(context, { page: 2, perPage: 10 })).hasMore).toBe(true);
+    expect((await listOrders(context, { page: 2, perPage: 10 })).total).toBe(21);
     expect(JSON.parse(spy.mock.calls[1]![1]!.body as string).variables.options).toMatchObject({ skip: 10, take: 10 });
     for (const [perPage, take] of [[500, 100], [0, 1], [2.7, 2]]) {
       spy.mockResolvedValueOnce(Response.json({ data: { orders: { items: [], totalItems: 0 } } }));
@@ -219,5 +221,10 @@ describe('Vendure store orders', () => {
     expect(connector.getOrders).toBeTypeOf('function');
     expect((await connector.listOrders!(context)).orders[0]!.pricesIncludeTax).toBe(true);
     expect(JSON.parse(spy.mock.calls[0]![1]!.body as string).query).not.toContain('customFields');
+  });
+
+  it('gives the store count of an empty search as total 0', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ data: { orders: { items: [], totalItems: 0 } } }));
+    await expect(createVendureOrders().listOrders(context, { search: 'nothing' })).resolves.toStrictEqual({ orders: [], hasMore: false, total: 0 });
   });
 });

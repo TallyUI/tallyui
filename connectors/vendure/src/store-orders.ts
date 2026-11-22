@@ -76,7 +76,7 @@ export function createVendureOrders(options: { pricesIncludeTax?: boolean; tally
       const skip = (page - 1) * perPage;
       const search = query.search?.trim();
       const { items, totalItems } = await listVendureOrderDetails(context, { skip, take: perPage, ...(search ? { search } : {}), ...tally });
-      return { orders: items.map((o) => toVendureStoreOrder(o, pricesIncludeTax)), hasMore: skip + items.length < totalItems };
+      return { orders: items.map((o) => toVendureStoreOrder(o, pricesIncludeTax)), hasMore: skip + items.length < totalItems, total: totalItems };
     },
 
     async getOrders(context: SyncContext, ids: readonly string[]) {
