@@ -216,11 +216,19 @@ it('R7c: with a leg in motion the cash Take is not rounded: BASE\'s net leg, and
   let cardId: string | null = null;
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
   enter(2130);
+  // By hand, tenderRounding(entry 2130 dirty, balance 3125 - 1000 = 2125, null): rounded due 2125, rounding 0,
+  // applied min(2130, 2125) = 2125, so no "Rounded from" and Take reads 21.25. entryChange =
+  // 2130 - min(2125, max(0, 2125 - 2123) + 0) = 2130 - 2 = 2128, the change the leg records; tillChange is 0 before Take.
+  expect(screen.getByTestId('tender-figure').textContent).not.toContain('Rounded from');
+  expect(text('tender-take')).toBe(`Take ${money(2125)} in Cash`);
+  expect(text('tender-entry-hint')).toBe(`Change ${money(2128)}`);
+  expect(screen.queryByTestId('tender-change')).toBeNull();
   press('tender-take');
   // By hand, use-sale.ts's non-rule path: due = 3125 - 1000 - 2123 (in motion) = 2, so the leg is min(2130, 2) = 2,
   // tendered 2130, change 2130 - 2 = 2128.
   expect(sale.order.payments).toHaveLength(3);
   expect(sale.order.payments[2]).toMatchObject({ method: 'cash', amountMinor: 2, tenderedMinor: 2130, changeMinor: 2128 });
+  expect(text('tender-change')).toBe(`Change ${money(2128)}`);
   expect(sale.order).not.toHaveProperty('cashRoundings');
   act(() => { expect(sale.setTenderStatus(cardId!, 'failed')).toBe(true); });
   expect(sale.order).not.toHaveProperty('cashRoundings');

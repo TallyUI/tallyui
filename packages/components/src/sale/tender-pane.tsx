@@ -82,7 +82,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const target = pick ? Math.min(pick.minor, balance - inMotionMinor(order.payments)) : balance;
   const partPick = pick !== null && target < balance;
   const entry = state.entryDirty ? state.entryMinor : target;
-  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, method);
+  // ADR-094: while a leg is in motion addTender rounds nothing on a flagged store, so the pane shows no rounding either.
+  const rounds = !(sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) > 0);
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null);
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
