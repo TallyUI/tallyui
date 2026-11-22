@@ -1,0 +1,43 @@
+---
+title: PickStepper
+description: PickStepper is WCPOS v2's per-unit stepper for paying by item, the one Cart draws while it has a picker, for apps that build their own cart.
+---
+
+## Import
+
+```tsx
+import { PickStepper } from '@tallyui/components';
+```
+
+## Usage
+
+```tsx
+import { CartLine, PickStepper } from '@tallyui/components';
+
+function PickLine({ line, picker, currency }) {
+  const unpaid = line.quantity - (picker.paid[line.id] ?? 0);
+  return (
+    <CartLine
+      name={line.name}
+      quantity={line.quantity}
+      lineTotal={line.total}
+      picking
+      quantitySlot={unpaid > 0
+        ? <PickStepper picker={picker} id={line.id} name={line.name} unpaid={unpaid} currency={currency} />
+        : undefined}
+    />
+  );
+}
+```
+
+It draws v2's `− n of unpaid +` stepper: − ("One fewer" and the name) calls `picker.onPick(id, units - 1)` and cannot be pressed at 0, and + ("One more" and the name) calls `picker.onPick(id, units + 1)` and cannot be pressed at `unpaid`, where `units` is `picker.picked[id]` (0 when absent). While `units` is above 0, what those units add, `picker.unitMinor(id, units)` formatted in `currency`, shows under it. The [Cart](/docs/components/cart) draws this same component for each line its `picker` can split; pass `picking` to CartLine so the quantity column takes the stepper's width.
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `picker` | Cart's `picker` | required | The same object [Cart](/docs/components/cart)'s `picker` takes: `picked`, `paid`, `unitMinor` and `onPick` |
+| `id` | `string` | required | The line id, the key into `picked` and the first argument to `onPick` and `unitMinor` |
+| `name` | `string` | required | The line name, used in the buttons' accessible names |
+| `unpaid` | `number` | required | The line's units that earlier payments have not taken; + stops here |
+| `currency` | `string` | required | The currency the picked amount is shown in |

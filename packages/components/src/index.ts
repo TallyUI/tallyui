@@ -248,7 +248,7 @@ export { TaxBasedOn, type TaxBasedOnProps } from './tax';
 
 // Sale components
 export {
-  Cart, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
+  Cart, PickStepper, CartBar, Tender, SplitTender, TenderPane, type TenderPaneProps, DiscountForm, DiscountChips, parseDiscount, discountLabel,
   PriceForm, parsePrice, LinePopover, type LinePopoverProps,
   ChargeForm, type ChargeFormProps,
   OrderNoteSheet, type OrderNoteSheetProps,
