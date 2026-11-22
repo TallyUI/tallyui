@@ -7,6 +7,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import type { TaxRounding } from '@tallyui/core';
 import { orderDraftSchema, type Order } from '../order';
+import { posOrderCollection } from '../pos-order';
 import { TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import type { SaleCoupon, SaleCouponSource } from './woocommerce/coupons';
@@ -50,7 +51,7 @@ describe('useSale kept coupons on a paid resume (Woo and generic inclusive)', ()
   beforeEach(async () => {
     db = await createRxDatabase({ name: `salekept${Math.random().toString(36).slice(2)}`,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
-    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
   });
   afterEach(async () => { cleanup(); await db.remove(); });
 
@@ -138,5 +139,52 @@ describe('useSale kept coupons on a paid resume (Woo and generic inclusive)', ()
     expect(totals(order)).toEqual(totals(parked));
     expect(result.current.error).toBeNull();
     expect(price).not.toHaveBeenCalled();
+  });
+
+  /** Woo 'ten' on entries[0] with a captured 500 cash leg, parked at 20 %, resumed after the rate moves to 10 % (F5). */
+  async function driftedResume() {
+    const state = { pct: 20 };
+    function Wrapper({ children }: { children: ReactNode }) {
+      const rated = { ...taxProps, ratesPpm: { default: state.pct * 10000 },
+        taxRates: { standard: [{ ...taxProps.taxRates.standard[0], rate: `${state.pct}.0000` }] } };
+      return <TaxProvider {...rated} rounding={woocommerce}>{children}</TaxProvider>;
+    }
+    const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
+    const { result, rerender } = renderHook(() => useSale({ currency: 'GBP' }, { registerId: 'register-1', cashierRef: 'cashier@store.test',
+      capabilities: { orderCreate: 6, coupons: true }, drafts: db.pos_drafts, discountCodes: createDiscountCodes(source()), onSaleCompleted }), { wrapper: Wrapper });
+    act(() => { result.current.add(entries[0], traits); });
+    await apply(result, 'ten');
+    const parked = await parkPaid(result, () => { state.pct = 10; rerender(); });
+    await settle();
+    return { result, parked };
+  }
+
+  it('D1/D2 (F5): a paid Woo draft stays priced when the rate moves between park and resume, tenders the balance and completes', async () => {
+    const { result, parked } = await driftedResume();
+    const order = result.current.order;
+    expect(order.couponPricesStale ?? false).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(order.totalMinor).toBe(parked.totalMinor);
+    expect(order.coupons).toEqual(parked.coupons);
+    expect(lineFigures(order)).toEqual(lineFigures(parked));
+    expect(totals(order)).toEqual(totals(parked));
+    const [cash] = order.payments;
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.error).toBeNull();
+    expect(result.current.stage).toEqual({ kind: 'tender', method: 'external' });
+    expect(result.current.order.payments).toEqual([cash, expect.objectContaining({ method: 'external', amountMinor: parked.totalMinor - 500 })]);
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    expect(result.current.stage.kind).toBe('receipt');
+  });
+
+  it('D3 (F5): after a drifted paid resume, a pricing-basis change still makes the kept coupons stale', async () => {
+    const { result } = await driftedResume();
+    expect(result.current.order.couponPricesStale ?? false).toBe(false);
+    // The live leg refuses a quantity edit (SALE_HAS_PAYMENT); the customer is in the kept basis and not in linesBasis.
+    act(() => { result.current.setCustomer({ id: 'customer-2', name: 'Ada' }); });
+    await settle();
+    expect(result.current.order.couponPricesStale).toBe(true);
   });
 });
