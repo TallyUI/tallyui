@@ -40,8 +40,8 @@ describe('useSale payment method ids (condition 5: method decides cash, methodId
     const { result } = renderSale({ onSaleCompleted });
     expect(result.current.order.totalMinor).toBe(2250);
     act(() => { expect(result.current.addTender({ method: 'cash', methodId: 'cod', amountMinor: 3000 })).toEqual(expect.any(String)); });
-    expect(result.current.order).toMatchObject({ paidMinor: 3000, balanceDueMinor: 0, changeDueMinor: 750,
-      payments: [{ method: 'cash', methodId: 'cod', amountMinor: 3000 }] });
+    expect(result.current.order).toMatchObject({ paidMinor: 2250, balanceDueMinor: 0, changeDueMinor: 0,
+      payments: [{ method: 'cash', methodId: 'cod', amountMinor: 2250 }] });
     await act(async () => { await result.current.complete(); });
     expect(onSaleCompleted).toHaveBeenCalledTimes(1);
     expect(onSaleCompleted.mock.calls[0][0].payments).toStrictEqual([

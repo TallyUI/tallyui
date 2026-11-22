@@ -49,8 +49,8 @@ describe('useSale split tender', () => {
     expect(cardId).toEqual(expect.any(String));
     expect(cashId).toEqual(expect.any(String));
     expect(result.current.order).toMatchObject({
-      paidMinor: 2500, balanceDueMinor: 0, changeDueMinor: 250,
-      payments: [{ id: cardId, method: 'external', amountMinor: 1000 }, { id: cashId, method: 'cash', amountMinor: 1500 }],
+      paidMinor: 2250, balanceDueMinor: 0, changeDueMinor: 0,
+      payments: [{ id: cardId, method: 'external', amountMinor: 1000 }, { id: cashId, method: 'cash', amountMinor: 1250 }],
     });
     await act(async () => { await result.current.complete(); });
     expect(onSaleCompleted).toHaveBeenCalledTimes(1);

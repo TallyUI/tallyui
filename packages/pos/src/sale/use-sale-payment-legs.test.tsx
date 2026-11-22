@@ -43,7 +43,7 @@ describe('useSale payment legs', () => {
     });
     expect(result.current.order.payments).toHaveLength(2);
     for (const payment of result.current.order.payments) expect(payment).not.toHaveProperty('status');
-    expect(result.current.order).toMatchObject({ paidMinor: 2500, balanceDueMinor: 0, changeDueMinor: 250 });
+    expect(result.current.order).toMatchObject({ paidMinor: 2250, balanceDueMinor: 0, changeDueMinor: 0 });
   });
 
   it('voids one leg, which stays on the sale and counts nothing', () => {

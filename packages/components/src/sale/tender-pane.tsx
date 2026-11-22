@@ -85,7 +85,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, method);
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
-  const entryChange = changeMinor(figures.entryMinor, figures.appliedMinor, givesChange);
+  // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
+  const entryChange = partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
+    : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
   const changeLeads = !noChange && entryChange > 0;

@@ -4199,6 +4199,7 @@ interface OrderCreatePayload {
     - A cash tender may exceed the balance due, and the excess is the change (ADR-039 lets the server accept a
       tender above the total).
     - So `changeDueMinor` only ever comes from cash.
+    - **Amended 2026-11-22 (row 500):** a cash leg taken through `addTender` records the amount applied (at most the balance less payments in motion), the amount handed over (`tenderedMinor`) and its change (`changeMinor`, 0 included), so a later void leaves the paid figure and the cash held right; a cash `addTender` with nothing due is refused (`NOTHING_DUE`). `setTender`, old drafts and reopened legs keep the full amount handed over, and finalize nets them as before.
   - **The same per-payment rules as `setTender`:**
     - Refused while locked (saving), and `amountMinor` must be a positive integer.
     - A terminal reference that finalize would refuse is dropped and the payment kept, with the warning and a

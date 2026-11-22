@@ -152,7 +152,7 @@ it('W6: Back clears picks, and re-entering waits for Split before exposing the p
   expect(tender.picker!.picked).toEqual({});
 });
 
-it('W7: a full cash pick keeps the rounded due and records the tendered amount', () => {
+it('W7: a full cash pick keeps the rounded due and records the tendered amount', async () => {
   const cash = paymentMethodOf('cash');
   const methods: PaymentMethodDescriptor[] = [{ ...cash, defaults: { ...cash.defaults, rounding: { incrementMinor: 10, mode: 'up' } } }];
   const id = start(2, methods);
@@ -164,7 +164,11 @@ it('W7: a full cash pick keeps the rounded due and records the tendered amount',
   expect(text('tender-entry-amount')).toBe(money(rounded));
   expect(text('tender-quick-exact')).toBe(`Exact ${money(rounded)}`);
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: rounded, units: { [id]: 2 } }]);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125, tenderedMinor: 3130, changeMinor: 5, units: { [id]: 2 } }]);
+  await act(async () => { await sale.complete(); });
+  // The stored leg, pinned at BASE 61cbdb83 (where Take kept the gross 3130 and finalize netted it).
+  expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.payments).toEqual([
+    { id: expect.any(String), method: 'cash', amountMinor: 3125, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 5 }]);
 });
 
 it('W8: prunes picks when integer quantity falls during tender, and ignores unknown and negative picks', () => {
@@ -325,7 +329,7 @@ it('W18: with nothing picked, recording a pending leg closes Split', () => {
   expect(tender.picker).toBeUndefined();
 });
 
-it('W19: a full cash pick with rounding up refuses an entry below the rounded due, even at or above the balance', () => {
+it('W19: a full cash pick with rounding up refuses an entry below the rounded due, even at or above the balance', async () => {
   const cash = paymentMethodOf('cash');
   const methods: PaymentMethodDescriptor[] = [{ ...cash, defaults: { ...cash.defaults, rounding: { incrementMinor: 10, mode: 'up' } } }];
   const id = start(2, methods);
@@ -343,5 +347,9 @@ it('W19: a full cash pick with rounding up refuses an entry below the rounded du
   enter(rounded);
   expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: rounded, units: { [id]: 2 } }]);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125, tenderedMinor: 3130, changeMinor: 5, units: { [id]: 2 } }]);
+  await act(async () => { await sale.complete(); });
+  // The stored leg, pinned at BASE 61cbdb83 (where Take kept the gross 3130 and finalize netted it).
+  expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.payments).toEqual([
+    { id: expect.any(String), method: 'cash', amountMinor: 3125, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 5 }]);
 });
