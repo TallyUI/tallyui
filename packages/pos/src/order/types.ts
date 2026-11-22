@@ -186,8 +186,8 @@ export interface Payment {
   methodId?: string;
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
-  // Cash records the full tendered amount, except a leg taken for picked units with `tenderedMinor`:
-  // it records the pick's money here and keeps the amount handed over and the change.
+  // A cash leg taken at Take records the amount applied here, with `tenderedMinor` and `changeMinor`. A leg without
+  // `tenderedMinor` (from `setTender`, an old draft or a reopened order) records the full amount handed over, and finalize nets it.
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;

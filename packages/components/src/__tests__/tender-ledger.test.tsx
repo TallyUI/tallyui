@@ -4,7 +4,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { canVoidLeg, createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, useSale, writeOrderDraft, type Order } from '@tallyui/pos';
+import { canVoidLeg, createOrderBuilder, NOTHING_DUE, orderDraftSchema, TaxProvider, taxProviderProps, useSale, writeOrderDraft, type Order } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { Tender } from '../sale/tender';
@@ -210,14 +210,21 @@ describe('TenderLedger leg times', () => {
   afterEach(async () => { vi.useRealTimers(); cleanup(); await db?.remove(); db = undefined; });
   /** The device's short time, written out as the ledger must render it. */
   const clock = (t: string | undefined) => new Date(t!).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  /** A €50 sale resumed from a draft whose legs are reopened (so startTender keeps them) and carry no takenAt: a leg from before the field. */
-  async function restored(payments: { method: 'cash' | 'external'; amountMinor: number; status?: 'pending' }[]) {
+  /**
+   * A sale (€50 unless `priceMinor` says otherwise) resumed from a draft. Its legs are reopened unless `reopened` is
+   * false, so startTender keeps them; a leg without `takenAt` is one from before the field. A captured or voided leg
+   * with `takenAt` is kept through startTender without `reopened` (takenLeg is part of heldLeg).
+   */
+  async function restored(
+    payments: { method: 'cash' | 'external'; amountMinor: number; status?: 'pending' | 'captured' | 'voided'; takenAt?: string }[],
+    { priceMinor = 5000, reopened = true }: { priceMinor?: number; reopened?: boolean } = {},
+  ) {
     db = await createRxDatabase({ name: `legtimes${Math.random().toString(36).slice(2)}`,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
     await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
-    builder.addLine({ productId: 'coffee', name: 'Coffee', unitPrice: { amount: 5000, currency: 'EUR' } });
-    payments.forEach((payment, index) => builder.addPayment({ id: `leg-${index + 1}`, ...payment, reopened: true }));
+    builder.addLine({ productId: 'coffee', name: 'Coffee', unitPrice: { amount: priceMinor, currency: 'EUR' } });
+    payments.forEach((payment, index) => builder.addPayment({ id: `leg-${index + 1}`, ...payment, ...(reopened ? { reopened: true } : {}) }));
     await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
     let held!: ReturnType<typeof useSale>;
     function Held({ drafts }: { drafts: RxCollection }) {
@@ -241,22 +248,21 @@ describe('TenderLedger leg times', () => {
     expect(text(`tender-leg-${leg(0)}-time`)).toBe(clock(takenAt));
   });
 
-  it('P6 Paid in full names the settled leg\'s time when a later leg in order.payments does not count', () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    start(2000);
-    vi.setSystemTime(new Date(2026, 10, 21, 10, 0));
-    act(() => { sale.addTender({ method: 'cash', amountMinor: 2000 }); });
-    vi.setSystemTime(new Date(2026, 10, 21, 10, 7));
-    let extra: string | null = null;
-    act(() => { extra = sale.addTender({ method: 'cash', amountMinor: 500 }); });
-    expect(extra).not.toBeNull(); // reachable: cash is still accepted once nothing is due
-    act(() => { expect(sale.voidTender(extra!)).toBe(true); });
-    const [settled, voided] = sale.order.payments;
-    expect(voided).toMatchObject({ id: extra, status: 'voided' });
+  it('P6 Paid in full names the settled leg\'s time when a later leg in order.payments does not count', async () => {
+    const held = await restored([
+      { method: 'cash', amountMinor: 2000, status: 'captured', takenAt: new Date(2026, 10, 21, 10, 0).toISOString() },
+      { method: 'cash', amountMinor: 500, status: 'voided', takenAt: new Date(2026, 10, 21, 10, 7).toISOString() },
+    ], { priceMinor: 2000, reopened: false });
+    const [settled, voided] = held.order.payments;
+    expect(voided).toMatchObject({ id: 'leg-2', status: 'voided' });
     expect(voided.takenAt).toBe(new Date(2026, 10, 21, 10, 7).toISOString());
     expect(clock(settled.takenAt)).not.toBe(clock(voided.takenAt));
-    expect(sale.order.balanceDueMinor).toBe(0);
+    expect(held.order.balanceDueMinor).toBe(0);
     expect(text('tender-ledger-lead')).toBe(`Paid in full · ${clock(settled.takenAt)}`);
+    // a cash leg cannot be added once nothing is due (row 500), so the later voided leg comes from a draft.
+    act(() => { expect(held.addTender({ method: 'cash', amountMinor: 500 })).toBeNull(); });
+    // `held` is the render-time sale, so its `error` is read where the live sale shows it.
+    expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toContain(NOTHING_DUE);
   });
 
   it('P2 a pending leg without takenAt shows no time', async () => {

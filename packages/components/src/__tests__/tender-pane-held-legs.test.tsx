@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, tillLegsTheStoreRefuses, useSale, writeOrderDraft } from '@tallyui/pos';
+import { createOrderBuilder, NOTHING_DUE, orderDraftSchema, TaxProvider, taxProviderProps, tillLegsTheStoreRefuses, useSale, writeOrderDraft } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { blue, pricing, SaleHarness, sale, traits } from './sale-harness';
 
@@ -60,9 +60,12 @@ describe('TenderPane held legs: Cancel payment (ADR-090 gate 36c; ADR-072 d3, am
     render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} />}</SaleHarness>);
     act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
     act(() => sale.startTender('cash'));
-    let live: string | null = null;
-    act(() => { live = sale.addTender({ method: 'cash', amountMinor: 500 }); });
-    expect(live).not.toBeNull();
+    // addTender refuses cash with nothing due, so the live till leg goes on through setTender, which keeps the reopened leg.
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).toBeNull(); });
+    expect(sale.error).toBe(NOTHING_DUE);
+    act(() => sale.setTender({ method: 'cash', amountMinor: 500 }));
+    expect(sale.order.payments.map((payment) => payment.id)).toContain(reopened);
+    const live = sale.order.payments.find((payment) => !payment.locked && !payment.reopened)!.id;
     expect(tillLegsTheStoreRefuses(sale.order)).toEqual([reopened, live]);
     expect(screen.getByTestId('tender-store-holds')).toBeTruthy();
     expect(screen.getByTestId(`tender-leg-${live}-refused-void`)).toBeTruthy();

@@ -2,7 +2,7 @@ import { useCallback, useReducer } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, initialTenderState, initTenderState, tenderReducer, type TenderAction, type useSale } from '@tallyui/pos';
+import { createOrderBuilder, CUSTOMER_RETAX_REFUSED, initialTenderState, NOTHING_DUE, initTenderState, tenderReducer, type TenderAction, type useSale } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Tender } from '../sale/tender';
 import { TenderPane } from '../sale/tender-pane';
@@ -60,7 +60,7 @@ describe('Tender', () => {
     expect(text('tender-entry-amount')).toBe(money(4000));
     expect(text('tender-entry-hint')).toBe(`Change ${money(549)}`);
     click(`Take ${money(3451)} in Cash`);
-    expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 4000 }]);
+    expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3451 }]);
     expect(text('tender-change')).toBe(`Change ${money(549)}`);
     expect(screen.queryByTestId('tender-entry')).toBeNull();
     await act(async () => { click('Complete sale'); });
@@ -408,8 +408,11 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     reopen(1000);
     act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 200)).toBeNull(); });
     act(() => sale.startTender('cash'));
-    // startTender drops every unlocked leg, so the till cash goes on through the sale API once the tender has begun.
-    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).not.toBeNull(); });
+    // startTender drops every unlocked leg, and addTender refuses cash with nothing due, so the till cash goes on through
+    // setTender once the tender has begun.
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).toBeNull(); });
+    expect(sale.error).toBe(NOTHING_DUE);
+    act(() => sale.setTender({ method: 'cash', amountMinor: 500 }));
     expect(sale.order.changeDueMinor).toBe(1300);
     expect(text('tender-change')).toBe(`Change ${money(500)}`);
     expect(text('tender-refund-due')).toBe(`Refund due ${money(800)}`);
@@ -420,10 +423,12 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     reopen(1000);
     act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
     act(() => sale.startTender('cash'));
-    // A restored draft or the sale API is the only way a till leg reaches this state: the entry is hidden at balance 0.
-    let cash: string | null = null;
-    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
-    expect(cash).not.toBeNull();
+    // A restored draft or setTender is the only way a till leg reaches this state: the entry is hidden at balance 0,
+    // and addTender refuses cash with nothing due.
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).toBeNull(); });
+    expect(sale.error).toBe(NOTHING_DUE);
+    act(() => sale.setTender({ method: 'cash', amountMinor: 500 }));
+    const cash = sale.order.payments.find((payment) => !payment.locked && !payment.reopened)!.id;
     expect(disabled('tender-complete')).toBe(true);
     expect(text('tender-store-holds')).toBe(`The store already holds this sale's payment. Remove the ${money(500)} taken here to finish.`);
     fireEvent.click(screen.getByTestId(`tender-leg-${cash}-refused-void`));
@@ -437,9 +442,11 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     reopen(1000);
     act(() => { expect(sale.setUnitPrice(sale.order.lineItems[0].id, 800)).toBeNull(); });
     act(() => sale.startTender('cash'));
-    let cash: string | null = null;
-    act(() => { cash = sale.addTender({ method: 'cash', amountMinor: 500 }); });
-    act(() => { expect(sale.voidTender(cash!)).toBe(true); });
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).toBeNull(); });
+    expect(sale.error).toBe(NOTHING_DUE);
+    act(() => sale.setTender({ method: 'cash', amountMinor: 500 }));
+    const cash = sale.order.payments.find((payment) => !payment.locked && !payment.reopened)!.id;
+    act(() => { expect(sale.voidTender(cash)).toBe(true); });
     expect(sale.order.payments.find((payment) => payment.id === cash)?.status).toBe('voided');
     expect(screen.queryByTestId('tender-store-holds')).toBeNull();
     expect(disabled('tender-complete')).toBe(false);
@@ -453,7 +460,7 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     expect(screen.getByTestId('tender-entry')).toBeTruthy();
     click(money(1000));
     click(`Take ${money(500)} in Cash`);
-    expect(sale.order.payments.filter((payment) => !payment.locked)).toMatchObject([{ method: 'cash', amountMinor: 1000 }]);
+    expect(sale.order.payments.filter((payment) => !payment.locked)).toMatchObject([{ method: 'cash', amountMinor: 500 }]);
     expect(disabled('tender-complete')).toBe(false);
     expect(screen.queryByTestId('tender-store-holds')).toBeNull();
     expect(screen.queryByTestId('tender-refund-due')).toBeNull();
@@ -496,9 +503,9 @@ describe("Tender with the host's own methods (ruling A, methodId)", () => {
     for (const key of ['3', '0', '0', '0']) press(key);
     expect(text('tender-entry-hint')).toBe(`Change ${money(500)}`);
     click(`Take ${money(2500)} in Till cash`);
-    expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'pos_cash', amountMinor: 3000 }]);
+    expect(sale.order.payments).toMatchObject([{ method: 'cash', methodId: 'pos_cash', amountMinor: 2500 }]);
     expect(text('tender-change')).toBe(`Change ${money(500)}`);
-    expect(ledgerRow(0)).toBe(`Till cash${money(3000)}Captured${legTime(0)}Cancel payment`);
+    expect(ledgerRow(0)).toBe(`Till cash${money(2500)}Captured${legTime(0)}Cancel payment`);
   });
 
   it("takes the host's cheque as an external leg under its own id, titled in the ledger", () => {

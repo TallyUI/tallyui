@@ -44,6 +44,8 @@ export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sal
 export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the payment before changing the sale.';
 /** removeTender refuses a taken leg with this: it is voided, never removed (ADR-072 d3, amended 2026-11-22). */
 export const PAYMENT_TAKEN = 'This payment was taken. Void it instead of removing it.';
+/** A cash addTender refuses with this when the balance less the legs in motion leaves nothing due (row 500). */
+export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale already cover the total.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
 export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
@@ -852,7 +854,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
     addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string | null {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
@@ -879,8 +881,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         clearStaleError(); // before addOne, which sets its own message for a dropped reference
         return addOne({ ...tender, amountMinor: Math.min(tender.amountMinor, due) }, true);
       }
+      if (tender.tenderedMinor === undefined) {
+        const snapshot = builderNow.current.getSnapshot();
+        const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
+        if (due <= 0) { setError(NOTHING_DUE); return null; }
+        const amountMinor = Math.min(tender.amountMinor, due);
+        clearStaleError();
+        return addOne({ ...tender, amountMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - amountMinor }, true);
+      }
       clearStaleError();
-      return addOne({ ...tender, ...(tender.tenderedMinor !== undefined ? { changeMinor: tender.tenderedMinor - tender.amountMinor } : {}) }, true);
+      return addOne({ ...tender, changeMinor: tender.tenderedMinor - tender.amountMinor }, true);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }

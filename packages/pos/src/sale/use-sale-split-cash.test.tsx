@@ -52,8 +52,8 @@ async function completeSale(quantity: number, amountMinor: number, picked = fals
     expect(result.current.addTender({ method: 'cash', amountMinor })).toEqual(expect.any(String));
   });
   const plain = result.current.order.payments.at(-1)!;
-  expect(plain).not.toHaveProperty('tenderedMinor');
-  expect(plain).not.toHaveProperty('changeMinor');
+  expect(plain).toHaveProperty('tenderedMinor', amountMinor);
+  expect(plain).toHaveProperty('changeMinor', amountMinor - plain.amountMinor);
   expect(plain).not.toHaveProperty('units');
   await act(async () => { await result.current.complete(); });
   expect(onSaleCompleted).toHaveBeenCalledTimes(1);
@@ -200,7 +200,7 @@ describe('cash tender for picked units', () => {
   it('C0-5: live and reprinted receipts show the tender and all change handed back', async () => {
     const saleB = await completeSale(2, 600, true);
     const saleA = await completeSale(1, 2000);
-    expect(saleB.order.changeDueMinor).toBe(100);
+    expect(saleB.order.changeDueMinor).toBe(0);
     const live = buildReceiptData(saleB.order, config);
     const reprint = buildReceiptDataFromPosOrder(saleB.posOrder, config);
     expect(live.payments.map((p) => p.amountMinor)).toEqual([2000, 600]);
