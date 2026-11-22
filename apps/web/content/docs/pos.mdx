@@ -416,7 +416,7 @@ The `taxLabels` config maps tax rates in ppm (100000 = 10%) to human-readable la
 
 **No timeout on a write.** Neither sink sets a timeout, so a job waits as long as the browser's USB transfer or GATT write does.
 
-**Errors.** A device the sink cannot print to is a `PrintError`.
+**Errors.** A device the sink cannot print to is a `PrintError` with code `unsupported`, and `createEscPosTransport` passes a sink's `PrintError` on unchanged; any other failed write is a `PrintError` with code `failed`.
 
 ```ts
 import {

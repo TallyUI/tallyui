@@ -6,9 +6,10 @@
  */
 import type { ReceiptTemplateOptions } from '../../receipt-template/template-data';
 import type { PrinterProfile } from '../printer-profiles';
-import { PrintError, type PrintJob, type PrintTransport } from '../types';
+import { PrintError, toPrintError, type PrintJob, type PrintTransport } from '../types';
 import { encodeEscPos } from './encode';
 
+/** Where the ESC/POS bytes go. A `write` that rejects with a `PrintError` keeps its code (`unsupported` for a device it cannot print to); any other rejection is a `failed` PrintError. */
 export interface EscPosSink {
   write(bytes: Uint8Array): Promise<void>;
 }
@@ -39,7 +40,7 @@ export function createEscPosTransport({ sink, profile, format }: EscPosTransport
       try {
         await sink.write(bytes);
       } catch (error) {
-        throw new PrintError('failed', error instanceof Error ? error.message : String(error), { cause: error });
+        throw toPrintError(error);
       }
     },
   };
