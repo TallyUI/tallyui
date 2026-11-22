@@ -1,6 +1,6 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
 import { resolvePrice, woocommerceTax, type woocommerceCoupons, type OrderCreateMeta, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
-import type { TaxContext } from '../tax/types';
+import type { TaxContext, WooRate } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
 import { capturedMinor, canMoveLeg, countsTowardPaid, isInMotion, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
@@ -17,7 +17,7 @@ import type {
   Payment,
   CustomerSummary,
   AddLineInput,
-  ChargeInput, ChargeLine, FeeLine, ShippingLine,
+  ChargeInput, ChargeLine, FeeLine, ShippingLine, LineTaxLine,
 } from './types';
 
 /** splitLine's refusal: a fixed line discount copied onto every split line would multiply it. */
@@ -152,6 +152,8 @@ export interface OrderBuilderOptions {
   storeOrder?: StoreOrderRef;
   afterClose?: Order['afterClose'];
   couponContext?: OrderCouponContext;
+  /** A restored paid draft's parked tax lines by line, fee or shipping id (row 497); held only while one of `legIds` is captured or moving. */
+  heldRates?: { legIds: readonly string[]; taxLines: ReadonlyMap<string, readonly LineTaxLine[]> };
 }
 
 export interface OrderBuilder {
@@ -210,11 +212,22 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const currency = options.currency.toUpperCase();
   const orderId = options.id ?? uid();
   const woo = taxContext.rounding?.granularity === 'woocommerce' && taxContext.getTaxRates ? taxContext.rounding : undefined;
-  const wooLine = (amount: number, taxClass: string | undefined, inclusive: boolean, untaxed = false, shipping = false) =>
-    woocommerceLine(amount, untaxed ? [] : taxContext.getTaxRates!(taxClass, { shipping }), inclusive, currency, woo!.roundAtSubtotal, taxContext.pricesIncludeTax);
+  // Row 497: a held item's parked tax lines, while a held leg is captured or moving; a void ends the hold at the next build.
+  const heldFor = (id: string) => {
+    const held = options.heldRates;
+    return held?.taxLines.has(id) && payments.some((p) => held.legIds.includes(p.id) && (countsTowardPaid(p) || isInMotion(p)))
+      ? held.taxLines.get(id) : undefined;
+  };
+  const toWooRates = (held: readonly LineTaxLine[]): WooRate[] => held.map((t, i) =>
+    ({ id: t.rateId!, code: t.code ?? '', label: '', rate: (t.ratePpm / 10000).toFixed(4), priority: i, compound: t.compound ?? false, shipping: true }));
+  const wooLine = (amount: number, taxClass: string | undefined, inclusive: boolean, untaxed = false, shipping = false, id?: string) => {
+    const held = id !== undefined ? heldFor(id) : undefined;
+    return woocommerceLine(amount, untaxed ? [] : held ? toWooRates(held) : taxContext.getTaxRates!(taxClass, { shipping }),
+      inclusive, currency, woo!.roundAtSubtotal, taxContext.pricesIncludeTax);
+  };
   const displayAmount = (line: LineItem, amount: number) => {
     if (!woo || line.taxInclusive === taxContext.pricesIncludeTax) return toDisplayMode(line, amount, taxContext.pricesIncludeTax);
-    const item = wooLine(amount, line.taxClass, line.taxInclusive, line.taxStatus === 'none');
+    const item = wooLine(amount, line.taxClass, line.taxInclusive, line.taxStatus === 'none', false, line.id);
     return taxContext.pricesIncludeTax ? item.totalMinor : item.netMinor;
   };
   /** A recalculated line's remaining amount in the store's mode: the display's remaining and a percent fee's basis. */
@@ -252,7 +265,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // Store-priced coupons (#709) come off what the discounts leave, capped there; discountMinor never includes them (v6).
     const netMinor = grossMinor - discountMinor - Math.max(0, Math.min(couponMinor, grossMinor - discountMinor));
     if (woo) return { ...line, discounts: recalcedDiscounts, discountMinor, orderDiscountMinor,
-      ...wooLine(netMinor, line.taxClass, line.taxInclusive, line.taxStatus === 'none') };
+      ...wooLine(netMinor, line.taxClass, line.taxInclusive, line.taxStatus === 'none', false, line.id) };
     const combinedRate = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
     // Tax in the line's own mode, from its own unit price × quantity: never re-tax a rounded base.
     const inclusiveTax = line.taxInclusive ? taxMicros(netMinor, combinedRate, true) : 0n;
@@ -338,7 +351,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         amountMinor: Number((basis * BigInt(Math.round(fee.percent * 10000)) + 500000n) / 1000000n) }));
     }
 
-    if (woo) shipping = shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
+    // Row 497: held charges recalculate on every build, so a hold starts once payments restore and ends at a void.
+    if (options.heldRates) fees = fees.map((fee) => fee.percent !== undefined ? fee : { ...fee, ...recalculateCharge(fee.id, fee) });
+    if (woo || options.heldRates) shipping =shipping.map((charge) => ({ ...charge, ...recalculateCharge(charge.id, charge, true) }));
     const charges = [...fees, ...shipping];
     const taxedCharges = charges.map((charge) => ({ ...charge, taxInclusive: charge.amountIncludesTax ?? taxContext.pricesIncludeTax,
       taxMicros: charge.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n).toString() }));
@@ -549,15 +564,15 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       // A `none` shipping line is untaxed as WCPOS saves it (its _woocommerce_pos_data meta clears the store's shipping taxes).
       const untaxed = shipping ? taxStatus === 'none' || taxClass === woocommerceTax.NO_SHIPPING_TAX : taxStatus === 'none';
       const line = wooLine(input.amountMinor, taxClass === woocommerceTax.NO_SHIPPING_TAX || (shipping && untaxed) ? undefined : taxClass,
-        inclusive, untaxed, shipping);
+        inclusive, untaxed, shipping, id);
       return { id, name: input.name, amountMinor: input.amountMinor, taxClass: input.taxClass, taxStatus, ...mode,
         ...(input.storeLineId !== undefined ? { storeLineId: input.storeLineId } : {}),
         ...line };
     }
-    const code = taxContext.getTaxRateCode?.(input.taxClass);
+    const code = taxContext.getTaxRateCode?.(input.taxClass), held = heldFor(id);
     const line = recalculateLine({
       id, productId: id, name: input.name, sku: '', unitPriceMinor: input.amountMinor, quantity: 1,
-      taxLines: [{ ...(code !== undefined ? { code } : {}),
+      taxLines: held ? held.map(({ code, ratePpm }) => ({ ...(code !== undefined ? { code } : {}), ratePpm, taxMicros: '0' })) : [{ ...(code !== undefined ? { code } : {}),
         ratePpm: taxStatus === 'none' ? 0 : taxContext.getTaxRatePpm(input.taxClass), taxMicros: '0' }],
       discounts: [], discountMinor: 0, orderDiscountMinor: 0, netMinor: 0, taxMicros: '0',
       taxInclusive: inclusive,
@@ -577,7 +592,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       throw new RangeError('Regular price must be integer minor units >= 0');
     // A rate from the tax class carries the backend's name for it when one is mapped (#287, #288).
     const code = woo || input.taxRates ? undefined : taxContext.getTaxRateCode?.(input.taxClass);
-    const taxRates = woo ? wooLine(unitPrice.amount * quantity, input.taxClass, unitPrice.taxInclusive ?? taxContext.pricesIncludeTax, input.taxStatus === 'none').taxLines
+    const taxRates = woo ? wooLine(unitPrice.amount * quantity, input.taxClass, unitPrice.taxInclusive ?? taxContext.pricesIncludeTax, input.taxStatus === 'none', false, input.id).taxLines
       : input.taxStatus === 'none' ? [{ ...(code !== undefined ? { code } : {}), ratePpm: 0 }]
       : input.taxRates ?? [{ ...(code !== undefined ? { code } : {}), ratePpm: taxContext.getTaxRatePpm(input.taxClass) }];
     const taxInclusive = unitPrice.taxInclusive ?? taxContext.pricesIncludeTax;
