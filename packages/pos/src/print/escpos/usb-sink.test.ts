@@ -25,8 +25,8 @@ function fakeDevice(options: FakeOptions = {}) {
     }),
   );
   const configuration = { interfaces };
-  const owns = (endpointNumber: number) => ({ alternate }: (typeof interfaces)[number]) =>
-    alternate.endpoints.some((endpoint) => endpoint.endpointNumber === endpointNumber && endpoint.direction === 'out');
+  const owns = (direction: 'in' | 'out', endpointNumber: number) => ({ alternate }: (typeof interfaces)[number]) =>
+    alternate.endpoints.some((endpoint) => endpoint.endpointNumber === endpointNumber && endpoint.direction === direction);
   const device = {
     productName: 'Counter printer',
     opened: options.opened ?? false,
@@ -50,14 +50,14 @@ function fakeDevice(options: FakeOptions = {}) {
     async clearHalt(direction: 'in' | 'out', endpointNumber: number) {
       calls.push(`clearHalt(${direction},${endpointNumber})`);
       if (!device.opened) throw new Error('InvalidStateError');
-      const claimedOwner = device.configuration?.interfaces.some((usbInterface) => usbInterface.claimed && owns(endpointNumber)(usbInterface));
+      const claimedOwner = device.configuration?.interfaces.some((usbInterface) => usbInterface.claimed && owns(direction, endpointNumber)(usbInterface));
       if (!claimedOwner) throw new Error('InvalidStateError');
       if (options.clearHaltError) throw options.clearHaltError;
       if (direction === 'out') halted.delete(endpointNumber);
     },
     async transferOut(endpointNumber: number, data: Uint8Array<ArrayBuffer>) {
       calls.push(`transferOut(${endpointNumber})`);
-      const owner = device.configuration?.interfaces.find(owns(endpointNumber));
+      const owner = device.configuration?.interfaces.find(owns('out', endpointNumber));
       if (!device.opened || !owner?.claimed) throw new Error('InvalidStateError');
       if (halted.has(endpointNumber)) return { status: 'stall' as const, bytesWritten: 0 };
       transfers.push(data.slice());
