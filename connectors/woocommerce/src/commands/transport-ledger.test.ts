@@ -252,13 +252,16 @@ describe('an unreadable /site', () => {
     for (let i = 0; i < 2; i += 1) expect(await transport.send([order()])).toStrictEqual({ kind: 'unauthorized' });
     expect(calls.map(({ path }) => path)).toEqual(['site', 'site']);
     expect(await transport.send([order()])).toEqual(applied);
+    expect(calls.map(({ path }) => path)).toEqual(['site', 'site', 'site', 'push/orders', 'orders/115/payments']);
   });
   it('W6: a 403 rest_forbidden /site is unauthorized', async () => {
-    const { transport } = store({ queue: { site: [json(403, { code: 'rest_forbidden' })] } });
+    const { calls, transport } = store({ queue: { site: [json(403, { code: 'rest_forbidden' })] } });
     expect(await transport.send([order()])).toStrictEqual({ kind: 'unauthorized' });
+    expect(calls.map(({ path }) => path)).toEqual(['site']);
   });
   it('W7: a 403 /site with another code stays retry status_403', async () => {
-    const { transport } = store({ queue: { site: [json(403, { code: 'some_waf_block' })] } });
-    expect(await transport.send([order()])).toEqual({ kind: 'retry', reason: 'status_403' });
+    const { calls, transport } = store({ queue: { site: [json(403, { code: 'some_waf_block' })] } });
+    expect(await transport.send([order()])).toStrictEqual({ kind: 'retry', reason: 'status_403' });
+    expect(calls.map(({ path }) => path)).toEqual(['site']);
   });
 });
