@@ -430,7 +430,7 @@ describe('Tender on a reopened order (ADR-090 gate 36)', () => {
     act(() => sale.setTender({ method: 'cash', amountMinor: 500 }));
     const cash = sale.order.payments.find((payment) => !payment.locked && !payment.reopened)!.id;
     expect(disabled('tender-complete')).toBe(true);
-    expect(text('tender-store-holds')).toBe(`The store already holds this sale's payment. Remove the ${money(500)} taken here to finish.`);
+    expect(text('tender-store-holds')).toBe(`The store already holds this sale's payment. Cancel the ${money(500)} taken here to finish.`);
     fireEvent.click(screen.getByTestId(`tender-leg-${cash}-refused-void`));
     expect(sale.order.payments.find((payment) => payment.id === cash)?.status).toBe('voided');
     expect(screen.queryByTestId('tender-store-holds')).toBeNull();

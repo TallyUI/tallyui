@@ -187,7 +187,7 @@ export interface Payment {
   /** Absent means captured; only captured legs count toward paidMinor. */
   status?: PaymentLegStatus;
   // A cash leg taken at Take records the amount applied here, with `tenderedMinor` and `changeMinor`. A leg without
-  // `tenderedMinor` (from `setTender`, an old draft or a reopened order) records the full amount handed over, and finalize nets it.
+  // `tenderedMinor` (from `setTender` or an old draft) records the full amount handed over, and finalize nets it; a reopened leg carries the stored, already netted amount.
   amountMinor: number;
   tenderedMinor?: number;
   changeMinor?: number;

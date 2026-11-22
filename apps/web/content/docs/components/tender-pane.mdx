@@ -32,9 +32,9 @@ While a balance remains, the cashier picks Cash or Card terminal and sets the en
 
 While something is due, Split on the headline shows Split the rest with 2 to 6 equal ways; after a typed amount, the ways divide what is left after this payment. A way sets the plan and the entry is pre-typed with each share. A method tile keeps the share that is due, and pressing Split again clears the plan.
 
-Complete sale is enabled once nothing is due and no leg is in motion, and calls `sale.complete`. Back calls `sale.cancelTender`. The sale's error and its Continue control show as the sale state requires.
+Complete sale is enabled once nothing is due and no leg is in motion, and calls `sale.complete`. Back calls `sale.cancelTender`. When money was taken here, it first opens the cancel-payment view, WCPOS v2's. The view lists each payment: Return cash to the customer (the amount the payment kept, after its change), Void on its method, or Refund from the order for a payment the till cannot void. Keep taking payment closes it. Cancel and void voids the payments it can and returns to the cart; a payment that can only be refunded stays on the sale, which completes at a later checkout or is parked. With nothing to void, the view offers Back instead. The sale's error and its Continue control show as the sale state requires.
 
-A held leg, one taken before the sale was reopened or one the store or a closed register's closure already holds, shows no Cancel payment and no terminal reference input.
+A held leg, one taken before the sale was reopened or one the store or a closed register's closure already holds, shows no Cancel payment and no terminal reference input. On a reopened sale the store already covers, each payment taken here shows Cancel payment when its method can void it, or a Refund line when it cannot, and then the sale can only be parked.
 
 ## Props
 
@@ -45,5 +45,5 @@ A held leg, one taken before the sale was reopened or one the store or a closed 
 | `dispatch` | `(action: TenderAction) => void` | required | The reducer's dispatch; the pane sends method picks, keypad keys, entries and recorded legs |
 | `methods` | `PaymentMethodDescriptor[]` | `defaultPaymentMethods()` | The methods offered: each manual-capture descriptor gets a tile and records its wire method (`cash` or `external`) plus its own id as `methodId`; other capture modes are not shown |
 | `ledger` | `boolean` | `true` | Draws the payments ledger in the pane; pass `false` when Cart's `tenderLedger` shows it in the cart column |
-| `back` | `boolean` | `true` | Draws the Back button (`sale.cancelTender`); pass `false` when the host leaves the tender stage itself, as WCPOS v2's phone checkout does |
+| `back` | `boolean` | `true` | Draws the Back button (`sale.cancelTender`); pass `false` when the host leaves the tender stage itself, as WCPOS v2's phone checkout does; when money was taken here, Back opens the cancel-payment view first |
 | `confirmVoid` | `boolean` | `false` | WCPOS v2's "Cancel this payment?" before a leg is voided: Cancel payment opens a question with the leg's amount ("Return €10.00 cash to the customer" for cash, else "Void €15.00 on Card terminal"), and the leg is voided only on confirm. Default off: Cancel payment voids at once |

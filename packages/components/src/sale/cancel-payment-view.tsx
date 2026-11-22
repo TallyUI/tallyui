@@ -1,0 +1,71 @@
+/**
+ * WCPOS v2's cancel-payment view (use-tender-flow.ts): before anything is voided, each payment taken here is listed as cash to
+ * return, a void on its method, or a refund from the order. ADR-072 d3 (amended 2026-11-22): it ends on the cart, not in
+ * checkout as v2 does, because park() runs only from the cart and a refund-only leg's sale must still be able to park.
+ */
+import type { JSX } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
+import { canVoidLeg, countsTowardPaid, lockedRefundDueMinor, type Order, type useSale } from '@tallyui/pos';
+import { useT } from '../i18n';
+import { heldTillLeg } from './held-leg';
+import { offeredMethods } from './offered-methods';
+import { cancelLine } from './tender-ledger';
+
+type Leg = Order['payments'][number];
+/** tender-pane.tsx's button. */
+const button = 'min-h-11 justify-center rounded-md border border-border bg-card px-4 py-2';
+
+/** The leg's offered descriptor, as TenderLedger's: its own id and its wire method both match. */
+export function legDescriptor(offered: PaymentMethodDescriptor[], leg: Leg): PaymentMethodDescriptor | undefined {
+  return offered.find((method) => method.id === (leg.methodId ?? leg.method) && wireMethodOf(method) === leg.method);
+}
+
+/** TenderLedger's Cancel payment rule: the offered method can void the leg, and the leg is not held. Any other leg is refund-only. */
+export function voidableLeg(order: Order, offered: PaymentMethodDescriptor[], leg: Leg): boolean {
+  const descriptor = legDescriptor(offered, leg);
+  return !!descriptor && canVoidLeg(leg, descriptor) && !heldTillLeg(order, leg);
+}
+
+/** The legs the view lists: taken here, still counting, and not held. */
+export function cancelLegs(order: Order): Leg[] {
+  return order.payments.filter((leg) => countsTowardPaid(leg) && leg.takenAt !== undefined && !heldTillLeg(order, leg));
+}
+
+// Row 501: a net leg (with `tenderedMinor`) returns its `amountMinor`; a leg without `tenderedMinor` is netted as finalize nets it.
+// Known limitation (ADR-072 d3, amended 2026-11-22): a pre-#1214 draft's gross leg, voided later, loses its change record.
+export function cashToReturnMinor(order: Pick<Order, 'payments' | 'changeDueMinor' | 'totalMinor'>, leg: Leg): number {
+  if (leg.tenderedMinor !== undefined) return leg.amountMinor;
+  let change = order.changeDueMinor - Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
+  for (const gross of order.payments.filter(countsTowardPaid).reverse()) {
+    if (gross.method !== 'cash' || gross.tenderedMinor !== undefined) continue;
+    const share = Math.min(change, gross.amountMinor);
+    if (gross.id === leg.id) return leg.amountMinor - share;
+    change -= share;
+  }
+  return leg.amountMinor;
+}
+
+export function CancelPaymentView({ sale, methods, onClose }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; onClose: () => void }): JSX.Element {
+  const formatMoney = useFormatMoney();
+  const t = useT();
+  const { order } = sale;
+  const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
+  const offered = offeredMethods(methods);
+  const legs = cancelLegs(order);
+  const voidable = legs.filter((leg) => voidableLeg(order, offered, leg));
+  // Void the voidable legs in ledger order; a refused void closes the view and the pane shows the sale's error.
+  const confirm = () => { for (const leg of voidable) if (!sale.voidTender(leg.id)) return onClose(); sale.cancelTender(); };
+  return <View testID="tender-cancel-view" className="gap-3">
+    <Text className="text-lg font-semibold text-foreground">{t('pos_checkout.cancel_payment')}</Text>
+    {legs.map((leg) => <Text key={leg.id} testID={`tender-cancel-leg-${leg.id}`} className="text-foreground">{cancelLine(t, money, leg, legDescriptor(offered, leg), voidable.includes(leg), cashToReturnMinor(order, leg))}</Text>)}
+    <Pressable testID="tender-cancel-keep" accessibilityRole="button" onPress={onClose} className="rounded-md bg-primary px-4 py-3">
+      <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.keep_taking_payment')}</Text>
+    </Pressable>
+    {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} className={button}>
+      <Text className="text-center text-destructive">{t('pos_checkout.cancel_and_void')}</Text>
+    </Pressable> : <Pressable testID="tender-cancel-back" accessibilityRole="button" onPress={sale.cancelTender} className={button}>
+      <Text className="text-center text-foreground">{t('common.back')}</Text>
+    </Pressable>}
+  </View>;
+}

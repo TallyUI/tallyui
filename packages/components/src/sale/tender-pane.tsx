@@ -18,7 +18,8 @@ import { useT } from '../i18n';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 import { offeredMethods, tenderOf } from './offered-methods';
 import { heldTillLeg } from './held-leg';
-import { TenderLedger } from './tender-ledger';
+import { CancelPaymentView, cancelLegs, legDescriptor, voidableLeg } from './cancel-payment-view';
+import { cancelLine, TenderLedger } from './tender-ledger';
 import { pickFigure } from './use-tender';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
 import { CreditCardIcon } from '../ui/icon/credit-card-icon';
@@ -35,7 +36,7 @@ export interface TenderPaneProps {
   methods?: PaymentMethodDescriptor[];
   /** Draws the payments ledger in the pane. Pass `false` when the host shows it in the cart column, as v2 does (Cart's `tenderLedger`). Default `true`. */
   ledger?: boolean;
-  /** Draws the Back button (`sale.cancelTender`). Pass `false` when the host leaves the tender stage itself, as v2's phone checkout does. Default `true`. */ back?: boolean;
+  /** Draws the Back button: `sale.cancelTender`, or the cancel-payment view first when money was taken here. Pass `false` when the host leaves the tender stage itself, as v2's phone checkout does. Default `true`. */ back?: boolean;
   /** Passed to the ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`: Cancel payment voids at once. */
   confirmVoid?: boolean;
 }
@@ -65,7 +66,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const t = useT();
   const [reference, setReference] = useState('');
   const [refusal, setRefusal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const balance = order.balanceDueMinor;
+  // Leaving the tender stage ends the cancel-payment view (state adjusted while rendering, so it never outlives the stage).
+  if (stage.kind !== 'tender' && cancelling) setCancelling(false);
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
     if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
@@ -118,7 +122,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their void.
   const refused = tillLegsTheStoreRefuses(order);
-  const refusedMinor = order.payments.filter((leg) => refused.includes(leg.id)).reduce((total, leg) => total + leg.amountMinor, 0);
+  const refusedLegs = order.payments.filter((leg) => refused.includes(leg.id));
+  const refusedMinor = refusedLegs.reduce((total, leg) => total + leg.amountMinor, 0);
+  // A refused leg the till cannot void (held, or refund-only) leaves the sale only able to park (ADR-072 d3, amended 2026-11-22).
+  const kept = refusedLegs.filter((leg) => !voidableLeg(order, offered, leg));
   const canComplete = balance === 0 && !order.payments.some(isInMotion) && refused.length === 0;
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
@@ -138,6 +145,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     setReference('');
     dispatch({ type: 'tender-started', paymentId: id, units: pick === null ? {} : pick.picks });
   }
+
+  if (cancelling) return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
+    <CancelPaymentView sale={sale} methods={methods} onClose={() => setCancelling(false)} />
+  </View>;
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
     <View testID="tender-headline" className="items-center gap-1">
@@ -243,10 +254,13 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     </View> : null}
 
     {refused.length > 0 ? <>
-      <Text testID="tender-store-holds" className="text-foreground">{t('pos_checkout.store_holds_payment', { amount: money(refusedMinor) })}</Text>
-      {refused.filter((id) => !order.payments.some((leg) => leg.id === id && heldTillLeg(order, leg))).map((id) => <Pressable key={id} testID={`tender-leg-${id}-refused-void`} accessibilityRole="button" onPress={() => sale.voidTender(id)} className={button}>
-        <Text className="text-center text-foreground">{t('pos_checkout.cancel_payment')}</Text>
-      </Pressable>)}
+      <Text testID="tender-store-holds" className="text-foreground">{kept.length ? t('pos_checkout.store_holds_park', { amount: money(kept.reduce((total, leg) => total + leg.amountMinor, 0)) })
+        : t('pos_checkout.store_holds_payment', { amount: money(refusedMinor) })}</Text>
+      {refusedLegs.filter((leg) => !heldTillLeg(order, leg)).map((leg) => voidableLeg(order, offered, leg)
+        ? <Pressable key={leg.id} testID={`tender-leg-${leg.id}-refused-void`} accessibilityRole="button" onPress={() => sale.voidTender(leg.id)} className={button}>
+          <Text className="text-center text-foreground">{t('pos_checkout.cancel_payment')}</Text>
+        </Pressable>
+        : <Text key={leg.id} testID={`tender-leg-${leg.id}-refused-refund`} className="text-foreground">{cancelLine(t, money, leg, legDescriptor(offered, leg), false, leg.amountMinor)}</Text>)}
     </> : null}
     <Pressable testID="tender-complete" accessibilityRole="button" disabled={!canComplete} onPress={sale.complete}
       className={cn('rounded-md bg-primary px-4 py-3', !canComplete && 'opacity-50')}>
@@ -259,6 +273,6 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
         <Text className="text-center font-semibold text-primary-foreground">{t('tender.continue')}</Text>
       </Pressable>
     </> : null}
-    {back ? <Pressable accessibilityRole="button" onPress={sale.cancelTender} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable> : null}
+    {back ? <Pressable accessibilityRole="button" onPress={() => (cancelLegs(order).length ? setCancelling(true) : sale.cancelTender())} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable> : null}
   </View>;
 }
