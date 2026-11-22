@@ -1,4 +1,4 @@
-import type { StoreOrder, StoreOrderLine, SyncContext, TallyConnector } from '@tallyui/core';
+import { assertOrderFiltersSupported, type StoreOrder, type StoreOrderLine, type SyncContext, type TallyConnector } from '@tallyui/core';
 import { getVendureOrder, listVendureOrderDetails, type VendureOrder } from './orders';
 
 const nonEmpty = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : undefined);
@@ -71,6 +71,8 @@ export function createVendureOrders(options: { pricesIncludeTax?: boolean; tally
   const pricesIncludeTax = options.pricesIncludeTax === true;
   return {
     async listOrders(context: SyncContext, query = {}) {
+      // Vendure lists no orderFilters yet, so every filter field is refused, never dropped (ListOrdersQuery contract).
+      assertOrderFiltersSupported(query, undefined);
       const page = Math.max(1, wholeNumber(query.page, 1));
       const perPage = Math.max(1, Math.min(100, wholeNumber(query.perPage, 25)));
       const skip = (page - 1) * perPage;
