@@ -972,3 +972,113 @@ describe('shipping tax status as WCPOS meta (Woo 16)', () => {
     expect(line).not.toHaveProperty('meta_data');
   });
 });
+
+// ADR-094 PR B: the fork carries a cash rounding as a tax-none Rounding fee line (22 Nov fork proofs, tax off and on).
+describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
+  const bag = { clientFeeId: 'bag', name: 'Bag', amountMinor: 20, taxStatus: 'taxable' as const, taxMinor: 0 };
+  function rounded(minor: 5 | -5) {
+    const envelope = order();
+    envelope.version = 5;
+    const totalMinor = 3125 + minor;
+    Object.assign(envelope.payload, { subtotalMinor: 3105, totalMinor, cashRoundings: [{ paymentId: 'cash-leg', minor }] });
+    envelope.payload.lines[0].unitPriceMinor = 3105;
+    envelope.payload.fees = [bag];
+    envelope.payload.payments = [{ clientPaymentId: 'cash-leg', method: 'cash', amountMinor: totalMinor, tenderedMinor: 5000, changeMinor: 5000 - totalMinor }];
+    return envelope;
+  }
+  const pushed = (total: string) => response(201, { document: { id: 115, number: '115', total } });
+  const transportWith = (fetch: typeof globalThis.fetch, extra: Parameters<typeof createWooCommandTransport>[0] extends infer O ? Partial<O> : never) =>
+    createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, ...extra });
+  const bodyOf = (fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>, call = 0) => JSON.parse(fetch.mock.calls[call][1]!.body as string);
+
+  it.each([[5, '31.30', '0.05'], [-5, '31.20', '-0.05']] as const)('W3: sends a %i rounding as the last fee line, total %s', async (minor, total, fee) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed(total));
+    const result = await transportWith(fetch, { acceptsCashRounding: true }).send([rounded(minor)]);
+    expect(result).toEqual({ kind: 'results', results: [{ id: order().id, status: 'applied',
+      serverRefs: { orderId: '115', displayId: '115', totalMinor: 3125 + minor } }] });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(bodyOf(fetch).payload.fee_lines).toStrictEqual([
+      { name: 'Bag', total: '0.20', tax_status: 'taxable', tax_class: '' },
+      { name: 'Rounding', total: fee, tax_status: 'none', tax_class: '' },
+    ]);
+  });
+
+  it.each([true, () => true, async () => true])('W3: reads the option %s at push time', async (acceptsCashRounding) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    await transportWith(fetch, { acceptsCashRounding }).send([rounded(5)]);
+    expect(bodyOf(fetch).payload.fee_lines.at(-1)).toStrictEqual({ name: 'Rounding', total: '0.05', tax_status: 'none', tax_class: '' });
+  });
+
+  it('W3b: sends a two-leg split as today, with its payments meta, plus the fee', async () => {
+    const envelope = rounded(5);
+    envelope.payload.payments = [
+      { clientPaymentId: 'cash-leg', method: 'cash', amountMinor: 2000, tenderedMinor: 2000, changeMinor: 0 },
+      { clientPaymentId: 'card-leg', method: 'external', amountMinor: 1130 },
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    const result = await transportWith(fetch, { acceptsCashRounding: true, acceptsPaymentsList: true }).send([envelope]);
+    expect(result).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
+    const { payload } = bodyOf(fetch);
+    expect(payload.payment_method).toBe('pos_cash');
+    expect(payload.meta_data).toEqual([
+      { key: '_woocommerce_pos_uuid', value: envelope.payload.clientOrderId },
+      { key: '_woocommerce_pos_payments', value: JSON.stringify([
+        { method: 'pos_cash', title: 'Cash', amount: '20.00', tendered: '20.00', change: '0.00' },
+        { method: 'pos_card', title: 'Card', amount: '11.30' },
+      ]) },
+    ]);
+    expect(payload.fee_lines.at(-1)).toStrictEqual({ name: 'Rounding', total: '0.05', tax_status: 'none', tax_class: '' });
+  });
+
+  it('W3c: sends the same fee on a prices-inclusive store, with no unsupported_tax_mode', async () => {
+    const envelope = rounded(5);
+    envelope.payload.pricesIncludeTax = true;
+    envelope.payload.fees = [];
+    envelope.payload.lines[0].unitPriceMinor = 3125;
+    const local: WooLocalOrder = { lines: [{ id: envelope.payload.lines[0].clientLineId, netMicros: '2962085300' }] };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    const result = await transportWith(fetch, { acceptsCashRounding: true }).send([envelope], { local: { orders: new Map([[envelope.id, local]]) } });
+    expect(result).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
+    const { payload } = bodyOf(fetch);
+    expect(payload.line_items).toEqual([{ product_id: 80, quantity: 1, subtotal: '29.620853', total: '29.620853' }]);
+    expect(payload.fee_lines).toStrictEqual([{ name: 'Rounding', total: '0.05', tax_status: 'none', tax_class: '' }]);
+  });
+
+  it.each([undefined, false, () => false, async () => false])('W4: refuses a rounded sale with no request when the option is %s', async (acceptsCashRounding) => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    expect(await transportWith(fetch, { acceptsCashRounding }).send([rounded(5)])).toEqual({ kind: 'results', results: [{
+      id: order().id, status: 'rejected', error: { code: 'invalid_payload',
+        message: "This store's WooCommerce connector does not carry cash rounding; complete the sale without it.",
+        data: { storeCode: 'cash_rounding_unsupported' } } }] });
+    expect(fetch).toHaveBeenCalledTimes(0);
+  });
+
+  it('W4: refuses a rounded sale with no request on a WCPOS 2.0 ledger store, even with the option', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    expect(await transportWith(fetch, { acceptsCashRounding: true, ledgerPayments: true }).send([rounded(-5)])).toEqual({ kind: 'results', results: [{
+      id: order().id, status: 'rejected', error: { code: 'invalid_payload',
+        message: 'WooCommerce POS 2.0 does not carry cash rounding; complete the sale without it.',
+        data: { storeCode: 'cash_rounding_unsupported' } } }] });
+    expect(fetch).toHaveBeenCalledTimes(0);
+  });
+
+  // Built at A's head (84e504b8): an unrounded sale's bytes do not move with the option, with or without fees.
+  const head = (fees: boolean) => JSON.stringify({ mutationId: order().id, operation: 'create', collection: 'orders',
+    recordId: order().payload.clientOrderId, baseRevision: null, payload: {
+      status: 'completed', set_paid: true, currency: 'EUR', payment_method: 'pos_cash', payment_method_title: 'Cash',
+      line_items: [{ product_id: 80, quantity: 1, subtotal: '3.00', total: '3.00' }],
+      ...(fees ? { fee_lines: [{ name: 'Bag', total: '0.20', tax_status: 'taxable', tax_class: '' }] } : {}),
+      meta_data: [{ key: '_woocommerce_pos_uuid', value: order().payload.clientOrderId }],
+    } });
+  it.each([[undefined, false], [true, false], [undefined, true], [true, true]])('W5: an unrounded sale with option %s and fees=%s is byte-identical to A', async (acceptsCashRounding, fees) => {
+    const envelope = order();
+    if (fees) {
+      envelope.version = 5;
+      envelope.payload.fees = [bag];
+      envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 320;
+    }
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed(fees ? '3.20' : '3.00'));
+    await transportWith(fetch, { acceptsCashRounding }).send([envelope]);
+    expect(fetch.mock.calls[0][1]!.body).toBe(head(fees));
+  });
+});

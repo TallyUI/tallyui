@@ -62,6 +62,18 @@ export function payloadShapeErrors(payload: unknown): string[] {
     .reduce((sum: bigint, line, index) => sum + (object(line) ? discount(line.discountMinor, `lines[${index}].discountMinor`) : 0n), 0n)
   const orderDiscount = discount(payload.discountMinor, 'discountMinor')
   if (errors.length === 0) check(orderDiscount === lineDiscounts, 'discountMinor', 'the sum of lines[].discountMinor')
+  // ADR-094: signed cash roundings, at any version, at most 16 entries.
+  if (payload.cashRoundings !== undefined) {
+    const entries = payload.cashRoundings
+    check(Array.isArray(entries) && entries.length <= 16, 'cashRoundings', 'an array of at most 16 entries')
+    if (Array.isArray(entries) && entries.length <= 16) for (const [index, entry] of entries.entries()) {
+      const path = `cashRoundings[${index}]`
+      check(object(entry), path, 'an object')
+      if (!object(entry)) continue
+      check(typeof entry.paymentId === 'string' && entry.paymentId.length > 0, `${path}.paymentId`, 'a non-empty string')
+      check(Number.isSafeInteger(entry.minor), `${path}.minor`, 'a safe integer')
+    }
+  }
   if (payload.customer !== undefined && payload.customer !== null) {
     check(object(payload.customer), 'customer', 'an object')
     if (object(payload.customer) && payload.customer.email !== undefined) {

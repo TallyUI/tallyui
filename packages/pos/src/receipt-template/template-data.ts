@@ -82,7 +82,7 @@ export function receiptTemplateData(receipt: ReceiptData, options: ReceiptTempla
     subtotal: money(totals.subtotalMinor),
     lineDiscount: lineDiscountMinor > 0 ? `−${money(lineDiscountMinor)}` : '',
     orderDiscount: receipt.orderDiscountMinor > 0 ? `−${money(receipt.orderDiscountMinor)}` : '',
-    charges: [...receipt.fees, ...receipt.shipping].map((charge) => ({
+    charges: [...receipt.fees, ...receipt.shipping, ...(receipt.rounding ? [receipt.rounding] : [])].map((charge) => ({
       label: charge.name, amount: money(charge.amountMinor),
     })),
     taxes: totals.taxLines.map((tax) => ({
