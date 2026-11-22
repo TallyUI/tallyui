@@ -15,6 +15,7 @@ describe('pageLastModified', () => {
     expect(pageLastModified(file)).toBe(date);
   });
 
+  // It shells out to git log once per docs page; under full-suite load that has passed 5000 ms (row 495).
   it('dates the home page and every docs page, not all on one date', () => {
     const files = [
       'apps/web/src/app/(home)/page.tsx',
@@ -26,5 +27,5 @@ describe('pageLastModified', () => {
 
     expect(result).not.toContain(undefined);
     expect(new Set(result).size).toBeGreaterThan(1);
-  });
+  }, 30000);
 });
