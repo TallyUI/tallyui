@@ -4876,6 +4876,7 @@ interface OrderCreatePayload {
       - **Amended 2026-11-19 (Front desk):** a draft with a live or captured leg keeps its parked coupon amounts on resume, as it keeps its parked prices; no re-price until the legs are voided, after which the normal automatic re-price applies. A reopened draft whose legs are all locked re-prices on resume as before.
       - **Amended 2026-11-22 (Front desk):** the draft's lines keep their parked tax rates, under every granularity (fees and shipping: row 497).
       - Built 2026-11-22 (row 497): `restoreOrderDraft` holds the parked tax lines of Woo lines, and of fees and shipping in every granularity, and the hold ends when no parked leg is still captured or in motion: the next build then re-derives today's rates. A fresh Woo coupon replay (`woocommerceCouponReplay`) over a held line keeps the line's parked rate (pinned under exclusive prices); the coupon's own figures, its tax split under inclusive prices included, are a separate row.
+      - Built 2026-11-22 (row 498): a Woo coupon replayed over a held line re-prices at that line's parked rates (rates keyed per line in woocommerceCouponReplay), so in an inclusive store the total, and in every store the coupon's discount tax, hold under taken money.
     - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
       `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
       exactly as before.
