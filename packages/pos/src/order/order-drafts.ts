@@ -2,7 +2,7 @@ import { map, type Observable } from 'rxjs';
 import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
-import { capturedMinor } from '../tender/payment-legs';
+import { capturedMinor, countsTowardPaid, isInMotion } from '../tender/payment-legs';
 import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import { isTakenAt } from './taken-at';
 import type { Order } from './types';
@@ -60,17 +60,26 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
 }
 
 /**
- * Rebuilds a saved order on `taxContext`. Fees and shipping re-derive their rates; under woo granularity lines re-derive
- * from their class too. Outside woo, a line marked taxFromClass re-derives from its class unless `keepTaxRates` is set;
- * every other line (given rates, a draft from before the marker) keeps its stored rates. `keepCoupons` puts the saved
+ * Rebuilds a saved order on `taxContext`. Outside woo, a line marked taxFromClass re-derives from its class unless
+ * `keepTaxRates` is set; every other line (given rates, a draft from before the marker) keeps its stored rates. Fees and
+ * shipping, and under woo lines too, re-derive today's rates, except with `keepTaxRates` (row 497): then they hold their
+ * parked tax lines (under woo, only those with every rate id) while a parked leg is captured or moving, and a void or
+ * failed leg ends the hold at the next build. Granularity must match the draft's. `keepCoupons` puts the saved
  * coupons back as parked, figures and all, while an unlocked leg is live (ADR-077 d3, amended 2026-11-19); otherwise none.
  * Carried coupons always restore their priced amounts against the saved basis, keeping stale figures stale.
  */
 export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean; keepCoupons?: boolean }): OrderBuilder {
   const { currency, taxContext } = options;
+  const wooNow = taxContext.rounding?.granularity === 'woocommerce' && !!taxContext.getTaxRates;
+  const items = [...saved.lineItems, ...saved.fees ?? [], ...saved.shipping ?? []];
+  const heldRates = options.keepTaxRates && wooNow === (saved.taxRounding?.granularity === 'woocommerce') ? {
+    legIds: (saved.payments ?? []).filter((p) => countsTowardPaid(p) || isInMotion(p)).map((p) => p.id),
+    taxLines: new Map(items.filter((i) => !wooNow || i.taxLines.every((t) => t.rateId !== undefined)).map((i) => [i.id, i.taxLines])),
+  } : undefined;
   const builder = createOrderBuilder({
     currency,
     taxContext,
+    ...(heldRates ? { heldRates } : {}),
     id: saved.id,
     ...(saved.createdAt ? { createdAt: saved.createdAt } : {}), // #742: with every id below (fees and shipping replay whole)
     ...(saved.storeOrder !== undefined ? { storeOrder: saved.storeOrder } : {}),
@@ -86,6 +95,26 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     builder.setNote(saved.note);
   }
   if (saved.meta?.length) builder.setMeta(saved.meta);
+
+  // Payments come first so that a held paid draft's lines are held when they are added (row 497).
+  // Restore payments
+  for (const payment of saved.payments) {
+    builder.addPayment({
+      id: payment.id,
+      method: payment.method,
+      amountMinor: payment.amountMinor,
+      tenderedMinor: payment.tenderedMinor,
+      changeMinor: payment.changeMinor,
+      reference: payment.reference,
+      ...(payment.status !== undefined ? { status: payment.status } : {}),
+      ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
+      ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
+      ...(payment.reopened !== undefined ? { reopened: payment.reopened } : {}),
+      ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
+      ...(payment.units !== undefined ? { units: payment.units } : {}),
+      ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
+    });
+  }
 
   // Restore line items and their discounts
   for (const line of saved.lineItems) {
@@ -136,24 +165,6 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
   }
 
   // Coupons are re-applied by the sale with fresh coupon data (ADR-077 d3), except carried coupons and keepCoupons below.
-  // Restore payments
-  for (const payment of saved.payments) {
-    builder.addPayment({
-      id: payment.id,
-      method: payment.method,
-      amountMinor: payment.amountMinor,
-      tenderedMinor: payment.tenderedMinor,
-      changeMinor: payment.changeMinor,
-      reference: payment.reference,
-      ...(payment.status !== undefined ? { status: payment.status } : {}),
-      ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
-      ...(payment.locked !== undefined ? { locked: payment.locked } : {}),
-      ...(payment.reopened !== undefined ? { reopened: payment.reopened } : {}),
-      ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
-      ...(payment.units !== undefined ? { units: payment.units } : {}),
-      ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
-    });
-  }
   if (saved.coupons?.some((c) => c.carried) && !saved.coupons.every((c) => c.carried)) throw new Error('restoreOrderDraft: a draft cannot mix carried and redeemable coupons');
   if (saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried)) {
     builder.setCoupons(saved.coupons.map((c) => c.code), { kind: 'store-priced', carried: true,
