@@ -25,6 +25,8 @@ function fakeDevice(options: FakeOptions = {}) {
     }),
   );
   const configuration = { interfaces };
+  const owns = (endpointNumber: number) => ({ alternate }: (typeof interfaces)[number]) =>
+    alternate.endpoints.some((endpoint) => endpoint.endpointNumber === endpointNumber && endpoint.direction === 'out');
   const device = {
     productName: 'Counter printer',
     opened: options.opened ?? false,
@@ -48,13 +50,14 @@ function fakeDevice(options: FakeOptions = {}) {
     async clearHalt(direction: 'in' | 'out', endpointNumber: number) {
       calls.push(`clearHalt(${direction},${endpointNumber})`);
       if (!device.opened) throw new Error('InvalidStateError');
+      const claimedOwner = device.configuration?.interfaces.some((usbInterface) => usbInterface.claimed && owns(endpointNumber)(usbInterface));
+      if (!claimedOwner) throw new Error('InvalidStateError');
       if (options.clearHaltError) throw options.clearHaltError;
       if (direction === 'out') halted.delete(endpointNumber);
     },
     async transferOut(endpointNumber: number, data: Uint8Array<ArrayBuffer>) {
       calls.push(`transferOut(${endpointNumber})`);
-      const owns = ({ alternate }: (typeof interfaces)[number]) => alternate.endpoints.some((endpoint) => endpoint.endpointNumber === endpointNumber && endpoint.direction === 'out');
-      const owner = device.configuration?.interfaces.find(owns);
+      const owner = device.configuration?.interfaces.find(owns(endpointNumber));
       if (!device.opened || !owner?.claimed) throw new Error('InvalidStateError');
       if (halted.has(endpointNumber)) return { status: 'stall' as const, bytesWritten: 0 };
       transfers.push(data.slice());
@@ -192,5 +195,13 @@ describe('createWebUsbSink', () => {
     });
     await createWebUsbSink({ device, chunkSize: 4 }).write(bytesOf(10));
     expect(calls).toEqual(['open', 'selectConfiguration(1)', 'claimInterface(1)', 'transferOut(3)', 'transferOut(3)', 'transferOut(3)']);
+  });
+
+  it('U14: a babbled transfer fails without clearing a halt', async () => {
+    const { device, calls } = fakeDevice({ statuses: ['babble'] });
+    const error = await rejection(createWebUsbSink({ device }).write(new Uint8Array([1])));
+    expect(error.code).toBe('failed');
+    expect(error.message).toContain('babble');
+    expect(calls.filter((call) => call.startsWith('clearHalt'))).toEqual([]);
   });
 });
