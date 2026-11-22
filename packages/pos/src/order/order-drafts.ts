@@ -63,8 +63,8 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
  * Rebuilds a saved order on `taxContext`. Outside woo, a line marked taxFromClass re-derives from its class unless
  * `keepTaxRates` is set; every other line (given rates, a draft from before the marker) keeps its stored rates. Fees and
  * shipping, and under woo lines too, re-derive today's rates, except with `keepTaxRates` (row 497): then they hold their
- * parked tax lines (under woo, only those with every rate id) while a parked leg is captured or moving, and a void or
- * failed leg ends the hold at the next build. Granularity must match the draft's. `keepCoupons` puts the saved
+ * parked tax lines (under woo, only those with every rate id), and the hold ends at the next build once no parked leg
+ * is still captured or in motion. Granularity must match the draft's. `keepCoupons` puts the saved
  * coupons back as parked, figures and all, while an unlocked leg is live (ADR-077 d3, amended 2026-11-19); otherwise none.
  * Carried coupons always restore their priced amounts against the saved basis, keeping stale figures stale.
  */

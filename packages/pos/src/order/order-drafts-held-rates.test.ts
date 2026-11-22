@@ -18,7 +18,7 @@ const woo = (rates: WooRate[], pricesIncludeTax = false): TaxContext => ({
 const at = (ratePpm: number): TaxContext => ({ pricesIncludeTax: false, getTaxRatePpm: (taxClass) => taxClass === 'reduced' ? ratePpm : 0 });
 const captured = { method: 'cash', amountMinor: 500, reference: 'Cash', status: 'captured' } as const;
 
-function park(taxContext: TaxContext, paid: boolean, extra: { locked?: true } = {}, amounts = [1000, 500, 300]): Order {
+function park(taxContext: TaxContext, paid: boolean, extra: Partial<Pick<Payment, 'locked' | 'method' | 'reference' | 'status'>> = {}, amounts = [1000, 500, 300]): Order {
   const builder = createOrderBuilder({ currency: 'EUR', taxContext });
   builder.addLine({ productId: 'p1', name: 'Tea', taxClass: 'reduced', unitPrice: { amount: amounts[0], currency: 'EUR' }, quantity: 2 });
   builder.addFee({ name: 'Fee', amountMinor: amounts[1], taxClass: 'reduced' });
@@ -83,6 +83,27 @@ describe('restoreOrderDraft holds a paid draft\'s parked rates (row 497)', () =>
     expect(saved.payments[0].locked).toBe(true);
     const restored = restoreOrderDraft(saved, { currency: 'EUR', taxContext: woo([rate(1, '20.0000')]), keepTaxRates: true }).getSnapshot();
     expect(rates(restored)).toEqual([[100000], [100000], [100000]]);
+  });
+
+  it('H10: a void\'s release is not undone by a new leg', () => {
+    const builder = restoreOrderDraft(park(woo([rate(1, '10.0000')]), true), { currency: 'EUR', taxContext: woo([rate(1, '20.0000')]), keepTaxRates: true });
+    voidLeg(builder);
+    // The new leg is in motion with a fresh id, so it is not one of the parked legs the hold was kept for.
+    builder.addPayment({ method: 'card', amountMinor: 100, reference: 'Card', status: 'pending' });
+    const after = builder.getSnapshot();
+    expect(rates(after)).toEqual([[200000], [200000], [200000]]);
+    const unpaid = restoreOrderDraft(park(woo([rate(1, '10.0000')]), false), { currency: 'EUR', taxContext: woo([rate(1, '20.0000')]) }).getSnapshot();
+    expect(figures(after)).toEqual(figures(unpaid));
+  });
+
+  it('H11: an in-motion parked leg holds, and its failure ends the hold', () => {
+    const saved = park(woo([rate(1, '10.0000')]), true, { method: 'card', reference: 'Card', status: 'authorized' });
+    expect(saved.payments.map((p) => p.status)).toEqual(['authorized']);
+    // As use-sale.ts resume does for a keepCoupons draft: keepTaxRates is `keep || captured`, so true with no captured leg.
+    const builder = restoreOrderDraft(saved, { currency: 'EUR', taxContext: woo([rate(1, '20.0000')]), keepTaxRates: true });
+    expect(rates(builder.getSnapshot())).toEqual([[100000], [100000], [100000]]);
+    expect(builder.setPaymentStatus(builder.getSnapshot().payments[0].id, 'failed')).toBe(true);
+    expect(rates(builder.getSnapshot())).toEqual([[200000], [200000], [200000]]);
   });
 
   // couponContext copied from woocommerce-coupons.test.ts:28, with only the 'ten' coupon.
