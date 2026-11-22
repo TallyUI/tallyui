@@ -1,5 +1,22 @@
 # @tallyui/pos
 
+## 4.2.0
+
+### Minor Changes
+
+- 3ea4653: `createWebBluetoothSink({ device })` writes ESC/POS bytes to a BLE receipt printer over Web Bluetooth, through `createEscPosTransport`. The app supplies the `BluetoothDevice` from `navigator.bluetooth.requestDevice`, listing `BLUETOOTH_PRINT_SERVICES` in `optionalServices`, and decides when to disconnect; the sink connects if needed, finds the first known print service whose characteristic takes writes, and writes 20-byte chunks 20 ms apart, the last with response, then gives the printer 300 ms before resolving. No dependency is added.
+- 2715c1a: `createWebUsbSink({ device })` writes ESC/POS bytes to a USB receipt printer over WebUSB, through `createEscPosTransport`. The app supplies the `USBDevice` from `navigator.usb.requestDevice` (which needs a user gesture) and keeps it between jobs; the sink opens it, selects configuration 1 if none is set, claims the first printer-class interface with a bulk OUT endpoint, or else the first interface with one, and writes in 4096-byte transfers; a stalled transfer tries to clear the endpoint's halt so the next job can print. No dependency is added.
+- e546a27: `@tallyui/pos` exports `taxedLinesFor`, which gives each line and charge the tax mode its tax was rounded in before `taxLinesByRate` splits tax by rate.
+- f3f85f7: A payment leg records `takenAt`, the instant the leg was captured, and keeps it through park, resume, reopen and the stored order. A leg added captured gets it at once; a pending or authorized leg gets it on capture; the pre-filled tender gets it at `complete()`. A value that is not an ISO instant is dropped, never the payment. `OrderBuilder.setPaymentStatus` takes an optional `takenAt`, set only on a move to captured. `pos_orders` moves to version 20 (identity migration, opened through `addPosOrderCollection`); like every pos_orders bump it is one-way.
+- 61dbe03: `useStoreOrdersInRange` reads every store order in a range page by page, with WCPOS v2's download progress; nothing is stored.
+
+### Patch Changes
+
+- ca99ab3: `createEscPosTransport` passes a sink's `PrintError` on unchanged, so a printer the WebUSB or Web Bluetooth sink cannot print to fails its job with code `unsupported` instead of `failed`.
+- 99d6063: `useStoreOrdersInRange` ends a read with an error when a page says there is more but adds no new order and no unreadable one, so a store that keeps repeating a page stops, unless that page reports unreadable orders.
+- faa5656: `useStoreOrdersInRange` stops a read whose `hasMore` page adds no new order even when that page reports unreadable orders, and counts unreadable orders only from the first page and from later pages that add a new order, so a store repeating such a page no longer pages forever.
+  - @tallyui/core@4.2.0
+
 ## 4.1.0
 
 ### Patch Changes

@@ -1,5 +1,34 @@
 # @tallyui/components
 
+## 4.2.0
+
+### Minor Changes
+
+- c93d08c: ChargeForm: `sku` adds WCPOS v2's "+ SKU" row to the custom item, and `onApply` carries the SKU.
+- d49555b: PickStepper: WCPOS v2's per-unit pay-by-item stepper, the one Cart draws while it has a `picker`, is exported for apps that build their own cart on CartPanel and CartLine.
+- 24abeb8: ProductTable takes `variationsButton`: a variable product's row shows v2's '{count} variations' button under the name, which expands its variants and never selects the row. Catalogue passes it as `tableRow.variationsButton`. Off by default.
+- 90b8ce0: ReceiptEmailForm: WCPOS v2's receipt email form, the one ReceiptSheet draws, is exported for apps that draw the receipt inline; it shows "Email sent" or "Receipt email queued" itself after a send.
+- 2c77798: The payments ledger shows each payment's time (`takenAt`) and `Paid in full · {time}` once the sale is paid, as WCPOS v2 does.
+- cae5320: ProductVariantPicker: `VariantOption.dimmed` draws values that no variant takes as faded but pressable.
+
+### Patch Changes
+
+- 02feb90: `ReceiptSheetEmail.onSend`'s doc comment says what the form shows after a send, instead of saying the form closes.
+- f0a8c08: The receipt email form shows "Could not send the receipt." when `onSend` returns an empty string or fails with an empty message, instead of showing nothing.
+- beb6a55: SyncStatus says "The online store didn't say which POS plugin version it runs." under the sending or retry line when that is why sales wait.
+- Updated dependencies [ca99ab3]
+- Updated dependencies [3ea4653]
+- Updated dependencies [2715c1a]
+- Updated dependencies [e546a27]
+- Updated dependencies [f3f85f7]
+- Updated dependencies [61dbe03]
+- Updated dependencies [99d6063]
+- Updated dependencies [faa5656]
+  - @tallyui/pos@4.2.0
+  - @tallyui/core@4.2.0
+  - @tallyui/primitives@4.2.0
+  - @tallyui/theme@4.2.0
+
 ## 4.1.0
 
 ### Minor Changes

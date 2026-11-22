@@ -1,5 +1,13 @@
 # @tallyui/connector-woocommerce
 
+## 4.2.0
+
+### Patch Changes
+
+- 4985b75: The command transport now retries an unreadable `/site` with what the store answered: `status_404` when the WCPOS plugin is missing (so the till's "couldn't find the plugin" notice shows again), `status_<n>` for other errors, `network` or `timeout` with no answer. Only a 2xx without a readable `wcpos_version` stays `store_version_unknown`.
+- 07babf0: A `/site` read answered 401, or 403 `rest_forbidden`, now returns `unauthorized`, as the register transport does, so a till that restarts with an expired token asks for sign-in instead of retrying forever.
+  - @tallyui/core@4.2.0
+
 ## 4.1.0
 
 ### Patch Changes
