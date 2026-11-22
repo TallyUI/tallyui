@@ -16,7 +16,7 @@ export type StoreOrdersRangeQuery = Omit<ListOrdersQuery, 'page' | 'perPage'>;
 
 /** The most `ListOrdersQuery.perPage` allows. */
 const PER_PAGE = 100;
-/** The error a read ends with when a page says `hasMore: true` but adds no new order and no unreadable one. */
+/** The error a read ends with when a page says `hasMore: true` but adds no new order id. */
 const STALLED = 'listOrders answered hasMore: true with a page that added no new order';
 
 type Read = {
@@ -60,11 +60,12 @@ async function readPages(
  * - `progress` is `{ downloaded, total }` while pages are fetched: `{ downloaded: 0, total: null }` until the first
  *   page lands, then `total` is that page's `total` (`null` when the store gives no count) and stays fixed for the
  *   read. `downloaded` is always `orders.length + unreadable`.
- * - Orders are deduplicated by id as pages land; the first copy stays. `unreadable` sums the pages' `unreadable`.
+ * - Orders are deduplicated by id as pages land; the first copy stays. `unreadable` sums the `unreadable` of the first
+ *   page and of each later page that adds a new order id; a later page that adds none adds nothing to it.
  * - A page with `hasMore: false` finishes: `complete: true`, `progress: null`, `orders` in `listOrders`' own order.
  * - A rejection stops the read: `error` is what was thrown, `progress` is `null`, the orders read so far stay.
- * - A page with `hasMore: true` that adds no new order and no unreadable one also stops the read, with an `Error`, so
- *   a store that keeps repeating a page stops, unless that page reports unreadable orders.
+ * - A page with `hasMore: true` that adds no new order id also stops the read, with an `Error`, even when it reports
+ *   unreadable orders, so a store that keeps repeating a page stops.
  * - A `query` that differs by value, or a new `connector` or `context`, abandons the read and starts again from
  *   page 1, showing none of the old orders; an equal new object changes nothing. Unmounting abandons the read.
  *   So keep `connector` and `context` the same objects across renders: a new object each render restarts the read on
@@ -96,11 +97,11 @@ export function useStoreOrdersInRange(
         seen.add(order.id);
         return true;
       });
-      if (page.hasMore && fresh.length === 0 && !page.unreadable) throw new Error(STALLED);
+      if (page.hasMore && fresh.length === 0) throw new Error(STALLED);
       publish({
         ...current,
         orders: [...current.orders, ...fresh],
-        unreadable: current.unreadable + (page.unreadable ?? 0),
+        unreadable: current.unreadable + (first || fresh.length > 0 ? (page.unreadable ?? 0) : 0),
         total: first ? (page.total ?? null) : current.total,
         status: page.hasMore ? 'reading' : 'complete',
       });

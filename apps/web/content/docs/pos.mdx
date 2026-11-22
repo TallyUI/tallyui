@@ -337,7 +337,7 @@ function OrdersToday() {
 }
 ```
 
-Keep `connector` and `context` the same objects across renders, from state, a ref or `useMemo`: a new object restarts the read. A page that says there is more but adds no new order and no unreadable one ends the read with an error, so a store that keeps repeating a page stops, unless that page reports unreadable orders.
+Keep `connector` and `context` the same objects across renders, from state, a ref or `useMemo`: a new object restarts the read. A page that says there is more but adds no new order ends the read with an error, even when it reports unreadable orders, so a store that keeps repeating a page stops; unreadable orders on a later page that adds no new order are not counted again.
 
 ## Repositories
 
