@@ -98,3 +98,59 @@ describe('ReceiptSheet with a send that resolves after its form unmounted', () =
     expect(screen.queryByTestId('receipt-email-form')).not.toBeNull();
   });
 });
+
+describe('ReceiptEmailForm with an empty or thrown refusal', () => {
+  const sendOnce = async (onSend: ReceiptSheetEmail['onSend']) => {
+    const onDone = vi.fn();
+    setup({ defaultAddress: 'a@b.co', onSend }, onDone);
+    send();
+    await act(async () => {});
+    return onDone;
+  };
+
+  it('E1: a synchronous empty string shows the default alert and keeps the form', async () => {
+    const onDone = await sendOnce(vi.fn(() => ''));
+    expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(line()).toBeNull();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('E2: a promise of an empty string shows the default alert and keeps the form', async () => {
+    const onDone = await sendOnce(vi.fn(() => Promise.resolve('')));
+    expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(line()).toBeNull();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('E3: a synchronous throw shows its message and keeps the form', async () => {
+    const onDone = await sendOnce(vi.fn(() => { throw new Error('Mail server down'); }));
+    expect(screen.getByRole('alert').textContent).toBe('Mail server down');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(line()).toBeNull();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('E4: a synchronous throw with an empty message shows the default alert', async () => {
+    const onDone = await sendOnce(vi.fn(() => { throw new Error(''); }));
+    expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('E5: a rejection with an empty message shows the default alert', async () => {
+    const onDone = await sendOnce(vi.fn(() => Promise.reject(new Error(''))));
+    expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.');
+    expect(screen.getByTestId('receipt-email-form')).toBeTruthy();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('E6: after an empty refusal a second Send can succeed', async () => {
+    const onDone = await sendOnce(vi.fn().mockReturnValueOnce('').mockReturnValueOnce(null));
+    expect(screen.getByRole('alert').textContent).toBe('Could not send the receipt.');
+    send();
+    await waitFor(() => expect(line()?.textContent).toBe('Email sent'));
+    expect(onDone).toHaveBeenCalledExactlyOnceWith(false);
+  });
+});
