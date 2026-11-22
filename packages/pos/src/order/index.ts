@@ -25,6 +25,7 @@ export type {
   DisplayTotals,
   DisplayLine,
   Payment,
+  CashRounding,
   CustomerSummary,
   PaymentMethod,
 } from './types';

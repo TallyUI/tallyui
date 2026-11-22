@@ -20,6 +20,12 @@ export interface WooCommandTransportOptions {
   /** True when the store passes the coupons gate (`ServerCapabilities.coupons`, ADR-077 R2/R3). Read at push time;
    * absent means closed, so a sale still carrying coupons is refused with `coupon_invalid` and no request is made. */
   acceptsCoupons?: boolean | (() => boolean | Promise<boolean>);
+  /** True when the store carries cash rounding (`ServerCapabilities.cashRounding`, ADR-094): the fork's `order_create_v5` stores
+   * declare it; stock stores do not, as nothing has been proven there. Pass it from `cashRounding` as `acceptsCoupons` is passed
+   * from `coupons`. Read at push time; absent means closed, so a sale carrying `cashRoundings` is refused as `invalid_payload`
+   * with `cash_rounding_unsupported` and no request is made. On a WCPOS 2.0 (ledger) store the transport refuses it whatever
+   * this says. */
+  acceptsCashRounding?: boolean | (() => boolean | Promise<boolean>);
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
    * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
    * it can, `send` retries with what `/site` answered: `network` or `timeout` with no answer, `status_<n>` for a non-2xx
@@ -195,6 +201,8 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     if (typeof total !== 'string') return total;
     fee_lines.push({ name: fee.name, total, tax_status: fee.taxStatus, tax_class: fee.taxClass ?? '' });
   }
+  // ADR-094: a tax-none rounding's total is its signed amount in every tax mode (22 Nov fork proofs), so it never goes through chargeTotal.
+  for (const entry of p.cashRoundings ?? []) fee_lines.push({ name: 'Rounding', total: major(entry.minor), tax_status: 'none', tax_class: '' });
   for (const shipping of p.shipping ?? []) {
     const total = chargeTotal(shipping.amountMinor,
       local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId);
@@ -284,12 +292,21 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
       }
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
+      const cashRounding = batch.some((envelope) => envelope.payload.cashRoundings !== undefined) && await capability(options.acceptsCashRounding);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
         if (envelope.payload.coupons?.length && !coupons) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid',
             message: "This store's WooCommerce POS plugin does not accept coupons (1.9.0 or later is needed). Remove the coupon and complete the sale again.",
             data: { storeCode: 'coupons_unsupported' } } });
+          continue;
+        }
+        // ADR-094: never dropped, which would push a wrong total; nothing is proven on a WCPOS 2.0 (ledger) store.
+        if (envelope.payload.cashRoundings !== undefined && (!cashRounding || ledger)) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: ledger
+            ? 'WooCommerce POS 2.0 does not carry cash rounding; complete the sale without it.'
+            : "This store's WooCommerce connector does not carry cash rounding; complete the sale without it.",
+          data: { storeCode: 'cash_rounding_unsupported' } } });
           continue;
         }
         const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList, ledger });

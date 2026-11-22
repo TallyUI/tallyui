@@ -15,7 +15,7 @@ import { createTaxContext, TaxProvider } from '../tax';
 import { initTenderState } from '../tender';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
-import { COUPONS_REPRICING, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
+import { COUPONS_REPRICING, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -864,5 +864,98 @@ describe('useSale: a held taken payment blocks the empty-sale resets (row 516)',
     act(() => { expect(result.current.openStoreOrder(second)).toBeNull(); });
     expect(result.current.order.id).toBe(second.id);
     expect(result.current.order.lineItems).toHaveLength(1);
+  });
+});
+
+describe('useSale: a resumed pre-4.2 captured leg counts as taken (row 517)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `salepre42${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  /** A draft parked before 4.2: one line and a captured cash leg of 500 with no status and no takenAt, resumed. */
+  async function resumedPre42(overrides: Partial<SaleOptions> = {}) {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }) });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' } });
+    builder.addPayment({ id: 'old-cash', method: 'cash', amountMinor: 500 });
+    const draftId = await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProps} rounding={perOrder}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale({ currency: 'GBP' }, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 6 }, drafts: db.pos_drafts, ...overrides,
+    }), { wrapper: Wrapper });
+    await act(async () => { expect(await hook.result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    expect(hook.result.current.order.payments[0]).toEqual(expect.objectContaining({ id: 'old-cash' }));
+    expect(hook.result.current.order.payments[0]).not.toHaveProperty('takenAt');
+    return hook;
+  }
+
+  it('K1: Back after the leg is voided keeps the voided leg, with no takenAt invented', async () => {
+    const { result } = await resumedPre42();
+    act(() => { result.current.startTender('cash'); });
+    act(() => { expect(result.current.voidTender('old-cash')).toBe(true); });
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ id: 'old-cash', status: 'voided' })]);
+    expect(result.current.order.payments[0]).not.toHaveProperty('takenAt');
+  });
+
+  it('K2: Back after Pay by card keeps exactly the captured leg', async () => {
+    const { result } = await resumedPre42();
+    const [cash] = result.current.order.payments;
+    act(() => { result.current.startTender('external'); });
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([cash]);
+  });
+
+  it('K3: removeTender refuses the leg with PAYMENT_TAKEN', async () => {
+    const { result } = await resumedPre42();
+    act(() => { result.current.removeTender('old-cash'); });
+    expect(result.current.error).toBe(PAYMENT_TAKEN);
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ id: 'old-cash' })]);
+  });
+
+  it('K4: newSale in the cart is refused with SALE_PARTLY_PAID, changing nothing', async () => {
+    const { result } = await resumedPre42();
+    const before = result.current.order;
+    act(() => { result.current.newSale(); });
+    expect(result.current.error).toBe(SALE_PARTLY_PAID);
+    expect(result.current.order).toBe(before);
+  });
+
+  it('K5: complete stores the leg without a takenAt and stamps only the new leg', async () => {
+    const onSaleCompleted = vi.fn(async (order: unknown) => { await db.pos_orders.insert(order); });
+    const { result } = await resumedPre42({ onSaleCompleted });
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    await act(async () => { await result.current.complete(); });
+    expect(result.current.error).toBeNull();
+    type Stored = { payments: Order['payments'] };
+    const rows = (await db.pos_orders.find().exec()).map((doc) => doc.toJSON() as unknown as Stored);
+    expect(rows).toHaveLength(1);
+    const old = rows[0].payments.find((p) => p.method === 'cash'); // finalize gives stored legs new ids (finalize.test.ts:204)
+    expect(old).toBeDefined();
+    expect(old).not.toHaveProperty('takenAt');
+    expect(rows[0].payments.find((p) => p.method === 'external')?.takenAt).toEqual(expect.any(String));
+  });
+
+  it('K6: the hold ends with the sale: a later store order carrying the same unstamped leg does not hold it', async () => {
+    const { result } = await resumedPre42();
+    act(() => { expect(result.current.voidTender('old-cash')).toBe(true); });
+    act(() => { result.current.newSale(); });
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }),
+      storeOrder: { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' } });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', storeLineId: '7', unitPrice: { amount: 1000, currency: 'GBP' } });
+    builder.addPayment({ id: 'old-cash', method: 'cash', amountMinor: 500 }); // unstamped: only resumedTakenIds could hold it
+    act(() => { expect(result.current.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+    act(() => { result.current.startTender('external'); });
+    await settle();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: result.current.order.totalMinor })]);
   });
 });

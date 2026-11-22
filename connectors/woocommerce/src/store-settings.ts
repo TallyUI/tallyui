@@ -214,8 +214,9 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       coupons = false;
     }
     const linesVersion = coupons ? WOO_TAX_ADDRESS_ORDER_CREATE_VERSION : WOO_ORDER_CREATE_VERSION;
+    const fork = capabilities.includes('order_create_v5');
     // The flag decides when present; else stock 2.0.4+ gets 6 (array or not), stock 1.10.20+ with no array gets 7; a failed /status gets 3.
-    const orderCreate = flagged === undefined ? WOO_BASE_ORDER_CREATE_VERSION : capabilities.includes('order_create_v5') ? linesVersion
+    const orderCreate = flagged === undefined ? WOO_BASE_ORDER_CREATE_VERSION : fork ? linesVersion
       : wooOnOrderLines20Line(wcposVersion) ? Math.min(WOO_ORDER_LINES_20_CAP, linesVersion)
       : !flagged && wooOnOrderLinesLine(wcposVersion) ? Math.min(WOO_ORDER_LINES_VERSION_CAP, linesVersion) : WOO_BASE_ORDER_CREATE_VERSION;
     const thresholdMinor = wooThresholdMinor(stores[0].variance_threshold, stores[0].currency);
@@ -226,6 +227,9 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       coupons,
       // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
+      // ADR-094: only the fork's order_create_v5 store was shown to take a tax-none ±0.05 Rounding fee line, tax off and on, exclusive
+      // and inclusive (22 Nov fork proofs). Stock stores declare nothing: their code was read, not tested.
+      ...(fork ? { cashRounding: true } : {}),
       ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
       // WCPOS 2.0's per-store register_sessions setting: the register transport sends to sessions, movements and closures.
       ...(stores[0].register_sessions === true ? { register: 3 } : {}),
