@@ -256,10 +256,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const keptCoupons = useRef<Order['coupons']>(undefined); // the draft's coupons while KEPT placeholders hold; park writes them stale
   const keptLegIds = useRef<readonly string[]>([]); // the kept draft's parked live legs, held while KEPT placeholders hold
   const resumedLegIds = useRef<readonly string[]>([]); // a resumed draft's parked live legs, held until the sale resets (ADR-072 d3, amended 2026-11-22; row 328 F3)
+  // a resumed draft's captured legs with no takenAt (parked before 4.2): taken, with no stamp invented (row 517)
+  const resumedTakenIds = useRef<readonly string[]>([]);
   // An after-close sale's closure counted these legs, and finalize refuses any change to them: they are held like a locked leg.
   function countedLeg(p: { id: string }) { return !!builderNow.current.getSnapshot().afterClose?.payments.some((leg) => leg.id === p.id); }
   function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
-    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || takenLeg(p); }
+    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || taken(p); }
+  function taken(p: Order['payments'][number]) { return takenLeg(p) || resumedTakenIds.current.includes(p.id); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -320,7 +323,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     builderNow.current = next;
     taxNow.current = tax;
     applied.current.clear();
-    keptCoupons.current = undefined; keptLegIds.current = []; resumedLegIds.current = [];
+    keptCoupons.current = undefined; keptLegIds.current = []; resumedLegIds.current = []; resumedTakenIds.current = [];
     appliedWith.current = null;
     generation.current++;
     saleEpoch.current++;
@@ -945,7 +948,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (payment?.locked) return;
       if (locked()) return;
       if (!payment) return;
-      if (takenLeg(payment)) return setError(PAYMENT_TAKEN);
+      if (taken(payment)) return setError(PAYMENT_TAKEN);
       builderNow.current.removePayment(paymentId);
       droppedReferences.current.delete(paymentId);
       clearStaleError();
@@ -984,11 +987,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (snapshot.payments.some(isInMotion)) { setSaving(false); setError(PAYMENT_IN_MOTION); return; }
       if (couponsUnpriced()) { setSaving(false); setError(carriedCoupon() ? COUPON_CARRY_STALE : COUPONS_REPRICING); return; }
       // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
-      // A leg with no takenAt yet (setTender's pre-filled one) was taken now; store and reopened legs keep what they have.
+      // A leg with no takenAt yet (setTender's pre-filled one) was taken now; store, reopened and resumed pre-4.2 legs keep what they have.
       // Only this copy is stamped, never the builder, so a retry (pending.current) keeps this attempt's instant.
       const completedAt = new Date().toISOString();
       const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid)
-        .map((payment) => payment.takenAt === undefined && !payment.locked && !payment.reopened ? { ...payment, takenAt: completedAt } : payment) };
+        .map((payment) => payment.takenAt === undefined && !payment.locked && !payment.reopened && !resumedTakenIds.current.includes(payment.id)
+          ? { ...payment, takenAt: completedAt } : payment) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
         .map((payment) => ({ code: 'payment_reference_dropped' as const, paymentId: payment.id }));
       let posOrder: PosOrder;
@@ -1050,7 +1054,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      */
     newSale() {
       if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current
-        && builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt !== undefined)) return setError(SALE_PARTLY_PAID);
+        && builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p))) return setError(SALE_PARTLY_PAID);
       resetSale();
     },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
@@ -1154,6 +1158,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (builderNow.current === builder) {
         applied.current = kept;
         resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
+        resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
         if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
         generation.current++;
