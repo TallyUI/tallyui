@@ -22,7 +22,7 @@ import { Breadcrumb } from './breadcrumb';
 import { CategoryTile, TileStack } from '../product/category-tile';
 import { useT } from '../i18n';
 import { SearchInput } from '../input';
-import { VStack, IconButton, PlusIcon } from '../ui';
+import { VStack, IconButton, PlusIcon, ChevronDownIcon, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui';
 import { skeletonCount } from '../ui/skeleton';
 import { useMinTarget } from '../scale/min-target';
 import { usePointer } from '../scale/use-pointer';
@@ -278,6 +278,17 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const [chooserId, setChooserId] = useState<string | null>(null);
   // The product ids whose table rows are expanded (local, never saved).
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // An expanded row's option filters (product id to group name to value), dropped when the row collapses.
+  const [variantFilters, setVariantFilters] = useState<Readonly<Record<string, Readonly<Record<string, string>>>>>({});
+  function toggleExpanded(key: string) {
+    const open = !expandedIds.has(key);
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (open) next.add(key); else next.delete(key);
+      return next;
+    });
+    if (!open) setVariantFilters((current) => { const next = { ...current }; delete next[key]; return next; });
+  }
   const [width, setWidth] = useState(0);
   const [loadingHeight, setLoadingHeight] = useState(0);
   const columns = resolveGridColumns(state.gridColumns, width);
@@ -376,9 +387,43 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   function variantRows(product: Doc) {
-    const variants = entries.filter((entry) => traits.getId(entry.product) === traits.getId(product));
+    const id = traits.getId(product);
+    const variants = entries.filter((entry) => traits.getId(entry.product) === id);
     if (variants.length === 0) return <Text className="px-3 py-1.5 text-sm text-muted-foreground">No variants to show.</Text>;
-    return variants.map((entry) => (
+    const picked = variantFilters[id] ?? {};
+    const matching = variants.filter(({ variant }) => Object.entries(picked).every(([group, value]) => variant.options?.[group] === value));
+    const pick = (group: string, value: string) => setVariantFilters((current) => {
+      const next = { ...current[id] };
+      if (value === '') delete next[group]; else next[group] = value;
+      return { ...current, [id]: next };
+    });
+    // v2 variations/filters.tsx: a select per option group, then a chevron that folds the row.
+    const bar = (
+      <View key="filters" testID={`variation-filters-${id}`} className="flex-row items-center gap-2 border-t border-border px-3 py-1">
+        <View className="min-w-0 flex-1 flex-row flex-wrap gap-2">
+          {(traits.getVariantOptions?.(product) ?? []).filter(({ values }) => values.length > 1).map(({ name, values }) => (
+            <Select key={name} value={{ value: picked[name] ?? '', label: picked[name] ? `${name}: ${picked[name]}` : name }}
+              onValueChange={(option) => { if (option) pick(name, option.value); }}>
+              <SelectTrigger testID={`variation-filter-${id}-${name}`} accessibilityLabel={name} className="h-9 w-auto">
+                <SelectValue className="text-sm text-foreground" />
+              </SelectTrigger>
+              <SelectContent>
+                {['', ...values].map((value) => (
+                  <SelectItem key={value} value={value} label={value || name}>
+                    <Text className="text-sm text-popover-foreground">{value || 'All'}</Text>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ))}
+        </View>
+        <IconButton size="sm" testID={`variation-filters-${id}-collapse`} accessibilityLabel="Collapse" onPress={() => toggleExpanded(id)}>
+          <View className="text-muted-foreground" style={{ transform: [{ rotate: '180deg' }] }}><ChevronDownIcon size={18} /></View>
+        </IconButton>
+      </View>
+    );
+    if (matching.length === 0) return [bar, <Text key="none" className="px-3 py-1.5 text-sm text-muted-foreground">No variants match.</Text>];
+    return [bar, ...matching.map((entry) => (
       <View key={entry.variant.id} testID={`variation-row-${entry.variant.id}`} className="flex-row items-center gap-3 border-t border-border px-3 py-1.5">
         <View testID={`variation-row-${entry.variant.id}-chips`} className="min-w-0 flex-1 flex-row flex-wrap gap-1">
           {chipsOf(entry).map((chip, index) => <Text key={index} className="rounded bg-foreground/12 px-1.5 text-xs font-bold text-foreground">{chip}</Text>)}
@@ -391,7 +436,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           </IconButton>
         </View>
       </View>
-    ));
+    ))];
   }
 
   // The variations popover (#719): the one open popover's product id, and each product's current entries in order.
@@ -530,11 +575,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
           showThumbnail={tableRow?.thumbnail} showAddButton={tableRow?.addButton}
           isExpanded={tableRow?.expand ? (doc) => expandedIds.has(traits.getId(doc)) : undefined}
-          onToggleExpand={tableRow?.expand ? (doc) => setExpandedIds((current) => {
-            const key = traits.getId(doc), next = new Set(current);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
-          }) : undefined}
+          onToggleExpand={tableRow?.expand ? (doc) => toggleExpanded(traits.getId(doc)) : undefined}
           renderExpanded={tableRow?.expand ? variantRows : undefined} variationsButton={tableRow?.variationsButton}
           cartQuantity={(doc) => quantities.get(traits.getId(doc)) ?? 0} />
       ) : drillEntries.length > 0 ? <LevelWrap level onBack={() => setDrillId(null)}>

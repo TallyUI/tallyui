@@ -80,3 +80,83 @@ it('V6: variationsButton without a thumbnail shows and expands the variant rows'
   for (const id of ['81', '82', '83']) expect(screen.getByTestId(`variation-row-${id}`)).toBeTruthy();
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+// A Woo shirt: Size {S, M} × Colour {Red, Blue}, one variant per pair.
+const shirt = { id: 90, name: 'Shirt', type: 'variable', status: 'publish', variations: [91, 92, 93, 94], attributes: [
+  { name: 'Size', variation: true, position: 0, options: ['S', 'M'] },
+  { name: 'Colour', variation: true, position: 1, options: ['Red', 'Blue'] },
+], variation_docs: [['S', 'Red'], ['S', 'Blue'], ['M', 'Red'], ['M', 'Blue']].map(([size, colour], index) => ({
+  id: 91 + index, status: 'publish', sku: `SHIRT-${size}-${colour}`, regular_price: '30', stock_status: 'instock',
+  attributes: [{ name: 'Size', option: size }, { name: 'Colour', option: colour }] })) };
+// A cap whose one group has one value: an M and an "Any size".
+const cap = { id: 95, name: 'Cap', type: 'variable', status: 'publish', variations: [96, 97], attributes: [
+  { name: 'Size', variation: true, position: 0, options: ['M'] },
+], variation_docs: [
+  { id: 96, status: 'publish', sku: 'CAP-M', regular_price: '10', stock_status: 'instock', attributes: [{ name: 'Size', option: 'M' }] },
+  { id: 97, status: 'publish', sku: 'CAP', regular_price: '10', stock_status: 'instock', attributes: [] },
+] };
+
+function mountProducts(products: object[]) {
+  const onSelect = vi.fn();
+  render(<Catalogue products={products} traits={wooProductTraits} currency="EUR" onSelect={onSelect} lastSyncedAt={null}
+    defaultViewState={{ view: 'table' }} tableRow={{ thumbnail: true, addButton: true, expand: true }} />, { wrapper });
+  return onSelect;
+}
+const rowIds = () => screen.queryAllByTestId(/^variation-row-\d+$/).map((node) => node.getAttribute('data-testid')!.slice('variation-row-'.length));
+function choose(filter: string, option: string) {
+  press(filter);
+  fireEvent.click(screen.getByRole('option', { name: option }));
+}
+
+it('F1: one select per group narrows the rows, and All clears that filter', () => {
+  mountProducts([shirt]);
+  press('product-row-expand-90');
+  expect(screen.getByTestId('variation-filter-90-Size')).toBeTruthy();
+  expect(screen.getByTestId('variation-filter-90-Colour')).toBeTruthy();
+  expect(screen.queryAllByTestId(/^variation-filter-90-/)).toHaveLength(2);
+  expect(rowIds()).toEqual(['91', '92', '93', '94']);
+  choose('variation-filter-90-Size', 'M');
+  expect(rowIds()).toEqual(['93', '94']);
+  choose('variation-filter-90-Colour', 'Blue');
+  expect(rowIds()).toEqual(['94']);
+  choose('variation-filter-90-Size', 'All');
+  expect(rowIds()).toEqual(['92', '94']);
+});
+
+it('F2: a group with one value draws no select, only the chevron', () => {
+  mountProducts([cap]);
+  press('product-row-expand-95');
+  expect(rowIds()).toEqual(['96', '97']);
+  expect(screen.queryAllByTestId(/^variation-filter-95-/)).toHaveLength(0);
+  expect(within(screen.getByTestId('variation-filters-95')).getByLabelText('Collapse')).toBeTruthy();
+});
+
+it('F3: Collapse folds the row, and expanding again shows every variant', () => {
+  mountProducts([shirt]);
+  press('product-row-expand-90');
+  choose('variation-filter-90-Size', 'M');
+  expect(rowIds()).toEqual(['93', '94']);
+  fireEvent.click(within(screen.getByTestId('variation-filters-90')).getByLabelText('Collapse'));
+  expect(rowIds()).toEqual([]);
+  expect(screen.getByTestId('product-row-expand-90').getAttribute('aria-expanded')).toBe('false');
+  press('product-row-expand-90');
+  expect(rowIds()).toEqual(['91', '92', '93', '94']);
+});
+
+it('F4: filters that match nothing say so, and hidden variants have no +', () => {
+  mountProducts([tee]);
+  press('product-row-expand-80');
+  choose('variation-filter-80-Size', 'S');
+  choose('variation-filter-80-Colour', 'Red');
+  expect(rowIds()).toEqual([]);
+  expect(screen.getByText('No variants match.')).toBeTruthy();
+  for (const id of ['81', '82', '83']) expect(screen.queryByTestId(`variation-row-add-${id}`)).toBeNull();
+});
+
+it("F5: a filtered row's + adds that variant", () => {
+  const onSelect = mountProducts([shirt]);
+  press('product-row-expand-90');
+  choose('variation-filter-90-Colour', 'Blue');
+  press('variation-row-add-94');
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product: shirt, variant: variants(shirt)[3] });
+});
