@@ -10,7 +10,7 @@ export { ChargeForm, type ChargeFormProps } from './charge-form';
 export { Catalogue, formatStockSyncTime } from './catalogue';
 export { CatalogueSettingsForm, type CatalogueSettingsFormProps } from './catalogue-settings-form';
 export { Receipt } from './receipt';
-export { ReceiptSheet, type ReceiptSheetEmail, type ReceiptSheetProps, type ReceiptSheetTemplate } from './receipt-sheet';
+export { ReceiptEmailForm, type ReceiptEmailFormProps, ReceiptSheet, type ReceiptSheetEmail, type ReceiptSheetProps, type ReceiptSheetTemplate } from './receipt-sheet';
 export { orderReference } from './order-reference';
 export { injectPrintStyle } from './print-style';
 export { SyncStatus, syncStatusQuiet } from './sync-status';
