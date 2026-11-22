@@ -4,12 +4,16 @@ import { Pressable, Text, View, useWindowDimensions, type ViewProps } from 'reac
 import { cn } from '@tallyui/theme';
 
 export interface SettingsLayoutProps extends Omit<ViewProps, 'children'> {
-  navSlot: ReactNode;
+  /** A function receives closeNav; call it from an item's onPress so a pick shows that section's content on a narrow screen. */
+  navSlot: ReactNode | ((nav: { closeNav: () => void }) => ReactNode);
   contentSlot: ReactNode;
   headerSlot?: ReactNode;
   layout?: 'split' | 'stacked';
   breakpoint?: number;
   className?: string;
+  /** Controls the stacked menu; absent means the layout keeps its own state. */
+  navOpen?: boolean;
+  onNavOpenChange?: (open: boolean) => void;
 }
 
 export function SettingsLayout({
@@ -19,11 +23,19 @@ export function SettingsLayout({
   layout: layoutProp,
   breakpoint = 768,
   className,
+  navOpen,
+  onNavOpenChange,
   ...viewProps
 }: SettingsLayoutProps) {
   const { width } = useWindowDimensions();
   const layout = layoutProp ?? (width >= breakpoint ? 'split' : 'stacked');
-  const [showNav, setShowNav] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const showNav = navOpen ?? innerOpen;
+  const setShowNav = (open: boolean) => {
+    if (navOpen === undefined) setInnerOpen(open);
+    onNavOpenChange?.(open);
+  };
+  const renderNav = (closeNav: () => void) => (typeof navSlot === 'function' ? navSlot({ closeNav }) : navSlot);
 
   return (
     <View className={cn('flex-1 bg-background', className)} {...viewProps}>
@@ -31,14 +43,14 @@ export function SettingsLayout({
 
       {layout === 'split' ? (
         <View className="flex-1 flex-row">
-          <View className="w-64 border-r border-border">{navSlot}</View>
+          <View className="w-64 border-r border-border">{renderNav(() => {})}</View>
           <View className="flex-1">{contentSlot}</View>
         </View>
       ) : (
         <View className="flex-1">
           {showNav ? (
             <View className="flex-1">
-              {navSlot}
+              {renderNav(() => setShowNav(false))}
               <Pressable onPress={() => setShowNav(false)} className="border-t border-border p-3">
                 <Text className="text-center text-sm font-medium text-primary">Done</Text>
               </Pressable>
