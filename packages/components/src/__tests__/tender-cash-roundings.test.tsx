@@ -1,6 +1,6 @@
 // ADR-094: cash rounding is an order field. A cash leg that settles the sale at a rounded due records the
-// signed difference in Order.cashRoundings, counted in totalMinor; a till rounds only against a store that
-// carries the entry (order.create 13). The harness is tender-picks.test.tsx's, with the store's capabilities.
+// signed difference in Order.cashRoundings, counted in totalMinor; a till rounds only against a store whose connector
+// declares the cashRounding capability. The harness is tender-picks.test.tsx's, with the store's capabilities.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
@@ -24,8 +24,9 @@ const card = paymentMethodOf('external');
 const nearest: PaymentRounding = { incrementMinor: 10, mode: 'nearest' };
 const down: PaymentRounding = { incrementMinor: 10, mode: 'down' };
 const rounding = (rule: PaymentRounding): PaymentMethodDescriptor[] => [{ ...cash, defaults: { ...cash.defaults, rounding: rule } }, card];
-const carries: ServerCapabilities = { orderCreate: 13 };
-const before: ServerCapabilities = { orderCreate: 12 };
+const carries: ServerCapabilities = { orderCreate: 12, cashRounding: true };
+/** R13: no flag; R13b: the flag false. Both are BASE byte for byte. */
+const unflagged: [string, ServerCapabilities][] = [['R13', { orderCreate: 12 }], ['R13b', { orderCreate: 12, cashRounding: false }]];
 
 let tender: ReturnType<typeof useTender>;
 function SharedTender({ methods }: { methods?: PaymentMethodDescriptor[] }) {
@@ -46,7 +47,7 @@ function start(quantity = 2, methods?: PaymentMethodDescriptor[], capabilities?:
   act(() => sale.startTender('cash'));
   return id;
 }
-/** R2's sale: one untaxed custom line of 3122 (order.create 5 or above, which both caps give). */
+/** R2's sale: one untaxed custom line of 3122 (order.create 5 or above, which every cap here gives). */
 function startCustom(priceMinor: number, methods: PaymentMethodDescriptor[], capabilities: ServerCapabilities) {
   render(<SaleHarness capabilities={capabilities}>{() => <SharedTender methods={methods} />}</SaleHarness>);
   act(() => { expect(sale.addCustomLine({ name: 'Item', priceMinor, taxStatus: 'none' })).toMatchObject({ id: expect.any(String) }); });
@@ -58,7 +59,7 @@ async function complete(): Promise<PosOrder> {
   if (sale.stage.kind !== 'receipt') throw new Error('no receipt');
   return sale.stage.posOrder;
 }
-/** R1: the 3125 sale taken in cash at the prefill, €31.30, at cap 13. */
+/** R1: the 3125 sale taken in cash at the prefill, €31.30, with the flag. */
 function roundUp() {
   start(2, rounding(nearest), carries);
   expect(text('tender-entry-amount')).toBe(money(3130));
@@ -113,7 +114,7 @@ it('R2: a cash leg that settles at the rounded-down due stores the due and recor
   expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: -2 }]);
   expect(sale.order).toMatchObject({ totalMinor: 3120, balanceDueMinor: 0 });
   const posOrder = await complete();
-  expect(posOrder).toMatchObject({ totalMinor: 3120, paidMinor: 3120, cashRoundings: [{ paymentId: posOrder.payments[0].id, minor: -2 }] });
+  expect(posOrder).toMatchObject({ totalMinor: 3120, payments: [{ amountMinor: 3120 }], cashRoundings: [{ paymentId: posOrder.payments[0].id, minor: -2 }] });
 });
 
 it('R3: a remainder that rounds to zero closes the sale with an entry on the card leg and no new leg', async () => {
@@ -308,7 +309,7 @@ it('R12: the receipt and the customer display show the rounding', async () => {
   expect(document.body.textContent).toContain(`Rounding${formatMoney({ amount: 5, currency: 'EUR' }, 'en-US')}`);
 });
 
-it('R13 up: below order.create 13 the till is BASE byte for byte, rounding up', async () => {
+it.each(unflagged)('%s up: without the cashRounding flag the till is BASE byte for byte, rounding up', async (_name, before) => {
   start(2, rounding(nearest), before);
   expect(text('tender-entry-amount')).toBe(money(3130));
   expect(text('tender-entry-hint')).toBe('');
@@ -323,7 +324,7 @@ it('R13 up: below order.create 13 the till is BASE byte for byte, rounding up', 
   expect('cashRoundings' in posOrder).toBe(false);
 });
 
-it('R13 down: below order.create 13 the till is BASE byte for byte, rounding down', async () => {
+it.each(unflagged)('%s down: without the cashRounding flag the till is BASE byte for byte, rounding down', async (_name, before) => {
   startCustom(3122, rounding(nearest), before);
   expect(text('tender-entry-amount')).toBe(money(3120));
   // The pane's figures, pinned at BASE a00e26c3.
@@ -335,6 +336,6 @@ it('R13 down: below order.create 13 the till is BASE byte for byte, rounding dow
   expect('cashRoundings' in sale.order).toBe(false);
   await act(async () => { await sale.complete(); });
   expect(sale.stage.kind).toBe('tender');
-  // BASE's outcome, as it is (amendment 4: not fixed at cap 12).
+  // BASE's outcome, as it is (amendment 1 item 4: not fixed without the flag).
   expect(sale.error).toBe('finalize: underpaid');
 });

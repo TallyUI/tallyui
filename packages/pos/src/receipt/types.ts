@@ -44,6 +44,8 @@ export interface ReceiptData {
   lineItems: ReceiptLineItem[];
   fees: Array<{ name: string; amountMinor: number }>;
   shipping: Array<{ name: string; amountMinor: number }>;
+  /** ADR-094: the sum of the order's cash roundings, signed; present only when non-zero. Counted in totals.totalMinor. */
+  rounding?: { name: string; amountMinor: number };
   discounts: { label: string; amountMinor: number }[];
   orderDiscountMinor: number;   // the order discounts as one row, in the display mode; + Σ displayDiscounts = totals.discountMinor
   totals: {

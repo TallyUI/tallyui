@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
-import type { CustomerAddress, CustomerTaxId, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, PaymentRounding, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus, takenLeg } from '../tender/payment-legs';
 import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
@@ -11,6 +11,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
+import { roundToIncrement, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -46,6 +47,8 @@ export const SALE_HAS_PAYMENT = 'A payment was taken on this sale. Cancel the pa
 export const PAYMENT_TAKEN = 'This payment was taken. Void it instead of removing it.';
 /** A cash addTender refuses with this when the balance less the legs in motion leaves nothing due (row 500). */
 export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale already cover the total.';
+/** ADR-094: a cash due that rounds to nothing is entered against the last leg counting toward paid; with none, there is nothing to round against. */
+export const NOTHING_TO_ROUND_AGAINST = 'This sale rounds to nothing in cash: take it by another method.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
 export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
@@ -399,7 +402,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
   }, []);
 
-  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }, stamp: boolean): string {
+  function addOne(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; changeMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }, stamp: boolean, rounding?: { minor: number }): string {
     // A terminal reference finalize would refuse is dropped as it's entered, never the payment (the money is
     // taken): the tender applies without it, with a message that doesn't block complete() and a
     // localWarnings entry on the stored order naming the payment whose reference was dropped.
@@ -415,7 +418,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       ...(tender.methodId !== undefined ? { methodId: tender.methodId } : {}), ...(tender.status !== undefined ? { status: tender.status } : {}) } : { ...tender, ...takenAt };
     const builder = builderNow.current;
     const { units, ...payment } = kept;
-    const paymentId = builder.addPayment({ ...payment, ...(units && Object.keys(units).length ? { units } : {}) });
+    const paymentId = builder.addPayment({ ...payment, ...(units && Object.keys(units).length ? { units } : {}) }, rounding);
     if (dropped) {
       droppedReferences.current.add(paymentId);
       setError(`${REFERENCE_DROPPED} (${dropped}); the payment is recorded without it.`);
@@ -855,9 +858,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     },
     setTender,
     /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
-    addTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured' }): string | null {
+    addTender(input: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured'; rounding?: PaymentRounding }): string | null {
+      const { rounding, ...tender } = input;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
-      if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor <= 0) return null;
+      if (rounding && tender.method !== 'cash') return null;
+      // ADR-094: a cash leg is rounded only against a store whose connector declares cashRounding; otherwise, BASE's leg.
+      const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true ? rounding : null;
+      if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor < 0 || (tender.amountMinor === 0 && !rule)) return null;
       if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
       const taxIdsRefused = taxIdsRefusal();
       if (taxIdsRefused) { setError(taxIdsRefused); return null; }
@@ -885,6 +892,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) { setError(NOTHING_DUE); return null; }
+        const dueMinor = rule ? roundToIncrement(due, rule.incrementMinor, rule.mode) : due;
+        if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
+          clearStaleError();
+          if (dueMinor > 0) {
+            return addOne({ ...tender, amountMinor: dueMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - dueMinor }, true, { minor: dueMinor - due });
+          }
+          // A remainder that rounds to zero closes the sale: no leg, its entry goes on the last leg counting toward paid.
+          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
+          if (!against) { setError(NOTHING_TO_ROUND_AGAINST); return null; }
+          builderNow.current.addCashRounding({ paymentId: against.id, minor: -due });
+          return against.id;
+        }
+        if (tender.amountMinor === 0) return null; // only the zero-remainder settle takes nothing
         const amountMinor = Math.min(tender.amountMinor, due);
         clearStaleError();
         return addOne({ ...tender, amountMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - amountMinor }, true);

@@ -89,6 +89,8 @@ export interface ServerCapabilities {
   receiptEmail?: number;
   /** The platform plugin's own contract version, from `/tally/v1/info`'s top-level `pluginContract` (#1114). Absent when not sent or malformed; each connector says what a version adds. */
   pluginContract?: number;
+  /** True only when the store's connector carries order.create's `cashRoundings` (ADR-094). Absent: the till never rounds a cash leg, and finalize refuses an order with entries. */
+  cashRounding?: boolean;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */

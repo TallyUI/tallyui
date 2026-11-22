@@ -67,6 +67,7 @@ export function CustomerDisplayScreen({ state }: { state: DisplayState }) {
         {row(t('subtotal'), money(receipt.totals.subtotalMinor))}
         {receipt.fees.map((charge, index) => row(charge.name, money(charge.amountMinor), `fee-${index}`))}
         {receipt.shipping.map((charge, index) => row(charge.name, money(charge.amountMinor), `shipping-${index}`))}
+        {receipt.rounding ? row(receipt.rounding.name, money(receipt.rounding.amountMinor), 'rounding') : null}
         {receipt.totals.discountMinor > 0 ? row(t('discount'), `-${money(receipt.totals.discountMinor)}`) : null}
         {receipt.totals.taxMinor > 0 ? row(t(receipt.totals.taxInclusive ? 'included_tax' : 'total_tax'), money(receipt.totals.taxMinor)) : null}
         {total}

@@ -86,7 +86,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
-  const entryChange = partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
+  // ADR-094: a cash due rounded to nothing still settles the sale (v2 tender-pane.tsx:1062), where the store's connector declares cashRounding.
+  const zeroDue = sale.capabilities?.cashRounding === true && !partPick && figures.roundedDueMinor === 0 && figures.roundingMinor !== 0;
+  const entryChange = zeroDue ? 0 : partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
@@ -114,6 +116,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
+    : zeroDue ? ''
     : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their void.
@@ -123,7 +126,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = figures.appliedMinor <= 0 || noChange || pickRefused;
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused;
 
   function take() {
     if (!method || pickRefused) return;
@@ -131,12 +134,14 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     // No pick stands (a plan is set, or nothing is picked): the leg carries no units. Otherwise it carries the picks that stand (pickFigure), never the raw ones.
     const units = pick === null ? {} : { units: pick.picks };
     const id = tender.method === 'cash'
-      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}) })
+      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}),
+        ...(!partPick && method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) })
       : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
     setRefusal(false);
     setReference('');
-    dispatch({ type: 'tender-started', paymentId: id, units: pick === null ? {} : pick.picks });
+    // A zero-due settle returns the leg its entry went on, which already holds its own units.
+    dispatch({ type: 'tender-started', paymentId: id, units: pick === null || zeroDue ? {} : pick.picks });
   }
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">

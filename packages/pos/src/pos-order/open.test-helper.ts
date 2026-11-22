@@ -18,7 +18,7 @@ import { posOrderSchema } from './schema';
 import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
-/** The version-20 schema: before cash roundings and order.create 13 (ADR-094). */
+/** The version-20 schema: before cash roundings (ADR-094). */
 export function versionTwenty(): RxJsonSchema<PosOrder> {
   const schema = structuredClone(posOrderSchema);
   delete (schema.properties as Record<string, unknown>).cashRoundings;
