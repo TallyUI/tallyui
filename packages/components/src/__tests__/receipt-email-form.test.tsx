@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { PortalHost } from '@tallyui/primitives';
+import { Text } from 'react-native';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ReceiptEmailForm, type ReceiptEmailFormProps, type ReceiptSheetEmail } from '../sale';
+import { ReceiptEmailForm, ReceiptSheet, type ReceiptEmailFormProps, type ReceiptSheetEmail } from '../sale';
 
 afterEach(cleanup);
 
@@ -64,5 +66,35 @@ describe('ReceiptEmailForm', () => {
     rerender(<ReceiptEmailForm key={1} email={email} />);
     expect(line()).toBeNull();
     expect((screen.getByTestId('receipt-email-address') as HTMLInputElement).value).toBe('jo@shop.co');
+  });
+});
+
+describe('ReceiptSheet with a send that resolves after its form unmounted', () => {
+  const TEMPLATES = [{ id: 'r', title: 'Receipt' }];
+
+  it('P1: sheet closed mid-send, send resolves, reopen: one Email Receipt press opens the form', async () => {
+    let resolve!: (v: null) => void;
+    const props = { templates: TEMPLATES, onPrint: () => {}, onOpenChange: () => {}, email: { defaultAddress: 'a@b.co', onSend: () => new Promise<null>((r) => { resolve = r; }) } };
+    const { rerender } = render(<><ReceiptSheet open {...props}><Text>P</Text></ReceiptSheet><PortalHost /></>);
+    fireEvent.click(screen.getByTestId('receipt-email-button'));
+    send();
+    rerender(<><ReceiptSheet open={false} {...props}><Text>P</Text></ReceiptSheet><PortalHost /></>);
+    await act(async () => { resolve(null); });
+    rerender(<><ReceiptSheet open {...props}><Text>P</Text></ReceiptSheet><PortalHost /></>);
+    expect(line()).toBeNull();
+    fireEvent.click(screen.getByTestId('receipt-email-button'));
+    expect(screen.queryByTestId('receipt-email-form')).not.toBeNull();
+  });
+
+  it('P2: form toggled closed mid-send, send resolves: Email sent shows and one press opens the form', async () => {
+    let resolve!: (v: null) => void;
+    render(<><ReceiptSheet open templates={TEMPLATES} onPrint={() => {}} onOpenChange={() => {}} email={{ defaultAddress: 'a@b.co', onSend: () => new Promise<null>((r) => { resolve = r; }) }}><Text>P</Text></ReceiptSheet><PortalHost /></>);
+    fireEvent.click(screen.getByTestId('receipt-email-button'));
+    send();
+    fireEvent.click(screen.getByTestId('receipt-email-button'));
+    await act(async () => { resolve(null); });
+    expect(line()?.textContent).toBe('Email sent');
+    fireEvent.click(screen.getByTestId('receipt-email-button'));
+    expect(screen.queryByTestId('receipt-email-form')).not.toBeNull();
   });
 });
