@@ -193,9 +193,15 @@ describe('row 501: cashToReturnMinor', () => {
     expect(returned(o, 'c')).toBe(1500);
   });
 
-  it('H6 mixed: a net leg is never netted (1add96ac gives 0)', () => {
+  it('H6 mixed: a net leg is never netted (gross leg walked first)', () => {
     const o = order([{ id: 'c1', method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0, takenAt: at },
       { id: 'gross', method: 'cash', amountMinor: 2000 }], 1500);
+    expect(returned(o, 'c1')).toBe(1000);
+  });
+
+  it('H6b mixed, net leg last: a net leg is never netted (1add96ac gives 0)', () => {
+    const o = order([{ id: 'gross', method: 'cash', amountMinor: 2000 },
+      { id: 'c1', method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0, takenAt: at }], 1500);
     expect(returned(o, 'c1')).toBe(1000);
   });
 
