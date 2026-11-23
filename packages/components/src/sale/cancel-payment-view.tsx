@@ -74,7 +74,7 @@ export function CancelPaymentView({ sale, methods, onClose, beforeVoid }: { sale
   return <View testID="tender-cancel-view" className="gap-3">
     <Text className="text-lg font-semibold text-foreground">{t('pos_checkout.cancel_payment')}</Text>
     {legs.map((leg) => <Text key={leg.id} testID={`tender-cancel-leg-${leg.id}`} className="text-foreground">{cancelLine(t, money, leg, legDescriptor(offered, leg), voidable.includes(leg), cashToReturnMinor(order, leg))}</Text>)}
-    <Pressable testID="tender-cancel-keep" accessibilityRole="button" onPress={onClose} className="rounded-md bg-primary px-4 py-3">
+    <Pressable testID="tender-cancel-keep" accessibilityRole="button" onPress={onClose} disabled={voiding} className={`rounded-md bg-primary px-4 py-3${voiding ? ' opacity-50' : ''}`}>
       <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.keep_taking_payment')}</Text>
     </Pressable>
     {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} disabled={voiding} className={`${button}${voiding ? ' opacity-50' : ''}`}>

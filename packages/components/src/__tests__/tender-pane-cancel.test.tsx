@@ -107,6 +107,19 @@ describe('the cancel-payment view runs beforeVoid (#1260)', () => {
     await settle(undefined);
     await settle(undefined);
   });
+  it('V6 Keep is disabled while the hook is in flight: pressing it voids nothing early and the view stays', async () => {
+    const { hook, settle } = later();
+    const [first, second] = await guarded(hook);
+    const keep = screen.getByTestId('tender-cancel-keep');
+    expect(keep.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { fireEvent.click(keep); });
+    expect(screen.getByTestId('tender-cancel-view')).toBeTruthy();
+    expect([status(first.id), status(second.id)]).toEqual(['captured', 'captured']);
+    expect(hook).toHaveBeenCalledTimes(1);
+    await settle(false);
+    expect([status(first.id), status(second.id)]).toEqual(['captured', 'captured']);
+    expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+  });
 });
 
 describe('the cancel-payment view (row 514)', () => {
