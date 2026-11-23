@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { OrderCreateEnvelope } from '../types'
-import { SUPPORTED_ORDER_CREATE_VERSIONS } from './versions'
+import { SUPPORTED_ORDER_CREATE_VERSIONS, SUPPORTED_REGISTER_VERSIONS } from './versions'
 
 // The type check fails tsc when the envelope's version union grows; the runtime check fails when the constant drifts from it.
 const ENVELOPE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const satisfies readonly OrderCreateEnvelope['version'][]
@@ -14,5 +14,11 @@ describe('SUPPORTED_ORDER_CREATE_VERSIONS', () => {
 
   it('lists versions once, in ascending order', () => {
     expect(SUPPORTED_ORDER_CREATE_VERSIONS).toEqual([...new Set(SUPPORTED_ORDER_CREATE_VERSIONS)].sort((a, b) => a - b))
+  })
+})
+
+describe('SUPPORTED_REGISTER_VERSIONS', () => {
+  it("the till's register versions are 1, 2 and 3 (register-commands.ts)", () => {
+    expect(SUPPORTED_REGISTER_VERSIONS).toEqual([1, 2, 3])
   })
 })

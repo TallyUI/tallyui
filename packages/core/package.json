@@ -55,6 +55,9 @@
     "rxjs": ">=7"
   },
   "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
     "rxdb": {
       "optional": true
     },

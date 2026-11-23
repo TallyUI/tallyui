@@ -5907,6 +5907,10 @@ interface OrderCreatePayload {
        Until then, nothing changes.
      - Core's server-side default, `SUPPORTED_REGISTER_VERSIONS = [1]` (`packages/core/src/server/versions.ts:9`),
        stays. A server adds 3 when it implements it.
+
+       Amended 2026-11-22 (Front desk ruling, 2026-11-22, arch 1a): core's `SUPPORTED_REGISTER_VERSIONS` lists what
+       the till builds, `[1, 2, 3]`, and a test holds it equal to the versions `register-commands.ts` produces. A server
+       still passes its own list.
      - Each platform owns its approval route, its dialog, its credential check and who counts as a manager (Paul,
        2026-10-07). TallyUI only carries the store's opaque proof.
 - **Rejected:**
