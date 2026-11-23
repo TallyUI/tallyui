@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { comparisonRange, daysOf, inRange, marginOf, salesFigures } from './sales-figures';
+import { comparisonRange, daysOf, inRange, marginOf, medianMinor, salesFigures } from './sales-figures';
 import type { DatePreset } from './presets';
 import type { ReportLine, ReportOrder, ReportRefund } from './types';
 
@@ -249,4 +249,11 @@ it('median of an even count is the mean of the two middle totals, rounded', () =
 
 it('no orders: median 0, largest null', () => {
   expect(spread([])).toMatchObject({ medianMinor: 0, largestMinor: null });
+});
+
+it('medianMinor: none is 0, odd is the middle, even rounds the mean', () => {
+  expect(medianMinor([])).toBe(0);
+  expect(medianMinor([900, 100, 500])).toBe(500);
+  expect(medianMinor([100, 400, 201, 900])).toBe(301);
+  expect(medianMinor([1, 2])).toBe(2);
 });

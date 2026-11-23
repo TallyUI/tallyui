@@ -14,6 +14,7 @@
  * string id (not WCPOS's numeric one).
  */
 import { minorUnitDigits } from '@tallyui/core';
+import { closureFigures } from './closure-figures';
 import { ENGLISH_CLOSURE_LABELS } from './document-labels';
 import { minorToDecimal, formatDecimalMoney } from './money';
 import type { Closure, RegisterSession } from './schemas';
@@ -102,7 +103,9 @@ function decimalizeBreakdowns(breakdowns: Values, exponent: number): Values {
       )
     );
   };
-  const openingFloat = breakdowns.opening_float as Values | undefined;
+  // The float's figures through closureFigures; an unknown one stays `null`, as writeClosure writes it.
+  const float = closureFigures({ breakdowns }).openingFloat;
+  const decOrNull = (m: number | undefined) => (m === undefined ? null : minorToDecimal(m, exponent));
   return {
     ...breakdowns,
     ...(breakdowns.payment_methods
@@ -111,11 +114,12 @@ function decimalizeBreakdowns(breakdowns: Values, exponent: number): Values {
     ...(breakdowns.tax_rates
       ? { tax_rates: group('tax_rates', [['net_minor', 'net'], ['tax_minor', 'tax'], ['gross_minor', 'gross']]) }
       : {}),
-    ...(openingFloat
+    ...(breakdowns.opening_float
       ? {
           opening_float: {
-            ...openingFloat, expected: dec(openingFloat.expected_minor), counted: dec(openingFloat.counted_minor),
-            variance: dec(openingFloat.variance_minor),
+            expected_minor: float.expectedMinor ?? null, counted_minor: float.countedMinor ?? null,
+            variance_minor: float.varianceMinor ?? null, expected: decOrNull(float.expectedMinor),
+            counted: decOrNull(float.countedMinor), variance: decOrNull(float.varianceMinor),
           },
         }
       : {}),
@@ -237,7 +241,7 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
           type_label: context.i18n[String(m.type)] ?? m.type,
           voided: !!m.voided_by,
         })),
-        cashiers: ((breakdowns.cashiers ?? []) as (Values | string)[]).map((c) => (typeof c === 'string' ? { id: c, name: c } : c)),
+        cashiers: closureFigures({ breakdowns }).cashiers,
       },
     },
     store: context.store,
