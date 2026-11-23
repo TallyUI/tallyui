@@ -152,4 +152,21 @@ describe('useSale payment takenAt', () => {
       expect(result.current.order.payments.map((payment) => payment.sessionId)).toEqual(['session-a', 'session-b']);
     } finally { cleanup(); await db.remove(); }
   });
+
+  it("S3: complete() stamps the stored order's legs with the tender's session", async () => {
+    const db = await createRxDatabase<{ register_sessions: RegisterSessionCollection }>({
+      name: `completesession${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      await db.addCollections({ register_sessions: registerSessionCreator() });
+      const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
+      const { result } = renderSale({ onSaleCompleted, session: { id: 'session-a', sessions: db.register_sessions } });
+      // setTender's pre-filled leg: no session stamp until complete().
+      act(() => { result.current.startTender('external'); });
+      expect(result.current.order.payments).toEqual([expect.not.objectContaining({ sessionId: expect.anything() })]);
+      await act(async () => { await result.current.complete(); });
+      const posOrder = onSaleCompleted.mock.calls[0][0];
+      expect(posOrder.payments).toHaveLength(1);
+      expect(posOrder.payments.every((p) => p.sessionId === 'session-a')).toBe(true);
+    } finally { cleanup(); await db.remove(); }
+  });
 });
