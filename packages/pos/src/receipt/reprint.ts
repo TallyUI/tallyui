@@ -4,6 +4,7 @@ import { refundDueOf } from '../pos-order/refund-due';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
 import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
+import { receiptRounding } from './build-receipt-data';
 import { carriedRows } from './carried-rows';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
@@ -84,6 +85,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     discounts: display && display.orderDiscountMinor > 0 ? [{ label: 'Order discount', amountMinor: display.orderDiscountMinor }] : [],
     fees: charges(display ? display.fees : order.fees),
     shipping: charges(display ? display.shipping : order.shipping),
+    ...receiptRounding(order),
     orderDiscountMinor: display ? display.orderDiscountMinor : 0,
     totals: display
       ? {

@@ -372,3 +372,27 @@ describe('reprint receipt data from a StoreOrder', () => {
     expect(receipt.fiscal).toMatchObject({ is_reprint: true, reprint_count: 1 });
   });
 });
+
+describe('cash rounding on reprint (ADR-094)', () => {
+  /** A 1.02 sale settled in cash at 1.00: one cash leg with its -2 entry, as cash-roundings.test.ts builds one. */
+  function cashSale(entry?: { minor: number }) {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 102, currency: 'EUR' } });
+    const amountMinor = 102 + (entry?.minor ?? 0);
+    builder.addPayment({ method: 'cash', amountMinor, tenderedMinor: amountMinor, changeMinor: 0 }, entry);
+    return finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
+  }
+
+  it('a reprinted cash-rounded sale keeps its Rounding row', () => {
+    const posOrder = cashSale({ minor: -2 });
+    expect(posOrder).toMatchObject({ totalMinor: 100, cashRoundings: [{ paymentId: posOrder.payments[0].id, minor: -2 }] });
+    const receipt = buildReceiptDataFromPosOrder(posOrder, config);
+    expect(receipt.rounding).toEqual({ name: 'Rounding', amountMinor: -2 });
+    const lines = total(receipt.lineItems.map((line) => ({ amountMinor: line.lineTotalMinor })));
+    expect(lines + total(receipt.fees) + total(receipt.shipping) + receipt.rounding!.amountMinor).toBe(receipt.totals.totalMinor);
+  });
+
+  it("an unrounded sale's reprint has no rounding key", () => {
+    expect(buildReceiptDataFromPosOrder(cashSale(), config)).not.toHaveProperty('rounding');
+  });
+});
