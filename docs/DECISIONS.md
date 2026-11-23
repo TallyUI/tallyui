@@ -5628,7 +5628,8 @@ interface OrderCreatePayload {
     - An `applied` record is final. Submitting it again returns its stored result and sends nothing.
     - A `pending` record is resent only with its own envelope. Any other attempt at that refund is refused with
       `RefundAnswerPendingError`, which carries the record so the app can resend it.
-    - Calls for the same refund and envelope run one at a time in the till's process (one tab, one database), so a concurrent resend never answers over another send of the same envelope (#1290).
+    - Calls for the same refund and envelope run one at a time in the till's process (one tab, one database), so
+      a concurrent resend never answers over another send of the same envelope (#1290).
     - A `rejected` record replays its rejection for the same envelope id. An `unsent` record may be sent again with
       the same envelope. Either one may take a new attempt with a new envelope id (decision 2), which replaces the
       record's attempt.
