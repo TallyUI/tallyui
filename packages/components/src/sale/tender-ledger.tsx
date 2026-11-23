@@ -6,7 +6,7 @@
 import { useState, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { canVoidLeg, countsTowardPaid, legStatus, type PaymentLegStatus, type useSale } from '@tallyui/pos';
+import { canVoidLeg, countsTowardPaid, legStatus, type Payment, type PaymentLegStatus, type useSale } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -24,13 +24,20 @@ const STATUS_TONE: Record<PaymentLegStatus, string> = {
   pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
 };
 
-export function TenderLedger({ sale, methods, closing = false, confirmVoid = false }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
+export function TenderLedger({ sale, methods, closing = false, confirmVoid = false, beforeVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
   /** v2's "Cancel this payment?" before a leg is voided (use-tender-flow.ts cancelOne). Default false: Cancel payment voids at once. */
-  confirmVoid?: boolean }): JSX.Element | null {
+  confirmVoid?: boolean;
+  /**
+   * Runs before Cancel payment voids the leg (a host journalling each void first, as v2's awaited cancelOnePayment); the
+   * void waits for it. Returning `false` or throwing keeps the leg (the host reports its own error). Absent, the void is immediate.
+   */
+  beforeVoid?: (leg: Payment) => boolean | void | Promise<boolean | void> }): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const t = useT();
   /** The id of the leg the one question is about (confirmVoid). */
   const [asking, setAsking] = useState<string | null>(null);
+  /** The ids of the legs whose beforeVoid is in flight: their Cancel payment is disabled, so a double press journals once. */
+  const [voiding, setVoiding] = useState<ReadonlySet<string>>(new Set());
   const { order, stage } = sale;
   if (stage.kind !== 'tender') return null;
 
@@ -51,11 +58,21 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
     ? t('pos_checkout.return_cash', { amount: money(askedLeg.amountMinor) })
     : t('pos_checkout.void_on_method', { amount: money(askedLeg.amountMinor), title: asked.title }) : undefined;
 
+  const cancel = async (leg: Payment) => {
+    if (!beforeVoid) { sale.voidTender(leg.id); return; }
+    setVoiding((ids) => new Set(ids).add(leg.id));
+    let go = false;
+    try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ }
+    setVoiding((ids) => { const next = new Set(ids); next.delete(leg.id); return next; });
+    if (go) sale.voidTender(leg.id);
+  };
+
   const legs = <View testID="tender-ledger" className="gap-1">
     {order.payments.length === 0 ? <Text className="text-muted-foreground">{t('pos_checkout.no_payments_yet')}</Text> : order.payments.map((leg) => {
       const status = legStatus(leg);
       const voided = status === 'voided';
       const descriptor = descriptorOf(leg);
+      const inFlight = voiding.has(leg.id);
       return <View key={leg.id} testID={`tender-leg-${leg.id}`} className="gap-1 border-b border-border py-2">
         <View className="flex-row items-center gap-2">
           <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.methodId ?? leg.method}</Text>
@@ -66,7 +83,8 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
         {leg.takenAt ? <Text testID={`tender-leg-${leg.id}-time`} className="text-sm text-muted-foreground">{shortTime(leg.takenAt)}</Text> : null}
         {leg === firstPending ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.next_leg')}</Text> : null}
         {descriptor && canVoidLeg(leg, descriptor) && !heldTillLeg(order, leg) ? <Pressable testID={`tender-leg-${leg.id}-void`} accessibilityRole="button" accessibilityLabel={t('pos_checkout.cancel_payment')}
-          onPress={() => (confirmVoid ? setAsking(leg.id) : sale.voidTender(leg.id))} className="self-start min-h-11 justify-center px-2">
+          disabled={inFlight} accessibilityState={{ disabled: inFlight }}
+          onPress={() => (confirmVoid ? setAsking(leg.id) : void cancel(leg))} className="self-start min-h-11 justify-center px-2">
           <Text className="text-destructive">{t('pos_checkout.cancel_payment')}</Text>
         </Pressable> : null}
       </View>;
@@ -79,7 +97,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
     {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{paidInFull}</Text> : null}
     {confirmVoid ? <ConfirmDialog testID="tender-leg-void-dialog" tone="destructive" title={t('pos_checkout.cancel_payment_question')} description={question}
       confirmLabel={t('pos_checkout.cancel_payment')} open={asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}
-      onConfirm={() => { if (asking) sale.voidTender(asking); }} /> : null}
+      onConfirm={() => { if (askedLeg) void cancel(askedLeg); }} /> : null}
   </View>;
   if (!closing) return legs;
 
