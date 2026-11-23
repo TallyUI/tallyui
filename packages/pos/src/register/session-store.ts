@@ -582,6 +582,15 @@ export async function writeClosure({
     }
   }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
+  // ADR-094: a bound order's rounding counts as its leg's money does (S3): a till leg, in the session that took it.
+  // A parked or live sale's legs are in the takings, but their rounding is not counted here (lane backlog).
+  const cashRoundingMinor = sum(bound.flatMap((order) => {
+    const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
+    return (order.cashRoundings ?? []).filter((entry) => {
+      const leg = legs.get(entry.paymentId);
+      return leg !== undefined && (leg.sessionId ?? order.sessionId) === session.id;
+    }).map((entry) => entry.minor);
+  }));
   const draft: Closure = {
     id: session.id,
     session_id: session.id,
@@ -623,6 +632,8 @@ export async function writeClosure({
       ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
       // A reopened sale's tax rates are its whole order's, including tax on what was paid earlier in the store (ADR-090 ruling 38).
       ...(bound.some((order) => tillPayments(order.payments).length < order.payments.length) ? { tax_includes_store_paid: true } : {}),
+      // ADR-094: in period_sales_total_minor, in no tax_rates row.
+      ...(cashRoundingMinor !== 0 ? { cash_rounding_minor: cashRoundingMinor } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

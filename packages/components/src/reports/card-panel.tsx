@@ -62,8 +62,10 @@ function panelCells(card: SalesPanelId, figures: SalesFigures, money: (minor: nu
     };
     case 'taxes': return {
       head: ['Rate', 'Net', 'Tax', 'Gross'],
-      rows: figures.taxes.map((row) => [taxLabel(row), row.netMinor === null ? UNKNOWN : money(row.netMinor), money(row.taxMinor),
+      rows: [...figures.taxes.map((row) => [taxLabel(row), row.netMinor === null ? UNKNOWN : money(row.netMinor), money(row.taxMinor),
         row.netMinor === null ? UNKNOWN : money(row.netMinor + row.taxMinor)]),
+        // Rounding is in gross, in no rate's net or tax: each column sums to its total.
+        ...(totals.roundingMinor !== 0 ? [['Rounding', '', '', money(totals.roundingMinor)]] : [])],
       total: ['Total', money(totals.netMinor), money(totals.taxMinor), money(totals.grossMinor)],
     };
   }

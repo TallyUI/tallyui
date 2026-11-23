@@ -15,6 +15,8 @@ export interface Margin {
 export interface SalesTotals {
   grossMinor: number; netMinor: number; taxMinor: number; discountMinor: number;
   refundsMinor: number; embeddedRefundsMinor: number;
+  /** Σ cash roundings in gross; gross = net + tax + rounding (front desk, 22 Nov, Q3). */
+  roundingMinor: number;
   orderCount: number; averageMinor: number; items: number;
   /** v2 ordersSummary: the middle order total, the mean of the two middles for an even count (rounded half up to the minor unit); 0 with no orders. */
   medianMinor?: number;
@@ -124,7 +126,7 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
   const refunds = (input.refunds ?? []).filter((refund) => inRange(refund.at, range, input.timezone));
   const lines = orders.flatMap((order) => order.lines);
   const totals: SalesTotals = {
-    grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0,
+    grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0, roundingMinor: 0,
     orderCount: orders.length, averageMinor: 0,
     items: lines.reduce((sum, line) => sum + (Number.isFinite(line.quantity) ? line.quantity : 0), 0),
     margin: marginOf(lines),
@@ -134,6 +136,7 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
   for (const order of orders) {
     totals.grossMinor += order.totalMinor;
     totals.taxMinor += order.taxMinor;
+    totals.roundingMinor += order.roundingMinor ?? 0;
     totals.discountMinor += order.discountMinor;
     totals.embeddedRefundsMinor += order.refunds.reduce((sum, refund) => sum + Math.abs(refund.amountMinor), 0);
     const point = byDay.get(businessDayOf(order.at, input.timezone))!;
@@ -144,7 +147,7 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
     totals.refundsMinor += Math.abs(refund.amountMinor);
     byDay.get(businessDayOf(refund.at, input.timezone))!.refundsMinor += Math.abs(refund.amountMinor);
   }
-  totals.netMinor = totals.grossMinor - totals.taxMinor;
+  totals.netMinor = totals.grossMinor - totals.taxMinor - totals.roundingMinor;
   totals.averageMinor = orders.length ? Math.round(totals.grossMinor / orders.length) : 0;
   Object.assign(totals, orderSpread(orders.map((order) => order.totalMinor)));
   return { orders, refunds, totals, series };

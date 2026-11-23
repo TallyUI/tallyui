@@ -126,6 +126,7 @@ function decimalizeBreakdowns(breakdowns: Values, exponent: number): Values {
     ...(breakdowns.movements
       ? { movements: (breakdowns.movements as BreakdownMovement[]).map((m) => ({ ...m, amount: dec(m.amountMinor) })) }
       : {}),
+    ...(breakdowns.cash_rounding_minor !== undefined ? { cash_rounding: dec(breakdowns.cash_rounding_minor) } : {}),
   };
 }
 
@@ -218,9 +219,12 @@ function envelope<R extends Values>(row: R, context: ClosureContext, xreport = f
       ...Object.fromEntries(
         ['payment_methods', 'tax_rates', 'movements'].map((key) => [`has_${key}`, Object.keys((breakdowns[key] as Values) ?? {}).length > 0]),
       ),
+      has_cash_rounding: breakdowns.cash_rounding !== undefined,
       ...(breakdowns.tax_rounding_mixed === true ? { tax_rounding_note: TAX_ROUNDING_MIXED_NOTE } : {}),
       ...(breakdowns.tax_includes_store_paid === true ? { tax_store_paid_note: TAX_STORE_PAID_NOTE } : {}),
       ...money(row, ['period_sales_total', 'period_refunds_total', 'perpetual_sales_total', 'perpetual_refunds_total', 'unsynced_total']),
+      ...(breakdowns.cash_rounding !== undefined
+        ? { cash_rounding: money({ name: context.i18n.cash_rounding, amount: breakdowns.cash_rounding }, ['amount']) } : {}),
       opened_at_gmt: row.opened_at,
       opened_by: breakdowns.opened_by ?? null,
       closed_by: row.closed_by ?? null,

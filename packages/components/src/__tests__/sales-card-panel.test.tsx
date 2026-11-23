@@ -125,3 +125,45 @@ describe('SalesCards legends', () => {
     expect(row?.textContent).toContain(money(300));
   });
 });
+
+// ADR-094, front desk 22 Nov Q3: a 10.02 sale at 10% taken as 10.00 in cash. Rounding is in gross, in no rate's net or tax.
+const rounded = figuresOf([order('r', 1000, { taxMinor: 91, roundingMinor: -2,
+  lines: [{ key: 'p-r', name: 'Coffee', quantity: 1, netMinor: 911, taxMinor: 91 }],
+  taxes: [{ ratePpm: 100_000, label: 'GST', taxMinor: 91, netMinor: 911 }] })]);
+/** A shown money cell back to minor units; '' is no amount. */
+const minorOf = (cell: string | null) => {
+  if (cell === '') return 0;
+  for (let minor = -2000; minor <= 2000; minor++) if (money(minor) === cell) return minor;
+  throw new Error(`not a money cell: ${cell}`);
+};
+
+describe('cash rounding in the taxes figures', () => {
+  it('the taxes panel shows a Rounding row for a rounded period and none otherwise', () => {
+    setup('taxes', rounded);
+    expect(cells('detail-panel-row-0')).toEqual(['GST', money(911), money(91), money(1002)]);
+    expect(cells('detail-panel-row-1')).toEqual(['Rounding', '', '', money(-2)]);
+    expect(cells('detail-panel-total')).toEqual(['Total', money(911), money(91), money(1000)]);
+    cleanup();
+    setup('taxes', figuresOf([order('a', 1150, { taxMinor: 150, taxes: [{ ratePpm: 150_000, label: 'GST', taxMinor: 150, netMinor: 1000 }] })]));
+    expect(screen.queryByTestId('detail-panel-row-1')).toBeNull();
+    expect(screen.queryByText('Rounding')).toBeNull();
+  });
+
+  it("the taxes panel's Net, Tax and Rounding add up to its Gross", () => {
+    setup('taxes', rounded);
+    const rows = ['detail-panel-row-0', 'detail-panel-row-1'].map((testID) => cells(testID).slice(1).map(minorOf));
+    const [net, tax, gross] = cells('detail-panel-total').slice(1).map(minorOf);
+    // Each column sums to its total.
+    [net, tax, gross].forEach((total, column) => expect(rows.reduce((sum, row) => sum + row[column], 0)).toBe(total));
+    const rounding = rows[1][2];
+    expect([net, tax, rounding, gross]).toEqual([911, 91, -2, 1000]);
+    expect(net + tax + rounding).toBe(gross);
+    cleanup();
+    // The Taxes card: four stats, Net, Tax, Rounding, Gross, and the shown three add up to the shown Gross.
+    render(<SalesCards figures={rounded} currency="EUR" />);
+    const stats = within(screen.getByTestId('card-taxes')).getAllByText(/^(Net|Tax|Rounding|Gross)$/)
+      .map((label) => [label.textContent, label.nextSibling?.textContent ?? null]);
+    expect(stats).toEqual([['Net', money(911)], ['Tax', money(91)], ['Rounding', money(-2)], ['Gross', money(1000)]]);
+    expect(stats.slice(0, 3).reduce((sum, [, value]) => sum + minorOf(value), 0)).toBe(minorOf(stats[3][1]));
+  });
+});

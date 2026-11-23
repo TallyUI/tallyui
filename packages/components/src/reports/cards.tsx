@@ -194,6 +194,7 @@ export function SalesCards({ figures, currency, onOpenCard, hide }: SalesCardsPr
             <StatGrid stats={[
               { label: 'Net', value: money(totals.netMinor) },
               { label: 'Tax', value: money(totals.taxMinor) },
+              ...(totals.roundingMinor !== 0 ? [{ label: 'Rounding', value: money(totals.roundingMinor) }] : []),
               { label: 'Gross', value: money(totals.grossMinor) },
             ]} />
           </>

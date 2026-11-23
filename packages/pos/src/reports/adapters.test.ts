@@ -247,3 +247,12 @@ describe('payment method ids (condition 4)', () => {
     expect(figures([splitSale()])).toBe(1139);
   });
 });
+
+it('reportOrderFromPosOrder carries roundingMinor only when the order has cash roundings', () => {
+  const { posOrder } = finalizedSale(false);
+  expect(reportOrderFromPosOrder(posOrder)).not.toHaveProperty('roundingMinor');
+  const rounded = { ...posOrder, cashRoundings: [{ paymentId: 'a', minor: 3 }, { paymentId: 'b', minor: -1 }] };
+  expect(reportOrderFromPosOrder(rounded).roundingMinor).toBe(2);
+  const cancelled = { ...posOrder, cashRoundings: [{ paymentId: 'a', minor: 1 }, { paymentId: 'b', minor: -1 }] };
+  expect(reportOrderFromPosOrder(cancelled)).not.toHaveProperty('roundingMinor');
+});
