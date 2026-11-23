@@ -405,4 +405,54 @@ describe('submitOrderRefund', () => {
     await expect(submitOrderRefund({ refunds: broken, transport: { send }, envelope, now })).rejects.toBe(disk);
     expect(send).not.toHaveBeenCalled();
   });
+
+  it.each<{ name: string; firstAnswer: TransportOutcome | Error; resendAnswer: TransportOutcome }>([
+    { name: 'status_409 then unauthorized', firstAnswer: { kind: 'retry', reason: 'status_409' },
+      resendAnswer: { kind: 'unauthorized' } },
+    { name: 'status_409 then refused', firstAnswer: { kind: 'retry', reason: 'status_409' },
+      resendAnswer: { kind: 'refused', status: 403, reason: 'forbidden' } },
+    { name: 'network error then unauthorized', firstAnswer: new Error('network'),
+      resendAnswer: { kind: 'unauthorized' } },
+    { name: 'network error then refused', firstAnswer: new Error('network'),
+      resendAnswer: { kind: 'refused', status: 403, reason: 'forbidden' } },
+  ])('keeps a refund the store may hold pending after $name', async ({ firstAnswer, resendAnswer }) => {
+    if (firstAnswer instanceof Error) send.mockRejectedValueOnce(firstAnswer);
+    else send.mockResolvedValueOnce(firstAnswer);
+    send.mockResolvedValueOnce(resendAnswer)
+      .mockResolvedValueOnce({ kind: 'results', results: [applied] });
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(first.record.status).toBe('pending');
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(second.outcome).toStrictEqual(resendAnswer);
+    expect(second.record).toStrictEqual(first.record);
+    await expect(submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now }))
+      .rejects.toBeInstanceOf(RefundAnswerPendingError);
+    const fourth = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(fourth.record.status).toBe('applied');
+    expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]], [[envelope]]]);
+  });
+
+  it('an unsent refund refused again on resend stays unsent and may take a new envelope', async () => {
+    send.mockResolvedValueOnce({ kind: 'unauthorized' })
+      .mockResolvedValueOnce({ kind: 'refused', status: 403, reason: 'forbidden' })
+      .mockResolvedValueOnce({ kind: 'results', results: [{ ...applied, id: nextEnvelope.id }] });
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(first.record.status).toBe('unsent');
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(second.record.status).toBe('unsent');
+    expect(second.record.error).toStrictEqual({ code: 'refused', message: 'forbidden', data: { status: 403 } });
+    const third = await submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now });
+    expect(third.record.status).toBe('applied');
+    expect(third.record.commandId).toBe(nextEnvelope.id);
+  });
+
+  it('a new envelope that took over a rejected refund and was refused is unsent', async () => {
+    send.mockResolvedValueOnce({ kind: 'results', results: [rejected] })
+      .mockResolvedValueOnce({ kind: 'unauthorized' });
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(first.record.status).toBe('rejected');
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now });
+    expect(second.record.status).toBe('unsent');
+    expect(second.record.commandId).toBe(nextEnvelope.id);
+  });
 });

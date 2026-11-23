@@ -20,6 +20,8 @@ export async function submitOrderRefund({ refunds, transport, envelope, now = ()
   envelope: OrderRefundEnvelope; now?: () => string;
 }): Promise<{ outcome: OrderRefundOutcome; record: PosRefund }> {
   const id = envelope.payload.clientRefundId;
+  // The record may already be held by the store unless this call wrote its pending attempt (#1285).
+  let mayBeHeld = true;
   let doc = await refunds.findOne(id).exec();
   if (!doc) {
     const at = now();
@@ -29,6 +31,7 @@ export async function submitOrderRefund({ refunds, transport, envelope, now = ()
         id, commandId: envelope.id, orderId, sessionId, registerId, envelope,
         status: 'pending', createdAt: at, updatedAt: at,
       });
+      mayBeHeld = false;
     } catch (error) {
       if (!(error instanceof RxError) || error.code !== 'CONFLICT') throw error;
       doc = (await refunds.findOne(id).exec())!;
@@ -50,16 +53,20 @@ export async function submitOrderRefund({ refunds, transport, envelope, now = ()
     }
     if (record.status === 'unsent' && record.commandId === envelope.id) {
       doc = await doc.incrementalModify((stored) => {
+        mayBeHeld = true;
         if (stored.status !== 'unsent' || stored.commandId !== envelope.id) return stored;
         const { error, ...rest } = stored;
+        mayBeHeld = false;
         return { ...rest, status: 'pending', updatedAt: now() };
       });
       record = doc.toJSON() as PosRefund;
       continue;
     }
     doc = await doc.incrementalModify((stored) => {
+      mayBeHeld = true;
       if (stored.status !== 'rejected' && stored.status !== 'unsent') return stored;
       const { result, duplicate, error, ...rest } = stored;
+      mayBeHeld = false;
       return { ...rest, commandId: envelope.id, envelope, status: 'pending', updatedAt: now() };
     });
     record = doc.toJSON() as PosRefund;
@@ -69,7 +76,7 @@ export async function submitOrderRefund({ refunds, transport, envelope, now = ()
   if (outcome.kind !== 'unknown') {
     doc = await doc.incrementalModify((stored) => {
       if (stored.status !== 'pending' || stored.commandId !== envelope.id) return stored;
-      if ((outcome.kind === 'refused' || outcome.kind === 'unauthorized') && stored.error?.code === 'needs_admin') return stored;
+      if ((outcome.kind === 'refused' || outcome.kind === 'unauthorized') && (mayBeHeld || stored.error?.code === 'needs_admin')) return stored;
       const updatedAt = now();
       if (outcome.kind === 'needs_admin') {
         return { ...stored, error: { code: 'needs_admin', message: outcome.message,

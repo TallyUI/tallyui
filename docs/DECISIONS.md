@@ -5622,7 +5622,7 @@ interface OrderCreatePayload {
     |---|---|
     | `applied` (or `duplicate`) | `applied`, with `result` and `duplicate` |
     | `rejected` | `rejected`, with the store's `error` |
-    | `refused` or `unauthorized` | `unsent`: the store did not take the batch |
+    | `refused` or `unauthorized` | `unsent`: the store did not take the batch. A record this call did not write as `pending` (an earlier send's answer was unknown, or another call is sending it) may already be held by the store, so it stays `pending` (#1285) |
     | `unknown` | stays `pending` |
 
     - An `applied` record is final. Submitting it again returns its stored result and sends nothing.
