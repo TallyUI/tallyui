@@ -5,7 +5,7 @@
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
-import { useEffect, useState, type JSX } from 'react';
+import { useEffect, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
@@ -38,6 +38,8 @@ export interface TenderPaneProps {
   /** Draws the Back button (`sale.cancelTender`). Pass `false` when the host leaves the tender stage itself, as v2's phone checkout does. Default `true`. */ back?: boolean;
   /** Passed to the ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`: Cancel payment voids at once. */
   confirmVoid?: boolean;
+  /** Passed to the ledger: runs before Cancel payment voids a leg; the void waits for it, and `false` or a throw keeps the leg. */
+  beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'];
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -59,7 +61,7 @@ const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
     .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 };
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -183,7 +185,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </>}
     </View> : null}
 
-    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} /> : null}
+    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} beforeVoid={beforeVoid} /> : null}
 
     {/* cardReference holds only for an external leg; the edit keeps that leg's method and its own methodId. */}
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
