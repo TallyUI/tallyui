@@ -13,6 +13,7 @@ import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from '
 import { fetchPages as fetchCalculatedPricePages, fingerprint as calculatedPriceFingerprint } from './reconcile/calculated-prices';
 import { medusaStoreSettings } from './store-settings';
 import { createMedusaOrders, MEDUSA_ORDER_FILTERS } from './orders';
+import { medusaDisplaySignalling } from './display-signalling';
 
 export const medusaSecretKeyAuth: ConnectorAuth = {
   type: 'Medusa Admin API',
@@ -168,7 +169,7 @@ const medusaConnectorParts = {
 export const createMedusaAdminUserConnector = (): TallyConnector => ({
   ...createMedusaConnector(), auth: medusaAdminUserAuth, capabilities: medusaCapabilities,
   searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer, updateCustomer: medusaUpdateCustomer,
-  ...createMedusaOrders(), orderFilters: MEDUSA_ORDER_FILTERS,
+  ...createMedusaOrders(), orderFilters: MEDUSA_ORDER_FILTERS, displaySignalling: medusaDisplaySignalling,
 });
 
 /**
@@ -197,6 +198,7 @@ export {
   MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT,
 } from './orders';
 export { withCalculatedPrices } from './pricing/calculated';
+export { medusaDisplaySignalling } from './display-signalling';
 export { MEDUSA_CALCULATED_PRICE_RECONCILE_INTERVAL_MS } from './reconcile/calculated-prices';
 export type { MedusaCalculatedPrice, MedusaProductDocument, MedusaVariantDocument } from './schemas/products';
 
