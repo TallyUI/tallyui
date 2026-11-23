@@ -332,7 +332,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const tagged = couponContext && 'kind' in couponContext ? couponContext : undefined;
     const store = tagged?.kind === 'store-priced' ? tagged : undefined, kept = tagged?.kind === 'kept' ? tagged : undefined;
     const replay = woo && couponCodes.length && !tagged ? woocommerceCouponReplay(displaySourceLines, couponCodes,
-      couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
+      couponContext as OrderCouponContext, (line) => { const held = heldFor(line.id); return held ? toWooRates(held) : taxContext.getTaxRates!(line.taxClass); },
+      currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
     // Kept figures go only on the lines they were parked for, so a line edit never meets them (it goes stale instead).
     const keptOn = kept && couponCodes.length > 0 && payments.some((p) => isLiveLeg(p) && kept.legIds.includes(p.id))
       && couponPricingBasis({ currency, customer: null, lineItems, discounts: orderDiscounts }) === kept.linesBasis ? kept : undefined;
