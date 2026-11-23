@@ -88,6 +88,7 @@
     "order-detail",
     "refund-form",
     "refund-modal",
+    "refund-needs-admin-notice",
     "---Register---",
     "cash-count-input",
     "register-summary",

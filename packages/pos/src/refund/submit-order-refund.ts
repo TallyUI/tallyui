@@ -69,7 +69,12 @@ export async function submitOrderRefund({ refunds, transport, envelope, now = ()
   if (outcome.kind !== 'unknown') {
     doc = await doc.incrementalModify((stored) => {
       if (stored.status !== 'pending' || stored.commandId !== envelope.id) return stored;
+      if ((outcome.kind === 'refused' || outcome.kind === 'unauthorized') && stored.error?.code === 'needs_admin') return stored;
       const updatedAt = now();
+      if (outcome.kind === 'needs_admin') {
+        return { ...stored, error: { code: 'needs_admin', message: outcome.message,
+          data: { reason: outcome.reason, at: updatedAt } }, updatedAt };
+      }
       if (outcome.kind === 'applied') {
         const { error, ...rest } = stored;
         return { ...rest, status: 'applied', result: outcome.refund, duplicate: outcome.duplicate, updatedAt };

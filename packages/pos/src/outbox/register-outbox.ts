@@ -116,9 +116,10 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
       reason: stuck.reduce((latest, entry) => (entry[1].seq > latest[1].seq ? entry : latest))[1].reason,
       orders: stuck.map(([commandId, { since, firstFailedAt, reason }]) => ({ commandId, since, firstFailedAt, reason })) };
   }
-  function serverFailed(commands: RegisterCommand[], reason: string) {
+  function serverFailed(commands: RegisterCommand[], reason: string, needsAdminId?: string) {
     const at = now();
-    for (const { commandId } of commands) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq, reason });
+    for (const { commandId } of commands) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq,
+      reason: needsAdminId === undefined || commandId === needsAdminId ? reason : 'status_409' });
   }
 
   function isNonBlocking(command: RegisterCommand, abandoned: ReadonlySet<string>): boolean {
@@ -202,7 +203,7 @@ export function createRegisterOutbox(options: RegisterOutboxOptions): RegisterOu
           clock.pausedAt = undefined;
         }
         if (outcome.kind === 'retry') {
-          if (outcome.reason !== 'network') serverFailed(commands, outcome.reason);
+          if (outcome.reason !== 'network') serverFailed(commands, outcome.reason, outcome.needsAdmin?.id);
           return scheduleRetry(outcome.reason, outcome.retryAfterMs);
         }
         if (outcome.kind === 'unauthorized') {

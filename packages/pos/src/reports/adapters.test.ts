@@ -180,6 +180,9 @@ it('maps only an applied PosRefund, dated when it was made', () => {
   expect(reportRefundFromPosRefund(refund)).toEqual({ id: 'r1', orderId: 'o1', at: refund.envelope.payload.createdAt, amountMinor: 450 });
   for (const status of ['pending', 'rejected', 'unsent'] as const) expect(reportRefundFromPosRefund({ ...refund, status })).toBeUndefined();
   const { result: _result, ...withoutResult } = refund;
+  expect(reportRefundFromPosRefund({ ...withoutResult, status: 'pending', error: {
+    code: 'needs_admin', message: 'Ask a manager.', data: { reason: 'session_closed', at: refund.updatedAt },
+  } })).toBeUndefined();
   expect(reportRefundFromPosRefund(withoutResult)?.amountMinor).toBe(500);
   for (const totalMinor of [NaN, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
     expect(reportRefundFromPosRefund({ ...refund, result: { totalMinor, byMethod: {}, refunds: [] } })?.amountMinor).toBe(500);

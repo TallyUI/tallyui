@@ -1,0 +1,29 @@
+---
+title: RefundNeedsAdminNotice
+description: A notice for a refund that needs a manager to finish it
+---
+
+Shows a refund's manager-required lead line, an optional plain-text server message, and an optional Check again button.
+
+Show it for the `needs_admin` outcome from `submitOrderRefund`, or a `pending` `pos_refunds` record whose `error.code` is `needs_admin`, using its `error.data.reason` and `error.message`. Check again resends the same refund envelope with the same id.
+
+## Usage
+
+```tsx
+import { RefundNeedsAdminNotice } from '@tallyui/components';
+import { submitOrderRefund } from '@tallyui/pos';
+
+<RefundNeedsAdminNotice
+  reason={outcome.reason}
+  message={outcome.message}
+  onCheckAgain={() => { void submitOrderRefund({ refunds, transport, envelope }); }}
+/>
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `reason` | `string` | --- | Required server reason; only `session_closed` says "Not paid" |
+| `message` | `string` | --- | Optional server message, shown as plain text and cut to 500 UTF-16 units |
+| `onCheckAgain` | `() => void` | --- | Resends the same envelope; omit to hide the Check again button |

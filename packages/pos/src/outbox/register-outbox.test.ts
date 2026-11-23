@@ -715,6 +715,22 @@ describe('register outbox stuck clock (answered time only, in memory)', () => {
     vi.setSystemTime(epoch);
   });
 
+  it.each([true, false])('stamps retry reasons per command when needsAdmin is present: %s', async (named) => {
+    const inputs = [command(1), command(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states } = setup();
+    const reason = named ? 'needs_admin:session_closed' : 'status_503';
+    send.mockResolvedValue({ kind: 'retry', reason,
+      ...(named ? { needsAdmin: { id: inputs[1].commandId, reason: 'session_closed', message: 'Ask a manager.' } } : {}) });
+    await at(outbox, 0);
+    expect(send.mock.calls[0][0].map(({ id }) => id)).toEqual(inputs.map((input) => input.commandId));
+    await at(outbox, STUCK_AFTER_MS);
+    expect(states.at(-1)?.stuck?.orders).toEqual(inputs.map(({ commandId }, i) => ({
+      commandId, since: epoch, firstFailedAt: epoch, reason: named && i !== 1 ? 'status_409' : reason,
+    })));
+    expect(states.at(-1)?.lastRetryReason).toBe(reason);
+  });
+
   it('a sent command failing 503 is stuck at STUCK_AFTER_MS, not 1 ms before: since its first failure, the latest reason', async () => {
     const inputs = [command(1), command(2)];
     await collection.bulkInsert(inputs);

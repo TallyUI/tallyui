@@ -223,9 +223,10 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
 
   // A failure the store answered (not offline). Returns undefined when the run goes on at once, or the
   // floor for the retry: the store's Retry-After, or an isolated order's own backoff.
-  function serverFailed(orders: PosOrder[], alone: 'probe' | 'isolated' | undefined, reason: string, retryAfterMs?: number) {
+  function serverFailed(orders: PosOrder[], alone: 'probe' | 'isolated' | undefined, reason: string, retryAfterMs?: number, needsAdminId?: string) {
     const at = now();
-    for (const { commandId } of orders) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq, reason });
+    for (const { commandId } of orders) clocks.set(commandId, { ...(clocks.get(commandId) ?? { since: at, firstFailedAt: at }), seq: ++failureSeq,
+      reason: needsAdminId === undefined || commandId === needsAdminId ? reason : 'status_409' });
     const id = orders[0].commandId;
     if (alone === 'isolated') {
       isolate(id, reason, retryAfterMs);
@@ -234,7 +235,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       if (runProgressed && retryAfterMs === undefined && reason !== 'status_429') return undefined;
       return Math.max(retryAfterMs ?? 0, isolated.get(id)!.nextAt - now());
     }
-    if (alone === 'probe') walk?.failed.set(id, { orderId: orders[0].id, reason });
+    if (alone === 'probe') walk?.failed.set(id, { orderId: orders[0].id,
+      reason: needsAdminId === undefined || id === needsAdminId ? reason : 'status_409' });
     else {
       head = { id, count: head?.id === id ? head.count + 1 : 1 };
       if (head.count >= isolateAfter) walk ??= { failed: new Map() };
@@ -390,7 +392,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           // no answer in time) is not offline: it counts like a 503 and never pauses a clock.
           for (const clock of clocks.values()) clock.pausedAt ??= now();
           walk = undefined;
-        } else if ((floor = serverFailed(orders, alone, outcome.reason, outcome.retryAfterMs)) === undefined) continue;
+        } else if ((floor = serverFailed(orders, alone, outcome.reason, outcome.retryAfterMs, outcome.needsAdmin?.id)) === undefined) continue;
         return scheduleRetry(outcome.reason, floor);
       }
       if (outcome.kind === 'unauthorized') {

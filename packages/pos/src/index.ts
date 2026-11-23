@@ -165,6 +165,7 @@ export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VER
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger } from './outbox';
+export { needsAdminReasonOf, NEEDS_ADMIN_RETRY_PREFIX, type NeedsAdminAnswer } from './outbox';
 export { createRegisterOutbox, isRegisterRequeueable, useRegisterOutbox, summarizeOutboxHealth, watchOutboxHealth, useOutboxHealth } from './outbox';
 export type { RegisterOutboxOptions, RegisterOutbox, UseRegisterOutboxOptions, UseRegisterOutboxResult } from './outbox';
 export type { OutboxCounts, OutboxHealth, UseOutboxHealthOptions, UseOutboxHealthResult } from './outbox';
@@ -172,6 +173,7 @@ export { createBackendNotFound } from './outbox/backend-not-found';
 export type { BackendNotFound } from './outbox/backend-not-found';
 export type { HttpTransportOptions, OrderOutboxOptions, OrderOutbox, TransportOutcome, CommandTransport, OrderTransportContext, OutboxState, UseOrderOutboxOptions, UseOrderOutboxResult } from './outbox';
 export { sendOrderRefund, type OrderRefundOutcome, posRefundSchema, posRefundCollection, submitOrderRefund, RefundAnswerPendingError, type PosRefund, type PosRefundStatus, type PosRefundCollection, refundableLines, priceRefund } from './refund';
+export { refundNeedsAdminLine } from './refund';
 export { sendOrderReopen, isOrderReopenInFlight, isReopenOffered, type OrderReopenOutcome, storeOrderForReopen, ReopenEntryError, REOPEN_REFUSED_STATUSES, type ReopenEntryReason, reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE, type ReopenStoreOrderOutcome } from './reopen';
 export type { RefundableOrderLine, EarlierRefund, RefundableLine, PricedRefundLine, PricedRefund } from './refund';
 export { tenderReducer, initTenderState, initialTenderState, appliedMinor, changeMinor, quickTenderedAmounts, evenSplitShareMinor, percentOfMinor, activePlan, planLegs, MAX_TENDER_MINOR, tenderFigures, runsWholeOrder, tenderVoidSchema, tenderVoidCollection, legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg, splitUnitLines, unitsMinor, unitAllocationsFromLegs, paidUnitsByLine, unpaidUnitsByLine, pickedUnitsMinor } from './tender';

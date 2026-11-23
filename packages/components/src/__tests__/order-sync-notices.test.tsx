@@ -31,6 +31,22 @@ const edited = (id: string, name = 'Blue shirt') => ({ id, productId: 'shirt', v
   quantity: 1, unitPriceMinor: 600, discountMinor: 0, netMinor: 600, taxLines: [] });
 const extras = { customer: { taxIds: [{ type: 'eu_vat', value: 'DE123456789' }] }, meta: [{ key: 'gift', value: 'yes' }], lines: [edited('l1')] };
 
+describe('OrderSyncNotices parked sales', () => {
+  it.each([
+    ['needs_admin:session_closed', 'Not in the online store yet. A manager must finish this sale in the store admin.'],
+    ['needs_admin:compensation_failed', 'Not finished in the online store. A manager must check this sale in the store admin.'],
+    ['needs_admin:made_up', 'Not finished in the online store. A manager must check this sale in the store admin.'],
+    ['status_503', "Hasn't reached the online store since"],
+  ])('shows the stuck line for %s', (reason, expected) => {
+    const sale = order('parked');
+    const stuck = { commandIds: [sale.commandId], since: 1, reason,
+      orders: [{ commandId: sale.commandId, since: 1, reason }] };
+    const { container } = render(<OrderSyncNotices order={sale} stuck={stuck} />);
+    expect(container.textContent).toContain(expected);
+    if (reason !== 'status_503') expect(container.textContent).not.toContain("Hasn't reached");
+  });
+});
+
 describe('OrderSyncNotices refusals', () => {
   it.each([
     ['invalid_payload', "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log."],

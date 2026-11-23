@@ -1,5 +1,6 @@
-import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, isCommandBatchResponse, type AnyCommandEnvelope } from '@tallyui/core';
+import { COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, NEEDS_ADMIN_MESSAGE_MAX, isCommandBatchResponse, type AnyCommandEnvelope } from '@tallyui/core';
 import type { CommandTransport } from './types';
+import { NEEDS_ADMIN_REASON, NEEDS_ADMIN_RETRY_PREFIX } from './needs-admin-reason';
 
 // These HTTP statuses permanently refuse the entire command batch.
 const PERMANENT_STATUSES = new Set([400, 403, 413, 415, 422]);
@@ -47,6 +48,20 @@ export function createHttpCommandTransport(options: HttpTransportOptions): Comma
             else if (typeof body?.code === 'string') reason = body.code;
           } catch {}
           return { kind: 'refused', status: response.status, reason };
+        }
+        if (response.status === 409) {
+          try {
+            const body = await response.json();
+            if (typeof body === 'object' && body !== null && body.code === 'needs_admin'
+              && typeof body.id === 'string' && batch.some((command) => command.id === body.id)
+              && typeof body.reason === 'string' && NEEDS_ADMIN_REASON.test(body.reason)
+              && typeof body.message === 'string') {
+              return { ...retry(`${NEEDS_ADMIN_RETRY_PREFIX}${body.reason}`), needsAdmin: {
+                id: body.id, reason: body.reason, message: body.message.slice(0, NEEDS_ADMIN_MESSAGE_MAX),
+              } };
+            }
+          } catch { /* An unreadable body is a plain 409: retried as before. */ }
+          return retry('status_409');
         }
         if (response.status !== 200) return retry(`status_${response.status}`);
         let body: unknown;

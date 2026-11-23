@@ -5,7 +5,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { CommandError, CommandResult, OrderRefundEnvelope, OrderRefundResult } from '@tallyui/core';
 import type { CommandTransport, TransportOutcome } from '../outbox/types';
-import { posRefundCollection, type PosRefundCollection } from './pos-refund';
+import { posRefundCollection, posRefundSchema, type PosRefundCollection } from './pos-refund';
 import { sendOrderRefund } from './send-order-refund';
 import { RefundAnswerPendingError, submitOrderRefund } from './submit-order-refund';
 
@@ -28,6 +28,8 @@ const refund: OrderRefundResult = {
 const applied: CommandResult = { id: envelope.id, status: 'applied', refund };
 const error: CommandError = { code: 'quantity_exceeds', message: 'x', data: { lines: [] } };
 const rejected: CommandResult = { id: envelope.id, status: 'rejected', error };
+const needsAdmin: TransportOutcome = { kind: 'retry', reason: 'needs_admin:session_closed',
+  needsAdmin: { id: envelope.id, reason: 'session_closed', message: 'Ask a manager.' } };
 const firstAt = '2026-10-07T10:00:00.000Z';
 const secondAt = '2026-10-07T10:00:01.000Z';
 let db: RxDatabase<{ pos_refunds: PosRefundCollection }>;
@@ -50,6 +52,72 @@ beforeEach(async () => {
 afterEach(async () => { await db.remove(); });
 
 describe('submitOrderRefund', () => {
+  it('stores a pending needs_admin marker and round-trips it through the unchanged version 0 schema', async () => {
+    send.mockResolvedValue(needsAdmin);
+    const { outcome, record } = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(outcome).toStrictEqual({ kind: 'needs_admin', reason: 'session_closed', message: 'Ask a manager.' });
+    expect(record.status).toBe('pending');
+    expect(record.updatedAt).toBe(secondAt);
+    expect(record.error).toStrictEqual({ code: 'needs_admin', message: 'Ask a manager.',
+      data: { reason: 'session_closed', at: record.updatedAt } });
+    expect(posRefundSchema.version).toBe(0);
+    expect((await refunds.findOne(record.id).exec())!.toJSON()).toStrictEqual(record);
+  });
+
+  it('preserves the stored marker through in_progress and a thrown transport on Check again', async () => {
+    send.mockResolvedValueOnce(needsAdmin)
+      .mockResolvedValueOnce({ kind: 'retry', reason: 'status_409' })
+      .mockRejectedValueOnce(new Error('network'));
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(second.outcome).toStrictEqual({ kind: 'unknown', reason: 'status_409' });
+    expect(second.record).toStrictEqual(first.record);
+    const third = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(third.outcome).toStrictEqual({ kind: 'unknown', reason: 'transport_error' });
+    expect(third.record).toStrictEqual(first.record);
+    expect((await refunds.findOne(first.record.id).exec())!.toJSON()).toStrictEqual(first.record);
+    expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]], [[envelope]]]);
+  });
+
+  it.each([
+    { kind: 'refused', status: 403, reason: 'forbidden' },
+    { kind: 'unauthorized' },
+  ] as const)('preserves a parked refund after $kind and blocks a new envelope', async (response) => {
+    send.mockResolvedValueOnce(needsAdmin).mockResolvedValueOnce(response);
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(second.outcome).toStrictEqual(response);
+    expect(second.record.status).toBe('pending');
+    expect(second.record.error).toStrictEqual(first.record.error);
+    expect(second.record.updatedAt).toBe(first.record.updatedAt);
+    expect(second.record).toStrictEqual(first.record);
+    await expect(submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now }))
+      .rejects.toBeInstanceOf(RefundAnswerPendingError);
+    expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]]]);
+    expect((await refunds.findOne(first.record.id).exec())!.toJSON()).toStrictEqual(first.record);
+  });
+
+  it('settles a parked refund on duplicate and strips the marker', async () => {
+    send.mockResolvedValueOnce(needsAdmin)
+      .mockResolvedValueOnce({ kind: 'results', results: [{ ...applied, status: 'duplicate' }] });
+    await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    const { outcome, record } = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(outcome).toStrictEqual({ kind: 'applied', refund, duplicate: true });
+    expect(record.status).toBe('applied');
+    expect(record).not.toHaveProperty('error');
+    expect(send).toHaveBeenNthCalledWith(2, [envelope]);
+  });
+
+  it('settles a parked refund on rejected and replaces the marker with the server error', async () => {
+    send.mockResolvedValueOnce(needsAdmin).mockResolvedValueOnce({ kind: 'results', results: [rejected] });
+    await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    const { outcome, record } = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(outcome).toStrictEqual({ kind: 'rejected', error });
+    expect(record.status).toBe('rejected');
+    expect(record.error).toStrictEqual(error);
+    expect(send).toHaveBeenNthCalledWith(2, [envelope]);
+  });
+
   it('stores the full applied record and returns the sendOrderRefund outcome', async () => {
     const expectedOutcome = await sendOrderRefund({ send: async () => ({ kind: 'results', results: [applied] }) }, envelope);
     const answer = await submitOrderRefund({ refunds, transport: { send }, envelope, now });

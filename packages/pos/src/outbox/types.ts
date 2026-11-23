@@ -7,13 +7,15 @@ export interface OrderTransportContext {
   local: { orders: ReadonlyMap<string, PosOrder> };
 }
 
+export type NeedsAdminAnswer = { id: string; reason: string; message: string };
+
 export type TransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
   | { kind: 'unauthorized' }
   | { kind: 'refused'; status: number; reason: string }
   /** `reason` is `network` when the store could not be reached, `timeout` when a sent request got no answer in time,
    * else what the store answered (`status_503`, `bad_body`, ...). The order outbox counts every reason but `network`. */
-  | { kind: 'retry'; reason: string; retryAfterMs?: number };
+  | { kind: 'retry'; reason: string; retryAfterMs?: number; needsAdmin?: NeedsAdminAnswer };
 
 export interface CommandTransport<E extends AnyCommandEnvelope = CommandEnvelope<OrderCreatePayload>> {
   send(batch: E[], context?: OrderTransportContext): Promise<TransportOutcome>;

@@ -172,6 +172,8 @@ export {
   type RefundFormValue,
   RefundModal,
   type RefundModalProps,
+  RefundNeedsAdminNotice,
+  type RefundNeedsAdminNoticeProps,
   OrderFilterBar,
   type OrderFilterBarProps,
   type OrderFilterOption,

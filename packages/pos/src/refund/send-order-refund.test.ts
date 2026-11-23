@@ -22,6 +22,16 @@ const refund: OrderRefundResult = {
 const applied: CommandResult = { id: envelope.id, status: 'applied', refund };
 
 describe('sendOrderRefund', () => {
+  it.each([envelope.id, 'other-id'])('maps needsAdmin only for the envelope id (%s)', async (id) => {
+    const transport: CommandTransport<OrderRefundEnvelope> = { send: async () => ({
+      kind: 'retry', reason: 'needs_admin:session_closed', retryAfterMs: 5000,
+      needsAdmin: { id, reason: 'session_closed', message: 'Ask a manager.' },
+    }) };
+    expect(await sendOrderRefund(transport, envelope)).toStrictEqual(id === envelope.id
+      ? { kind: 'needs_admin', reason: 'session_closed', message: 'Ask a manager.' }
+      : { kind: 'unknown', reason: 'needs_admin:session_closed', retryAfterMs: 5000 });
+  });
+
   it('sends one batch containing exactly the same envelope, with no context', async () => {
     const send = vi.fn<CommandTransport<OrderRefundEnvelope>['send']>()
       .mockResolvedValue({ kind: 'results', results: [applied] });

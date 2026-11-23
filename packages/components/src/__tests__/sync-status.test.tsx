@@ -23,6 +23,21 @@ function line() {
 const label = () => document.querySelector('[aria-label]')?.getAttribute('aria-label');
 
 describe('SyncStatus', () => {
+  it.each([1, 2])('counts %i parked sales before the stuck or backend-missing sentence', (n) => {
+    const orders = Array.from({ length: n }, (_, i) => ({ commandId: `c${i}`, since: 1, reason: 'needs_admin:session_closed' }));
+    render(<SyncStatus state={{ pending: n, sending: false, backendMissing: { since: 1 },
+      stuck: { commandIds: orders.map((entry) => entry.commandId), since: 1, reason: orders[0].reason, orders } }} />);
+    expect(line()).toBe(`${n === 1 ? '1 sale' : '2 sales'} waiting to sync · ${n === 1 ? '1 sale needs' : '2 sales need'} a manager in the store admin. Keep selling: new sales are saved on this till.`);
+  });
+
+  it('keeps the refused batch sentence over parked sales', () => {
+    const reason = 'needs_admin:session_closed';
+    render(<SyncStatus state={{ pending: 1, sending: false, refused: { status: 413, reason: 'status_413' },
+      stuck: { commandIds: ['c1'], since: 1, reason, orders: [{ commandId: 'c1', since: 1, reason }] } }} />);
+    expect(line()).toBe('1 sale waiting to sync · The online store refused the last send. This till will try again with the next sale, or when the app is reopened.');
+    expect(document.body.textContent).not.toContain('needs a manager');
+  });
+
   it('shows "Sales are up to date." when nothing is pending', () => {
     render(<SyncStatus state={{ pending: 0, sending: false }} />);
     expect(line()).toBe('Sales are up to date.');
