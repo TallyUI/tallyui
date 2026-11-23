@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { extrasNotSent, isRequeueableOrder, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -50,11 +50,16 @@ export type OrderSyncNoticesProps = {
   children?: ReactNode;
 };
 
+// #1280: only session_closed guarantees the store holds no order.
+const NEEDS_ADMIN_SESSION_CLOSED = 'Not in the online store yet. A manager must finish this sale in the store admin.';
+const NEEDS_ADMIN_SALE = 'Not finished in the online store. A manager must check this sale in the store admin.';
+
 /** The per-sale sync notices OrdersList shows under each order, for an app's own order screen. */
 export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesProps) {
   const formatMoney = useFormatMoney();
   // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
   const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
+  const needsAdminReason = stuckEntry ? needsAdminReasonOf(stuckEntry.reason) : undefined;
   const sentence = order.syncStatus === 'rejected'
     ? order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? '')
       ? REOPEN_AGAIN_SENTENCE : refusalSentence(order.error?.code)
@@ -62,8 +67,10 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   const extras = extrasNotSent(order);
   return <>
     {stuckEntry ? <Text className="text-destructive">
-      {/* The same words for any reason, with no reason code; the hour as the status line has it (numeric, #245). */}
-      {`Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
+      {/* A parked sale needs a manager; other retries keep the hour as the status line has it (numeric, #245), with no reason code. */}
+      {needsAdminReason !== undefined
+        ? needsAdminReason === 'session_closed' ? NEEDS_ADMIN_SESSION_CLOSED : NEEDS_ADMIN_SALE
+        : `Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
     </Text> : null}
     {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
     {sentence ? <Text className="text-destructive">{sentence}</Text> : null}

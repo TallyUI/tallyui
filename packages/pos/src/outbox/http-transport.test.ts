@@ -14,6 +14,40 @@ const commands: CommandEnvelope<OrderCreatePayload>[] = [{
 afterEach(() => vi.useRealTimers());
 
 describe('HTTP command transport', () => {
+  it.each([undefined, '5'])('keeps a needs_admin answer as a retry with Retry-After %s', async (retryAfter) => {
+    const needsAdmin = { id: commands[0].id, reason: 'session_closed', message: 'A manager must finish this.' };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ code: 'needs_admin', ...needsAdmin }, {
+      status: 409, headers: retryAfter ? { 'Retry-After': retryAfter } : {},
+    }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toStrictEqual({ kind: 'retry', reason: 'needs_admin:session_closed', needsAdmin,
+      ...(retryAfter ? { retryAfterMs: 5000 } : {}),
+    });
+  });
+
+  it.each([
+    'not json',
+    JSON.stringify({ code: 'in_progress', id: commands[0].id }),
+    JSON.stringify({ code: 'needs_admin', id: commands[0].id, reason: 'session_closed' }),
+    JSON.stringify({ code: 'needs_admin', id: commands[0].id, reason: 'Bad Reason!', message: 'm' }),
+    JSON.stringify({ code: 'needs_admin', id: commands[0].id, reason: 'a'.repeat(41), message: 'm' }),
+    JSON.stringify({ code: 'needs_admin', id: 'other-id', reason: 'session_closed', message: 'm' }),
+  ])('keeps an unrecognized 409 body as a plain retry: %s', async (body) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(body, { status: 409 }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toStrictEqual({ kind: 'retry', reason: 'status_409' });
+  });
+
+  it('cuts a needs_admin message to 500 UTF-16 units', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({
+      code: 'needs_admin', id: commands[0].id, reason: 'session_closed', message: 'm'.repeat(600),
+    }, { status: 409 }));
+    const transport = createHttpCommandTransport({ baseUrl: '', getHeaders: () => ({}), fetch });
+    expect(await transport.send(commands)).toStrictEqual({ kind: 'retry', reason: 'needs_admin:session_closed',
+      needsAdmin: { id: commands[0].id, reason: 'session_closed', message: 'm'.repeat(500) },
+    });
+  });
+
   it('keeps the request body byte-identical when local orders are supplied', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({ results: [] }));
     const transport = createHttpCommandTransport({ baseUrl: 'https://shop.example', getHeaders: () => ({}), fetch });

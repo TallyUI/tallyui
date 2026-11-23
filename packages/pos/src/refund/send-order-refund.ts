@@ -5,11 +5,12 @@ import type { CommandTransport } from '../outbox/types';
 export type OrderRefundOutcome =
   | { kind: 'applied'; refund: OrderRefundResult; duplicate: boolean }
   | { kind: 'rejected'; error: CommandError }
+  | { kind: 'needs_admin'; reason: string; message: string }
   | { kind: 'unknown'; reason: string; retryAfterMs?: number }
   | { kind: 'refused'; status: number; reason: string }
   | { kind: 'unauthorized' };
 
-/** Online only, never queued (ADR-080). On unknown, resend the same envelope (same id).
+/** Online only, never queued (ADR-080). On unknown or needs_admin, resend the same envelope (same id; Check again).
  * After rejected, a new attempt needs a new id. Refused and unauthorized mean the store did not take the batch. */
 export async function sendOrderRefund(
   transport: CommandTransport<OrderRefundEnvelope>, envelope: OrderRefundEnvelope,
@@ -21,6 +22,10 @@ export async function sendOrderRefund(
     return { kind: 'unknown', reason: 'transport_error' };
   }
   if (outcome.kind === 'retry') {
+    const { needsAdmin } = outcome;
+    if (needsAdmin?.id === envelope.id) {
+      return { kind: 'needs_admin', reason: needsAdmin.reason, message: needsAdmin.message };
+    }
     return {
       kind: 'unknown', reason: outcome.reason,
       ...(outcome.retryAfterMs !== undefined ? { retryAfterMs: outcome.retryAfterMs } : {}),

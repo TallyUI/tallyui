@@ -10,6 +10,8 @@ export const PROTOCOL_VERSION = 1;
 export const MAX_COMMANDS_PER_BATCH = 50;
 /** The longest order.create `note` (version 7, ADR-083), in UTF-16 code units. WCPOS v2's order note has no cap; this bounds the wire. */
 export const ORDER_NOTE_MAX = 1000;
+/** The most UTF-16 units of a `needs_admin` message the till keeps and shows (TallyUI #1280). */
+export const NEEDS_ADMIN_MESSAGE_MAX = 500;
 /** The most tax ids order.create 12 carries in `customer.taxIds` (ADR-092). */
 export const ORDER_TAX_IDS_MAX = 10;
 /** The longest order.create 12 tax id `type` (the connector's scheme id), in UTF-16 code units (ADR-092). */

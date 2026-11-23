@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, Text, View } from 'react-native';
 import type { SyncNotice } from '@tallyui/core';
 import type { OutboxState } from '@tallyui/pos';
+import { needsAdminReasonOf } from '@tallyui/pos';
 import { sinceText } from './since-text';
 
 /**
@@ -50,6 +51,8 @@ const PULL_NOTICE_FALLBACK: PullNoticeText = {
 const BACKEND_MISSING = "Sales aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
 // The same line once an order is stuck, with the store missing or not; {time} is the real first failure or about the virtual since.
 const BACKEND_MISSING_SINCE = "Sales haven't reached the online store since {time}. Keep selling: they're saved on this till and will send by themselves.";
+// #1280: parked sales keep retrying while a manager finishes them in the store admin.
+const NEEDS_ADMIN_SALES = (n: number) => `${n === 1 ? '1 sale needs' : `${n} sales need`} a manager in the store admin. Keep selling: new sales are saved on this till.`;
 // The line instead when no sale waits but till updates do, and its "since" variant once registerState.stuck is set.
 const TILL_UPDATES_MISSING = "Till updates aren't reaching the online store. Keep selling: they're saved on this till and will send by themselves.";
 const TILL_UPDATES_MISSING_SINCE = "Till updates haven't reached the online store since {time}. Keep selling: they're saved on this till and will send by themselves.";
@@ -115,16 +118,18 @@ export function SyncStatus({ state, registerState, pluginName = 'the POS plugin'
   const label = [state.pending && count(state.pending, 'sale'),
     updates && count(updates, 'till update')].filter(Boolean).join(' and ') + ' waiting to sync';
   const { stuck } = state;
+  const needsAdmin = stuck?.orders.filter((entry) => needsAdminReasonOf(entry.reason) !== undefined).length ?? 0;
   const backendMissing = state.backendMissing ?? registerState?.backendMissing;
   const backendMissingText = state.pending === 0 && updates > 0 ? (registerState?.stuck
     ? TILL_UPDATES_MISSING_SINCE.replace('{time}', () => sinceText(registerState.stuck!)) : TILL_UPDATES_MISSING)
     : stuck ? BACKEND_MISSING_SINCE.replace('{time}', () => sinceText(stuck)) : BACKEND_MISSING;
   const upToDate = state.pending === 0 && updates === 0;
   // The sentence shows with the store missing, or once the waiting sales (with none waiting, the till updates) are stuck, then as
-  // its "since" variant: the same words for any reason, and no reason code.
+  // its "since" variant, unless a parked sale needs a manager; no reason code is shown.
   // A refused batch from the outbox shown (the sales', whenever a sale waits) replaces that sentence: it is the store's latest
   // answer, and sending waits for that outbox's next command or start.
   const sentence = outbox.refused ? ` · ${outbox === state ? SALES_REFUSED : TILL_UPDATES_REFUSED}`
+    : outbox === state && needsAdmin > 0 ? ` · ${NEEDS_ADMIN_SALES(needsAdmin)}`
     : backendMissing || (state.pending === 0 && updates > 0 ? registerState?.stuck : stuck) ? ` · ${backendMissingText}` : '';
   // The live region holds only the substance (counts and the sentence), so it is announced when that changes and never as sending
   // or retrying flips or the countdown ticks: those are a short line of their own below it, outside any live region.
