@@ -79,6 +79,24 @@ describe('submitOrderRefund', () => {
     expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]], [[envelope]]]);
   });
 
+  it.each([
+    { kind: 'refused', status: 403, reason: 'forbidden' },
+    { kind: 'unauthorized' },
+  ] as const)('preserves a parked refund after $kind and blocks a new envelope', async (response) => {
+    send.mockResolvedValueOnce(needsAdmin).mockResolvedValueOnce(response);
+    const first = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    const second = await submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    expect(second.outcome).toStrictEqual(response);
+    expect(second.record.status).toBe('pending');
+    expect(second.record.error).toStrictEqual(first.record.error);
+    expect(second.record.updatedAt).toBe(first.record.updatedAt);
+    expect(second.record).toStrictEqual(first.record);
+    await expect(submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now }))
+      .rejects.toBeInstanceOf(RefundAnswerPendingError);
+    expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]]]);
+    expect((await refunds.findOne(first.record.id).exec())!.toJSON()).toStrictEqual(first.record);
+  });
+
   it('settles a parked refund on duplicate and strips the marker', async () => {
     send.mockResolvedValueOnce(needsAdmin)
       .mockResolvedValueOnce({ kind: 'results', results: [{ ...applied, status: 'duplicate' }] });

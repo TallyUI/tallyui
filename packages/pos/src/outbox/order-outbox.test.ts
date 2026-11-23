@@ -1388,6 +1388,41 @@ describe('order outbox isolation', () => {
     return { ...harness, next };
   }
 
+  it.each([true, false])('stamps retry reasons per command when needsAdmin is present: %s', async (named) => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const { outbox, send, states, next } = timed();
+    const reason = named ? 'needs_admin:session_closed' : 'status_503';
+    send.mockResolvedValue({ kind: 'retry', reason,
+      ...(named ? { needsAdmin: { id: inputs[1].commandId, reason: 'session_closed', message: 'Ask a manager.' } } : {}) });
+    await outbox.flush();
+    expect(ids(send.mock.calls[0][0])).toEqual(inputs.map((input) => input.commandId));
+    while (!states.at(-1)?.stuck) await next();
+    expect(states.at(-1)?.stuck?.orders).toEqual(inputs.map(({ commandId }, i) => ({
+      commandId, since: epoch, firstFailedAt: epoch, reason: named && i !== 1 ? 'status_409' : reason,
+    })));
+    expect(states.at(-1)?.lastRetryReason).toBe(reason);
+  });
+
+  it('uses the named command reason for failed probes when another probe applies', async () => {
+    const inputs = [order(0), order(1), order(2)];
+    await collection.bulkInsert(inputs);
+    const logged: LogEntry[] = [];
+    outboxLogger.addSink({ id: 'needs-admin-probes', levels: ['warn'], write: (entry) => logged.push(entry) });
+    try {
+      const { outbox, send, next } = timed();
+      send.mockImplementation(async (batch) => batch.length === 1 && batch[0].id === inputs[2].commandId
+        ? { kind: 'results', results: applied(batch) }
+        : { kind: 'retry', reason: 'needs_admin:session_closed',
+          needsAdmin: { id: inputs[1].commandId, reason: 'session_closed', message: 'Ask a manager.' } });
+      await outbox.flush();
+      for (let i = 0; i < ISOLATE_AFTER_ATTEMPTS + 2; i++) await next();
+      expect(logged.filter((entry) => entry.syncRecord?.outcome === 'pending').map((entry) => entry.syncRecord))
+        .toEqual(inputs.slice(0, 2).map((input, i) => ({ collection: 'pos_orders', recordId: input.id, outcome: 'pending',
+          reason: i === 1 ? 'needs_admin:session_closed' : 'status_409' })));
+    } finally { outboxLogger.removeSink('needs-admin-probes'); }
+  });
+
   it('isolates an order the store keeps failing, and the orders around it apply', async () => {
     const inputs = [order(0), order(1), order(2)];
     await collection.bulkInsert(inputs);

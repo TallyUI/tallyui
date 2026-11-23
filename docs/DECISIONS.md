@@ -1463,6 +1463,14 @@ interface OrderCreatePayload {
       `id` is not in the batch, the till reads the answer as a plain 409
       and retries.
     - **Older tills** read every 409 as a retry, so they keep working.
+    - **Only the named command is parked.** Other commands in the same
+      batch keep the plain `status_409` retry reason.
+    - **A parked refund** stays `pending` and stores
+      `error: { code: 'needs_admin', message, data: { reason, at } }`
+      (pos_refunds schema unchanged). Only a `duplicate` or `rejected`
+      answer settles it. A later `in_progress`, transport failure,
+      `refused` or `unauthorized` answer leaves the marker in place, and a
+      new envelope for the same refund is refused.
 
     Whether the reason guarantees that no money moved:
 
