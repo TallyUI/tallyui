@@ -131,6 +131,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       ...(payment.reference !== undefined ? { reference: payment.reference } : {}),
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
+      ...(payment.sessionId !== undefined ? { sessionId: payment.sessionId } : {}),
     }));
     // ADR-094: each entry follows its leg's new id; an entry whose stored leg is not found is dropped.
     for (const entry of order.cashRoundings ?? []) {

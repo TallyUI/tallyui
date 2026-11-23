@@ -196,7 +196,7 @@ export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUN
 import { minorToDecimal as registerMinorToDecimal } from './register';
 /** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
 export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
-export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';

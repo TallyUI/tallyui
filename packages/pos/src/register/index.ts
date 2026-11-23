@@ -31,7 +31,7 @@ export { minorToDecimal, formatDecimalMoney } from './money';
 export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, TAX_STORE_PAID_NOTE, createClosureContext } from './closure-document';
 export type { ClosureContext, CreateClosureContextOptions } from './closure-document';
 export { registerFactsLogger, recordRegisterFact, type Actor, type RegisterFact } from './facts';
-export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError } from './use-register-session';
 export type { ApprovalNeeded, UseRegisterSessionOptions } from './use-register-session';
 export { registerCommandSchema, registerCommandCollection, registerCommandsLogger, sessionOpenCommand, sessionTransitionCommand, movementCommand, closureCommand, reconcileRegisterCommands } from './register-commands';
 export {

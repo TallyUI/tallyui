@@ -260,6 +260,24 @@ it("stores schema-20's payment takenAt and refuses one over 40 characters", asyn
   } finally { await db.remove(); }
 });
 
+it('a payment keeps its sessionId through insert and read', async () => {
+  const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+  try {
+    const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100 });
+    const plain = finalizeOrder(builder.getSnapshot());
+    const sessionId = uuidv7();
+    const order: PosOrder = { ...plain, sessionId: uuidv7(), payments: plain.payments.map((payment) => ({ ...payment, sessionId })) };
+    await pos_orders.insert(order);
+    const read = (await pos_orders.findOne(order.id).exec())?.toJSON() as PosOrder | undefined;
+    expect(read?.payments.map((payment) => payment.sessionId)).toEqual([sessionId]);
+    expect(read).toStrictEqual(order);
+  } finally { await db.remove(); }
+});
+
 it("M2 stores schema-18 tax ids, meta, a line's catalogueSku and attentionHandledFor, closed (ADR-092)", async () => {
   expect(posOrderSchema.version).toBe(21);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,

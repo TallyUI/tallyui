@@ -195,8 +195,11 @@ export interface OrderBuilder {
   addPayment(payment: Omit<Payment, 'id'> & { id?: string }, rounding?: { minor: number }): string;
   /** ADR-094: adds a cash rounding entry against an existing leg; it counts in totalMinor while that leg counts toward paid. */
   addCashRounding(entry: CashRounding): void;
-  /** Moves a leg's status; `takenAt` is set on the leg only on a move to captured. */
-  setPaymentStatus(paymentId: string, status: PaymentLegStatus, takenAt?: string): boolean;
+  /**
+   * Moves a leg's status; `takenAt` is set on the leg only on a move to captured, and `sessionId` with it (S3: the
+   * session that captured the leg), only on a leg that has none yet.
+   */
+  setPaymentStatus(paymentId: string, status: PaymentLegStatus, takenAt?: string, sessionId?: string): boolean;
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setNote(note: string): void;
@@ -854,10 +857,11 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
-    setPaymentStatus(paymentId, status, takenAt) {
+    setPaymentStatus(paymentId, status, takenAt, sessionId) {
       const payment = payments.find((p) => p.id === paymentId);
       if (!payment || payment.locked || !canMoveLeg(legStatus(payment), status)) return false;
-      const stamp = status === 'captured' && takenAt !== undefined ? { takenAt } : {};
+      const stamp = status === 'captured' && takenAt !== undefined
+        ? { takenAt, ...(sessionId !== undefined && payment.sessionId === undefined ? { sessionId } : {}) } : {};
       payments = payments.map((p) => p.id === paymentId ? { ...p, status, ...stamp } : p);
       emit();
       return true;

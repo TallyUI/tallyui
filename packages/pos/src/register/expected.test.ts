@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { orderBuilderFromStoreOrder } from '../order/from-store-order';
 import { finalizeOrder } from '../pos-order/finalize';
-import { deriveExpected, paymentLedgerRows, refundAmounts, type RefundRow } from './expected';
+import { deriveExpected, paymentLedgerRows, refundAmounts, takingsByMethod, type RefundRow } from './expected';
 
 // Fixtures are minor units at exponent 2 (GBP-style): WCPOS's server four-decimal amount '50'
 // (£50.00) becomes 5000; '100' (£100.00) becomes 10000. The numbers are kept real-world
@@ -39,6 +39,19 @@ it('gate 11 on a finalize-written row: locked pos_cash and card legs never count
   expect(paymentLedgerRows([{ ...row, sessionId: 'session' }])).toEqual([
     { session_id: 'session', kind: 'cash', method_id: 'cash', status: 'captured', amountMinor: 1000 },
   ]);
+});
+
+it("a payment stamped with another session counts there, not in the order's session", () => {
+  const orders = [{ sessionId: 'b', payments: [
+    { id: 'p1', method: 'cash' as const, amountMinor: 400, sessionId: 'a' },
+    { id: 'p2', method: 'cash' as const, amountMinor: 600 },
+  ] }];
+  const rows = paymentLedgerRows(orders);
+  expect(rows.map((row) => row.session_id)).toEqual(['a', 'b']);
+  const cashIn = (id: string) => deriveExpected({ session: { id, countedFloatMinor: 0 }, movements: [], ledgerRowsBySession: rows }).cash;
+  expect([cashIn('a'), cashIn('b')]).toEqual([400, 600]);
+  expect({ ...takingsByMethod(orders, 'b') }).toEqual({ cash: { amountMinor: 600, count: 1 } });
+  expect({ ...takingsByMethod(orders, 'a') }).toEqual({ cash: { amountMinor: 400, count: 1 } });
 });
 
 it('derives captured session cash and card net of refunds and non-voided movements', () => {

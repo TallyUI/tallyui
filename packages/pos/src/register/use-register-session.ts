@@ -20,11 +20,12 @@ import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { safeErrorString } from '../outbox/safe-error';
+import type { Payment } from '../order/types';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
-import { deriveDrawerTerms, deriveExpected, paymentLedgerRows, type LedgerRow } from './expected';
+import { deriveDrawerTerms, deriveExpected, liveLedgerRows, parkedLedgerRows, paymentLedgerRows, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import {
@@ -41,6 +42,14 @@ export class RegisterTenderInProgressError extends Error {
   constructor() {
     super('Finish or cancel the sale in progress first.');
     this.name = 'RegisterTenderInProgressError';
+  }
+}
+
+/** The live sale is still saving (or its save failed and was not retried), so the till can't count or close under it. Its message can be shown to a cashier as it is. */
+export class RegisterSaleSavingError extends Error {
+  constructor() {
+    super('A sale is still being saved. Wait for it to finish, or retry it if it failed, then close the register.');
+    this.name = 'RegisterSaleSavingError';
   }
 }
 
@@ -97,6 +106,23 @@ export interface UseRegisterSessionOptions {
   deviceName?: string | null;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
+  /**
+   * Required (S3): `order_drafts`, the sale's own, so a parked sale's taken legs count in the session that took them;
+   * `null` when the app never parks a sale. Left out, that cash would be missing from the session's Z.
+   */
+  drafts: RxCollection | null;
+  /**
+   * Required (S3): the live sale's taken legs, read when the figures are derived, so a leg still in the cart (after
+   * `cancelTender`, say) counts on its session's Z; `null` when the app has no live sale. A getter, because the app
+   * creates the register before the sale (the sale takes `register.saleSession`). The usual wiring is a ref:
+   * ```ts
+   * const saleRef = useRef<ReturnType<typeof useSale> | null>(null)
+   * const register = useRegisterSession({ …, liveSale: () => saleRef.current?.registerView() ?? { takenLegs: [], saving: false } })
+   * const sale = useSale(…)
+   * saleRef.current = sale
+   * ```
+   */
+  liveSale: (() => { takenLegs: readonly Payment[]; saving: boolean }) | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
   register: RegisterHost | null;
   /** The app's neutral store key (see `bindRegister`). */
@@ -126,7 +152,7 @@ export interface UseRegisterSessionOptions {
 type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
-  entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[];
+  entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[]; parked: { data?: unknown }[];
   /** The register's open and closure command rows (ADR-082 d4, d7, d9). */
   commandRows: RegisterCommand[];
 };
@@ -183,9 +209,9 @@ function currentSession(rows: RegisterSession[], closureRows: Closure[], reserva
     ?? null;
 }
 
-/** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
-function ledgerRows(orders: readonly PosOrder[], replaced = replacedOrderIds(orders)): LedgerRow[] {
-  return paymentLedgerRows(orders.filter((order) => !replaced.has(order.id)));
+/** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them, plus `extra` (S3: parked and live legs). */
+function ledgerRows(orders: readonly PosOrder[], extra: readonly LedgerRow[], replaced = replacedOrderIds(orders)): LedgerRow[] {
+  return [...paymentLedgerRows(orders.filter((order) => !replaced.has(order.id))), ...extra];
 }
 
 /** The closure's counted map, as `closeSession` hands it to `writeClosure`: cash is always present. */
@@ -196,7 +222,7 @@ const sameVariance = (a: Record<string, number>, b: Record<string, number>) =>
 
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
-  const { commands, refunds } = options;
+  const { commands, refunds, drafts } = options;
   // ADR-082 d3: the store's threshold wins over the app's; the gate and RegisterCount use this one.
   const varianceThreshold = options.capabilities?.registerApproval?.thresholdMinor ?? options.varianceThreshold;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
@@ -235,14 +261,15 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       } }) : of([] as RegisterCommand[]),
     ]).pipe(switchMap(([rows, closureRows, reservation, commandRows]) => {
       const current = currentSession(rows, closureRows, reservation);
-      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [], commandRows } as Snapshot);
+      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [], parked: [], commandRows } as Snapshot);
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
         refunds ? watchFresh(refunds, { selector: { sessionId: current.id } }) : of([]),
-      ]).pipe(map(([entries, sales, refundRows]) => ({ rows, closureRows, reservation, entries, sales, refundRows, commandRows })));
+        drafts ? watchFresh(drafts, { selector: {} }) : of([]),
+      ]).pipe(map(([entries, sales, refundRows, parked]) => ({ rows, closureRows, reservation, entries, sales, refundRows, parked, commandRows })));
     }));
-  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds]);
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds, drafts]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
@@ -323,9 +350,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const entries = data?.entries ?? [];
   const sales = data?.sales ?? [];
   const replaced = replacedOrderIds(sales);
+  const parked = data?.parked;
+  const parkedRows = useMemo(() => parkedLedgerRows(parked ?? []), [parked]);
   // The drawer ledger's terms; their `expected` is `deriveExpected`'s own result for the same rows.
+  const sale = options.liveSale?.();
   const terms = session
-    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, replaced), refunds: data?.refundRows ?? [] })
+    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, [...parkedRows, ...liveLedgerRows(sale?.saving ? [] : sale?.takenLegs ?? [])], replaced), refunds: data?.refundRows ?? [] })
     : null;
   const expected = terms ? terms.expected : {};
   const now = new Date();
@@ -351,24 +381,28 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   };
   const live = () => {
     if (!enabled || !sessions || !movements || !closures || !orders || !registerId || !register || refunds === null) throw new RegisterSessionRequiredError();
-    return { sessions, movements, closures, orders, registerId, register, refunds };
+    return { sessions, movements, closures, orders, registerId, register, refunds, drafts, liveSale: options.liveSale };
   };
   const current = () => {
     if (!session) throw new RegisterSessionRequiredError();
     return session;
   };
+  const parkedFresh = async () => { const { drafts } = live(); return drafts ? readFresh(drafts, { selector: {} }) : []; };
+  const liveLegs = () => { const sale = live().liveSale?.(); return sale?.saving ? [] : sale?.takenLegs ?? []; };
   // As `writeClosure` derives the Z's expected figures, from the same rows, past the query cache.
   const freshExpected = async (row: RegisterSession) => {
     const { movements, orders, refunds } = live();
     return deriveExpected({
       session: { id: row.id, countedFloatMinor: row.counted_float_minor },
       movements: await readFresh(movements, { selector: { session_id: row.id } }),
-      ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: row.id } })),
+      ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: row.id } }),
+        [...parkedLedgerRows(await parkedFresh()), ...liveLedgerRows(liveLegs())]),
       refunds: refunds ? await readFresh(refunds, { selector: { sessionId: row.id } }) : undefined,
     });
   };
   const refuseDuringTender = () => {
     if (tender.current) throw new RegisterTenderInProgressError();
+    if (live().liveSale?.().saving) throw new RegisterSaleSavingError();
   };
   const nameOf = (id: string | null | undefined) => !id ? '' : id === actor.id ? actor.name : labels?.resolveCashierName?.(id) ?? '';
 
@@ -535,6 +569,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
           movements: await readFresh(movements, { selector: { session_id: closed.id } }),
           orders: await readFresh(orders, { selector: { sessionId: closed.id } }),
+          drafts: await parkedFresh(), liveLegs: liveLegs(),
           refunds: refunds ? await readFresh(refunds, { selector: { sessionId: closed.id } }) : undefined,
           resolveCashierName: labels?.resolveCashierName,
           labels: {

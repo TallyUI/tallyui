@@ -51,4 +51,12 @@ describe('restoreOrderDraft payment takenAt', () => {
     expect(restored.payments[1]).toMatchObject({ method: 'cash', amountMinor: 600 });
     expect(restored.payments[1]).not.toHaveProperty('takenAt');
   });
+
+  it('F5 S3: drops a restored sessionId that is not a string, keeping the leg', async () => {
+    const order = sale();
+    const restored = await parkAndResume({ ...order, payments: order.payments.map((p, i) => ({ ...p, sessionId: (i ? 42 : 'session-a') as unknown as string })) });
+    expect(restored.payments[0]).toMatchObject({ sessionId: 'session-a' });
+    expect(restored.payments[1]).toMatchObject({ method: 'cash', amountMinor: 600 });
+    expect(restored.payments[1]).not.toHaveProperty('sessionId');
+  });
 });
