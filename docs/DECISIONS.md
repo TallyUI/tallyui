@@ -1467,8 +1467,9 @@ interface OrderCreatePayload {
       batch keep the plain `status_409` retry reason.
     - **A parked refund** stays `pending` and stores
       `error: { code: 'needs_admin', message, data: { reason, at } }`
-      (pos_refunds schema unchanged). Only a `duplicate` or `rejected`
-      answer settles it. A later `in_progress`, transport failure,
+      (pos_refunds schema unchanged). Only an applied (or `duplicate`) or
+      `rejected` answer settles it. A repeated `needs_admin` refreshes the
+      marker's message, reason and `at`. A later `in_progress`, transport failure,
       `refused` or `unauthorized` answer leaves the marker in place, and a
       new envelope for the same refund is refused.
 
