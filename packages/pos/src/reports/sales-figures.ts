@@ -105,13 +105,18 @@ export function marginOf(lines: readonly ReportLine[]): Margin {
   return margin;
 }
 
+/** The median of minor-unit values: 0 for none; an even count rounds the mean of the middle two (`Math.round`). */
+export function medianMinor(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (!sorted.length) return 0;
+  return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
 /** Median and largest order total. Port of WCPOS v2 `ordersSummary` (`screens/main/reports/cards/aggregate.ts`). */
 function orderSpread(totals: number[]): { medianMinor: number; largestMinor: number | null } {
   const values = [...totals].sort((a, b) => a - b);
-  const middle = Math.floor(values.length / 2);
-  if (!values.length) return { medianMinor: 0, largestMinor: null };
-  const medianMinor = values.length % 2 ? values[middle] : Math.round((values[middle - 1] + values[middle]) / 2);
-  return { medianMinor, largestMinor: values[values.length - 1] };
+  return { medianMinor: medianMinor(values), largestMinor: values.length ? values[values.length - 1] : null };
 }
 
 function periodFigures(input: SalesFiguresInput, range: DayRange) {
