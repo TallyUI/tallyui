@@ -164,11 +164,13 @@ it('W7: a full cash pick keeps the rounded due and records the tendered amount',
   expect(text('tender-entry-amount')).toBe(money(rounded));
   expect(text('tender-quick-exact')).toBe(`Exact ${money(rounded)}`);
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125, tenderedMinor: 3130, changeMinor: 5, units: { [id]: 2 } }]);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3130, tenderedMinor: 3130, changeMinor: 0, units: { [id]: 2 } }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: sale.order.payments[0].id, minor: 5 }]);
   await act(async () => { await sale.complete(); });
-  // The stored leg, pinned at BASE 61cbdb83 (where Take kept the gross 3130 and finalize netted it).
+  // The stored leg settles at the rounded due, and the +5 is a cash rounding (R1 in tender-cash-roundings.test.tsx).
   expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.payments).toEqual([
-    { id: expect.any(String), method: 'cash', amountMinor: 3125, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 5 }]);
+    { id: expect.any(String), method: 'cash', amountMinor: 3130, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 0 }]);
+  expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.cashRoundings).toEqual([{ paymentId: expect.any(String), minor: 5 }]);
 });
 
 it('W8: prunes picks when integer quantity falls during tender, and ignores unknown and negative picks', () => {
@@ -347,9 +349,11 @@ it('W19: a full cash pick with rounding up refuses an entry below the rounded du
   enter(rounded);
   expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125, tenderedMinor: 3130, changeMinor: 5, units: { [id]: 2 } }]);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3130, tenderedMinor: 3130, changeMinor: 0, units: { [id]: 2 } }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: sale.order.payments[0].id, minor: 5 }]);
   await act(async () => { await sale.complete(); });
-  // The stored leg, pinned at BASE 61cbdb83 (where Take kept the gross 3130 and finalize netted it).
+  // The stored leg settles at the rounded due, and the +5 is a cash rounding (R1 in tender-cash-roundings.test.tsx).
   expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.payments).toEqual([
-    { id: expect.any(String), method: 'cash', amountMinor: 3125, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 5 }]);
+    { id: expect.any(String), method: 'cash', amountMinor: 3130, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 0 }]);
+  expect(sale.stage.kind === 'receipt' && sale.stage.posOrder.cashRoundings).toEqual([{ paymentId: expect.any(String), minor: 5 }]);
 });
