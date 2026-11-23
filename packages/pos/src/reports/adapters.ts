@@ -23,6 +23,7 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, method
   const taxes = recordedTaxByRate(order) ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
   const till = tillPayments(order.payments);
   const amountOf = (payments: readonly { amountMinor: number }[]) => payments.reduce((total, payment) => total + payment.amountMinor, 0);
+  const roundingMinor = (order.cashRoundings ?? []).reduce((total, entry) => total + entry.minor, 0);
   return {
     id: order.id, at: order.createdAt, totalMinor: order.totalMinor, taxMinor: order.taxMinor,
     discountMinor: order.discountMinor, needsPayment: false, refunds: [],
@@ -43,6 +44,7 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, method
       return { method, ...(label ? { label } : {}), amountMinor: payment.amountMinor };
     }),
     ...(order.storeOrderId !== undefined ? { paidEarlierMinor: amountOf(order.payments) - amountOf(till) } : {}),
+    ...(roundingMinor !== 0 ? { roundingMinor } : {}),
     taxes: taxes.map((row) => ({
       ratePpm: row.ratePpm, ...(row.code !== undefined ? { code: row.code } : {}),
       label: row.label ?? `Tax ${row.ratePpm / 10000}%`, taxMinor: row.amountMinor, netMinor: row.netMinor,

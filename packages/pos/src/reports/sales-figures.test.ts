@@ -1,4 +1,7 @@
 import { expect, it } from 'vitest';
+import { createOrderBuilder } from '../order/order-builder';
+import { finalizeOrder } from '../pos-order/finalize';
+import { reportOrderFromPosOrder } from './adapters';
 import { comparisonRange, daysOf, inRange, marginOf, medianMinor, salesFigures } from './sales-figures';
 import type { DatePreset } from './presets';
 import type { ReportLine, ReportOrder, ReportRefund } from './types';
@@ -190,7 +193,7 @@ it('lists inclusive calendar days and returns zeros for an empty period', () => 
   expect(daysOf({ from: '2026-11-11', to: '2026-11-10' })).toEqual([]);
   const result = salesFigures({ orders: [], range, timezone: 'UTC' });
   expect(result.totals).toEqual({
-    grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0,
+    grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0, roundingMinor: 0,
     orderCount: 0, averageMinor: 0, medianMinor: 0, largestMinor: null, items: 0,
     margin: { costedNetMinor: 0, costMinor: 0, profitMinor: 0, marginPct: null, missingLines: 0, missingQuantity: 0 },
   });
@@ -209,7 +212,7 @@ it('keeps gross separate from dated and embedded refunds', () => {
     { id: 'r2', orderId: 'o1', at: '2026-11-10T11:00:00.000Z', amountMinor: 150 },
   ] });
   expect(result.totals).toEqual({
-    grossMinor: 1501, netMinor: 1351, taxMinor: 150, discountMinor: 75, refundsMinor: 250, embeddedRefundsMinor: 200,
+    grossMinor: 1501, netMinor: 1351, taxMinor: 150, discountMinor: 75, refundsMinor: 250, embeddedRefundsMinor: 200, roundingMinor: 0,
     orderCount: 2, averageMinor: 751, medianMinor: 751, largestMinor: 1000, items: 1,
     margin: { costedNetMinor: 900, costMinor: 600, profitMinor: 300, marginPct: 1 / 3, missingLines: 0, missingQuantity: 0 },
   });
@@ -256,4 +259,28 @@ it('medianMinor: none is 0, odd is the middle, even rounds the mean', () => {
   expect(medianMinor([900, 100, 500])).toBe(500);
   expect(medianMinor([100, 400, 201, 900])).toBe(301);
   expect(medianMinor([1, 2])).toBe(2);
+});
+
+/** ADR-094: one line taken in cash with a -2 rounding entry (the cashRounding capability on). */
+function roundedSale(unitMinor: number, ratePpm: number, pricesIncludeTax: boolean) {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => ratePpm, pricesIncludeTax } });
+  builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: unitMinor, currency: 'EUR' } });
+  builder.addPayment({ method: 'cash', amountMinor: unitMinor - 2, tenderedMinor: unitMinor - 2, changeMinor: 0 }, { minor: -2 });
+  return reportOrderFromPosOrder(finalizeOrder(builder.getSnapshot(), {
+    capabilities: { orderCreate: 12, cashRounding: true }, now: new Date('2026-11-10T10:00:00.000Z'),
+  }));
+}
+
+// Front desk, 22 Nov, Q3: net = gross - tax - rounding, so net is the product rows' net.
+it('salesFigures reports roundingMinor -2 and net sales equal to the product rows', () => {
+  const { totals, products } = salesFigures({ range, timezone: 'UTC', orders: [roundedSale(102, 0, false)] });
+  expect(totals).toMatchObject({ roundingMinor: -2, grossMinor: 100, netMinor: 102, taxMinor: 0 });
+  expect(totals.netMinor).toBe(products.reduce((sum, row) => sum + row.netMinor, 0));
+  expect(totals.grossMinor).toBe(totals.netMinor + totals.taxMinor + totals.roundingMinor);
+});
+
+it('a taxed rounded sale: gross 10.00 = net 9.11 + tax 0.91 + rounding -0.02', () => {
+  const { totals } = salesFigures({ range, timezone: 'UTC', orders: [roundedSale(1002, 100_000, true)] });
+  expect(totals).toMatchObject({ grossMinor: 1000, netMinor: 911, taxMinor: 91, roundingMinor: -2 });
+  expect(totals.netMinor + totals.taxMinor + totals.roundingMinor).toBe(totals.grossMinor);
 });

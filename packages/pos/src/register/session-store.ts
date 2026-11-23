@@ -582,6 +582,7 @@ export async function writeClosure({
     }
   }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
+  const cashRoundingMinor = sum(bound.flatMap((order) => (order.cashRoundings ?? []).map((entry) => entry.minor)));
   const draft: Closure = {
     id: session.id,
     session_id: session.id,
@@ -623,6 +624,8 @@ export async function writeClosure({
       ...(roundings.size > 1 ? { tax_rounding_mixed: true } : {}),
       // A reopened sale's tax rates are its whole order's, including tax on what was paid earlier in the store (ADR-090 ruling 38).
       ...(bound.some((order) => tillPayments(order.payments).length < order.payments.length) ? { tax_includes_store_paid: true } : {}),
+      // ADR-094: in period_sales_total_minor, in no tax_rates row.
+      ...(cashRoundingMinor !== 0 ? { cash_rounding_minor: cashRoundingMinor } : {}),
       opening_float: {
         expected_minor: session.expected_float_minor ?? null,
         counted_minor: session.counted_float_minor,

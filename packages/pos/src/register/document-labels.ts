@@ -1,6 +1,6 @@
 // Offline defaults use the same label keys as the shipped server closure template. Port
-// provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c` `document-labels.ts`, unchanged —
-// no money, no imports.
+// provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c` `document-labels.ts`, unchanged
+// except `cash_rounding` — no money, no imports.
 export const labelKeys = {
   x_report: 'register.x_report',
   closure: 'reports.document.closure',
@@ -43,6 +43,8 @@ export const labelKeys = {
   no_sale: 'register.no_sale',
   void: 'register.void',
   copy: 'reports.document.copy',
+  // TallyUI's own key (ADR-094); the WCPOS server template has none.
+  cash_rounding: 'reports.document.cash_rounding',
 };
 
 // The English wording for offline documents, keyed like `ClosureContext.i18n`.
@@ -67,5 +69,5 @@ export const ENGLISH_CLOSURE_LABELS: Record<keyof typeof labelKeys, string> = {
   exact: 'Exact', voided: 'Voided',
   paid_in: 'Paid in', paid_out: 'Paid out',
   no_sale: 'No sale', void: 'Void',
-  copy: 'Copy',
+  copy: 'Copy', cash_rounding: 'Rounding',
 };

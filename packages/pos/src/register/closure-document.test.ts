@@ -13,7 +13,7 @@
 // key-for-key at every template section" is plain data comparison needing no renderer, so it's
 // ported below instead of deferred — 3 of 7 kept, 4 deferred.
 import { expect, expectTypeOf, it } from 'vitest';
-import { buildClosureDocument, buildXReportDocument, type ClosureContext } from './closure-document';
+import { buildClosureDocument, buildXReportDocument, createClosureContext, type ClosureContext } from './closure-document';
 import closureFixture from './__fixtures__/closure.json';
 import closureLocalRow from './__fixtures__/closure-local-row.json';
 import type { Closure, RegisterSession } from './schemas';
@@ -289,6 +289,8 @@ const closureLocalOnly = [
   'closure.breakdowns.tax_rates[].gross_minor',
   'closure.breakdowns.tax_rates[].net_minor',
   'closure.breakdowns.tax_rates[].tax_minor',
+  // TallyUI's own flag (ADR-094): false on a closure with no cash rounding.
+  'closure.has_cash_rounding',
   'closure.id',
   'closure.movement_ids[]',
   'closure.order_ids[]',
@@ -434,4 +436,33 @@ it('writes an opening float with no counted value as unknown (null), never 0 (#1
   expect(doc.closure.breakdowns.opening_float).toMatchObject({
     expected_minor: 10000, counted_minor: null, counted: null,
   });
+});
+
+// ADR-094: the session's cash rounding is its own Z line, so the tax rates' gross plus the rounding is the period sales.
+it('the Z document shows cash rounding as a decimal with its display, and has_cash_rounding false when the key is absent', () => {
+  const rounded = buildClosureDocument({ ...row, breakdowns: { ...row.breakdowns, cash_rounding_minor: -2 } }, context);
+  expect(rounded.closure).toMatchObject({ has_cash_rounding: true, cash_rounding: { amount: '-0.02', amount_display: '-$0.02' } });
+  expect(rounded.closure.breakdowns.cash_rounding).toBe('-0.02');
+  // A v0 row written before the key existed reads as no rounding.
+  for (const plain of [row, closureLocalRow as unknown as Closure]) {
+    const doc = buildClosureDocument(plain, context);
+    expect(doc.closure.has_cash_rounding).toBe(false);
+    expect(doc.closure).not.toHaveProperty('cash_rounding');
+    expect(doc.closure.breakdowns).not.toHaveProperty('cash_rounding');
+  }
+});
+
+it("the Z document's rounding line is labelled and the printed figures add up", () => {
+  const rounded: Closure = { ...row, period_sales_total_minor: 1000, breakdowns: { ...row.breakdowns,
+    tax_rates: { 100000: { name: 'Tax 10%', net_minor: 911, tax_minor: 91, gross_minor: 1002 } }, cash_rounding_minor: -2 } };
+  const eur = createClosureContext({ currency: 'EUR', store: {} });
+  const { closure } = buildClosureDocument(rounded, eur);
+  expect(closure.cash_rounding).toMatchObject({ name: 'Rounding', amount: '-0.02', amount_display: eur.formatMoney('-0.02') });
+  expect(closure.cash_rounding?.amount_display).not.toBe('');
+  const minorOf = (decimal: unknown) => Math.round(Number(decimal) * 100);
+  const taxGross = closure.breakdowns.tax_rates.reduce((sum, rate) => sum + minorOf((rate as Record<string, unknown>).gross), 0);
+  expect(taxGross + minorOf(closure.cash_rounding?.amount)).toBe(minorOf(closure.period_sales_total));
+  expect(closure.period_sales_total).toBe('10.00');
+  const french = createClosureContext({ currency: 'EUR', store: {}, labels: { cash_rounding: 'Arrondi' } });
+  expect(buildClosureDocument(rounded, french).closure.cash_rounding?.name).toBe('Arrondi');
 });
