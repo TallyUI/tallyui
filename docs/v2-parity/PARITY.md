@@ -47,8 +47,8 @@ Every row has:
   was opened and closed without refunding.
 - **Tally Woo:** scored from a code read, with no screenshots: the
   2026-11-23 code parity table, monorepo 3a43096a3 against
-  tallyui-woocommerce 1778057 with @tallyui/* 4.2.0
-  (`~/agent/handoff/tallyui-parity-2026-11-23.md`).
+  tallyui-woocommerce 1778057 with @tallyui/* 4.2.0 (the table is kept
+  outside the repo; its row numbers are cited below).
   - Its demo is still not reachable: the README's demo
     (`https://tallyui-woocommerce.vercel.app`) asks for a WCPOS cashier
     account, and the demo store that ADR 0007 names is behind a password
