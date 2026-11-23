@@ -6941,7 +6941,11 @@ interface OrderCreatePayload {
      `precheckCommand` refuses an order.create (or an order.update's create part) carrying `cashRoundings` as
      `invalid_payload` rather than dropping the field, since a dropped entry is a wrong total.
      **Amended 2026-11-23 (Front desk, S7):** "Without the cashRounding flag the pane does not round and takes the exact due; nothing is sent that the store refuses." The pane rounds exactly when addTender does.
-  4. **Refunds** of the rounding are not decided; nothing refunds or re-figures it separately.
+  4. **Refunds.** Amended 22 Nov (batch 6), front desk, verbatim:
+     > "Q1 yes: the refund taking every line's whole remaining quantity returns the order's rounding through adjustmentMinor, and the refundable figure shown equals what will be accepted (tests: 1.02→1.00 shows and refunds 1.00; 1.03→1.05 refunds 1.05, nothing stranded; a final partial refund that completes the order also carries the rounding)."
+     > "Q2 no for now, backlog row, but the refund screen must not offer cash for an amount that is not a multiple of the increment without saying so: a one-line notice now, rounding later."
+
+     The refund form carries Q1 as `cashRoundingMinor` and Q2's notice as `cashIncrementMinor`; rounding a cash refund to the increment is a backlog row.
   5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
      plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
      refused at finalize.

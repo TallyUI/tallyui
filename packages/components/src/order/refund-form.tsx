@@ -29,6 +29,10 @@ export interface RefundFormProps {
   refundedMinor?: number;
   /** Shipping still refundable, with tax; 0 or absent hides the shipping field. */
   refundableShippingMinor?: number;
+  /** The order's cash rounding, signed (ADR-094): the sum of its entries, or a WooCommerce order's Rounding fee. The refund that takes every line's whole remaining quantity returns it through adjustmentMinor; default 0. */
+  cashRoundingMinor?: number;
+  /** The cash method's rounding increment (PaymentRounding.incrementMinor). A cash refund that is not a multiple of it shows a one-line notice; the refund itself is not rounded. */
+  cashIncrementMinor?: number;
   /** The sale's payment method; omit for a cash sale, which always refunds in cash. */
   originalMethod?: { title: string; available: boolean };
   /** Each line's restock starting value; default true. */
@@ -53,7 +57,7 @@ function parseAmount(text: string, currency: string, signed = false, format?: Mo
 /** Ports WCPOS v2 form.tsx, monorepo main 5ac185b0e; the till never prices lines itself (priceRefund). */
 export function RefundForm({
   lines, refunds, currency, orderReference, orderTotalMinor, refundedMinor = 0,
-  refundableShippingMinor = 0, originalMethod, defaultRestock = true, online = true,
+  refundableShippingMinor = 0, cashRoundingMinor = 0, cashIncrementMinor, originalMethod, defaultRestock = true, online = true,
   error, onConfirm, onCancel,
 }: RefundFormProps): JSX.Element {
   const formatMoney = useFormatMoney();
@@ -76,11 +80,14 @@ export function RefundForm({
     restock: restock[orderLineId] ?? defaultRestock,
   })).filter(({ quantity }) => quantity > 0);
   const priced = priceRefund(lines, refunds, request);
+  const emptiesLines = priced.lines.length > 0 && available.every(({ orderLineId, refundableQuantity }) => (request.find((line) => line.orderLineId === orderLineId)?.quantity ?? 0) === refundableQuantity);
+  const roundingShareMinor = emptiesLines ? cashRoundingMinor : 0;
   const shippingMinor = refundableShippingMinor > 0 ? parseAmount(shippingText, currency, false, format) : 0;
   const adjustmentMinor = parseAmount(adjustmentText, currency, true, format);
   const totalMinor = typeof shippingMinor === 'number' && typeof adjustmentMinor === 'number'
-    ? priced.totalMinor + shippingMinor + adjustmentMinor : undefined;
+    ? priced.totalMinor + shippingMinor + adjustmentMinor + roundingShareMinor : undefined;
   const destination = originalMethod?.available ? (picked ?? 'original_method') : 'cash';
+  const cashStep = destination === 'cash' && Number.isInteger(cashIncrementMinor) && cashIncrementMinor! > 1 && typeof totalMinor === 'number' && totalMinor > 0 && totalMinor % cashIncrementMinor! !== 0;
   const invalid = typeof shippingMinor === 'string' ? shippingMinor
     : typeof adjustmentMinor === 'string' ? adjustmentMinor
     : shippingMinor > refundableShippingMinor ? `Shipping can be at most ${fmt(refundableShippingMinor)}.`
@@ -98,7 +105,7 @@ export function RefundForm({
     const value: RefundFormValue = {
       lines: priced.lines,
       shippingMinor: shippingMinor as number,
-      adjustmentMinor: adjustmentMinor as number,
+      adjustmentMinor: (adjustmentMinor as number) + roundingShareMinor,
       totalMinor: totalMinor!,
       destination,
       reason: reason.trim(),
@@ -178,10 +185,16 @@ export function RefundForm({
             Original payment method refunds are unavailable for this order.
           </Text>}
         </View>}
+        {roundingShareMinor !== 0 && <View className="flex-row justify-between gap-2">
+          <Text>Rounding</Text><Text testID="refund-rounding">{fmt(roundingShareMinor)}</Text>
+        </View>}
         <View className="flex-row justify-between gap-2">
           <Text className="font-semibold">Refund Total</Text>
           <Text testID="refund-total" className="font-semibold">{fmt(totalMinor ?? 0)}</Text>
         </View>
+        {cashStep && <Text testID="refund-cash-step" className="text-muted-foreground">
+          {`Cash cannot pay ${fmt(totalMinor)} exactly. The smallest cash step is ${fmt(cashIncrementMinor!)}.`}
+        </Text>}
       </ScrollView>
       {online === false && <Text testID="refund-offline-reason" className="text-muted-foreground">Refunds need a connection</Text>}
       {invalid && online !== false && <Text testID="refund-invalid" className="text-muted-foreground">{invalid}</Text>}

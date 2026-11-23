@@ -29,6 +29,8 @@ import { RefundForm } from '@tallyui/components';
 - Shipping above `refundableShippingMinor` prevents confirmation.
 - The refund total is the amount returned by `priceRefund` plus shipping and the signed adjustment.
 - Confirmation requires a positive total no greater than `orderTotalMinor - refundedMinor`.
+- The refund that takes every line's whole remaining quantity adds `cashRoundingMinor` to the total and to `adjustmentMinor`.
+- A cash refund that is not a multiple of `cashIncrementMinor` shows a one-line notice; the refund itself is not rounded and the notice does not prevent confirmation.
 - Confirmation requires a non-blank reason.
 - The destination defaults to `original_method` when `originalMethod.available` is true, and to `cash` otherwise.
 - Setting `online` to `false` disables confirmation.
@@ -48,6 +50,8 @@ import { RefundForm } from '@tallyui/components';
 | `orderTotalMinor` | `number` | --- | Required order total including tax, in minor units |
 | `refundedMinor` | `number` | `0` | Money already refunded on the order, expressed as a positive amount in minor units |
 | `refundableShippingMinor` | `number` | `0` | Shipping still refundable including tax, in minor units |
+| `cashRoundingMinor` | `number` | `0` | Signed cash rounding on the order, returned through `adjustmentMinor` when every line's whole remaining quantity is refunded |
+| `cashIncrementMinor` | `number` | --- | Cash method's rounding increment in minor units; cash refunds off the increment show a notice |
 | `originalMethod` | `{ title: string; available: boolean }` | --- | Original payment method; omit for a cash sale |
 | `defaultRestock` | `boolean` | `true` | Starting restock choice for each line |
 | `online` | `boolean` | `true` | Whether confirmation is enabled, subject to validation and busy state |
