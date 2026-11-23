@@ -32,11 +32,13 @@ export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
- * switching, but a TallyUI draft keeps no tender stage, the next `startTender` replaces every unlocked leg but a resumed
- * paid draft's taken legs, and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
+ * switching, but a TallyUI draft keeps no tender stage; `startTender` keeps taken legs and legs in motion (ADR-072 d3,
+ * amended 2026-11-22 and 2026-11-23), and `resume` keeps a paid draft's parked coupons (ADR-077 d3, amended 2026-11-19): so the
  * sale stays on the till until it is paid or its paid legs are voided.
  */
 export const SALE_PARTLY_PAID = 'This sale is partly paid. Take the rest of the payment or void the paid legs first.';
+/** newSale refuses with this while an unlocked payment leg is pending or authorized. */
+export const SALE_CARD_IN_PROGRESS = 'A card payment is still in progress. Finish or cancel it before starting a new sale.';
 export const SALE_IN_TENDER = 'Finish or cancel the payment before switching sales';
 /**
  * Line and total changes refuse with this while a till leg is live, as v2's resolveStage stills the cart (tally-woo 11c).
@@ -1064,8 +1066,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * updates or requeues `pos_orders` itself. An unfinished sale that still holds a taken payment is refused
      * with SALE_PARTLY_PAID, changing nothing, as `closeSale` refuses it; the receipt and a confirmed stored
      * pending completion are unchanged.
+     * An unfinished sale with an unlocked leg in motion refuses with SALE_CARD_IN_PROGRESS, changing nothing.
      */
     newSale() {
+      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current && builderNow.current.getSnapshot().payments.some((p) => !p.locked && isInMotion(p))) return setError(SALE_CARD_IN_PROGRESS);
       if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current && holdsTakenPayment()) return setError(SALE_PARTLY_PAID);
       resetSale();
     },
