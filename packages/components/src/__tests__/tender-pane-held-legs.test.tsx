@@ -1,4 +1,4 @@
-// Held legs (desk 2026-11-21): money taken before a sale was reopened keeps no reference input and no Remove payment.
+// Held legs (desk 2026-11-21): money taken before a sale was reopened keeps no reference input and no Cancel payment.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';

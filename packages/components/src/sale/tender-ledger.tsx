@@ -24,6 +24,16 @@ const STATUS_TONE: Record<PaymentLegStatus, string> = {
   pending: 'text-muted-foreground', authorized: 'text-success', captured: 'text-success', failed: 'text-destructive', voided: 'text-muted-foreground',
 };
 
+// One leg's line in v2's cancel-payment view (use-tender-flow.ts cancelOne): voidable cash not captured by the server goes back as
+// `cashMinor` cash, any other voidable leg is voided on its method, and a leg the till cannot void is refunded from the order.
+export function cancelLine(t: ReturnType<typeof useT>, money: (minor: number) => string, leg: ReturnType<typeof useSale>['order']['payments'][number],
+  descriptor: PaymentMethodDescriptor | undefined, voidable: boolean, cashMinor: number): string {
+  if (!voidable) return t('pos_checkout.refund_on_method', { amount: money(leg.amountMinor), title: descriptor?.title ?? leg.methodId ?? leg.method });
+  return descriptor?.kind === 'cash' && descriptor.capture.mode !== 'server'
+    ? t('pos_checkout.return_cash', { amount: money(cashMinor) })
+    : t('pos_checkout.void_on_method', { amount: money(leg.amountMinor), title: descriptor?.title ?? leg.methodId ?? leg.method });
+}
+
 export function TenderLedger({ sale, methods, closing = false, confirmVoid = false, beforeVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
   /** v2's "Cancel this payment?" before a leg is voided (use-tender-flow.ts cancelOne). Default false: Cancel payment voids at once. */
   confirmVoid?: boolean;
@@ -53,10 +63,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
   const firstPending = order.payments.find((leg) => legStatus(leg) === 'pending');
   const askedLeg = order.payments.find((leg) => leg.id === asking);
   const asked = askedLeg && descriptorOf(askedLeg);
-  /** v2 cancelOne's body: cash not captured by the server goes back as cash, anything else is voided on its method. */
-  const question = askedLeg && asked ? asked.kind === 'cash' && asked.capture.mode !== 'server'
-    ? t('pos_checkout.return_cash', { amount: money(askedLeg.amountMinor) })
-    : t('pos_checkout.void_on_method', { amount: money(askedLeg.amountMinor), title: asked.title }) : undefined;
+  const question = askedLeg && asked ? cancelLine(t, money, askedLeg, asked, true, askedLeg.amountMinor) : undefined;
 
   const cancel = async (leg: Payment) => {
     if (!beforeVoid) { sale.voidTender(leg.id); return; }

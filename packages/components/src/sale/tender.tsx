@@ -13,7 +13,7 @@ function HostedPane({ sale, method, methods, ledger, back, confirmVoid, beforeVo
 
 type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[]; /** Passed to TenderPane: `false` leaves the ledger to Cart's `tenderLedger`. Default `true`. */ ledger?: boolean; /** Passed to TenderPane: `false` hides Back (v2's phone checkout). Default `true`. */ back?: boolean;
   /** Passed to TenderPane's ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`. */ confirmVoid?: boolean;
-  /** Passed to TenderPane's ledger: runs before Cancel payment voids a leg; the void waits for it. */ beforeVoid?: TenderPaneProps['beforeVoid'];
+  /** Passed to TenderPane's ledger and its cancel-payment view: runs before either voids a leg; the void waits for it. */ beforeVoid?: TenderPaneProps['beforeVoid'];
   /** One reducer shared with Cart's `picker` (useTender). Without it, Tender keeps its own reducer, as before. */ tender?: ReturnType<typeof useTender> };
 
 /** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
