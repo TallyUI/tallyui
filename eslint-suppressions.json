@@ -327,11 +327,6 @@
       "count": 1
     }
   },
-  "packages/components/src/__tests__/settings-layout.test.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    }
-  },
   "packages/components/src/customer/customer-card.tsx": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
