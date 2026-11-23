@@ -24,8 +24,8 @@ Pro 2.0.5 on Free 2.0.5. Pro ran with no licence set; the refund route did not n
   404 `rest_no_route` (`A-free204-v2-refund-create`, `A-free204-v1-refund-create`,
   `A-free204-v2-refunds-collection-post`). The v2 index lists `/wcpos/v2/refunds` as GET only, the
   read-only proxy (`A-free204-v2-index`). It also lists `POST /wcpos/v2/orders/<id>/payments/<uuid>/refund`,
-  which only allocates a payments-ledger refund to an existing Woo refund (`refund_id` is required,
-  `includes/API/V2/Payments_Controller.php:339`); it never creates one (`A-free204-payment-refund-no-refund-id`).
+  which only allocates a payments-ledger refund to an existing Woo refund; by source, not recorded, it
+  requires `refund_id` and never creates one (`includes/API/V2/Payments_Controller.php:339`).
 - B: `POST /wcpos/v2/orders/<order_id>/refunds` (201, `B-pro205-v2-create-k1`) and the same under
   `wcpos/v1` (201, `B-pro205-v1-create-k3`). Source: `includes/API.php:92,110` registers `order_refunds`;
   `includes/API/V2/Order_Refunds_Controller.php` is the v1 class with namespace `wcpos/v2`. The index also
@@ -62,7 +62,7 @@ Woo's own refund object plus Pro's fields (`B-pro205-v2-create-k1`, `D-pro11020-
 - Destination: `refund_result: {mode, destination, gateway_id, api_refund}`, for example
   `{"mode":"manual","destination":"cash","gateway_id":"pos_cash","api_refund":false}`, plus `allocations`
   when the payments ledger split the refund. Request field `refund_destination` takes
-  `original_method`, `cash` or `manual` (`includes/Payments/Refund_Processor.php:176-230`).
+  `original_method`, `cash` or `manual` (Pro `includes/Payments/Refund_Processor.php:176-230`).
 
 ## 4. Idempotency (`X-WCPOS-Idempotency-Key`)
 
@@ -75,6 +75,6 @@ Woo's own refund object plus Pro's fields (`B-pro205-v2-create-k1`, `D-pro11020-
   different request." (`B-pro205-v2-create-k1-other-body`, `D-pro11020-fork-v2-create-k1-other-body`).
 - A new key with the same body makes a second refund (`B-pro205-v2-create-k2-same-body`,
   `B-pro205-order12-after-all`): dedupe is by key, not by body.
-- Source, not recorded: the hash is md5 of the JSON params plus `order_id` (`Refund_Processor.php:679`);
+- Source, not recorded: the hash is md5 of the JSON params plus `order_id` (`Refund_Processor.php:684`);
   replays live in a transient for 24 hours (Free `includes/Payments/Idempotency_Repository.php:23`); a
   concurrent duplicate gets 409 `wcpos_idempotency_in_progress` (Pro `Idempotency_Repository.php:136`).
