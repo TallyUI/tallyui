@@ -21,14 +21,23 @@ export function roundToIncrement(minor: number, incrementMinor: number, mode: Ro
   return remainder * 2 >= incrementMinor ? down + incrementMinor : down;
 }
 
+/** ADR-094: the sale rounds once, against its unrounded remainder. */
+export function roundedRemainder(balanceMinor: number, entriesMinor: number, rounding: NonNullable<PaymentRounding>): number {
+  if (balanceMinor <= 0) return balanceMinor;
+  const unrounded = balanceMinor - entriesMinor;
+  return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
+}
+
 /** The balance under a cash method's rounding, with its signed difference. */
 export function roundedDue(
   balanceMinor: number,
   method: PaymentMethodDescriptor | null,
+  /** The sum of the order's live cashRoundings, already counted in the balance. */
+  entriesMinor = 0,
 ): { dueMinor: number; roundingMinor: number } {
   const rounding = method?.capture.mode === 'manual' && wireMethodOf(method) === 'cash' ? method.defaults.rounding : null;
   if (!rounding) return { dueMinor: balanceMinor, roundingMinor: 0 };
-  const dueMinor = roundToIncrement(balanceMinor, rounding.incrementMinor, rounding.mode);
+  const dueMinor = roundedRemainder(balanceMinor, entriesMinor, rounding);
   return { dueMinor, roundingMinor: dueMinor - balanceMinor };
 }
 
@@ -60,8 +69,10 @@ export function tenderRounding(
   state: Pick<TenderState, 'entryMinor' | 'entryDirty'>,
   balanceMinor: number,
   method: PaymentMethodDescriptor | null,
+  /** The sum of the order's live cashRoundings, already counted in the balance. */
+  entriesMinor = 0,
 ): TenderRounding {
-  const roundedDueMinor = roundedDue(balanceMinor, method).dueMinor;
+  const roundedDueMinor = roundedDue(balanceMinor, method, entriesMinor).dueMinor;
   const entryMinor = !state.entryDirty && state.entryMinor === balanceMinor ? roundedDueMinor : state.entryMinor;
   const legMinor = appliedMinor(entryMinor, balanceMinor);
   const roundingMinor = settlesAtRoundedDue({

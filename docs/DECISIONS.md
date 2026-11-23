@@ -6951,5 +6951,10 @@ interface OrderCreatePayload {
   5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
      plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
      refused at finalize.
+  6. **The sale rounds once.** Amended 2026-11-24 (Front desk, S8), verbatim: "the sale rounds once ... cash rounding
+     is a property of what the customer pays in cash for the sale, not of each trip to the till; paying 33.80 for
+     33.70 of goods is the bug, whichever path got there." A settling cash leg rounds the balance less the live
+     entries (the sale's unrounded remainder; 0 when that is not positive), so every such leg is a multiple of the
+     increment, the live entries sum to one rounding of the sale, and earlier entries are never rewritten.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.

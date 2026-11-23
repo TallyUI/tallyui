@@ -22,6 +22,8 @@ export interface TenderFacts {
   /** Currency decimal places; every `*Minor` number is in these units. */
   dp: number;
   balanceMinor: number;
+  /** The sum of the order's live cashRoundings, already counted in the balance. */
+  entriesMinor?: number;
   /** The order's payment legs in ledger order; only those that count toward paid are numbered. */
   payments: readonly { status?: PaymentLegStatus }[];
   /** The plan's counted legs (by `plan.before`, else since `plan.from`), as `tender-recorded` and `planLegs` read them. */
@@ -47,7 +49,7 @@ export function tenderFigures(facts: TenderFacts) {
     plan?.kind === 'items' && done.reduce((sum, leg) => sum + leg.minor, 0) >= plan.firstMinor;
   const thisPaymentMinor = split?.thisPaymentMinor ?? balanceMinor;
   const legCapMinor = method?.capabilities.change ? thisPaymentMinor : balanceMinor;
-  const roundedDueMinor = roundedDue(balanceMinor, method).dueMinor;
+  const roundedDueMinor = roundedDue(balanceMinor, method, facts.entriesMinor ?? 0).dueMinor;
   const percent = state.entryMode === 'percent';
   const percentMinor = percent ? percentOfMinor(balanceMinor, state.entryMinor) : null;
   const entryMinor =

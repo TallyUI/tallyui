@@ -272,6 +272,72 @@ it('#1277: with cashRounding, a non-cash method with a rounding increment shows 
   expect(sale.order.cashRoundings ?? []).toEqual([]);
 });
 
+it('S8: a void between two cash settles still rounds the sale once (10.03 takes 10.05 in cash)', () => {
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  // Cash settles 5.02 as 5.00: entry -2.
+  let firstCash: string | null = null;
+  act(() => { firstCash = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  expect(firstCash).toEqual(expect.any(String));
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  // The customer hands 5.05 for the rest.
+  let secondCash: string | null = null;
+  act(() => { secondCash = sale.addTender({ method: 'cash', amountMinor: 505, rounding: five }); });
+  const cashTaken = sale.order.payments.filter((p) => p.method === 'cash' && p.status !== 'voided').reduce((sum, p) => sum + p.amountMinor, 0);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  expect({ cashTaken, totalMinor: sale.order.totalMinor }).toEqual({ cashTaken: 1005, totalMinor: 1005 });
+  // Invariant 3: the first entry is not rewritten; only the new leg's entry is computed.
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: firstCash, minor: -2 }, { paymentId: secondCash, minor: 4 }]);
+  // Invariant 2: voiding the new leg takes its entry out of the sum.
+  act(() => { expect(sale.voidTender(secondCash!)).toBe(true); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: firstCash, minor: -2 }]);
+  expect(sale.order.balanceDueMinor).toBe(501);
+});
+
+it('S8: after the void the pane shows and takes the sale\'s single rounding', () => {
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  let firstCash: string | null = null;
+  act(() => { firstCash = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  expect(firstCash).toEqual(expect.any(String));
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  expect(text('tender-entry-amount')).toBe(money(505));
+  press('tender-take');
+  expect(sale.order).toMatchObject({ balanceDueMinor: 0, totalMinor: 1005 });
+  const liveCash = sale.order.payments.filter((p) => p.method === 'cash' && p.status !== 'voided');
+  for (const leg of liveCash) expect(leg.amountMinor % 5).toBe(0);
+  expect((sale.order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0)).toBe(2);
+});
+
+it('invariant 1: with a live card and no prior cash the cash leg takes a payable 5.00', () => {
+  startCustom(1003, rounding(five), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });
+  expect(text('tender-entry-amount')).toBe(money(500));
+  press('tender-take');
+  const leg = sale.order.payments.find((p) => p.method === 'cash')!;
+  expect(leg).toMatchObject({ method: 'cash', amountMinor: 500 });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: -2 }]);
+  expect(sale.order).toMatchObject({ totalMinor: 1001, balanceDueMinor: 0 });
+});
+
+it('a card-only completion after a cash leg adds no rounding entry', () => {
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  let firstCash: string | null = null;
+  act(() => { firstCash = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  expect(firstCash).toEqual(expect.any(String));
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 501 })).toEqual(expect.any(String)); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: firstCash, minor: -2 }]);
+  expect(sale.order).toMatchObject({ totalMinor: 1001, balanceDueMinor: 0 });
+});
+
 it('R8: reopen keeps the stored entries as stored', async () => {
   roundUp();
   const draft = await reopened(await complete());
@@ -290,13 +356,13 @@ it('R8b: a reopened sale settled again by cash adds its own entry', async () => 
   renderTill(db!.pos_drafts, rounding(nearest));
   await act(async () => { expect(await till.resume(draft.id)).toBeNull(); });
   act(() => till.startTender('cash'));
-  expect(text('tender-entry-amount')).toBe(money(250));
+  expect(text('tender-entry-amount')).toBe(money(240));
   press('tender-take');
-  // By hand: total 3125 + 245 + 5 + 5 = 3380; paid 3130 (reopened) + 250 (the new cash leg) = 3380.
+  // By hand: total 3125 + 245 + 5 - 5 = 3370, the sale rounded once (desk, 2026-11-24); paid 3130 (reopened) + 240 (the new cash leg) = 3370.
   const [first, second] = till.order.payments;
-  expect(second).toMatchObject({ method: 'cash', amountMinor: 250, tenderedMinor: 250, changeMinor: 0 });
-  expect(till.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 5 }, { paymentId: second.id, minor: 5 }]);
-  expect(till.order).toMatchObject({ totalMinor: 3380, paidMinor: 3380, balanceDueMinor: 0 });
+  expect(second).toMatchObject({ method: 'cash', amountMinor: 240, tenderedMinor: 240, changeMinor: 0 });
+  expect(till.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 5 }, { paymentId: second.id, minor: -5 }]);
+  expect(till.order).toMatchObject({ totalMinor: 3370, paidMinor: 3370, balanceDueMinor: 0 });
   await act(async () => { await till.complete(); });
   expect(till.stage.kind).toBe('receipt');
 });

@@ -92,7 +92,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const entry = state.entryDirty ? state.entryMinor : target;
   // ADR-094: the pane rounds exactly when addTender does: only on a store whose connector declares cashRounding, and only while no leg is in motion.
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
-  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null);
+  const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.

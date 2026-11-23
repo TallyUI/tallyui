@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { roundToIncrement, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -940,7 +940,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) { setError(NOTHING_DUE); return null; }
-        const dueMinor = rule ? roundToIncrement(due, rule.incrementMinor, rule.mode) : due;
+        const entries = (snapshot.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+        const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
           clearStaleError();
           if (dueMinor > 0) {

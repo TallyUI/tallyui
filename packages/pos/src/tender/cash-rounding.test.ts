@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { paymentMethodOf, type PaymentRounding } from '@tallyui/core';
-import { roundToIncrement, roundedDue, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+import { roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
 
 const cash = (rounding: PaymentRounding) => ({
   ...paymentMethodOf('cash'),
@@ -30,6 +30,15 @@ describe('roundToIncrement', () => {
 });
 
 describe('roundedDue', () => {
+  it('rounds the unrounded remainder after a void, accounting for live entries', () => {
+    expect(roundedDue(501, cash({ incrementMinor: 5, mode: 'nearest' }), -2)).toStrictEqual({ dueMinor: 505, roundingMinor: 4 });
+  });
+
+  it('clamps a nonpositive unrounded remainder and leaves a zero balance unchanged', () => {
+    expect(roundedDue(1, cash({ incrementMinor: 5, mode: 'up' }), 3)).toStrictEqual({ dueMinor: 0, roundingMinor: -1 });
+    expect(roundedDue(0, cash({ incrementMinor: 5, mode: 'up' }), -2)).toStrictEqual({ dueMinor: 0, roundingMinor: 0 });
+  });
+
   it('does not round a non-cash method (#1277)', () => {
     const card = paymentMethodOf('external');
     card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
@@ -85,6 +94,12 @@ describe('settlesAtRoundedDue', () => {
 });
 
 describe('tenderRounding', () => {
+  it('prefills and applies the sale\'s single rounding after a void', () => {
+    expect(tenderRounding({ entryMinor: 501, entryDirty: false }, 501, cash({ incrementMinor: 5, mode: 'nearest' }), -2)).toStrictEqual({
+      roundedDueMinor: 505, roundingMinor: 4, entryMinor: 505, appliedMinor: 505,
+    });
+  });
+
   it('keeps an untouched prefill at the exact due for a non-cash method (#1277)', () => {
     const card = paymentMethodOf('external');
     card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
@@ -119,5 +134,34 @@ describe('tenderRounding', () => {
       entryMinor: 1003,
       appliedMinor: 1003,
     });
+  });
+});
+
+describe('roundedRemainder', () => {
+  it('keeps cash payable and the sale rounding bounded across live entries', () => {
+    for (const mode of ['nearest', 'up', 'down'] as const) {
+      for (let unrounded = -6; unrounded <= 30; unrounded++) {
+        for (let entries = -4; entries <= 4; entries++) {
+          const balance = unrounded + entries;
+          if (balance <= 0) continue;
+          const due = roundedRemainder(balance, entries, { incrementMinor: 5, mode });
+          expect(due % 5).toBe(0);
+          if (unrounded <= 0) {
+            expect(due).toBe(0);
+          } else {
+            expect(due).toBe(roundToIncrement(unrounded, 5, mode));
+            if (mode === 'nearest') {
+              expect(Math.abs(due - unrounded)).toBeLessThanOrEqual(2);
+            } else if (mode === 'up') {
+              expect(due - unrounded).toBeGreaterThanOrEqual(0);
+              expect(due - unrounded).toBeLessThan(5);
+            } else {
+              expect(due - unrounded).toBeGreaterThan(-5);
+              expect(due - unrounded).toBeLessThanOrEqual(0);
+            }
+          }
+        }
+      }
+    }
   });
 });
