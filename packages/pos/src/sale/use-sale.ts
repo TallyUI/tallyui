@@ -263,8 +263,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const resumedTakenIds = useRef<readonly string[]>([]);
   // An after-close sale's closure counted these legs, and finalize refuses any change to them: they are held like a locked leg.
   function countedLeg(p: { id: string }) { return !!builderNow.current.getSnapshot().afterClose?.payments.some((leg) => leg.id === p.id); }
+  // BUG 2: a leg in motion is held too, so Back and a repeat startTender never drop a card the terminal may still capture.
   function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
-    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || taken(p); }
+    || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || taken(p) || isInMotion(p); }
   function taken(p: Order['payments'][number]) { return takenLeg(p) || resumedTakenIds.current.includes(p.id); }
   /** The live sale holds a captured taken payment (row 517's `taken`): newSale, openStoreOrder, resume and the empty-sale resets refuse it with SALE_PARTLY_PAID (row 516). */
   function holdsTakenPayment() { return builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p)); }

@@ -776,8 +776,11 @@ describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () =
   it('R5: the hold ends with the sale: the next sale, even one carrying the same leg, has no held legs', async () => {
     const { result, cash } = await completed();
     act(() => { result.current.add(entries[0], traits); }); // the receipt's add starts the next sale
-    // Pending, so takenLeg never holds it (ADR-072 d3, amended 2026-11-22): only a held id could keep it.
-    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'pending' })).toEqual(expect.any(String)); });
+    // Failed, so takenLeg never holds it (ADR-072 d3, amended 2026-11-22) and it is not in motion (BUG 2): only a held id could keep it.
+    let leg: string | null = null;
+    act(() => { leg = result.current.addTender({ method: 'external', amountMinor: 100, status: 'pending' }); });
+    expect(leg).toEqual(expect.any(String));
+    act(() => { expect(result.current.setTenderStatus(leg!, 'failed')).toBe(true); });
     act(() => { result.current.startTender('external'); });
     await settle();
     const total = result.current.order.totalMinor;
