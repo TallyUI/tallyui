@@ -249,6 +249,18 @@ it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 
   expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
 });
 
+const five: PaymentRounding = { incrementMinor: 5, mode: 'nearest' };
+
+it('S7: without cashRounding, the due the pane shows is the due the leg takes', () => {
+  startCustom(1002, rounding(five), { orderCreate: 12 });
+  const shown = text('tender-entry-amount');
+  press('tender-take');
+  const [leg] = sale.order.payments;
+  expect(money(leg.amountMinor)).toBe(shown);
+  // At 10.02 and 5c the pane must not show 10.00 while the leg leaves 0.02 due.
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
+
 it('R8: reopen keeps the stored entries as stored', async () => {
   roundUp();
   const draft = await reopened(await complete());
@@ -350,33 +362,31 @@ it('R12: the receipt and the customer display show the rounding', async () => {
   expect(document.body.textContent).toContain(`Rounding${formatMoney({ amount: 5, currency: 'EUR' }, 'en-US')}`);
 });
 
-it.each(unflagged)('%s up: without the cashRounding flag the till is BASE byte for byte, rounding up', async (_name, before) => {
+it.each(unflagged)('%s up: without the cashRounding flag the pane does not round, and the stock-store sale completes with no cashRoundings (S7)', async (_name, before) => {
   start(2, rounding(nearest), before);
-  expect(text('tender-entry-amount')).toBe(money(3130));
+  expect(text('tender-entry-amount')).toBe(money(3125));
   expect(text('tender-entry-hint')).toBe('');
-  expect(text('tender-take')).toBe(`Take ${money(3130)} in Cash`);
+  expect(text('tender-take')).toBe(`Take ${money(3125)} in Cash`);
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125, tenderedMinor: 3130, changeMinor: 5 }]);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3125 }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
   expect('cashRoundings' in sale.order).toBe(false);
-  expect(text('tender-change')).toBe(`Change ${money(5)}`);
   const posOrder = await complete();
-  expect(posOrder.payments).toEqual([
-    { id: expect.any(String), method: 'cash', amountMinor: 3125, takenAt: expect.any(String), tenderedMinor: 3130, changeMinor: 5 }]);
+  expect(sale.stage.kind).toBe('receipt');
+  expect(posOrder.totalMinor).toBe(3125);
+  expect(posOrder.payments[0].amountMinor).toBe(3125);
   expect('cashRoundings' in posOrder).toBe(false);
 });
 
-it.each(unflagged)('%s down: without the cashRounding flag the till is BASE byte for byte, rounding down', async (_name, before) => {
+it.each(unflagged)('%s down: without the cashRounding flag the pane takes the exact due and the sale completes (S7)', async (_name, before) => {
   startCustom(3122, rounding(nearest), before);
-  expect(text('tender-entry-amount')).toBe(money(3120));
-  // The pane's figures, pinned at BASE a00e26c3.
-  expect(text('tender-entry-hint')).toBe(`Part payment · ${money(0)} left after this`);
-  expect(text('tender-take')).toBe(`Take ${money(3120)} in Cash`);
+  expect(text('tender-entry-amount')).toBe(money(3122));
+  expect(text('tender-take')).toBe(`Take ${money(3122)} in Cash`);
   press('tender-take');
-  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3120, tenderedMinor: 3120, changeMinor: 0 }]);
-  expect(sale.order.balanceDueMinor).toBe(2);
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 3122 }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
   expect('cashRoundings' in sale.order).toBe(false);
-  await act(async () => { await sale.complete(); });
-  expect(sale.stage.kind).toBe('tender');
-  // BASE's outcome, as it is (amendment 1 item 4: not fixed without the flag).
-  expect(sale.error).toBe('finalize: underpaid');
+  await complete();
+  expect(sale.stage.kind).toBe('receipt');
+  expect(sale.error).toBeNull();
 });

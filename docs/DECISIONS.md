@@ -6902,6 +6902,7 @@ interface OrderCreatePayload {
      order's content version. Without the flag the till is unchanged, finalize refuses an order with entries, and
      `precheckCommand` refuses an order.create (or an order.update's create part) carrying `cashRoundings` as
      `invalid_payload` rather than dropping the field, since a dropped entry is a wrong total.
+     **Amended 2026-11-23 (Front desk, S7):** "Without the cashRounding flag the pane does not round and takes the exact due; nothing is sent that the store refuses." The pane rounds exactly when addTender does.
   4. **Refunds** of the rounding are not decided; nothing refunds or re-figures it separately.
   5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
      plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
