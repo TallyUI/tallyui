@@ -60,7 +60,7 @@ export function createHttpCommandTransport(options: HttpTransportOptions): Comma
                 id: body.id, reason: body.reason, message: body.message.slice(0, NEEDS_ADMIN_MESSAGE_MAX),
               } };
             }
-          } catch {}
+          } catch { /* An unreadable body is a plain 409: retried as before. */ }
           return retry('status_409');
         }
         if (response.status !== 200) return retry(`status_${response.status}`);

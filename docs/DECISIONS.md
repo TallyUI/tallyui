@@ -1236,8 +1236,8 @@ interface OrderCreatePayload {
     #212). The plugin logs the failure for an admin (Front desk,
     2026-09-29).
     - The ledger row is marked as needing an admin, with a distinct status
-      or flag. A marked row still answers resends with `409 in_progress`,
-      never `duplicate` or `rejected`. A plugin's stale-in-progress reclaim
+      or flag. A marked row still answers resends with `409 in_progress`
+      (or `409 needs_admin`, TallyUI #1280), never `duplicate` or `rejected`. A plugin's stale-in-progress reclaim
       path (medusapos reclaims stale `in_progress` rows after a timeout)
       never re-runs the recipe on a marked row.
     - An admin resolves it by explicitly applying or rejecting the command.
@@ -1449,6 +1449,31 @@ interface OrderCreatePayload {
   - A `409 in_progress` stops the batch at that command. The response is
     HTTP 409 `{ code: 'in_progress', id }`. The client retries the whole
     batch, and earlier commands replay as `duplicate`.
+  - **A `409 needs_admin` answers a command that only an admin can finish
+    (TallyUI #1280).** The response is HTTP 409
+    `{ code: 'needs_admin', id, reason, message }`, built by
+    `needsAdminOutcome()` from `@tallyui/core/server`.
+    - **Retrying:** like `in_progress`, it stops the batch at that command.
+      The till keeps resending the same id on its usual backoff, and a
+      later `duplicate` or `rejected` settles the command.
+    - **`reason`** is snake_case, 1–40 characters.
+    - **`message`** is meant for store staff, at most 500 UTF-16 units. The
+      till shows it as plain text under its own lead line.
+    - **Malformed answers:** if any field is missing or out of shape, or the
+      `id` is not in the batch, the till reads the answer as a plain 409
+      and retries.
+    - **Older tills** read every 409 as a retry, so they keep working.
+
+    Whether the reason guarantees that no money moved:
+
+    | `reason` | "No money moved" guaranteed | Till's refund lead line |
+    |---|---|---|
+    | `session_closed` | Yes. The store applied nothing for the command, and no payment or refund was made for it. A connector sends this reason only under that guarantee. | "Not paid. …" |
+    | `compensation_failed` | No. Money may have moved before compensation failed. | the neutral "Not finished. …" line |
+    | any other reason | No. | the neutral line |
+
+    A row marked as needing an admin (above) may answer `409 needs_admin`
+    instead of `409 in_progress`.
   - The fingerprint is sha256 of canonical JSON of
     `{ type, version, payload }`, excluding `attempt`, `deviceId` and the
     envelope's `createdAt`.
