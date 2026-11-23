@@ -316,9 +316,37 @@ describe('vendurepos gap 2.10: a charge entered in the other tax mode, through t
 });
 
 describe('cash rounding on a WCPOS reprint (ADR-094)', () => {
-  // Needs #1258's Rounding fee row from receipt.rounding. Then: R1's PosOrder (1.02 settled in cash at 1.00, minor -2) through
-  // wcpos(wcposSourceFromPosOrder(...)) has a fee 'Rounding' with total -0.02, and lines plus fees add up to totals.total_incl.
-  it.todo('a reprinted cash-rounded sale has a Rounding fee row');
+  function reprinted(lineMinor: number, minor: number): PosOrder {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: lineMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: lineMinor + minor, tenderedMinor: lineMinor + minor, changeMinor: 0 }, { minor });
+    return finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
+  }
+
+  it('a reprinted cash-rounded sale has a Rounding fee row of -0.02, and its lines, fees and tax add up to its total', () => {
+    const data = wcpos(wcposSourceFromPosOrder(reprinted(102, -2), plain));
+    expect(data.fees).toHaveLength(1);
+    expect(data.fees[0]).toMatchObject({ label: 'Rounding', total: -0.02, total_incl: -0.02, total_excl: -0.02 });
+    expect(data.fees[0]).not.toHaveProperty('taxes');
+    expect(data.totals.tax_total).toBe(0);
+    expect(data.totals.total_incl).toBe(1);
+    expect(sum([...data.lines.map((line) => line.line_total_incl), ...data.fees.map((fee) => fee.total_incl),
+      ...data.shipping.map((row) => row.total_incl)])).toBeCloseTo(data.totals.total_incl, 10);
+  });
+
+  it('rounding up: a reprinted 1.03 sale rounded to 1.05 has a Rounding fee row of +0.02', () => {
+    const data = wcpos(wcposSourceFromPosOrder(reprinted(103, 2), plain));
+    expect(data.fees[0]).toMatchObject({ label: 'Rounding', total: 0.02 });
+    expect(data.totals.total_incl).toBe(1.05);
+  });
+
+  it('the reprint carries the same Rounding fee as the first print', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 102, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 100, tenderedMinor: 100, changeMinor: 0 }, { minor: -2 });
+    expect(wcpos(wcposSourceFromPosOrder(reprinted(102, -2), plain)).fees)
+      .toEqual(wcpos(wcposSourceFromSentOrder(builder.getSnapshot(), plain)).fees);
+  });
 });
 
 describe('ADR-094: a cash-rounded sale on the WCPOS receipt', () => {
