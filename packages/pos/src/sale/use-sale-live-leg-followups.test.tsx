@@ -15,7 +15,7 @@ import { createTaxContext, TaxProvider } from '../tax';
 import { initTenderState } from '../tender';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
-import { COUPONS_REPRICING, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
+import { COUPONS_REPRICING, NOTHING_DUE, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -683,6 +683,18 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     act(() => { expect(result.current.setTenderStatus(third, 'failed')).toBe(true); });
     expect(result.current.error).toBe(dropped);
     expect(result.current.order.lineItems[0].quantity).toBe(1);
+  });
+
+  it('P4 (row 502): a stale NOTHING_DUE clears when the pending leg that covered the sale fails', () => {
+    const { result } = renderSale();
+    const total = result.current.order.totalMinor;
+    let id = '';
+    act(() => { id = result.current.addTender({ method: 'external', amountMinor: total, status: 'pending' })!; });
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: total })).toBeNull(); });
+    expect(result.current.error).toBe(NOTHING_DUE);
+    act(() => { expect(result.current.setTenderStatus(id, 'failed')).toBe(true); });
+    expect(result.current.order.balanceDueMinor).toBe(total);
+    expect(result.current.error).toBeNull();
   });
 });
 

@@ -156,6 +156,52 @@ describe('Tender', () => {
     expect(sale.order.payments[1]).toMatchObject({ method: 'external', amountMinor: 1500, reference: 'REF-7' });
   });
 
+  it('P1 (row 502): Take is disabled while a pending leg covers the balance', () => {
+    start(1500);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1500, status: 'pending' }); });
+    fireEvent.click(screen.getByTestId('tender-method-cash'));
+    expect(disabled('tender-take')).toBe(true);
+  });
+
+  it('P2 (row 502): a pending leg that covers part of the balance leaves Take enabled for the rest', () => {
+    start(1500);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' }); });
+    fireEvent.click(screen.getByTestId('tender-method-cash'));
+    expect(disabled('tender-take')).toBe(false);
+    fireEvent.click(screen.getByTestId('tender-take'));
+    expect(sale.order.payments[1]).toMatchObject({ method: 'cash', amountMinor: 500 });
+    expect(sale.error).toBeNull();
+  });
+
+  it('P3 (row 502): NOTHING_DUE clears when the pending leg that covered the sale fails', () => {
+    start(1500);
+    let id!: string;
+    act(() => { id = sale.addTender({ method: 'external', amountMinor: 1500, status: 'pending' })!; });
+    act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 1500 })).toBeNull(); });
+    expect(sale.error).toBe(NOTHING_DUE);
+    act(() => { sale.setTenderStatus(id, 'failed'); });
+    expect(sale.order.balanceDueMinor).toBe(1500);
+    expect(sale.error).toBeNull();
+    expect(screen.queryByText(NOTHING_DUE)).toBeNull();
+  });
+
+  it('P5/P6 (row 502): a refused Take shows not_taken until a leg changes', async () => {
+    start(1500);
+    let id!: string;
+    act(() => { id = sale.addTender({ method: 'external', amountMinor: 500, status: 'pending' })!; });
+    fireEvent.click(screen.getByTestId('tender-method-cash'));
+    // The locked-sale refusal B2 uses: Take while complete() is in flight returns null.
+    await act(async () => {
+      const completing = sale.complete();
+      fireEvent.click(screen.getByTestId('tender-take'));
+      await completing;
+    });
+    expect(sale.order.payments).toHaveLength(1);
+    expect(screen.queryByText("That payment wasn't taken: nothing is due, or the amount isn't valid.")).not.toBeNull(); // P6
+    act(() => { expect(sale.setTenderStatus(id, 'failed')).toBe(true); });
+    expect(screen.queryByText("That payment wasn't taken: nothing is due, or the amount isn't valid.")).toBeNull(); // P5
+  }, 20_000);
+
   describe('Continue after a failed save (the Front desk, 2026-09-27)', () => {
     const stub = (canContinue: boolean) => ({
       stage: { kind: 'tender', method: 'external' }, error: 'The sale could not be saved: flush failed', canContinue,
