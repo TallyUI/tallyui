@@ -359,3 +359,45 @@ describe('medusaDisplaySignalling behaviour (#1219)', () => {
     expect(second.headers).not.toHaveProperty('x-tally-display-token');
   });
 });
+
+describe('request building (#1253 follow-up)', () => {
+  /** Runs `call` against a paired display; checks the refusal is `code`, sent nothing, logged nothing and names no `secret`. */
+  async function refusedUnsent(
+    code: DisplaySignallingErrorCode, secret: string | undefined,
+    call: (p: Awaited<ReturnType<typeof paired>>) => Promise<unknown>,
+  ): Promise<void> {
+    const spies = CONSOLE.map((name) => vi.spyOn(console, name).mockImplementation(() => {}));
+    const f = setup();
+    const p = await paired(f);
+    const before = f.requests.length;
+    const error = await refusal(call(p));
+    expect(error.code).toBe(code);
+    expect(error.message).toBe(error.code);
+    expect(error.cause).toBeUndefined();
+    expect(f.requests.length).toBe(before);
+    if (secret !== undefined) {
+      const own = error as unknown as Record<string, unknown>;
+      const texts = [String(error), error.stack ?? '', JSON.stringify(Object.getOwnPropertyNames(error).map((k) => own[k]))];
+      for (const text of texts) expect(text).not.toContain(secret);
+    }
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  }
+
+  it('R1 a ctx header Headers refuses is network, sends nothing and names no secret', () =>
+    refusedUnsent('network', 'cret-session', (p) => s.mint({ ...p.a, headers: { Authorization: 'Bearer se\ncret-session' } }, p.device)));
+
+  it('R2 a device key Headers refuses is network, sends nothing and names no secret', () =>
+    refusedUnsent('network', 'key-secret', (p) => s.list(p.a, { deviceId: p.device.deviceId, deviceKey: 'dev\r\nkey-secret' })));
+
+  it('R3 a display token Headers refuses is network, sends nothing and names no secret', () =>
+    refusedUnsent('network', 'token-secret', (p) => s.readSnapshot(p.d, 'tok\u0000token-secret')));
+
+  it('R4 a snapshot JSON cannot serialise is too_large and sends nothing', () =>
+    refusedUnsent('too_large', undefined, (p) => s.postSnapshot(p.a, p.device, p.displayId, { n: 1n })));
+
+  it('R5 a circular snapshot is too_large and sends nothing', () => {
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    return refusedUnsent('too_large', undefined, (p) => s.postSnapshot(p.a, p.device, p.displayId, circular));
+  });
+});

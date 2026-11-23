@@ -45,9 +45,8 @@ async function refusalCode(res: Response, till: boolean): Promise<DisplaySignall
   return CODES_BY_STATUS[res.status]?.find((known) => known === code) ?? 'server';
 }
 
-/** Sends one request and gives the 2xx response; every failure is a `DisplaySignallingError`. */
-async function request(side: Side, method: string, path: string, body?: unknown): Promise<Response> {
-  const base = side.till ? side.ctx : side.dctx;
+/** The request's headers. Throws, naming the value, for a value `Headers` refuses. */
+function headersOf(side: Side, body: unknown): Headers {
   // The display side never reads ctx headers: a display holds no store credential.
   const headers = side.till ? new Headers(side.ctx.headers) : new Headers();
   if (body !== undefined) headers.set('Content-Type', 'application/json');
@@ -57,13 +56,26 @@ async function request(side: Side, method: string, path: string, body?: unknown)
     headers.set('X-Tally-Device-Key', side.device.deviceKey);
   }
   if (!side.till && side.token !== undefined) headers.set('X-Tally-Display-Token', side.token);
+  return headers;
+}
+
+/** Sends one request and gives the 2xx response; every failure is a `DisplaySignallingError`. */
+async function request(side: Side, method: string, path: string, body?: unknown): Promise<Response> {
+  const base = side.till ? side.ctx : side.dctx;
+  let headers: Headers, json: string | undefined;
+  // Both are built before the fetch, so a bad input sends nothing:
+  // - a header value `Headers` refuses is `network`, as M7; its error names the value, so it is dropped;
+  // - a body JSON cannot serialise is `too_large`, which pos does not re-send, as M2;
+  // - headers go first, so an input bad in both is `network`.
+  try { headers = headersOf(side, body); } catch { throw refuse('network'); }
+  try { json = body === undefined ? undefined : JSON.stringify(body); } catch { throw refuse('too_large'); }
   const doFetch = base.fetch ?? globalThis.fetch;
   let res: Response;
   try {
     // Joined like capabilities.ts: the base URL as given, then the path.
     res = await doFetch(new URL(`${base.baseUrl}${PREFIX}${path}`), {
       method, headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(json === undefined ? {} : { body: json }),
       ...(side.till ? { signal: side.ctx.signal } : { credentials: 'omit' as const }),
     });
   } catch {
