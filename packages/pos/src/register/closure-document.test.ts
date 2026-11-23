@@ -421,3 +421,17 @@ it('reads a tender named like an Object.prototype member as its own entry, not a
     label: 'Constructor', expected: '5.00', counted: '5.00', has_variance: false,
   });
 });
+
+it('writes an opening float with no counted value as unknown (null), never 0 (#1261)', () => {
+  const uncountedRow: Closure = {
+    ...row,
+    breakdowns: {
+      ...row.breakdowns,
+      opening_float: { expected_minor: 10000, variance_minor: null },
+    },
+  };
+  const doc = buildClosureDocument(uncountedRow, context);
+  expect(doc.closure.breakdowns.opening_float).toMatchObject({
+    expected_minor: 10000, counted_minor: null, counted: null,
+  });
+});
