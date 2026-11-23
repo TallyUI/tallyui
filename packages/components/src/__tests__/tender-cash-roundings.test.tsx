@@ -261,6 +261,17 @@ it('S7: without cashRounding, the due the pane shows is the due the leg takes', 
   expect(sale.order.balanceDueMinor).toBe(0);
 });
 
+it('#1277: with cashRounding, a non-cash method with a rounding increment shows and takes the exact due', () => {
+  startCustom(1002, [cash, { ...card, defaults: { ...card.defaults, rounding: five } }], carries);
+  press('tender-method-external');
+  expect(text('tender-entry-amount')).toBe(money(1002));
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(sale.order.payments[0]).toMatchObject({ method: 'external', amountMinor: 1002 });
+  expect(sale.order.balanceDueMinor).toBe(0);
+  expect(sale.order.cashRoundings ?? []).toEqual([]);
+});
+
 it('R8: reopen keeps the stored entries as stored', async () => {
   roundUp();
   const draft = await reopened(await complete());
