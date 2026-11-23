@@ -159,7 +159,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   }
 
   if (cancelling) return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
-    <CancelPaymentView sale={sale} methods={methods} onClose={() => setCancelling(false)} />
+    <CancelPaymentView sale={sale} methods={methods} beforeVoid={beforeVoid} onClose={() => setCancelling(false)} />
   </View>;
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">

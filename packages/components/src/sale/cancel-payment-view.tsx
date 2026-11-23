@@ -3,14 +3,14 @@
  * return, a void on its method, or a refund from the order. ADR-072 d3 (amended 2026-11-22): it ends on the cart, not in
  * checkout as v2 does, because park() runs only from the cart and a refund-only leg's sale must still be able to park.
  */
-import type { JSX } from 'react';
+import { useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { canVoidLeg, countsTowardPaid, lockedRefundDueMinor, type Order, type useSale } from '@tallyui/pos';
 import { useT } from '../i18n';
 import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
-import { cancelLine } from './tender-ledger';
+import { cancelLine, type TenderLedger } from './tender-ledger';
 
 type Leg = Order['payments'][number];
 /** tender-pane.tsx's button. */
@@ -46,23 +46,38 @@ export function cashToReturnMinor(order: Pick<Order, 'payments' | 'changeDueMino
   return leg.amountMinor;
 }
 
-export function CancelPaymentView({ sale, methods, onClose }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; onClose: () => void }): JSX.Element {
+export function CancelPaymentView({ sale, methods, onClose, beforeVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; onClose: () => void;
+  /** Runs before each leg this view voids, as in TenderLedger. */
+  beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'] }): JSX.Element {
   const formatMoney = useFormatMoney();
   const t = useT();
+  const [voiding, setVoiding] = useState(false);
   const { order } = sale;
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const offered = offeredMethods(methods);
   const legs = cancelLegs(order);
   const voidable = legs.filter((leg) => voidableLeg(order, offered, leg));
   // Void the voidable legs in ledger order; a refused void closes the view and the pane shows the sale's error.
-  const confirm = () => { for (const leg of voidable) if (!sale.voidTender(leg.id)) return onClose(); sale.cancelTender(); };
+  const confirm = async () => {
+    if (voiding) return;
+    if (!beforeVoid) { for (const leg of voidable) if (!sale.voidTender(leg.id)) return onClose(); sale.cancelTender(); return; }
+    setVoiding(true);
+    try {
+      for (const leg of voidable) {
+        let go = false;
+        try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ }
+        if (!go || !sale.voidTender(leg.id)) return onClose();
+      }
+      sale.cancelTender();
+    } finally { setVoiding(false); }
+  };
   return <View testID="tender-cancel-view" className="gap-3">
     <Text className="text-lg font-semibold text-foreground">{t('pos_checkout.cancel_payment')}</Text>
     {legs.map((leg) => <Text key={leg.id} testID={`tender-cancel-leg-${leg.id}`} className="text-foreground">{cancelLine(t, money, leg, legDescriptor(offered, leg), voidable.includes(leg), cashToReturnMinor(order, leg))}</Text>)}
     <Pressable testID="tender-cancel-keep" accessibilityRole="button" onPress={onClose} className="rounded-md bg-primary px-4 py-3">
       <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.keep_taking_payment')}</Text>
     </Pressable>
-    {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} className={button}>
+    {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} disabled={voiding} className={`${button}${voiding ? ' opacity-50' : ''}`}>
       <Text className="text-center text-destructive">{t('pos_checkout.cancel_and_void')}</Text>
     </Pressable> : <Pressable testID="tender-cancel-back" accessibilityRole="button" onPress={sale.cancelTender} className={button}>
       <Text className="text-center text-foreground">{t('common.back')}</Text>

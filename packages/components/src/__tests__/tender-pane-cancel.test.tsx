@@ -1,12 +1,12 @@
 // Row 514 (row 496 PR2, row 501 folded in): Back opens WCPOS v2's cancel-payment view when money was taken here; the cash
 // to return per leg; and the gate-36c refused-leg button only on a leg the till can void (ADR-072 d3, amended 2026-11-22).
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf } from '@tallyui/core';
-import { createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, tillLegsTheStoreRefuses, useSale, writeOrderDraft, type Order } from '@tallyui/pos';
+import { createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, tillLegsTheStoreRefuses, useSale, writeOrderDraft, type Order, type Payment } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
 import { cancelLegs, cashToReturnMinor } from '../sale/cancel-payment-view';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
@@ -39,6 +39,75 @@ function reopen(lockedMinor: number, methods?: Parameters<typeof Tender>[0]['met
   act(() => { expect(sale.openStoreOrder(builder.getSnapshot())).toBeNull(); });
 }
 const back = () => click('Back');
+
+describe('the cancel-payment view runs beforeVoid (#1260)', () => {
+  type Hook = (leg: Payment) => boolean | void | Promise<boolean | void>;
+  async function guarded(hook: Hook, methods?: Parameters<typeof Tender>[0]['methods']) {
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} methods={methods} beforeVoid={hook} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); sale.addTender({ method: 'external', amountMinor: 700 }); });
+    const legs = sale.order.payments;
+    await act(async () => { back(); });
+    await act(async () => { fireEvent.click(screen.getByTestId('tender-cancel-confirm')); });
+    return legs;
+  }
+  function later() {
+    let settle!: (value: boolean | void) => void;
+    const hook = vi.fn<Hook>(() => new Promise<boolean | void>((resolve) => { settle = resolve; }));
+    return { hook, settle: async (value: boolean | void) => { await act(async () => { settle(value); }); } };
+  }
+  it('V1 awaits each hook in ledger order before voiding its leg', async () => {
+    const { hook, settle } = later();
+    const [first, second] = await guarded(hook);
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook).toHaveBeenNthCalledWith(1, first);
+    expect(status(first.id)).toBe('captured');
+    expect(sale.stage.kind).toBe('tender');
+    await settle(undefined);
+    expect(status(first.id)).toBe('voided');
+    expect(status(second.id)).toBe('captured');
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(hook).toHaveBeenNthCalledWith(2, second);
+    await settle(undefined);
+    expect([status(first.id), status(second.id)]).toEqual(['voided', 'voided']);
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(sale.stage.kind).toBe('cart');
+  });
+  it('V2 false on the second leg keeps it and closes the view', async () => {
+    const hook = vi.fn<Hook>((leg) => leg.method !== 'external');
+    const [first, second] = await guarded(hook);
+    expect([status(first.id), status(second.id)]).toEqual(['voided', 'captured']);
+    expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+    expect(sale.stage.kind).toBe('tender');
+  });
+  it('V3 a throw on the first leg keeps both legs and closes the view', async () => {
+    const hook = vi.fn<Hook>(() => { throw new Error('journal down'); });
+    const [first, second] = await guarded(hook);
+    expect([status(first.id), status(second.id)]).toEqual(['captured', 'captured']);
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+    expect(sale.stage.kind).toBe('tender');
+  });
+  it('V4 a refund-only leg never reaches the hook', async () => {
+    const hook = vi.fn<Hook>(() => undefined);
+    const [first, second] = await guarded(hook, [cash, refundOnlyCard]);
+    expect(hook.mock.calls.map(([leg]) => leg.id)).toEqual([first.id]);
+    expect([status(first.id), status(second.id)]).toEqual(['voided', 'captured']);
+    expect(sale.stage.kind).toBe('cart');
+  });
+  it('V5 disables confirm while the hook is in flight and ignores a second press', async () => {
+    const { hook, settle } = later();
+    await guarded(hook);
+    const button = screen.getByTestId('tender-cancel-confirm');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { fireEvent.click(button); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    await settle(undefined);
+    await settle(undefined);
+  });
+});
 
 describe('the cancel-payment view (row 514)', () => {
   it('C1 with no taken leg, Back goes straight to the cart', () => {
