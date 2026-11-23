@@ -278,3 +278,28 @@ it('a cash refund off the increment says so', () => {
   rerender(<RefundForm {...props} originalMethod={{ title: 'Card', available: true }} />);
   expect(screen.queryByTestId('refund-cash-step')).toBeNull();
 });
+
+it('a final refund with a typed adjustment and shipping carries both with the rounding', async () => {
+  const { onConfirm, props } = renderForm({
+    lines: [{ id: 'a', name: 'Mug', quantity: 1, totalMinor: 102, taxMinor: 0 }],
+    refunds: [], refundedMinor: 0, orderTotalMinor: 110, refundableShippingMinor: 10, cashRoundingMinor: -2,
+  });
+  plus('a');
+  fireEvent.change(screen.getByTestId('refund-shipping'), { target: { value: '0.10' } });
+  fireEvent.change(screen.getByTestId('refund-adjustment'), { target: { value: '-0.05' } });
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(105));
+  expect(screen.getByTestId('refund-rounding').textContent).toBe(eur(-2));
+  expect.soft(screen.queryByTestId('refund-invalid')?.textContent ?? null).toBeNull();
+  fireEvent.click(screen.getByTestId('refund-submit'));
+  fireEvent.click(screen.getByTestId('refund-confirm'));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+  const payload: RefundFormValue = onConfirm.mock.calls[0][0];
+  expect(payload).toMatchObject({ shippingMinor: 10, adjustmentMinor: -7, totalMinor: 105 });
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(payload.totalMinor));
+  expect(payload.totalMinor).toBe(priceRefund(props.lines, props.refunds, payload.lines).priced.reduce((sum, line) => sum + line.totalMinor, 0) + payload.shippingMinor + payload.adjustmentMinor);
+  expect(refundPayloadErrors({
+    clientRefundId: 'refund-1', orderId: 'order-1', registerId: 'register-1', sessionId: 'session-1',
+    createdAt: '2026-11-10T10:00:00.000Z', ...payload,
+  })).toStrictEqual([]);
+});
