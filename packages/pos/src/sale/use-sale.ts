@@ -165,6 +165,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   const defaultKey = opts.defaultCustomer ? JSON.stringify([opts.defaultCustomer.id, opts.defaultCustomer.name, opts.defaultCustomer.email]) : '';
   const defaultSeen = useRef(defaultKey);
+  const resetRefused = useRef(false); // the idle reset was refused for a held taken payment; its error is set once, not on every render (row 516)
   const [rendered, setBuilder] = useState(() => {
     const customer = defaulted();
     taxNow.current = contextFor(customer);
@@ -265,6 +266,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   function heldLeg(p: Order['payments'][number]) { return !!p.locked || !!p.reopened || countedLeg(p) || (keptCodes() && isLiveLeg(p) && keptLegIds.current.includes(p.id))
     || (isLiveLeg(p) && resumedLegIds.current.includes(p.id)) || taken(p); }
   function taken(p: Order['payments'][number]) { return takenLeg(p) || resumedTakenIds.current.includes(p.id); }
+  /** The live sale holds a captured taken payment (row 517's `taken`): newSale, openStoreOrder, resume and the empty-sale resets refuse it with SALE_PARTLY_PAID (row 516). */
+  function holdsTakenPayment() { return builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p)); }
   /** Prices the accepted codes again, as resume() checks them, on the live builder; resolves to the error it set, or null. */
   function reprice(): Promise<string | null> {
     if (repricing.current) return repricing.current;
@@ -356,18 +359,22 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     setError(COUPONS_UNSUPPORTED);
   }
   // New tax settings or currency wait until the sale is idle (an empty cart), then start a new sale keeping its customer:
-  // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule).
+  // a sale in progress (lines, tender or receipt) finishes on the settings it started with (a money rule), and an empty
+  // sale holding a taken payment waits too, refused with SALE_PARTLY_PAID (row 516).
   const idle = stage.kind === 'cart' && !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   // A layout effect, on live idleness (#301): it runs inside the settings' commit, before any tap can be handled, and
   // the rendered `idle` would miss a line added since this render (it would then be dropped with the old builder).
   // A new default customer starts a new sale on it at once when idle, as v2 seeds its new cart again; never held pending.
+  function refuseIdleReset() { if (!resetRefused.current) setError(SALE_PARTLY_PAID); resetRefused.current = true; }
   useLayoutEffect(() => {
     const live = builderNow.current.getSnapshot();
     const liveIdle = stageNow.current.kind === 'cart' && !live.lineItems.length && !live.fees?.length && !live.shipping?.length && !inFlight.current && !pending.current;
     const newDefault = defaultSeen.current !== defaultKey;
     defaultSeen.current = defaultKey;
-    if (liveIdle && (newDefault || madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency
-      || madeWith.current.taxContextFor !== opts.taxContextFor)) resetSale(newDefault ? undefined : live.customer ?? null);
+    const due = liveIdle && (newDefault || madeWith.current.taxContext !== taxContext || madeWith.current.currency !== settings.currency
+      || madeWith.current.taxContextFor !== opts.taxContextFor);
+    if (due && holdsTakenPayment()) refuseIdleReset();
+    else { resetRefused.current = false; if (due) resetSale(newDefault ? undefined : live.customer ?? null); }
   });
   /**
    * #722: the cart rebuilt on `next`, its customer's context, as resume() restores a draft: the order id, lines, discounts,
@@ -1056,8 +1063,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * pending completion are unchanged.
      */
     newSale() {
-      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current
-        && builderNow.current.getSnapshot().payments.some((p) => !p.locked && legStatus(p) === 'captured' && taken(p))) return setError(SALE_PARTLY_PAID);
+      if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current && holdsTakenPayment()) return setError(SALE_PARTLY_PAID);
       resetSale();
     },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
@@ -1085,12 +1091,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         } catch { return false; }
       });
     },
-    /** Loads a reopened store order (from reopenStoreOrder) into an empty sale, or returns why not. */
+    /** Loads a reopened store order (from reopenStoreOrder) into an empty sale, or returns why not; refused with SALE_PARTLY_PAID while the live sale holds a taken payment. */
     openStoreOrder(order: Order): string | null {
       if (locked()) return SALE_SAVING;
       if (!order.storeOrder) throw new Error('useSale: openStoreOrder() takes a reopened store order');
       const liveSnapshot = builderNow.current.getSnapshot();
       if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
+      if (holdsTakenPayment()) return SALE_PARTLY_PAID;
       if (order.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That order is in another currency';
       const restoredTax = contextFor(order.customer && !customerRefusal(order.customer) ? order.customer : null);
       const builder = restoreOrderDraft(order, { currency: settings.currency, taxContext: restoredTax.taxContext });
@@ -1099,13 +1106,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       return null;
     },
-    /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed. */
+    /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed; refused with SALE_PARTLY_PAID while the live sale holds a taken payment. */
     async resume(draftId: string, options?: { keepParkedPrices?: boolean }): Promise<string | null> {
       if (locked()) return SALE_SAVING;
       if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
       const live = builderNow.current;
       const liveSnapshot = live.getSnapshot();
       if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
+      if (holdsTakenPayment()) return SALE_PARTLY_PAID;
       const doc = await opts.drafts.findOne(draftId).exec();
       if (!doc) return 'That parked sale is no longer there';
       const saved: Order = JSON.parse(doc.toJSON().data);
@@ -1161,6 +1169,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (builderNow.current === builder) {
         applied.current = kept;
         resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
+        // A pre-4.2 leg voided before the park carries no takenAt and holds no money the till still has: it is dropped (desk, 23 Nov).
         resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
         if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
         appliedWith.current = kept.size ? codes : null;
@@ -1172,7 +1181,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /**
      * Opens the parked draft `draftId`, or an empty sale for null (New), as a tab switch (u19, v2 cart/tabs.tsx):
      * parks the current sale first when it has lines, fees or shipping (a receipt is done and is not parked).
-     * Refused, changing nothing, while saving, for a partly paid sale (SALE_PARTLY_PAID), a payment in motion or
+     * Refused, changing nothing, while saving, for a partly paid sale or an empty sale holding a taken payment (SALE_PARTLY_PAID), a payment in motion or
      * the tender stage. Resolves to a refusal (park's, or `resume`'s for the chosen draft), or null.
      */
     async switchSale(draftId: string | null): Promise<string | null> {
@@ -1184,6 +1193,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
       if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
       if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
+      if (stageNow.current.kind !== 'receipt' && !snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length && holdsTakenPayment()) return SALE_PARTLY_PAID;
       if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
         const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
         if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
