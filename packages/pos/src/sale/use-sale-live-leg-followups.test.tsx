@@ -15,7 +15,7 @@ import { createTaxContext, TaxProvider } from '../tax';
 import { initTenderState } from '../tender';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
-import { COUPONS_REPRICING, NOTHING_DUE, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
+import { COUPONS_REPRICING, NOTHING_DUE, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, SALE_CARD_IN_PROGRESS, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -78,6 +78,46 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(hook.result.current.order.payments).toEqual(paid ? [expect.objectContaining({ method: 'cash', amountMinor: 500 })] : []);
     return hook;
   }
+
+  it('newSale refuses while a card leg is pending, naming the card payment', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const before = result.current.order, stage = result.current.stage;
+    expect(before.payments).toMatchObject([{ method: 'external', status: 'pending' }]);
+    act(() => result.current.newSale());
+    expect(result.current.order.lineItems).toEqual(before.lineItems);
+    expect(result.current.order.payments).toEqual(before.payments);
+    expect(result.current.order).toBe(before);
+    expect(result.current.stage).toEqual(stage);
+    expect(result.current.error).toBe(SALE_CARD_IN_PROGRESS);
+    expect(result.current.error).toBe('A card payment is still in progress. Finish or cancel it before starting a new sale.');
+  });
+
+  it('newSale refuses while a card leg is authorized', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const id = result.current.order.payments[0].id;
+    act(() => { expect(result.current.setTenderStatus(id, 'authorized')).toBe(true); });
+    const before = result.current.order, stage = result.current.stage;
+    expect(before.payments).toMatchObject([{ id, status: 'authorized' }]);
+    act(() => result.current.newSale());
+    expect(result.current.order).toBe(before);
+    expect(result.current.stage).toEqual(stage);
+    expect(result.current.error).toBe(SALE_CARD_IN_PROGRESS);
+  });
+
+  it('newSale after the pending leg fails starts the new sale', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const before = result.current.order;
+    act(() => { expect(result.current.setTenderStatus(before.payments[0].id, 'failed')).toBe(true); });
+    act(() => result.current.newSale());
+    expect(result.current.order.id).not.toBe(before.id);
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.error).toBeNull();
+  });
 
   it('R1: a resumed draft with a captured leg and stale store-priced coupons does not re-price; the total is unchanged', async () => {
     const shop = store();
