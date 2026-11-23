@@ -2,7 +2,7 @@
  * Port of v2's cash rounding: packages/order-math/src/payments/rounding.ts and
  * packages/core/src/screens/main/pos/checkout/tender/tender-figures.ts.
  * v2's tender LEDGER: "a partial or short cash entry and every other method keep full precision".
- * Local figures only; writing the rounding as an order line is unit 24.
+ * The till records the rounding as an order field, Order.cashRoundings (ADR-094).
  */
 import type { PaymentMethodDescriptor, PaymentRounding } from '@tallyui/core';
 import { appliedMinor, type TenderState } from './tender-state';

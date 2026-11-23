@@ -314,3 +314,40 @@ describe('vendurepos gap 2.10: a charge entered in the other tax mode, through t
     expect(sent.fees![0]).not.toHaveProperty('amountIncludesTax');
   });
 });
+
+describe('ADR-094: a cash-rounded sale on the WCPOS receipt', () => {
+  /** One untaxed EUR line, taken as one cash leg of 1.00 or 1.05 with its rounding entry. */
+  function roundedSale(lineMinor: number, minor: number) {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: lineMinor, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: lineMinor + minor, tenderedMinor: lineMinor + minor, changeMinor: 0 }, { minor });
+    return builder.getSnapshot();
+  }
+  const view = (lineMinor: number, minor: number) => wcpos(wcposSourceFromSentOrder(roundedSale(lineMinor, minor), plain));
+  const addsUp = (data: View) => sum([...data.lines.map((line) => line.line_total_incl), ...data.fees.map((fee) => fee.total_incl),
+    ...data.shipping.map((row) => row.total_incl)]);
+
+  it('a cash-rounded sale\'s WCPOS data carries a tax-free Rounding fee of -0.02, and its lines, fees and tax add up to its total', () => {
+    const data = view(102, -2);
+    expect(data.fees).toHaveLength(1);
+    expect(data.fees[0]).toMatchObject({ label: 'Rounding', total: -0.02, total_incl: -0.02, total_excl: -0.02 });
+    expect(data.fees[0]).not.toHaveProperty('taxes');
+    expect(data.totals.tax_total).toBe(0);
+    expect(data.totals.total_incl).toBe(1);
+    expect(data.totals.total_excl).toBe(1);
+    expect(addsUp(data)).toBeCloseTo(data.totals.total_incl, 10);
+  });
+
+  it('rounding up: a 1.03 sale rounded to 1.05 carries a Rounding fee of +0.02', () => {
+    const data = view(103, 2);
+    expect(data.fees).toHaveLength(1);
+    expect(data.fees[0]).toMatchObject({ label: 'Rounding', total: 0.02, total_incl: 0.02, total_excl: 0.02 });
+    expect(data.totals.total_incl).toBe(1.05);
+    expect(addsUp(data)).toBeCloseTo(data.totals.total_incl, 10);
+  });
+
+  it('an unrounded sale\'s WCPOS data is unchanged', () => {
+    const data = wcpos(wcposSourceFromSentOrder(twoRateSale(false), plain));
+    expect(data.fees.map((fee) => fee.label)).toEqual(['Bag']);
+  });
+});

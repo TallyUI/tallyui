@@ -209,6 +209,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.lineItems.some((line) => line.anyAttributes?.length) && (options.capabilities?.orderCreate ?? 1) < 6) {
     throw new Error("finalize: picked options need the store to accept order.create version 6; update the store's TallyUI plugin");
   }
+  if (order.cashRoundings?.length && options.capabilities?.cashRounding !== true) {
+    throw new Error('finalize: cash rounding needs a store whose connector declares the cashRounding capability');
+  }
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
   if (order.discountMinor < 0
@@ -377,6 +380,11 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   return freezeSentForm({
     id, saleId: order.id, createdAt: afterClose?.createdAt ?? now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
+    ...(order.cashRoundings?.length ? { cashRoundings: order.cashRoundings.map((entry) => {
+      const index = order.payments.findIndex((payment) => payment.id === entry.paymentId);
+      if (index === -1) throw new Error('finalize: a cash rounding names no payment on the order');
+      return { paymentId: payments[index].id, minor: entry.minor };
+    }) } : {}),
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,

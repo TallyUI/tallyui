@@ -55,7 +55,7 @@ export function CartColumnsForm({ value = {}, onChange, showReset = false, class
   };
   return (
     <View className={cn('gap-1', className)} {...viewProps}>
-      <Text role="heading" className="pb-1 text-base font-semibold">{t('common.columns')}</Text>
+      <Text role="heading" aria-level={4} className="pb-1 text-base font-semibold">{t('common.columns')}</Text>
       {order.map((id, at) => {
         const label = t(LABELS[id]);
         const show = value[id]?.show ?? CART_COLUMN_DEFAULT_SHOWN[id];

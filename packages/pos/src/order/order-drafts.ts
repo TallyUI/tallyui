@@ -116,6 +116,8 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     });
   }
 
+  for (const entry of saved.cashRoundings ?? []) builder.addCashRounding(entry);
+
   // Restore line items and their discounts
   for (const line of saved.lineItems) {
     const rederive = line.taxFromClass === true && !options.keepTaxRates;

@@ -87,6 +87,7 @@ export function Receipt(props: ReceiptProps) {
     {/* Charges are not in the subtotal (order.display): they follow it and its discounts, before tax. */}
     {receipt.fees.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
     {receipt.shipping.map((charge, index) => row(charge.name, money(charge.amountMinor), false, index))}
+    {receipt.rounding ? row(receipt.rounding.name, money(receipt.rounding.amountMinor)) : null}
     {taxRows}
     {row('Total', money(totals.totalMinor), true)}
     {receipt.payments.map((payment, index) => row(payment.method === 'cash' ? 'Cash tendered'

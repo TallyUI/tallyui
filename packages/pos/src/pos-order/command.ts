@@ -246,6 +246,9 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       subtotalMinor: order.subtotalMinor,
       ...(discountMinor > 0 ? { discountMinor } : {}),
       taxMinor: order.taxMinor, totalMinor: order.totalMinor,
+      // ADR-094: a rounded sale's entries ride at its content version; finalize refuses them unless the store declares cashRounding.
+      ...(order.cashRoundings?.length
+        ? { cashRoundings: order.cashRoundings.map(({ paymentId, minor }) => ({ paymentId, minor })) } : {}),
       ...(base >= 3 ? {
         display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,

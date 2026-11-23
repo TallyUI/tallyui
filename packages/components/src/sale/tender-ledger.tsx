@@ -71,6 +71,11 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
         </Pressable> : null}
       </View>;
     })}
+    {/* ADR-094: each live cash rounding, signed, under the legs. */}
+    {order.cashRoundings?.map((entry) => <View key={`rounding-${entry.paymentId}`} testID={`tender-rounding-${entry.paymentId}`} className="flex-row items-center gap-2 border-b border-border py-2">
+      <Text className="flex-1 text-muted-foreground">{t('pos_checkout.rounding')}</Text>
+      <Text className="text-foreground">{money(entry.minor)}</Text>
+    </View>)}
     {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{paidInFull}</Text> : null}
     {confirmVoid ? <ConfirmDialog testID="tender-leg-void-dialog" tone="destructive" title={t('pos_checkout.cancel_payment_question')} description={question}
       confirmLabel={t('pos_checkout.cancel_payment')} open={asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}

@@ -1,8 +1,8 @@
-// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; no swipe or hover yet) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
+// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; the Total peeks on hover; no swipe yet) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
 import { useRef, useState, type JSX, type ReactNode } from 'react';
 import { Animated, Platform, Pressable, View } from 'react-native';
 import { Button, Text } from '../ui';
-import { ARM, EASE_EXIT, PANEL_SLIDE_OUT } from '../lib/motion';
+import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK, PEEK_SPRING } from '../lib/motion';
 import { useReducedMotion } from '../lib/use-reduced-motion';
 
 /** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Edit and Remove. */
@@ -18,11 +18,14 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
   // The row is flying off or its removal is committing: nothing else may move it.
   const leaving = useRef(false);
   const [open, setOpen] = useState(false);
+  // `open` at event time: react-native-web binds a Pressable's hover-out listener at hover-in and keeps that closure (modules/useHover).
+  const opened = useRef(false);
   const [rowWidth, setRowWidth] = useState<number>();
   const [stripWidth, setStripWidth] = useState(0);
   const settle = (next: boolean) => {
     if (leaving.current) return;
     setOpen(next);
+    opened.current = next;
     const target = next ? -stripWidth : 0;
     if (reduced) offset.setValue(target);
     else Animated.spring(offset, { toValue: target, overshootClamping: true, useNativeDriver: Platform.OS !== 'web' }).start();
@@ -39,9 +42,19 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
       settle(false);
     });
   };
+  // v2's peek: only a closed, staying row, and only with reduced motion known to be off.
+  const peek = (on: boolean) => {
+    if (opened.current || leaving.current || reduced) return;
+    if (on) Animated.spring(offset, { ...PEEK_SPRING, toValue: -PEEK, useNativeDriver: Platform.OS !== 'web' }).start();
+    else settle(false);
+  };
+  // A peek retargeted mid-close keeps the spring's velocity (SpringAnimation.start), so the bounce could swing past 0 and bare the strip's red at the left: never right of rest.
+  const shown = useRef(offset.interpolate({ inputRange: [-1, 0], outputRange: [-1, 0], extrapolateRight: 'clamp' })).current;
   const wrapTotal = (content: ReactNode) => <Pressable testID="cart-line-total" accessibilityRole="button"
     accessibilityLabel={`Edit total of ${name}`} accessibilityState={{ expanded: open }} className="justify-center"
-    onPress={() => settle(!open)}>{content}</Pressable>;
+    onPress={() => settle(!open)} onHoverIn={() => peek(true)} onHoverOut={() => peek(false)}>{content}
+    {/* v2's HOVER_REACH: past the bounce, so the Total never slides out from under a resting pointer; closed only, or it would take Edit's presses. */}
+    {open ? null : <View className="absolute inset-y-0 left-0" style={{ right: -PEEK * 2 }} />}</Pressable>;
   const block = 'h-auto min-w-16 rounded-none px-5';
   return <View testID="cart-line-row" className="relative overflow-hidden" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}>
     <View testID="cart-line-strip" className="absolute inset-y-0 right-0 flex-row items-stretch justify-end bg-destructive"
@@ -54,6 +67,6 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
           onPress={leave}><Text>Remove</Text></Button>
       </View>
     </View>
-    <Animated.View className="bg-background" style={{ transform: [{ translateX: offset }] }}>{children(wrapTotal)}</Animated.View>
+    <Animated.View className="bg-background" style={{ transform: [{ translateX: shown }] }}>{children(wrapTotal)}</Animated.View>
   </View>;
 }

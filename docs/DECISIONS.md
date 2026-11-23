@@ -4208,6 +4208,7 @@ interface OrderCreatePayload {
   - **`setTender` keeps its single-payment meaning for existing apps.** It replaces **all** payments with the one
     given (or none). `startTender('external')` still sets one card payment of the total.
     - **Amended 2026-11-22 (Front desk):** a taken leg (status `captured` with `takenAt`, or `voided` after capture) is never removed, only voided. `setTender`, `startTender` and `cancelTender` keep it, `removeTender` refuses it, and the cash to return is listed once each cash leg records its change (row to follow), as in WCPOS v2's cancel-payment view. A voided taken leg stays on the order as the record (on the sale; the completed order carries only the legs that count toward paid). Uncaptured legs (pending, authorized, failed, and `setTender`'s unstamped pre-filled leg) keep this decision. A resumed paid draft's parked live legs are held the same way until the sale resets (row 328 F3, #1208). A captured leg whose offered method cannot void it is kept, with no Cancel payment offered; the sale completes or parks. `newSale` refuses an unfinished sale holding a captured taken payment, as `closeSale` does.
+    - **Amended 2026-11-23 (Front desk rulings, 22-23 Nov; rows 516 and 517):** a leg resumed from a pre-4.2 draft that is captured but has no `takenAt` counts as taken, because the till cannot prove no money was taken, and treating it as untaken could lose a payment. While any taken leg is held, `openStoreOrder`, `resume` and the sale resets refuse with `SALE_PARTLY_PAID` and change nothing. A pre-4.2 leg already voided before the park carries no `takenAt` and is dropped, since it holds no money the till still has.
   - **`complete()` stays gated on `balanceDueMinor === 0`.**
   - **No schema change for split tender itself:** `PosOrder.payments[]` and the payload already carry several. The
     receipt already lists each payment and the change.
@@ -4876,6 +4877,7 @@ interface OrderCreatePayload {
       - **Amended 2026-11-19 (Front desk):** a draft with a live or captured leg keeps its parked coupon amounts on resume, as it keeps its parked prices; no re-price until the legs are voided, after which the normal automatic re-price applies. A reopened draft whose legs are all locked re-prices on resume as before.
       - **Amended 2026-11-22 (Front desk):** the draft's lines keep their parked tax rates, under every granularity (fees and shipping: row 497).
       - Built 2026-11-22 (row 497): `restoreOrderDraft` holds the parked tax lines of Woo lines, and of fees and shipping in every granularity, and the hold ends when no parked leg is still captured or in motion: the next build then re-derives today's rates. A fresh Woo coupon replay (`woocommerceCouponReplay`) over a held line keeps the line's parked rate (pinned under exclusive prices); the coupon's own figures, its tax split under inclusive prices included, are a separate row.
+      - Built 2026-11-22 (row 498): a Woo coupon replayed over a held line re-prices at that line's parked rates (rates keyed per line in woocommerceCouponReplay), so in an inclusive store the total, and in every store the coupon's discount tax, hold under taken money. Row 497's H8 covers an exclusive store only; before this row an inclusive store's replay moved a captured 990 total to 999 (a 10% line resumed under 20%), so the line above was not proven for inclusive stores until R1.
     - **The stored order.** `finalizeOrder` writes the order's `coupons` (code, id and figures) and each line's
       `regularUnitPriceMinor` into `pos_orders` v9 (d2). An order without coupons or regular prices is stored
       exactly as before.
@@ -5905,6 +5907,10 @@ interface OrderCreatePayload {
        Until then, nothing changes.
      - Core's server-side default, `SUPPORTED_REGISTER_VERSIONS = [1]` (`packages/core/src/server/versions.ts:9`),
        stays. A server adds 3 when it implements it.
+
+       Amended 2026-11-22 (Front desk ruling, 2026-11-22, arch 1a): core's `SUPPORTED_REGISTER_VERSIONS` lists what
+       the till builds, `[1, 2, 3]`, and a test holds it equal to the versions `register-commands.ts` produces. A server
+       still passes its own list.
      - Each platform owns its approval route, its dialog, its credential check and who counts as a manager (Paul,
        2026-10-07). TallyUI only carries the store's opaque proof.
 - **Rejected:**
@@ -6868,3 +6874,36 @@ interface OrderCreatePayload {
   5. **Blind figures.** Figures a store withholds from the signed-in user are absent, never zero.
   6. **Money.** Every amount is in integer minor units, as elsewhere in core; a connector converts the store's
      decimals both ways.
+
+## ADR-094 Cash rounding is an order field
+
+- **Date:** 2026-11-22 · **Status:** Accepted (front desk, 2026-11-22; the gate amended the same day to the
+  `cashRounding` capability) · **Relates to:** ADR-048 (its note that the Vendure surcharge mechanism can later carry
+  cash rounding; nothing in ADR-048 is amended here), ADR-038 and ADR-070 (the order.create contract and its strict
+  payloads). WCPOS v2 is the reference for features and taste.
+- **Decision** (Front desk, 2026-11-22, verbatim): "Cash rounding is an order field, not a fee and not change: a cash
+  leg that settles the sale at a rounded due records the signed difference as an entry in cashRoundings
+  {paymentId, minor}, counted in totalMinor. Part payments and non-cash legs are never rounded. A remainder that
+  rounds to zero closes the sale. An entry lives while its leg counts toward paid and clears when the leg is voided or
+  fails; it is never re-derived under taken money. Each connector carries it its platform's way." A till rounds only
+  against a store whose connector declares the cashRounding capability.
+- **Details:**
+  1. **Zero remainder.** When the remainder rounds to 0, the entry's `paymentId` is the last leg in `order.payments`
+     that counts toward paid, whatever its method: that leg left the remainder, so voiding it clears the entry. With
+     no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
+     While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
+     leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
+     pane shows no rounding.
+  2. **Storage.** `pos_orders` goes to version 21 with an identity migration; an unrounded order is stored byte for
+     byte as before, with no `cashRoundings` key.
+  3. **The capability, not a version.** `ServerCapabilities.cashRounding` is set only by a connector that carries the
+     entry. There is no order.create 13 and `ORDER_CREATE_MAX_VERSION` stays 12: `cashRoundings` rides at the
+     order's content version. Without the flag the till is unchanged, finalize refuses an order with entries, and
+     `precheckCommand` refuses an order.create (or an order.update's create part) carrying `cashRoundings` as
+     `invalid_payload` rather than dropping the field, since a dropped entry is a wrong total.
+  4. **Refunds** of the rounding are not decided; nothing refunds or re-figures it separately.
+  5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
+     plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
+     refused at finalize.
+- **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
+  version.

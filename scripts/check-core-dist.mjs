@@ -59,3 +59,28 @@ if (cjsKeys.join() !== esmKeys.join()) {
   process.exit(1);
 }
 console.log(`check:core-dist: ${SERVER_CJS} loads under require() with the same ${cjsKeys.length} exports as the ESM build`);
+
+// @tallyui/core/server must load in a store with no react, rxdb or rxjs (arch 1a): walk both built server graphs,
+// following every static, side-effect, dynamic and require() specifier.
+const SERVER_SPEC_RE = /(?:from\s*|import\s*(?:\(\s*)?|require\s*\(\s*)['"]([^'"]*)['"]/g;
+const SERVER_FORBIDDEN = ['react', 'rxdb', 'rxjs'];
+function serverGraphHit(file, seen = new Set()) {
+  if (seen.has(file)) return null; seen.add(file);
+  if (!existsSync(file)) { console.error(`check:core-dist: ${file} missing; run \`pnpm build\` first`); process.exit(1); }
+  const ext = file.endsWith('.cjs') ? '.cjs' : '.js';
+  for (const [, spec] of readFileSync(file, 'utf8').matchAll(SERVER_SPEC_RE)) {
+    if (SERVER_FORBIDDEN.some((name) => spec === name || spec.startsWith(`${name}/`))) return { file, spec };
+    if (!spec.startsWith('.')) continue;
+    const hit = serverGraphHit(resolve(dirname(file), /\.c?js$/.test(spec) ? spec : `${spec}${ext}`), seen);
+    if (hit) return hit;
+  }
+  return null;
+}
+for (const entry of [SERVER_CJS, SERVER_ESM]) {
+  const hit = serverGraphHit(entry);
+  if (hit) {
+    console.error(`check:core-dist: ${hit.file} imports ${hit.spec} (@tallyui/core/server must load in a store with no react, rxdb or rxjs)`);
+    process.exit(1);
+  }
+}
+console.log(`check:core-dist: ${SERVER_CJS} and ${SERVER_ESM} import no react, rxdb or rxjs`);

@@ -15,6 +15,7 @@ import type {
   Discount,
   AppliedDiscount,
   Payment,
+  CashRounding,
   CustomerSummary,
   AddLineInput,
   ChargeInput, ChargeLine, FeeLine, ShippingLine, LineTaxLine,
@@ -190,7 +191,10 @@ export interface OrderBuilder {
   applyLineDiscount(lineId: string, discount: Discount): void;
   applyOrderDiscount(discount: Discount): void;
   removeDiscount(discountId: string): void;
-  addPayment(payment: Omit<Payment, 'id'> & { id?: string }): string;
+  /** ADR-094: `rounding` adds the leg's cash rounding entry with it, so no snapshot shows the leg without it (none when `minor` is 0). */
+  addPayment(payment: Omit<Payment, 'id'> & { id?: string }, rounding?: { minor: number }): string;
+  /** ADR-094: adds a cash rounding entry against an existing leg; it counts in totalMinor while that leg counts toward paid. */
+  addCashRounding(entry: CashRounding): void;
   /** Moves a leg's status; `takenAt` is set on the leg only on a move to captured. */
   setPaymentStatus(paymentId: string, status: PaymentLegStatus, takenAt?: string): boolean;
   removePayment(paymentId: string): void;
@@ -239,6 +243,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   let shipping: ShippingLine[] = [];
   let orderDiscounts: AppliedDiscount[] = [];
   let payments: Payment[] = [];
+  let cashRoundings: CashRounding[] = [];
   let customer: CustomerSummary | null = null;
   let note = '';
   let meta: OrderCreateMeta[] = [];
@@ -327,7 +332,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const tagged = couponContext && 'kind' in couponContext ? couponContext : undefined;
     const store = tagged?.kind === 'store-priced' ? tagged : undefined, kept = tagged?.kind === 'kept' ? tagged : undefined;
     const replay = woo && couponCodes.length && !tagged ? woocommerceCouponReplay(displaySourceLines, couponCodes,
-      couponContext as OrderCouponContext, taxContext.getTaxRates!, currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
+      couponContext as OrderCouponContext, (line) => { const held = heldFor(line.id); return held ? toWooRates(held) : taxContext.getTaxRates!(line.taxClass); },
+      currency, woo.roundAtSubtotal, taxContext.pricesIncludeTax) : undefined;
     // Kept figures go only on the lines they were parked for, so a line edit never meets them (it goes stale instead).
     const keptOn = kept && couponCodes.length > 0 && payments.some((p) => isLiveLeg(p) && kept.legIds.includes(p.id))
       && couponPricingBasis({ currency, customer: null, lineItems, discounts: orderDiscounts }) === kept.linesBasis ? kept : undefined;
@@ -492,16 +498,19 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
         throw new Error(`Display line ${line.lineId} shows ${line.amountMinor}, less than its rows ${rows} and share ${shareMinor} (ADR-063)`);
       }
     }
+    // ADR-094: an entry counts while its leg counts toward paid; the subtotal above stays unrounded.
+    const live = cashRoundings.filter((e) => payments.some((p) => p.id === e.paymentId && countsTowardPaid(p)));
+    const total = totalMinor + live.reduce((sum, e) => sum + e.minor, 0);
     const display = {
-      taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor,
+      taxInclusive, subtotalMinor: displaySubtotal, discountMinor: displayDiscount, taxMinor, totalMinor: total,
       lines: displayLines, orderDiscountMinor: orderDiscountDisplay,
       ...(displayCoupons ? { coupons: displayCoupons } : {}),
       ...(fees.length ? { fees: displayFees } : {}),
       ...(shipping.length ? { shipping: displayShipping } : {}),
     };
     const paidMinor = capturedMinor(payments);
-    const balanceDueMinor = Math.max(0, totalMinor - paidMinor);
-    const changeDueMinor = Math.max(0, paidMinor - totalMinor);
+    const balanceDueMinor = Math.max(0, total - paidMinor);
+    const changeDueMinor = Math.max(0, paidMinor - total);
 
     const order: Order = {
       id: orderId,
@@ -514,13 +523,14 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       ...(shipping.length ? { shipping: [...shipping] } : {}),
       discounts: recalcedOrderDiscounts,
       payments: [...payments],
+      ...(live.length ? { cashRoundings: live.map((e) => ({ ...e })) } : {}),
       customer,
       note,
       ...(meta.length ? { meta: meta.map((m) => ({ ...m })) } : {}),
       subtotalMinor,
       discountMinor,
       taxMinor,
-      totalMinor,
+      totalMinor: total,
       display,
       paidMinor,
       balanceDueMinor,
@@ -825,11 +835,23 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
-    addPayment(payment) {
+    addPayment(payment, rounding) {
       const id = idFor(payment.id);
       payments = [...payments, { ...payment, id }];
+      if (rounding && rounding.minor !== 0) cashRoundings = [...cashRoundings, { paymentId: id, minor: rounding.minor }];
       emit();
       return id;
+    },
+
+    addCashRounding(entry) {
+      // One entry per leg: a second entry on a leg is summed into the first, and a sum of 0 removes it.
+      const prior = cashRoundings.find((e) => e.paymentId === entry.paymentId);
+      if (!prior) cashRoundings = [...cashRoundings, { paymentId: entry.paymentId, minor: entry.minor }];
+      else {
+        const minor = prior.minor + entry.minor;
+        cashRoundings = minor === 0 ? cashRoundings.filter((e) => e !== prior) : cashRoundings.map((e) => (e === prior ? { ...e, minor } : e));
+      }
+      emit();
     },
 
     setPaymentStatus(paymentId, status, takenAt) {
@@ -902,6 +924,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       shipping = [];
       orderDiscounts = [];
       payments = [];
+      cashRoundings = [];
       customer = null;
       note = '';
       meta = [];
