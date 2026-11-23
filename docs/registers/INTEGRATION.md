@@ -125,16 +125,19 @@ reports no session rather than throwing.
 - `drafts` (required) — the sale's `order_drafts` collection, or `null` if
   the app never parks a sale. A parked sale's taken legs count on the Z of
   the session that took them.
-- `liveSale` (required) — a getter returning the live sale's taken legs
-  (`sale.takenLegs()`), or `null` if the app has no live sale. A leg still
+- `liveSale` (required) — a getter returning `{ takenLegs, saving }`
+  (`sale.registerView()`), or `null` if the app has no live sale. A leg still
   in the cart (after `cancelTender`, say) then counts on its session's Z.
   The register is created before the sale, so read the sale through a ref:
   ```ts
   const saleRef = useRef<ReturnType<typeof useSale> | null>(null)
-  const register = useRegisterSession({ …, liveSale: () => saleRef.current?.takenLegs() ?? [] })
+  const register = useRegisterSession({ …, liveSale: () => saleRef.current?.registerView() ?? { takenLegs: [], saving: false } })
   const sale = useSale(…)
   saleRef.current = sale
   ```
+  While `saving` is true (a completion is in flight or its failed save has not been cleared),
+  `startCounting` and `closeSession` throw `RegisterSaleSavingError`. Live figures omit its legs then,
+  since the stored order may already count them. Wait for the save, or retry it if it failed, then close.
 - `tenderInProgress` — true while a sale is at tender. While true,
   `startCounting` and `closeSession` refuse before any write, so a till
   can't close under a payment in progress.
@@ -145,6 +148,8 @@ reports no session rather than throwing.
 - `blind` — hides expected figures from the cashier while counting.
 - `labels` — `{ registerName?, resolveCashierName? }`, for the closure's
   register name and turning a cashier id into a display name.
+
+`terms` and `expected` are render-time figures. `closeSession` and the count gates call the getter when they run, so they are always right. An app that runs `useRegisterSession` in a provider above the sale must re-render it when the sale's legs change (for example, call both hooks in one component), or the shown figures lag.
 
 ### Returns
 

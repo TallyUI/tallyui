@@ -48,7 +48,7 @@ export function paymentLedgerRows<P extends { method: string; amountMinor: numbe
   })));
 }
 
-/** S3: the ledger rows of the live sale's taken legs (`useSale`'s `takenLegs()`), each in the session that took it. */
+/** S3: the ledger rows of the live sale's taken legs (`useSale`'s `registerView().takenLegs`), each in the session that took it. */
 export function liveLedgerRows(legs: readonly Payment[]): LedgerRow[] {
   return paymentLedgerRows([{ payments: legs }]);
 }
@@ -183,7 +183,7 @@ type TillOrder = { sessionId?: string; payments: readonly TillLeg[] };
  * payments behind each. Local only, never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070
  * decision 1). A leg with no methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to
  * deriveDrawerTerms' cash sales plus other tenders for the same orders. `extra` adds taken legs no order holds yet (S3: a
- * parked draft's `parkedTakenLegs`, the live sale's `takenLegs()`), each counted only in its own `sessionId`; they are legs,
+ * parked draft's `parkedTakenLegs`, the live sale's `registerView().takenLegs`), each counted only in its own `sessionId`; they are legs,
  * not `LedgerRow`s, because a row keeps no `methodId` to key by. Refunds and movements are not here: they are keyed
  * by the wire method. The map has no prototype, so a platform id such as `__proto__` or `toString` is a key like any other.
  */

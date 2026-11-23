@@ -144,7 +144,7 @@ async function saving(call: () => Promise<unknown>) {
     await call();
   } catch (e) {
     // The hook's own refusals keep their text (by name: components import no class from pos, ADR-064).
-    const own = e instanceof Error && (e.name === 'RegisterApprovalRequiredError' || e.name === 'RegisterTenderInProgressError');
+    const own = e instanceof Error && (e.name === 'RegisterApprovalRequiredError' || e.name === 'RegisterTenderInProgressError' || e.name === 'RegisterSaleSavingError');
     throw own ? e : new StoreCallFailed(e);
   }
 }

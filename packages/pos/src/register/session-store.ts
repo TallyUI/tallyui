@@ -509,7 +509,7 @@ export async function writeClosure({
    * in this session but not yet on an order is missing from its Z.
    */
   drafts?: readonly { data?: unknown }[];
-  /** The live sale's taken legs (`useSale`'s `takenLegs()`, S3): those taken in this session count here. See `drafts`. */
+  /** The live sale's taken legs (`useSale`'s `registerView().takenLegs`, S3): those taken in this session count here. See `drafts`. */
   liveLegs?: readonly Payment[];
   /** `pos_refunds` rows; only this session's applied ones are counted (ADR-080 amendment 1). */
   refunds?: readonly PosRefund[];

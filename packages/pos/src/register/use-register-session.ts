@@ -45,6 +45,14 @@ export class RegisterTenderInProgressError extends Error {
   }
 }
 
+/** The live sale is still saving (or its save failed and was not retried), so the till can't count or close under it. Its message can be shown to a cashier as it is. */
+export class RegisterSaleSavingError extends Error {
+  constructor() {
+    super('A sale is still being saved. Wait for it to finish, or retry it if it failed, then close the register.');
+    this.name = 'RegisterSaleSavingError';
+  }
+}
+
 /** The register already has an `open` or `counting` session, or an open is in flight. Its message can be shown to a cashier as it is. */
 export class RegisterSessionAlreadyOpenError extends Error {
   constructor() {
@@ -109,12 +117,12 @@ export interface UseRegisterSessionOptions {
    * creates the register before the sale (the sale takes `register.saleSession`). The usual wiring is a ref:
    * ```ts
    * const saleRef = useRef<ReturnType<typeof useSale> | null>(null)
-   * const register = useRegisterSession({ …, liveSale: () => saleRef.current?.takenLegs() ?? [] })
+   * const register = useRegisterSession({ …, liveSale: () => saleRef.current?.registerView() ?? { takenLegs: [], saving: false } })
    * const sale = useSale(…)
    * saleRef.current = sale
    * ```
    */
-  liveSale: (() => readonly Payment[]) | null;
+  liveSale: (() => { takenLegs: readonly Payment[]; saving: boolean }) | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
   register: RegisterHost | null;
   /** The app's neutral store key (see `bindRegister`). */
@@ -345,8 +353,9 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const parked = data?.parked;
   const parkedRows = useMemo(() => parkedLedgerRows(parked ?? []), [parked]);
   // The drawer ledger's terms; their `expected` is `deriveExpected`'s own result for the same rows.
+  const sale = options.liveSale?.();
   const terms = session
-    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, [...parkedRows, ...liveLedgerRows(options.liveSale?.() ?? [])], replaced), refunds: data?.refundRows ?? [] })
+    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, [...parkedRows, ...liveLedgerRows(sale?.saving ? [] : sale?.takenLegs ?? [])], replaced), refunds: data?.refundRows ?? [] })
     : null;
   const expected = terms ? terms.expected : {};
   const now = new Date();
@@ -379,7 +388,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     return session;
   };
   const parkedFresh = async () => { const { drafts } = live(); return drafts ? readFresh(drafts, { selector: {} }) : []; };
-  const liveLegs = () => live().liveSale?.() ?? [];
+  const liveLegs = () => { const sale = live().liveSale?.(); return sale?.saving ? [] : sale?.takenLegs ?? []; };
   // As `writeClosure` derives the Z's expected figures, from the same rows, past the query cache.
   const freshExpected = async (row: RegisterSession) => {
     const { movements, orders, refunds } = live();
@@ -393,6 +402,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   };
   const refuseDuringTender = () => {
     if (tender.current) throw new RegisterTenderInProgressError();
+    if (live().liveSale?.().saving) throw new RegisterSaleSavingError();
   };
   const nameOf = (id: string | null | undefined) => !id ? '' : id === actor.id ? actor.name : labels?.resolveCashierName?.(id) ?? '';
 

@@ -94,6 +94,11 @@ const KEPT = Symbol('kept coupon');
  * `useSale`'s `hungSaveCheckMs` overrides this; that option is tests only.
  */
 export const HUNG_SAVE_CHECK_MS = 5000;
+/**
+ * An `onSaleCompleted` call unsettled after this long is treated as failed, so the sale offers Retry;
+ * the register can be closed once the retry succeeds (Front desk, 2026-11-23).
+ */
+export const SAVE_TIMEOUT_MS = 60_000;
 
 /** Runs a builder call; an `Error` it throws becomes the refusal message to show, anything else is rethrown. */
 function refusalOf<T>(run: () => T): T | string {
@@ -144,6 +149,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   isStored?: (posOrder: PosOrder) => Promise<boolean>;
   /** Tests only: overrides HUNG_SAVE_CHECK_MS, so a test can shrink the hung-save poll's interval. */
   hungSaveCheckMs?: number;
+  /** Tests only: overrides SAVE_TIMEOUT_MS, so a test can shrink the save's time bound. */
+  saveTimeoutMs?: number;
   /**
    * #722: the tax context for a customer's address (`saleTaxContexts(settings)`, memoized). Each new sale is taxed for its
    * customer, and `setCustomer` re-taxes a cart whose new customer moves the matched rates; tender and receipt keep theirs.
@@ -495,8 +502,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       else if (hungSaveTimer.current === timer) clearHungSaveTimer();
     }, opts.hungSaveCheckMs ?? HUNG_SAVE_CHECK_MS) : null;
     hungSaveTimer.current = timer;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     try {
-      await opts.onSaleCompleted?.(completion.posOrder);
+      await Promise.race([
+        Promise.resolve(opts.onSaleCompleted?.(completion.posOrder)).then(() => {
+          if (timedOut && pending.current === completion && inFlight.current === null) finish();
+        }, (error) => {
+          if (timedOut && confirmed.current !== completion) saleLogger.error('onSaleCompleted failed', { orderId: completion.posOrder.id, error: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => { timedOut = true; reject(new Error('the save took too long')); }, opts.saveTimeoutMs ?? SAVE_TIMEOUT_MS);
+        }),
+      ]);
     } catch (error) {
       if (hungSaveTimer.current === timer) clearHungSaveTimer();
       const message = error instanceof Error ? error.message : String(error);
@@ -511,16 +530,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         checkStored(completion);
       }
       return;
+    } finally { clearTimeout(timeout); }
+    finish();
+    function finish() {
+      if (hungSaveTimer.current === timer) clearHungSaveTimer();
+      if (pending.current !== completion) return;
+      pending.current = null;
+      droppedReferences.current.clear();
+      confirm(null);
+      setSaving(false);
+      setError(null); // every error goes, SALE_HAS_PAYMENT too: it is never shown on the receipt (#1059 review)
+      stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
+      setStage(stageNow.current);
     }
-    if (hungSaveTimer.current === timer) clearHungSaveTimer();
-    if (pending.current !== completion) return;
-    pending.current = null;
-    droppedReferences.current.clear();
-    confirm(null);
-    setSaving(false);
-    setError(null); // every error goes, SALE_HAS_PAYMENT too: it is never shown on the receipt (#1059 review)
-    stageNow.current = { kind: 'receipt', order: withSentForm(completion.order, completion.posOrder), posOrder: completion.posOrder };
-    setStage(stageNow.current);
   }
 
   /**
@@ -1084,10 +1106,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * S3: the live sale's legs its session counts now and no stored order counts yet, for `useRegisterSession`'s
      * `liveSale`: captured till legs stamped with a session, not reopened and not counted by an after-close sale's closure
      * (`sessionTakenLegs`, the rule a parked draft's legs follow). `[]` on the receipt, whose stored order counts them.
+     * `saving` is true while a completion is in flight or pending, including after a failed save.
      */
-    takenLegs(): Payment[] {
-      if (stageNow.current.kind === 'receipt') return [];
-      return sessionTakenLegs(builderNow.current.getSnapshot().payments, countedLeg);
+    registerView(): { takenLegs: Payment[]; saving: boolean } {
+      return {
+        takenLegs: stageNow.current.kind === 'receipt' ? [] : sessionTakenLegs(builderNow.current.getSnapshot().payments, countedLeg),
+        saving: inFlight.current !== null || pending.current !== null,
+      };
     },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
     async park(): Promise<string | null> {

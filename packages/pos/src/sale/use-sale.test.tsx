@@ -1760,7 +1760,7 @@ describe('abandoning a hung save and locking from entry', () => {
       act(() => result.current.startTender('external'));
       let settled = false;
       act(() => { void result.current.complete().then(() => { settled = true; }); });
-      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      await waitFor(() => { expect(settled).toBe(true); expect(result.current.error).toBe('The sale could not be saved: the save took too long'); }, { timeout: 500 });
       expect(result.current.error).toBe('The sale could not be saved: the save took too long');
       expect(result.current.registerView().saving).toBe(true);
       await act(async () => { await result.current.complete(); });
@@ -1777,7 +1777,7 @@ describe('abandoning a hung save and locking from entry', () => {
       act(() => result.current.startTender('external'));
       let settled = false;
       act(() => { void result.current.complete().then(() => { settled = true; }); });
-      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      await waitFor(() => { expect(settled).toBe(true); expect(result.current.error).toBe('The sale could not be saved: the save took too long'); }, { timeout: 500 });
       expect(result.current.error).toBe('The sale could not be saved: the save took too long');
       await act(async () => { resolve(); });
       expect(result.current.stage.kind).toBe('receipt');
@@ -1793,7 +1793,7 @@ describe('abandoning a hung save and locking from entry', () => {
       act(() => result.current.startTender('external'));
       let settled = false;
       act(() => { void result.current.complete().then(() => { settled = true; }); });
-      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      await waitFor(() => { expect(settled).toBe(true); expect(result.current.error).toBe('The sale could not be saved: the save took too long'); }, { timeout: 500 });
       const { stage, error } = result.current;
       expect(error).toBe('The sale could not be saved: the save took too long');
       await act(async () => { reject(new Error('late failure')); });
