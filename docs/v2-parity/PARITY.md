@@ -479,7 +479,7 @@ a count and a "+" for a new one.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
-| Tally Woo | gap | feature | Tally Woo | The cash keypad, quick-cash chips, change and slow-save notice are there, but the tender is two hard-coded tiles (cash and a typed card reference), with no store gateways, order-pay webview, readers, tips or pay later, no rounded due at 4.2.0, and a hard-coded order status (rows 95, 96, 103, 104, 106, 110 missing) (code read 23 Nov, rows 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 106, 110, 112, 113, 114). |
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/connector-woocommerce` | The cash keypad, quick-cash chips, change and slow-save notice are there, but the tender is two hard-coded tiles (cash and a typed card reference), with no store gateways, order-pay webview, readers, tips or pay later, no rounded due at 4.2.0, and a hard-coded order status (rows 95, 96, 103, 104, 106, 110 missing) (code read 23 Nov, rows 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 106, 110, 112, 113, 114). |
 | medusapos | gap | visual | `@tallyui/components` | Tender sits inside the cart column: Cash and Card terminal, chips, a keypad, "Take", then a separate "Complete sale" and Back. There is no ledger beyond "No payments yet". |
 | vendurepos | gap | visual | `@tallyui/components` | The same pane across the full width. |
 
@@ -501,7 +501,7 @@ and a leg can be voided.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
-| Tally Woo | gap | feature | Tally Woo | Split by ways and by percent is there, but the ledger needs a store that reports `order_payments_list`, a cancelled payment is only written to a local journal, and split by items is not mounted (row 109 missing) (code read 23 Nov, rows 107, 108, 109, 111). |
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/connector-woocommerce` | Split by ways and by percent is there, but the ledger needs a store that reports `order_payments_list`, a cancelled payment is only written to a local journal, and split by items is not mounted (row 109 missing) (code read 23 Nov, rows 107, 108, 109, 111). |
 | medusapos | missing | feature | `@tallyui/components` | There is no Split control on the tender pane. |
 | vendurepos | missing | feature | `@tallyui/components` | There is no Split control, although the demo card says "Split a payment". |
 
@@ -579,7 +579,7 @@ Process Refund.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
-| Tally Woo | missing | feature | Tally Woo | The app imports no refund code, though the library has the form, and the connector has no refund write; only refunded orders display (code read 23 Nov, rows 131, 132, 133). |
+| Tally Woo | missing | feature | Tally Woo, `@tallyui/connector-woocommerce` | The app imports no refund code, though the library has the form, and the connector has no refund write; only refunded orders display (code read 23 Nov, rows 131, 132, 133). |
 | medusapos | missing | feature | medusapos | There is no order to refund from. |
 | vendurepos | close | feature | vendurepos | Inline on the order page: a quantity per item, a restock switch, a reason, Refund and Cancel. There is no custom amount. |
 
