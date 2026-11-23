@@ -1,6 +1,7 @@
 # v2 parity checklist: screen by screen against demo.wcpos.com
 
-- **Date:** 2026-11-17 (refresh of the 2026-11-10 round) · **Owner:** the
+- **Date:** 2026-11-17 (refresh of the 2026-11-10 round); Tally Woo column
+  re-scored from code 2026-11-23 · **Owner:** the
   TallyUI shared-libraries worker
 - **Reference:** WCPOS 2.0.0 at `https://demo.wcpos.com/pos`; its source is
   `packages/core/src/screens/main` in the WCPOS monorepo.
@@ -17,7 +18,8 @@ Every row has:
   - `close`: the same job gets done, with a different look or one step more.
   - `gap`: the screen exists but misses something a v2 cashier uses.
   - `missing`: there is no such screen or control.
-  - `not reachable`: no public demo to look at (Tally Woo, see below).
+  - `not reachable`: no public demo to look at, and for Tally Woo no
+    row of the code read covers it (see below).
 - a **kind**:
   - `feature`: the cashier cannot do the job, or does it another way;
   - `visual`: the job is the same, but the screen looks or is laid out
@@ -43,11 +45,16 @@ Every row has:
   register was opened with a 100 float. To reach the receipt, orders and
   refund screens, one cash sale of a Cold Brew was completed. The refund form
   was opened and closed without refunding.
-- **Tally Woo:** `not reachable`, so every row reads `not reachable`.
-  - The README's demo (`https://tallyui-woocommerce.vercel.app`) asks for a
-    WCPOS cashier account, and none is public.
-  - The demo store that the Tally Woo repo's ADR 0007 names is behind a
-    password kept outside the repos.
+- **Tally Woo:** scored from a code read, with no screenshots: the
+  2026-11-23 code parity table, monorepo 3a43096a3 against
+  tallyui-woocommerce 1778057 with @tallyui/* 4.2.0 (the table is kept
+  outside the repo; its row numbers are cited below).
+  - Its demo is still not reachable: the README's demo
+    (`https://tallyui-woocommerce.vercel.app`) asks for a WCPOS cashier
+    account, and the demo store that ADR 0007 names is behind a password
+    kept outside the repos.
+  - `match` is never given from code, since it needs a fresh screenshot.
+    Every row cites the table's row numbers.
   - The Tally Woo screens below are still from 2026-11-10.
 
 The screenshots are JPEG at quality 70:
@@ -70,7 +77,7 @@ There are 30 screen sections and 5 motion rows. The counts are per app.
 
 | App | match | close | gap | missing | not reachable |
 |---|---|---|---|---|---|
-| Tally Woo | 0 | 0 | 0 | 0 | 35 |
+| Tally Woo | 0 | 3 | 26 | 1 | 5 |
 | medusapos | 1 | 16 | 14 | 4 | 0 |
 | vendurepos | 1 | 19 | 13 | 2 | 0 |
 
@@ -78,6 +85,7 @@ Rows that are not `match`, by kind:
 
 | App | feature | visual | motion | open in all |
 |---|---|---|---|---|
+| Tally Woo | 25 | 5 | 5 | 35 |
 | medusapos | 17 | 12 | 5 | 34 |
 | vendurepos | 17 | 12 | 5 | 34 |
 
@@ -195,7 +203,7 @@ for a new device.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
-| Tally Woo | not reachable | feature | | The demo asks for a WCPOS cashier account. |
+| Tally Woo | gap | feature | Tally Woo | Connect and saved sites match, but a store behind a Cloudflare challenge fails to connect, the first store is always taken, and there is one local register (rows 3, 4, 134 missing) (code read 23 Nov, rows 1, 2, 3, 4, 134). |
 | medusapos | close | feature | medusapos | A demo page with "Enter the demo" (cashier or manager), then a register card on the sale screen. |
 | vendurepos | close | feature | vendurepos | A demo card with one "Enter the demo" button; the register opens straight onto an opening-float form. |
 
@@ -221,6 +229,7 @@ each platform's own.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/components` | The rail, screen bar and cart header match, but the rail has a fixed width, 640 to 899 px gets the phone layout, taxes always itemise as "Tax n%", and with no outbox the tender reads "Taking payment arrives in the next update" (code read 23 Nov, rows 9, 10, 12, 14, 15, 49, 83, 92, 93). |
 | medusapos | gap | visual | medusapos | The shell matches v2 (rail, cart table, Checkout, tabs). The tiles are text only, with no photos. |
 | vendurepos | close | visual | `@tallyui/components` | The same shell, with photo tiles. There is a title bar with "Sync now" and "Register ›" over the rail, and the cart column is narrower. |
 
@@ -240,6 +249,7 @@ carries the total.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | visual | Tally Woo | The Products and Cart tab bar and the phone drawer are there; the tab bar has no count animation or haptic (code read 23 Nov, rows 11, 17). |
 | medusapos | close | visual | `@tallyui/components` | Products fill the screen, with a "Cart · 1 item €2.50 ›" bar instead of tabs. |
 | vendurepos | close | visual | `@tallyui/components` | Products and Cart are tabs at the top, not the bottom. |
 
@@ -257,6 +267,7 @@ Featured, On Sale, Category, Tag, Brand); results stay as tiles.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | `@tallyui/components`, Tally Woo | Search and scan work locally, but search has no debounce or meta keys, there is no Featured or Brands pill, an out-of-stock scan is always refused, there is no BLE, and nothing looks the store up when a search or scan misses (row 53 missing) (code read 23 Nov, rows 52, 53, 56, 57, 59, 60, 61, 62, 63). |
 | medusapos | close | feature | `@tallyui/components` | "Search or scan barcode / SKU" filters the tiles; only an In Stock pill. |
 | vendurepos | close | feature | `@tallyui/components` | The same, plus a scan button; only an In Stock pill. |
 
@@ -276,6 +287,7 @@ count ("Clothing · 160 products"), then a breadcrumb.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Browse by categories and tags is there; brands and shortcuts are listed but disabled (row 55 missing) (code read 23 Nov, rows 54, 55). |
 | medusapos | gap | visual | medusapos | A row of chips (All products, Bakery, …); no tiles, counts or nesting. |
 | vendurepos | gap | visual | vendurepos | The same chips. |
 
@@ -293,6 +305,7 @@ to pick the variation.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | close | visual | Tally Woo | Variations in place, as a popover or as expanded rows, with the attribute picker; look not compared (code read 23 Nov, row 58). |
 | medusapos | close | visual | `@tallyui/components` | A "from €10.00" tile opens a list of variants (name, price, stock) over the grid. |
 | vendurepos | close | visual | `@tallyui/components` | The same variant list. |
 
@@ -310,6 +323,7 @@ button.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | `@tallyui/components`, Tally Woo | The quantity keypad and add or split line are there, but a decimal quantity throws and nothing guards against overselling (rows 66, 67 missing) (code read 23 Nov, rows 65, 66, 67, 69). |
 | medusapos | close | visual | `@tallyui/components` | A keypad popover with Remove, Apply and Cancel buttons instead of −, + and trash. |
 | vendurepos | close | visual | `@tallyui/components` | The same keypad, with Discount added. |
 
@@ -328,6 +342,7 @@ line-discount form.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | close | visual | `@tallyui/components` | The price keypad with quick-discount keys is the library's line popover; look not compared (code read 23 Nov, row 69). |
 | medusapos | close | visual | `@tallyui/components` | The same keypad and quick discounts, plus Discount, Apply and Cancel buttons. |
 | vendurepos | close | visual | `@tallyui/components` | The same. |
 
@@ -346,6 +361,7 @@ Discount and Shipping. The fee sheet has a name, an amount in $ or %,
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | The add menu is there, but the fee add form has no percent or includes-tax switch, shipping has no method select, and the misc product has no SKU, virtual, downloadable or categories (code read 23 Nov, rows 73, 74, 75, 92). |
 | medusapos | gap | feature | medusapos | The "+" menu holds Misc product, Fee, Discount and Shipping. The fee is a small modal with a name and an EUR amount: no %, no tax. |
 | vendurepos | close | feature | vendurepos | "Add charge" expands inline (Fee, Shipping, Custom item), with a name, an amount and tax-class chips; no %. |
 
@@ -363,6 +379,7 @@ tab picks from the store's coupons.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Coupon validation is faithful, but coupons are picked from synced ones only with no typed code, and the order discount is a library discount, not v2's server coupon line (code read 23 Nov, rows 76, 77). |
 | medusapos | gap | feature | medusapos | A Discount entry in the "+" menu; the cart's ⋮ menu holds Void only. No coupon code anywhere. |
 | vendurepos | gap | feature | vendurepos | "Order discount" (Percent or Amount) inline; no coupon code. |
 
@@ -382,6 +399,7 @@ store's customers, with an address button beside it.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Customer search is online only, so no customer can be picked offline, and the cart customer's billing and shipping cannot be edited (row 81 missing) (code read 23 Nov, rows 79, 81). |
 | medusapos | close | visual | `@tallyui/components` | "Customer: Guest" opens a modal with a search and "New customer". |
 | vendurepos | close | visual | `@tallyui/components` | The search opens inline above the cart, with "New customer". |
 
@@ -398,6 +416,7 @@ phone, and billing and shipping addresses.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Name, email and phone; no addresses (code read 23 Nov, row 80). |
 | medusapos | close | feature | `@tallyui/components` | A "New customer" modal: first and last name, email, phone; no addresses. |
 | vendurepos | close | feature | `@tallyui/components` | The same short form, inline. |
 
@@ -419,6 +438,7 @@ are `new`.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | The order note is there, but the Order details sheet holds Note, Void, Print and Close only, with no hand-over or custom fields, no tax exempt and no save to the server (rows 85, 88 missing) (code read 23 Nov, rows 85, 86, 87, 88). |
 | medusapos | close | feature | medusapos | An "Order note" field over the cart lines; no hand-over, tax exempt or sync. |
 | vendurepos | missing | feature | vendurepos | "Order details" holds only Void and Close; no note. |
 
@@ -438,6 +458,7 @@ a count and a "+" for a new one.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Tabs, ages and a new order are there, but open orders are local to this device, with no server pos-open orders (code read 23 Nov, row 89). |
 | medusapos | close | visual | `@tallyui/components` | Tabs under the cart with a "+", plus a parked-sales chip; no ages. |
 | vendurepos | close | visual | `@tallyui/components` | Tabs under the cart plus "Parked (1)" over the cart. |
 
@@ -458,6 +479,7 @@ a count and a "+" for a new one.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/connector-woocommerce` | The cash keypad, quick-cash chips, change and slow-save notice are there, but the tender is two hard-coded tiles (cash and a typed card reference), with no store gateways, order-pay webview, readers, tips or pay later, no rounded due at 4.2.0, and a hard-coded order status (rows 95, 96, 103, 104, 106, 110 missing) (code read 23 Nov, rows 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 106, 110, 112, 113, 114). |
 | medusapos | gap | visual | `@tallyui/components` | Tender sits inside the cart column: Cash and Card terminal, chips, a keypad, "Take", then a separate "Complete sale" and Back. There is no ledger beyond "No payments yet". |
 | vendurepos | gap | visual | `@tallyui/components` | The same pane across the full width. |
 
@@ -479,6 +501,7 @@ and a leg can be voided.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/connector-woocommerce` | Split by ways and by percent is there, but the ledger needs a store that reports `order_payments_list`, a cancelled payment is only written to a local journal, and split by items is not mounted (row 109 missing) (code read 23 Nov, rows 107, 108, 109, 111). |
 | medusapos | missing | feature | `@tallyui/components` | There is no Split control on the tender pane. |
 | vendurepos | missing | feature | `@tallyui/components` | There is no Split control, although the demo card says "Split a payment". |
 
@@ -497,6 +520,7 @@ Download PDF and Print.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/components` | Store templates, zoom, email with its offline queue and order sync are there, but every print is the browser dialog, with no printer switcher, PDF or real printer output, and no logo or QR outside store templates (rows 118, 120, 126 missing) (code read 23 Nov, rows 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126). |
 | medusapos | gap | feature | `@tallyui/components` | A centred card with "Email receipt", "Print receipt" and "New sale". No preview, template or PDF. |
 | vendurepos | gap | feature | `@tallyui/components` | A receipt in the cart column with "Print receipt" and "New sale". No email, template or PDF. |
 
@@ -517,6 +541,7 @@ history.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo, `@tallyui/components` | A table with day headings, paging, search, scan and tap-to-filter, but fetched online a page at a time, with six columns, no payment-method or register pill and no sort (row 144 missing) (code read 23 Nov, rows 142, 143, 144, 145, 146, 147, 148, 149). |
 | medusapos | gap | feature | medusapos | A "Recent" card list of this till's sales only ("No sales yet" until one is made). |
 | vendurepos | close | feature | vendurepos | An "All orders / This till" table with Status, Customer, Cashier, register and Date filters. There is no payment-method filter. |
 
@@ -535,6 +560,7 @@ payments, plus Delete, Refund, Sync, Close, Receipt and Re-open.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | The View tab shows items, totals, payments, refunds and the customer, with print and per-order sync, but there is no Edit or JSON tab and no re-open, delete, invoice actions or edit (rows 154, 155, 156, 157 missing) (code read 23 Nov, rows 130, 150, 151, 152, 153, 154, 155, 156, 157, 158). |
 | medusapos | missing | feature | medusapos | A "Recent" card does not open. |
 | vendurepos | close | feature | vendurepos | A full page with lines, totals and paid, "Refund items", "Receipt" and "Back to orders". No Re-open or Sync. |
 
@@ -553,6 +579,7 @@ Process Refund.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | missing | feature | Tally Woo, `@tallyui/connector-woocommerce` | The app imports no refund code, though the library has the form, and the connector has no refund write; only refunded orders display (code read 23 Nov, rows 131, 132, 133). |
 | medusapos | missing | feature | medusapos | There is no order to refund from. |
 | vendurepos | close | feature | vendurepos | Inline on the order page: a quantity per item, a restock switch, a reason, Refund and Cancel. There is no custom amount. |
 
@@ -570,6 +597,7 @@ billing address, date created) and an add button.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | A customers table with server search and an add form, but one server page only, fewer columns, a four-field add form, and rows that cannot be opened or edited (row 170 missing) (code read 23 Nov, rows 167, 168, 169, 170, 171). |
 | medusapos | gap | feature | medusapos | A Customers screen that stays empty until a search, plus "Add customer". |
 | vendurepos | close | feature | vendurepos | A customers table with search (#822). |
 
@@ -588,6 +616,7 @@ switch, variations and prices, edited in place.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | A read-only products table with search, scan and count, but no inline price, sale price or stock edit and no edit dialog, with fewer columns, sorts and filter chips (rows 160, 161, 162 missing) (code read 23 Nov, rows 159, 160, 161, 162, 163, 164, 165, 166). |
 | medusapos | gap | feature | `@tallyui/components` | Only the sale screen's "Table" view, read-only. |
 | vendurepos | gap | feature | `@tallyui/components` | The same read-only table view. |
 
@@ -605,6 +634,7 @@ sale, the expected cash, Print X-report and Close register.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Open with a float and paid in, paid out and no sale are the library's, but the panel is a centred dialog with no Print X-report, and no sale opens no drawer (row 129 missing) (code read 23 Nov, rows 129, 135, 136, 137). |
 | medusapos | match | visual | | The same side sheet: drawer total, session sales, Paid in, Paid out, No sale, float, expected, Print X-report, Close register. |
 | vendurepos | match | visual | | The same side sheet. |
 
@@ -621,6 +651,7 @@ coins", and "Close & print".
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | The denomination count with over and short and session sync are there, but a close over the variance threshold is refused with nowhere to approve, and closures have no recount (row 139 missing) (code read 23 Nov, rows 138, 139, 140, 141). |
 | medusapos | close | visual | `@tallyui/components` | A grid of notes and coins first, with "Back to selling" and "Close register"; no keypad-first count. |
 | vendurepos | close | visual | `@tallyui/components` | The same count. |
 
@@ -638,6 +669,7 @@ Where-sold cards, and Print summary.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Periods, presets, compare and the hourly chart are there, but reports cover this device only, count rejected and pending sales, subtract no refunds, and have no Brands or Refunds cards or panels (code read 23 Nov, rows 176, 177, 178, 179, 180). |
 | medusapos | close | visual | `@tallyui/components` | The same layout of hero and cards, with fewer cards. |
 | vendurepos | close | visual | `@tallyui/components` | The same. |
 
@@ -653,6 +685,7 @@ Where-sold cards, and Print summary.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | visual | Tally Woo | Light, dark and system, ten themes, fonts and Scale are there; there is no icon-set choice (code read 23 Nov, rows 19, 20). |
 | medusapos | close | visual | medusapos | Theme with the ten themes; no Scale or icon set. |
 | vendurepos | close | visual | vendurepos | General (prices, quick discounts, products per row) and Theme; no Scale. |
 
@@ -670,6 +703,7 @@ templates.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Network printer profiles and a printer per template are saved, then never used at print, with no code page, columns or cut; auto print opens the browser dialog, and there is no discovery, test print or setup report (row 128 missing) (code read 23 Nov, rows 124, 127, 128). |
 | medusapos | missing | feature | `@tallyui/components` | Settings has Store, Register, Scanner, Theme and Danger zone; no printing. |
 | vendurepos | gap | feature | `@tallyui/components` | Printing holds one "Print after each sale" switch. |
 
@@ -687,6 +721,7 @@ length, prefix and suffix, sound, direct connection, and a test field.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Thresholds, prefix, suffix, sound and the test panel are there; no BLE, keyboard register flow, device chooser or reset notice (code read 23 Nov, row 42). |
 | medusapos | close | feature | `@tallyui/components` | Scanner: average time per key, minimum characters and a test field; no prefix, suffix or sound. |
 | vendurepos | close | feature | `@tallyui/components` | Scanner: minimum length, prefix, suffix, sounds and a test field; no key timing. |
 
@@ -707,6 +742,7 @@ not started. The shared scanner rules are merged (#825–#827).
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | gap | feature | Tally Woo | Sales today, the drawer, "Hand the till to" and Sign out are there, but there is no store or register switch or open-carts count, though the library sheet has those rows (row 6 missing) (code read 23 Nov, rows 5, 6). |
 | medusapos | close | feature | medusapos | Sales today, the drawer, "Hand the till to the next cashier" and Sign out; no store switch. |
 | vendurepos | gap | feature | vendurepos | The email, the store and Sign out only. |
 
@@ -715,9 +751,10 @@ not started. The shared scanner rules are merged (#825–#827).
 | ![v2](screens/v2/cashier.jpg) | ![medusapos](screens/medusapos/cashier.jpg) | ![vendurepos](screens/vendurepos/cashier.jpg) |
 
 **Closes it:** the shared sheet is ready-queue row S9: `CashierSheet` (S9a,
-#982) has the header, Your sales today and Sign out; the rest of v2's sheet
-(S9b–d) is open. PLAN unit 33 is the handover slip and switch confirm, not
-the sheet. vendurepos adopts the sheet (`cashier()` is not started in any
+#982) has the header, Your sales today and Sign out, and now also "Hand the
+till to" (530744b7) and the Store and Register rows with Switch
+(bef8aebb). PLAN unit 33 is the handover slip and switch confirm, not the
+sheet. vendurepos adopts the sheet (`cashier()` is not started in any
 connector).
 
 ## Offline
@@ -727,6 +764,7 @@ pill; search and sales carry on.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | close | visual | Tally Woo | The online, offline and unreachable toasts, the pill and the session hold banner are there (code read 23 Nov, rows 23, 24). |
 | medusapos | gap | feature | `@tallyui/components` | Search carries on, but nothing says the till is offline: the footer keeps "Sales are up to date". |
 | vendurepos | gap | feature | `@tallyui/components` | The same; no indicator. |
 
@@ -762,6 +800,7 @@ an "added to cart" toast slides in.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
 | medusapos | gap | motion | `@tallyui/components` | No press state, no count badge, no toast; the line just appears. |
 | vendurepos | gap | motion | `@tallyui/components` | A count badge and a toast; no press state. |
 
@@ -777,6 +816,7 @@ aware). Open-order tabs fade in and out (`pos/cart/tabs.tsx:127, 446`).
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
 | medusapos | gap | motion | `@tallyui/components` | A line pops in; Remove makes it vanish. |
 | vendurepos | gap | motion | `@tallyui/components` | The same. |
 
@@ -789,6 +829,7 @@ sheet slides from the right, and Escape closes it.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
 | medusapos | gap | motion | `@tallyui/components` | Add Fee is a centred modal; the modal and the register sheet appear and go with no slide. |
 | vendurepos | gap | motion | `@tallyui/components` | The register sheet appears with no slide; Add charge expands inline. |
 
@@ -811,6 +852,7 @@ Customers → Sale.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
 | medusapos | gap | motion | `@tallyui/components` | Screens swap at once; an empty list shows until the data comes; no skeletons. |
 | vendurepos | gap | motion | `@tallyui/components` | The same. |
 
@@ -825,6 +867,7 @@ the products stay visible behind it.
 
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
+| Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
 | medusapos | close | motion | `@tallyui/components` | The popover opens beside the line and the till stays visible; there is no open animation. |
 | vendurepos | gap | motion | `@tallyui/components` | The popover opens low on the left. A white backdrop blanks the products grid and the cart below the popover's top edge, at 1280x800 and at 1280x720. This confirms the Steward's report. |
 
