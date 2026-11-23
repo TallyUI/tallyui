@@ -6948,7 +6948,8 @@ interface OrderCreatePayload {
      > "Q2 no for now, backlog row, but the refund screen must not offer cash for an amount that is not a multiple of the increment without saying so: a one-line notice now, rounding later."
 
      The refund form carries Q1 as `cashRoundingMinor` and Q2's notice as `cashIncrementMinor`; rounding a cash refund to the increment is a backlog row.
-  5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only); Medusa and Vendure in their
+  5. **Carriers:** WooCommerce a tax-free fee_line 'Rounding' (PR B, on the fork only,
+     and never on a WCPOS 2.0+ ledger store, whose transport refuses it (S9)); Medusa and Vendure in their
      plugin lanes; until a store's connector declares `cashRounding`, a till never rounds and a rounded sale is
      refused at finalize.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create

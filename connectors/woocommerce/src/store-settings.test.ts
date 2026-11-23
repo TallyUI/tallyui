@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, StoreSettingsError, formatMoney, type SyncContext } from '@tallyui/core';
 import { wooStoreSettings, readWooCapabilities, wooPluginSupportsCoupons, wooOnOrderLinesLine, wooOnOrderLines20Line, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION,
-  WOO_TAX_ADDRESS_ORDER_CREATE_VERSION } from './store-settings';
+  WOO_TAX_ADDRESS_ORDER_CREATE_VERSION, wooLedgerVersion } from './store-settings';
 import { createWooCommerceConnector } from './index';
 import stores from './__tests__/fixtures/taxes-1.10.20/stores.json';
 import taxes from './__tests__/fixtures/taxes-1.10.20/taxes.json';
@@ -751,6 +751,20 @@ describe('readWooCapabilities', () => {
     expect('cashRounding' in caps!).toBe(false);
   });
 
+  it.each(['2.0.4', '2.0.0', '2.1.0-beta.1', ' 3.0 '])('W2: leaves cashRounding out on a fork store reporting WCPOS %j (a ledger store; the transport refuses cashRoundings there)', async (wcpos_version) => {
+    statusBody = { capabilities: ['order_create_v5'] };
+    siteBody = { wcpos_version };
+    const caps = await readWooCapabilities(context);
+    expect(caps).toBeDefined();
+    expect('cashRounding' in caps!).toBe(false);
+  });
+
+  it('W2: declares cashRounding on a fork store reporting WCPOS 1.11.0', async () => {
+    statusBody = { capabilities: ['order_create_v5'] };
+    siteBody = { wcpos_version: '1.11.0' };
+    expect(await readWooCapabilities(context)).toMatchObject({ cashRounding: true });
+  });
+
   it.each(['HTTP 500', 'network'])('W2: leaves cashRounding out when /status fails (%s)', async (failure) => {
     fetchMock.mockResolvedValueOnce(Response.json(stores));
     if (failure === 'network') fetchMock.mockRejectedValueOnce(new TypeError('network'));
@@ -758,6 +772,16 @@ describe('readWooCapabilities', () => {
     const caps = await readWooCapabilities(context);
     expect(caps).toMatchObject({ orderCreate: 3 });
     expect('cashRounding' in caps!).toBe(false);
+  });
+});
+
+describe('wooLedgerVersion', () => {
+  it.each([
+    ['2.0.4', true], ['2.0', true], [' 2.0.4 ', true], ['2.1.0-beta.1', true], ['2.0.4+b7', true], ['10.0.0', true],
+    ['1.11.0', false], ['1.10.20', false], ['0.9', false],
+    ['2', undefined], ['v2.0.4', undefined], ['', undefined], [200, undefined], [null, undefined], [undefined, undefined],
+  ])('%j gives %s', (input, expected) => {
+    expect(wooLedgerVersion(input)).toBe(expected);
   });
 });
 
