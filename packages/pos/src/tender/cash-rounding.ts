@@ -4,7 +4,7 @@
  * v2's tender LEDGER: "a partial or short cash entry and every other method keep full precision".
  * The till records the rounding as an order field, Order.cashRoundings (ADR-094).
  */
-import type { PaymentMethodDescriptor, PaymentRounding } from '@tallyui/core';
+import { wireMethodOf, type PaymentMethodDescriptor, type PaymentRounding } from '@tallyui/core';
 import { appliedMinor, type TenderState } from './tender-state';
 
 /** How the method rounds to its increment. */
@@ -21,12 +21,12 @@ export function roundToIncrement(minor: number, incrementMinor: number, mode: Ro
   return remainder * 2 >= incrementMinor ? down + incrementMinor : down;
 }
 
-/** The balance under a manual method's rounding, with its signed difference. */
+/** The balance under a cash method's rounding, with its signed difference. */
 export function roundedDue(
   balanceMinor: number,
   method: PaymentMethodDescriptor | null,
 ): { dueMinor: number; roundingMinor: number } {
-  const rounding = method?.capture.mode === 'manual' ? method.defaults.rounding : null;
+  const rounding = method?.capture.mode === 'manual' && wireMethodOf(method) === 'cash' ? method.defaults.rounding : null;
   if (!rounding) return { dueMinor: balanceMinor, roundingMinor: 0 };
   const dueMinor = roundToIncrement(balanceMinor, rounding.incrementMinor, rounding.mode);
   return { dueMinor, roundingMinor: dueMinor - balanceMinor };
