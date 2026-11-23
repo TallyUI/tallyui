@@ -481,10 +481,10 @@ const open = (registerId = 'register') =>
   openSession(db.register_sessions, {
     registerId, expectedFloatMinor: 10000, countedFloatMinor: 10000, openedBy: '7', businessDay: { year: 2026, month: 9, day: 16 },
   });
-const z = (session: RegisterSession, extra: { counted?: number; orders?: PosOrder[]; movements?: CashMovement[] } = {}) =>
+const z = (session: RegisterSession, extra: { counted?: number; orders?: PosOrder[]; movements?: CashMovement[]; drafts?: { data?: unknown }[] } = {}) =>
   writeClosure({
     closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted: extra.counted ?? 10000,
-    otherTenders: {}, movements: extra.movements ?? [], orders: extra.orders ?? [], softwareVersion: '1.0.0',
+    otherTenders: {}, movements: extra.movements ?? [], orders: extra.orders ?? [], drafts: extra.drafts, softwareVersion: '1.0.0',
   });
 
 // TallyUI (#123 review): close, Z #1, reopen, then a 2,500 sale and a 700 pay-out fell off every
@@ -690,4 +690,26 @@ it('labels tax rates only from orders bound to this session', async () => {
   const closure = await closeWith((id) => [tillRow(id), reopenedRow('another-session')]);
   expect(closure.breakdowns.transaction_count).toBe(1);
   expect(closure.breakdowns).not.toHaveProperty('tax_includes_store_paid');
+});
+
+// S3: a sale parked in A, A closed, then resumed and completed in B. Its order is B's; its A leg is A's.
+const closeNext = async () => closeSession(db.register_sessions, (await open()).id, { counted: { cash: 10000 } });
+const parked = (leg: Record<string, unknown>) => ({ data: JSON.stringify({ payments: [{ id: 'leg', method: 'cash', status: 'captured', ...leg }] }) });
+it("S3: a leg stamped with another session is in neither this Z's expected nor its payment_methods", async () => {
+  const a = await closeNext();
+  const zA = await z(a, { drafts: [parked({ amountMinor: 400, sessionId: a.id })] });
+  expect(zA.breakdowns.payment_methods).toEqual({ cash: { sales_minor: 400, refunds_minor: 0 } });
+  const b = await closeNext();
+  const zB = await z(b, { orders: [order('resumed', b.id, [{ method: 'cash', amountMinor: 400, sessionId: a.id }, { method: 'cash', amountMinor: 600 }])] });
+  expect(zB.till_expected.cash).toBe(10600);
+  expect(zB.breakdowns.payment_methods).toEqual({ cash: { sales_minor: 600, refunds_minor: 0 } });
+});
+it("S3: a parked reopened sale's legs count once, in the refused order, not again from the draft", async () => {
+  const a = await closeNext();
+  const refused: PosOrder = { ...order('refused', a.id, [{ method: 'cash', amountMinor: 500, sessionId: a.id }]),
+    syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'x' } };
+  // The draft reopen.ts writes: the refused order's leg, carried as reopened with its session.
+  const closure = await z(a, { orders: [refused], drafts: [parked({ amountMinor: 500, reopened: true, sessionId: a.id })] });
+  expect(closure.till_expected.cash).toBe(10500);
+  expect(closure.breakdowns.payment_methods).toEqual({ cash: { sales_minor: 500, refunds_minor: 0 } });
 });

@@ -5,7 +5,7 @@
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
-import { useEffect, useState, type JSX } from 'react';
+import { useEffect, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
@@ -39,6 +39,8 @@ export interface TenderPaneProps {
   /** Draws the Back button: `sale.cancelTender`, or the cancel-payment view first when money was taken here. Pass `false` when the host leaves the tender stage itself, as v2's phone checkout does. Default `true`. */ back?: boolean;
   /** Passed to the ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`: Cancel payment voids at once. */
   confirmVoid?: boolean;
+  /** Passed to the ledger: runs before Cancel payment voids a leg; the void waits for it, and `false` or a throw keeps the leg. */
+  beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'];
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -60,7 +62,7 @@ const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
     .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 };
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -74,6 +76,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   useEffect(() => {
     if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
+  const legsKey = order.payments.map((leg) => `${leg.id}:${legStatus(leg)}`).join(',');
+  useEffect(() => setRefusal(false), [legsKey]);
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
@@ -86,8 +90,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const target = pick ? Math.min(pick.minor, balance - inMotionMinor(order.payments)) : balance;
   const partPick = pick !== null && target < balance;
   const entry = state.entryDirty ? state.entryMinor : target;
-  // ADR-094: while a leg is in motion addTender rounds nothing on a flagged store, so the pane shows no rounding either.
-  const rounds = !(sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) > 0);
+  // ADR-094: the pane rounds exactly when addTender does: only on a store whose connector declares cashRounding, and only while no leg is in motion.
+  const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null);
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
@@ -136,7 +140,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused;
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
@@ -192,7 +196,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </>}
     </View> : null}
 
-    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} /> : null}
+    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} beforeVoid={beforeVoid} /> : null}
 
     {/* cardReference holds only for an external leg; the edit keeps that leg's method and its own methodId. */}
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}

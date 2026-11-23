@@ -8,8 +8,9 @@
  * `refunded_amount`) are not ported: the store attributes each refund to a tender in `byMethod`.
  */
 import { legMethodId } from '@tallyui/core';
+import { parkedTakenLegs } from '../order/order-drafts';
+import type { Payment } from '../order/types';
 import { tillPayments } from '../pos-order/till-payments';
-import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 
 export type RefundRow = Pick<PosRefund, 'id' | 'sessionId' | 'status' | 'result'>;
@@ -36,12 +37,25 @@ export type LedgerRow = {
 /**
  * The ledger rows of these orders' payments. Each payment is captured, and a cash payment's amount is already net of change.
  * A locked store payment (storePaymentId set) is the store's earlier money, not this till's, and is left out (ADR-090 gate 11).
+ * A payment stamped with the session that took it counts there, else in its order's (S3).
  */
-export function paymentLedgerRows(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[]): LedgerRow[] {
+export function paymentLedgerRows<P extends { method: string; amountMinor: number; storePaymentId?: string; sessionId?: string }>(
+  orders: readonly { sessionId?: string; payments: readonly P[] }[],
+): LedgerRow[] {
   return orders.flatMap((order) => tillPayments(order.payments).map((payment) => ({
-    session_id: order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
+    session_id: payment.sessionId ?? order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));
+}
+
+/** S3: the ledger rows of the live sale's taken legs (`useSale`'s `registerView().takenLegs`), each in the session that took it. */
+export function liveLedgerRows(legs: readonly Payment[]): LedgerRow[] {
+  return paymentLedgerRows([{ payments: legs }]);
+}
+
+/** S3: the ledger rows of parked drafts' taken legs (`order_drafts` documents), mapped as `liveLedgerRows` maps the live sale's. */
+export function parkedLedgerRows(drafts: readonly { data?: unknown }[]): LedgerRow[] {
+  return liveLedgerRows(drafts.flatMap((draft) => parkedTakenLegs(draft.data)));
 }
 
 /** `type`, `voids` and `voided_by` are kept as WCPOS names them: neutral across backends. */
@@ -160,19 +174,26 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
   };
 }
 
+type TillLeg = { method: string; methodId?: string; amountMinor: number; storePaymentId?: string; sessionId?: string };
+type TillOrder = { sessionId?: string; payments: readonly TillLeg[] };
+
 /**
- * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) of the
- * orders whose `sessionId` is `sessionId`, keyed by `legMethodId`'s kind plus id (`external:stripe`), with the number of
+ * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) in
+ * `sessionId`: a payment's own session, else its order's (S3), keyed by `legMethodId`'s kind plus id (`external:stripe`), with the number of
  * payments behind each. Local only, never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070
  * decision 1). A leg with no methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to
- * deriveDrawerTerms' cash sales plus other tenders for the same orders. Refunds and movements are not here: they are keyed
+ * deriveDrawerTerms' cash sales plus other tenders for the same orders. `extra` adds taken legs no order holds yet (S3: a
+ * parked draft's `parkedTakenLegs`, the live sale's `registerView().takenLegs`), each counted only in its own `sessionId`; they are legs,
+ * not `LedgerRow`s, because a row keeps no `methodId` to key by. Refunds and movements are not here: they are keyed
  * by the wire method. The map has no prototype, so a platform id such as `__proto__` or `toString` is a key like any other.
  */
-export function takingsByMethod(orders: readonly Pick<PosOrder, 'sessionId' | 'payments'>[], sessionId: string): Record<string, DrawerTerm> {
+export function takingsByMethod(
+  orders: readonly TillOrder[], sessionId: string, extra: readonly TillLeg[] = [],
+): Record<string, DrawerTerm> {
   const takings: Record<string, DrawerTerm> = Object.create(null);
-  for (const order of orders) {
-    if (order.sessionId !== sessionId) continue;
+  for (const order of [...orders, { payments: extra }] as readonly TillOrder[]) {
     for (const payment of tillPayments(order.payments)) {
+      if ((payment.sessionId ?? order.sessionId) !== sessionId) continue;
       const term = (takings[legMethodId(payment)] ??= { amountMinor: 0, count: 0 });
       term.amountMinor += payment.amountMinor;
       term.count += 1;

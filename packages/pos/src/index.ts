@@ -151,7 +151,7 @@ export type {
 } from './print';
 
 // Sale
-export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, COUPON_CARRIED, COUPON_CARRY_STALE, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
+export { useSale, DISCOUNTS_UNSUPPORTED, SALE_SAVING, PAYMENT_IN_MOTION, SALE_PARTLY_PAID, SALE_CARD_IN_PROGRESS, SALE_IN_TENDER, SALE_HAS_PAYMENT, SALE_FINISHED, openSales, isPartlyPaid, saleLogger, addEntryToCart, CartError, catalogueEntries, findEntryByCode, variantPriceLabel, woocommerceDiscountCodes, COUPONS_UNSUPPORTED, COUPONS_NEED_CONNECTION, COUPONS_REPRICING, COUPON_CARRIED, COUPON_CARRY_STALE, TENDER_GATE_FAILED, TENDER_SALE_CHANGED, createStorePricedDiscountCodes, cartQuantities, SPLIT_FIXED_DISCOUNT, variantFits, matchVariant, disabledOptions, orderFiltersQuery } from './sale';
 export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscountState, StorePricedAccepted, StorePricedCodePricing, StorePricedDiscountCodesOptions, CartQuantityLine, OptionPicks, OrderFilterValue } from './sale';
 
 export { uuidv7, AFTER_CLOSE_PAYMENTS_CHANGED, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
@@ -190,13 +190,13 @@ export { mintUuid, readRegister, ensureRegister, observeRegister$, getBoundRegis
 export type { RegisterHost, RegisterCounters, RegisterBucket, RegisterStore, RegisterDocument } from './register';
 export { RegisterSessionRequiredError, RegisterSessionClosedError, RegisterNeedsUpgradeError, RegisterSessionConflictError, RegisterTakeOverError, isKnownSessionStatus, RegisterMovementAmountError, RegisterMovementReasonError, RegisterMovementStrandedError, openSessionSelector, requireOpenSession, stampSession, openSession, startCounting, backToSelling, closeSession, recordMovement, voidMovement, writeClosure } from './register';
 export type { RegisterSessionCollection, CashMovementCollection, ClosureCollection } from './register';
-export { deriveSettled, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
-export type { Correction, RecordedFigures, ClosureScope } from './register';
+export { deriveSettled, closureFigures, exportCsv, labelKeys, clampClosureScope, selectClosureRows, ENGLISH_CLOSURE_LABELS } from './register';
+export type { Correction, RecordedFigures, ClosureScope, ClosureFigures } from './register';
 export { formatClosureDate, buildClosureDocument, buildXReportDocument, TAX_ROUNDING_MIXED_NOTE, TAX_STORE_PAID_NOTE, registerFactsLogger, recordRegisterFact, type ClosureContext, type Actor, type RegisterFact, createClosureContext, formatDecimalMoney, type CreateClosureContextOptions } from './register';
 import { minorToDecimal as registerMinorToDecimal } from './register';
 /** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
 export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
-export { useRegisterSession, RegisterTenderInProgressError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
+export { useRegisterSession, RegisterTenderInProgressError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
 export { roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
@@ -204,5 +204,5 @@ export { switchWarnings, handoverSlip } from './register';
 export type { SwitchKind, SwitchWarning, SwitchWarningInput, SwitchWarnings, HandoverSlipInput, HandoverSlipData } from './register';
 
 // Reports
-export { salesFigures, marginOf, comparisonRange, daysOf, inRange, presetRange, DATE_PRESETS, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
+export { salesFigures, marginOf, medianMinor, comparisonRange, daysOf, inRange, presetRange, DATE_PRESETS, reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './reports';
 export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin, Margin, SalesTotals, PaymentRow, GroupRow, TaxRow, DayPoint, SalesFiguresInput, SalesFigures, DatePreset } from './reports';

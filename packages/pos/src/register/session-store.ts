@@ -18,7 +18,8 @@ import { replacedOrderIds } from '../pos-order/reopened';
 import { tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
-import { deriveExpected, paymentLedgerRows, refundAmounts } from './expected';
+import type { Payment } from '../order/types';
+import { deriveExpected, liveLedgerRows, parkedLedgerRows, paymentLedgerRows, refundAmounts } from './expected';
 import { recordRegisterFact } from './facts';
 import { MAX_REASON_LENGTH } from './movement-input';
 import { countVariance } from './register-count.helpers';
@@ -482,6 +483,8 @@ export async function writeClosure({
   otherTenders,
   movements,
   orders,
+  drafts,
+  liveLegs,
   refunds,
   tillExpected,
   labels,
@@ -500,6 +503,14 @@ export async function writeClosure({
   movements: readonly CashMovement[];
   /** Any `pos_orders`; only those whose `sessionId` is this session's are counted. */
   orders: readonly PosOrder[];
+  /**
+   * `order_drafts` documents: a parked sale's legs taken in this session count here (S3). Optional here only because
+   * `useRegisterSession`, the real caller, always passes it and `liveLegs`; any other caller must pass both, or cash taken
+   * in this session but not yet on an order is missing from its Z.
+   */
+  drafts?: readonly { data?: unknown }[];
+  /** The live sale's taken legs (`useSale`'s `registerView().takenLegs`, S3): those taken in this session count here. See `drafts`. */
+  liveLegs?: readonly Payment[];
   /** `pos_refunds` rows; only this session's applied ones are counted (ADR-080 amendment 1). */
   refunds?: readonly PosRefund[];
   tillExpected?: Record<string, number>;
@@ -523,7 +534,9 @@ export async function writeClosure({
   const replaced = replacedOrderIds(orders);
   const bound = orders.filter((order) => order.sessionId === session.id && !replaced.has(order.id));
   const countedRefunds = (refunds ?? []).filter((refund) => refund.status === 'applied' && refund.sessionId === session.id);
-  const rows = paymentLedgerRows(bound);
+  // S3: a leg counts in the session that took it, here or on another session's Z, never on both.
+  const rows = [...paymentLedgerRows(bound), ...parkedLedgerRows(drafts ?? []), ...liveLedgerRows(liveLegs ?? [])]
+    .filter((row) => row.session_id === session.id);
   const entries = movements.filter((row) => row.session_id === session.id);
   const till_expected =
     tillExpected ??

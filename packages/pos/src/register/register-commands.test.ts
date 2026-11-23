@@ -4,6 +4,7 @@ import { createRxDatabase, type RxDatabase } from 'rxdb';
 import { checkSchema } from 'rxdb/plugins/dev-mode';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
+import { SUPPORTED_REGISTER_VERSIONS } from '@tallyui/core/server';
 import { readFresh } from '../rxdb';
 import { ensureRegister, readRegister, type RegisterDocument } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type CashMovement, type Closure, type RegisterSession } from './schemas';
@@ -155,6 +156,16 @@ describe('closureCommand', () => {
     expect(closureCommand({ ...closure, closed_by: '7', business_day: '2026-09-28' }).payload).toStrictEqual({
       ...payload, approvedBy: 'manager', closedBy: '7', businessDay: '2026-09-28',
     });
+  });
+});
+
+describe('register versions', () => {
+  it('every register command the till builds uses a version core lists', () => {
+    const built = [
+      sessionOpenCommand(session), sessionOpenCommand(session, { registerContract: 2 }), sessionOpenCommand(session, { registerContract: 3 }),
+      closureCommand(closure, {}), closureCommand(closure, { registerContract: 3 }),
+    ];
+    expect([...new Set(built.map((command) => command.version))].sort((a, b) => a - b)).toEqual([...SUPPORTED_REGISTER_VERSIONS]);
   });
 });
 

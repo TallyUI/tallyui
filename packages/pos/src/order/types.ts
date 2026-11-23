@@ -201,6 +201,8 @@ export interface Payment {
   units?: Readonly<Record<string, number>>;
   /** When the till recorded the leg (an ISO 8601 instant). Absent on store-held legs and on legs from before 4.2. */
   takenAt?: string;
+  /** The register session the leg was taken in (money suspect S3): its cash counts there, not in the order's session. */
+  sessionId?: string;
 }
 
 export interface CustomerSummary {

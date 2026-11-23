@@ -54,7 +54,7 @@ export function CatalogueSettingsForm({
   const auto = gridColumns === 'auto';
   return (
     <View testID={testID} className={cn('gap-1', className)} {...viewProps}>
-      <Text role="heading" className="pb-1 text-base font-semibold">{t('common.tile_size')}</Text>
+      <Text role="heading" aria-level={4} className="pb-1 text-base font-semibold">{t('common.tile_size')}</Text>
       <View className="flex-row items-center gap-3 py-1">
         <Switch testID={`${testID}-auto`} accessibilityLabel={t('common.auto')} checked={auto}
           onCheckedChange={(on) => onGridColumnsChange(on ? 'auto' : V2_TILE_SIZE)} />
@@ -68,7 +68,7 @@ export function CatalogueSettingsForm({
           <Text className="w-6 text-right tabular-nums">{String(gridColumns)}</Text>
         </View>
       )}
-      <Text role="heading" className="pb-1 pt-3 text-base font-semibold">{t('common.tile_fields')}</Text>
+      <Text role="heading" aria-level={4} className="pb-1 pt-3 text-base font-semibold">{t('common.tile_fields')}</Text>
       {(Object.keys(DEFAULT_TILE_FIELDS) as TileField[]).map((field) => {
         const label = t(LABELS[field]);
         return (

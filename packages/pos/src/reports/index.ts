@@ -1,4 +1,4 @@
-export { salesFigures, marginOf, comparisonRange, daysOf, inRange } from './sales-figures';
+export { salesFigures, marginOf, medianMinor, comparisonRange, daysOf, inRange } from './sales-figures';
 export { presetRange, DATE_PRESETS, type DatePreset } from './presets';
 export { reportOrderFromPosOrder, reportOrderFromStoreOrder, reportRefundFromPosRefund } from './adapters';
 export type { StoreDay, DayRange, ReportCategory, ReportLine, ReportPayment, ReportTax, ReportOrder, ReportRefund, LineJoin } from './types';

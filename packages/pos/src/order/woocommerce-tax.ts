@@ -1,5 +1,5 @@
 import { minorUnitDigits, woocommerceTax, woocommerceCoupons } from '@tallyui/core';
-import type { TaxContext, WooRate } from '../tax/types';
+import type { WooRate } from '../tax/types';
 import { roundMicrosToMinor } from '../tax/exact';
 import type { RateTaxLine } from '../tax/exact';
 import type { ChargeLine, LineItem, LineTaxLine, OrderCoupon } from './types';
@@ -34,13 +34,13 @@ function lineAmounts(net: number, taxes: { total: number }[], taxLines: LineTaxL
     taxMicros: taxLines.reduce((sum, rate) => sum + BigInt(rate.taxMicros), 0n).toString() };
 }
 
-/** Replays coupons on the manually discounted net lines; only integer money leaves this boundary (ADR-076). */
+/** Replays coupons on the discounted net lines at per-line rates (a held line's parked rates, else today's); integer money only leaves (ADR-076). */
 export function woocommerceCouponReplay(lines: readonly LineItem[], codes: readonly string[], context: OrderCouponContext,
-  getTaxRates: NonNullable<TaxContext['getTaxRates']>, currency: string, roundAtSubtotal: boolean,
+  ratesFor: (line: LineItem) => readonly WooRate[], currency: string, roundAtSubtotal: boolean,
   pricesIncludeTax: boolean): { lines: LineItem[]; coupons: OrderCoupon[] } {
   const dp = minorUnitDigits(currency), factor = 10 ** dp;
   const inputLines = lines.filter((line) => line.unitPriceMinor >= 0);
-  const lineItems: woocommerceCoupons.LineItemInput[] = inputLines.map((line) => {
+  const lineItems: woocommerceCoupons.LineItemInput[] = inputLines.map((line, index) => {
     const productId = Number(line.productId), variationId = Number(line.variantId);
     const net = (Number(line.netMicros) / (factor * 1e6)).toFixed(6);
     const taxes = line.taxLines.map((tax) => {
@@ -51,22 +51,19 @@ export function woocommerceCouponReplay(lines: readonly LineItem[], codes: reado
     return {
       product_id: !line.custom && Number.isSafeInteger(productId) && productId >= 0 ? productId : 0,
       ...(Number.isSafeInteger(variationId) && variationId >= 0 ? { variation_id: variationId } : {}),
-      quantity: line.quantity, tax_class: line.taxClass ?? '',
+      quantity: line.quantity, tax_class: `line-${index}`,
       ...(line.taxStatus === 'none' ? { tax_status: 'none' } : {}),
       subtotal: net, total: net, taxes, subtotal_tax: tax, total_tax: tax,
     };
   });
-  const taxRates = new Map<string, woocommerceCoupons.RecalculateInput['taxRates'][number]>();
-  for (const line of inputLines) for (const rate of getTaxRates(line.taxClass)) {
-    const taxClass = woocommerceTax.normalizeTaxClass(line.taxClass);
-    taxRates.set(JSON.stringify([rate.id, taxClass]), { id: rate.id, rate: rate.rate, compound: rate.compound,
-      order: rate.priority, priority: rate.priority, class: taxClass });
-  }
+  // Row 498: rates are keyed per line, so a held line's coupon re-prices at its parked rate beside a fresh line of the same class.
+  const taxRates = inputLines.flatMap((line, index) => ratesFor(line).map((rate) => ({ id: rate.id, rate: rate.rate,
+    compound: rate.compound, order: rate.priority, priority: rate.priority, class: `line-${index}` })));
   const result = woocommerceCoupons.recalculateCoupons({
     lineItems, couponLines: codes.map((code) => ({ code })),
     couponConfigs: new Map(codes.map((code) => [code, context.configs.get(code)!])),
     pricesIncludeTax, calcDiscountsSequentially: context.calcDiscountsSequentially,
-    productCategories: new Map(context.productCategories), taxRates: [...taxRates.values()],
+    productCategories: new Map(context.productCategories), taxRates,
     taxRoundAtSubtotal: roundAtSubtotal, dp,
   });
   let index = 0;

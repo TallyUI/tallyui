@@ -117,6 +117,31 @@ for (const spec of ${JSON.stringify(specifiers)}) {
     } catch (error) {
       failures.push(`Install/import smoke test (${packages.map(pkg => pkg.name).join(', ')}): ${error.message}`);
     }
+
+    // A store plugin installs core alone, with no react, rxdb or rxjs: ./server must load there (arch 1a).
+    const serverOnly = path.join(tmp, 'server-only');
+    fs.mkdirSync(serverOnly);
+    fs.writeFileSync(path.join(serverOnly, 'package.json'), JSON.stringify({
+      name: 'tallyui-pack-smoke-server-only', private: true, type: 'module',
+    }));
+    try {
+      const coreTarball = tarballs[packages.findIndex(pkg => pkg.name === '@tallyui/core')];
+      if (!coreTarball) throw new Error('no @tallyui/core tarball');
+      execFileSync('npm', [
+        'install', '--no-audit', '--no-fund', '--ignore-scripts', '--package-lock=false', coreTarball,
+      ], { cwd: serverOnly, stdio: 'inherit' });
+      if (fs.existsSync(path.join(serverOnly, 'node_modules', 'react'))) throw new Error('node_modules/react was installed');
+      fs.writeFileSync(path.join(serverOnly, 'server.mjs'), `
+import { createRequire } from 'node:module';
+const required = createRequire(import.meta.url)('@tallyui/core/server');
+if (Object.keys(required).length === 0) throw new Error('require() has zero exports');
+const imported = await import('@tallyui/core/server');
+if (Object.keys(imported).length === 0) throw new Error('import() has zero exports');
+`);
+      execFileSync(process.execPath, ['server.mjs'], { cwd: serverOnly, stdio: 'inherit' });
+    } catch (error) {
+      failures.push(`Server-only install (no react): ${error.message}`);
+    }
   }
 } catch (error) {
   failures.push(error.message);
