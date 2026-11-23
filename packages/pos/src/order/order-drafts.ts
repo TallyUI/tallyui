@@ -2,10 +2,11 @@ import { map, type Observable } from 'rxjs';
 import type { RxCollection, RxJsonSchema } from 'rxdb';
 import type { TaxContext } from '../tax/types';
 import { customerRefusal } from '../pos-order/command';
+import { tillPayments } from '../pos-order/till-payments';
 import { capturedMinor, countsTowardPaid, isInMotion } from '../tender/payment-legs';
 import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import { isTakenAt } from './taken-at';
-import type { Order } from './types';
+import type { Order, Payment } from './types';
 
 /** Apps create their drafts collection with this schema. */
 export const orderDraftSchema: RxJsonSchema<{
@@ -38,12 +39,29 @@ export interface ParkedOrderSummary {
   firstItem?: string;
 }
 
+/** A draft's saved order; throws on data that is not JSON. */
+const savedDraft = (data: unknown) => JSON.parse(String(data)) as Partial<Order>;
+
 function draftExtras(data: unknown): Pick<ParkedOrderSummary, 'paidMinor' | 'balanceDueMinor' | 'firstItem'> {
   try {
-    const saved = JSON.parse(String(data)) as Partial<Order>;
+    const saved = savedDraft(data);
     return { paidMinor: capturedMinor(saved.payments ?? []), balanceDueMinor: saved.balanceDueMinor, firstItem: saved.lineItems?.[0]?.name };
   } catch {
     return {}; // an unreadable draft still lists, without these figures
+  }
+}
+
+/**
+ * S3: a parked draft's captured till legs stamped with the session that took them, so that session counts their cash
+ * while the sale is parked. A reopened leg is its refused order's, already counted there. Unreadable data has none.
+ */
+export function parkedTakenLegs(data: unknown): Payment[] {
+  try {
+    const payments = savedDraft(data).payments;
+    return Array.isArray(payments)
+      ? tillPayments(payments).filter((leg) => countsTowardPaid(leg) && !leg.reopened && typeof leg.sessionId === 'string') : [];
+  } catch {
+    return [];
   }
 }
 
@@ -113,6 +131,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
       ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
+      ...(payment.sessionId !== undefined ? { sessionId: payment.sessionId } : {}),
     });
   }
 

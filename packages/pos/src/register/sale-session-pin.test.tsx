@@ -14,6 +14,7 @@ import type { LogEntry } from '../logging';
 import { catalogueEntries, saleLogger, useSale } from '../sale';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
+import { orderDraftSchema } from '../order/order-drafts';
 import { addPosOrderCollection, type PosOrder } from '../pos-order';
 import { ensureRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
@@ -100,6 +101,46 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
     expect(order.sessionId).toBe(confirmed!.id);
     expect(order).not.toHaveProperty('lateSessionId');
     expect(saleWarnings).toEqual([]);
+  });
+
+  // DECISIONS.md:4210 lets a sale holding a captured leg park, so the drawer side is asserted (desk ruling, batch 9 Q1).
+  it('a part-paid sale parked across a close counts its cash once, in the session that took it (S3)', async () => {
+    const { order_drafts } = await db.addCollections({ order_drafts: { schema: orderDraftSchema } });
+    const completed: PosOrder[] = [];
+    const view = renderHook(() => {
+      const register = useRegisterSession(registerOptions({ drafts: order_drafts }));
+      const sale = useSale(pricing, { registerId, cashierRef, capabilities: { orderCreate: 12 }, drafts: order_drafts,
+        onSaleCompleted: async (posOrder) => { completed.push(posOrder); await db.pos_orders.insert(posOrder); }, session: register.saleSession });
+      return { register, sale };
+    }, { wrapper: ({ children }: { children: ReactNode }) => <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider> });
+    const now = () => view.result.current;
+    let a: { id: string; sessions: RegisterSessionCollection } | null = null;
+    await act(async () => {
+      await now().register.actions.openSession({ expectedFloatMinor: null, countedFloatMinor: 0 });
+      a = await now().register.requireSaleSession();
+    });
+    act(() => { expect(now().sale.addCustomLine({ name: 'Item', priceMinor: 1000, taxStatus: 'none' })).toMatchObject({ id: expect.any(String) }); });
+    act(() => { now().sale.startTender('cash', { session: a ?? undefined }); });
+    act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 400 })).toEqual(expect.any(String)); });
+    act(() => { now().sale.cancelTender(); });
+    const id = now().sale.order.id;
+    await act(async () => { expect(await now().sale.park()).toBeNull(); });
+    let closureA: Awaited<ReturnType<ReturnType<typeof useRegisterSession>['actions']['closeSession']>> | undefined;
+    await act(async () => { closureA = await now().register.actions.closeSession({ counted: { cash: 400 } }); });
+    let b: { id: string; sessions: RegisterSessionCollection } | null = null;
+    await act(async () => {
+      await now().register.actions.openSession({ expectedFloatMinor: null, countedFloatMinor: 0 });
+      b = await now().register.requireSaleSession();
+    });
+    await act(async () => { expect(await now().sale.resume(id)).toBeNull(); });
+    act(() => { now().sale.startTender('cash', { session: b ?? undefined }); });
+    act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 600 })).toEqual(expect.any(String)); });
+    await act(async () => { await now().sale.complete(); });
+    expect({ stage: now().sale.stage.kind, error: now().sale.error }).toEqual({ stage: 'receipt', error: null });
+    expect(completed).toMatchObject([{ sessionId: b!.id, totalMinor: 1000 }]);
+    expect(await db.pos_orders.findOne(completed[0].id).exec()).not.toBeNull();
+    expect(closureA!.till_expected.cash).toBe(400);
+    await waitFor(() => expect(now().register.expected.cash).toBe(600));
   });
 
   it('the same sequence without the confirmed session is still stamped, by the backstop, with a warning', async () => {

@@ -423,7 +423,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     // addTender stamps a leg that enters captured; setTender's pre-filled leg waits for complete(), a pending one for capture.
     // Stamped here, never in addPayment, which the restore paths call too.
-    const takenAt = stamp && legStatus({ status: tender.status }) === 'captured' ? { takenAt: new Date().toISOString() } : {};
+    // S3: a taken leg is also stamped with its tender's session; a pending one here too, as its capture (setTenderStatus)
+    // is in the same tender and setPaymentStatus stamps only takenAt. No session, no stamp.
+    const sessionId = stamp ? legSessionId() : undefined;
+    const takenAt = { ...(stamp && legStatus({ status: tender.status }) === 'captured' ? { takenAt: new Date().toISOString() } : {}),
+      ...(sessionId !== undefined ? { sessionId } : {}) };
     const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, ...takenAt,
       ...(tender.tenderedMinor !== undefined ? { tenderedMinor: tender.tenderedMinor } : {}),
       ...(tender.changeMinor !== undefined ? { changeMinor: tender.changeMinor } : {}),
@@ -530,6 +534,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     }
     return inFlight.current ?? Promise.resolve();
   }
+
+  /** The session this tender is pinned to, as complete() stamps the order (S3). */
+  const legSessionId = () => (tenderSession.current?.session ?? opts.session)?.id;
 
   function begin(method: 'cash' | 'external', options?: { session?: { id: string; sessions: RegisterSessionCollection } }) {
     if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // a tender gate that answers after complete()
@@ -1002,10 +1009,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // Failed and voided legs stay on the screen's ledger but are never sent: only captured money is the sale's.
       // A leg with no takenAt yet (setTender's pre-filled one) was taken now; store, reopened and resumed pre-4.2 legs keep what they have.
       // Only this copy is stamped, never the builder, so a retry (pending.current) keeps this attempt's instant.
-      const completedAt = new Date().toISOString();
+      const completedAt = new Date().toISOString(), sessionId = legSessionId();
       const current = { ...snapshot, payments: snapshot.payments.filter(countsTowardPaid)
         .map((payment) => payment.takenAt === undefined && !payment.locked && !payment.reopened && !resumedTakenIds.current.includes(payment.id)
-          ? { ...payment, takenAt: completedAt } : payment) };
+          ? { ...payment, takenAt: completedAt, ...(sessionId !== undefined && payment.sessionId === undefined ? { sessionId } : {}) } : payment) };
       const localWarnings = current.payments.filter((payment) => droppedReferences.current.has(payment.id))
         .map((payment) => ({ code: 'payment_reference_dropped' as const, paymentId: payment.id }));
       let posOrder: PosOrder;

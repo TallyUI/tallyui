@@ -18,7 +18,7 @@ import { replacedOrderIds } from '../pos-order/reopened';
 import { tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
-import { deriveExpected, paymentLedgerRows, refundAmounts } from './expected';
+import { deriveExpected, parkedLedgerRows, paymentLedgerRows, refundAmounts } from './expected';
 import { recordRegisterFact } from './facts';
 import { MAX_REASON_LENGTH } from './movement-input';
 import { countVariance } from './register-count.helpers';
@@ -482,6 +482,7 @@ export async function writeClosure({
   otherTenders,
   movements,
   orders,
+  drafts,
   refunds,
   tillExpected,
   labels,
@@ -500,6 +501,8 @@ export async function writeClosure({
   movements: readonly CashMovement[];
   /** Any `pos_orders`; only those whose `sessionId` is this session's are counted. */
   orders: readonly PosOrder[];
+  /** `order_drafts` documents: a parked sale's legs taken in this session count here (S3). */
+  drafts?: readonly { data?: unknown }[];
   /** `pos_refunds` rows; only this session's applied ones are counted (ADR-080 amendment 1). */
   refunds?: readonly PosRefund[];
   tillExpected?: Record<string, number>;
@@ -523,7 +526,8 @@ export async function writeClosure({
   const replaced = replacedOrderIds(orders);
   const bound = orders.filter((order) => order.sessionId === session.id && !replaced.has(order.id));
   const countedRefunds = (refunds ?? []).filter((refund) => refund.status === 'applied' && refund.sessionId === session.id);
-  const rows = paymentLedgerRows(bound);
+  // S3: a leg counts in the session that took it, here or on another session's Z, never on both.
+  const rows = [...paymentLedgerRows(bound), ...parkedLedgerRows(drafts ?? [])].filter((row) => row.session_id === session.id);
   const entries = movements.filter((row) => row.session_id === session.id);
   const till_expected =
     tillExpected ??

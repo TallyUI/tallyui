@@ -133,4 +133,23 @@ describe('useSale payment takenAt', () => {
       expect(onSaleCompleted.mock.calls[0][0].payments[0]).not.toHaveProperty('takenAt');
     } finally { cleanup(); await db.remove(); }
   });
+
+  it("a captured leg is stamped with its tender's session; a resumed leg keeps its stamp", async () => {
+    const db = await createRxDatabase<{ order_drafts: RxCollection; register_sessions: RegisterSessionCollection }>({
+      name: `legsession${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      await db.addCollections({ order_drafts: { schema: orderDraftSchema }, register_sessions: registerSessionCreator() });
+      const { result } = renderSale({ drafts: db.order_drafts, session: { id: 'session-a', sessions: db.register_sessions } });
+      act(() => { result.current.startTender('cash'); });
+      act(() => { result.current.addTender({ method: 'cash', amountMinor: 500 }); });
+      act(() => { result.current.cancelTender(); });
+      expect(result.current.order.payments).toEqual([expect.objectContaining({ takenAt: first, sessionId: 'session-a' })]);
+      const id = result.current.order.id;
+      await act(async () => { expect(await result.current.park()).toBeNull(); });
+      await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+      act(() => { result.current.startTender('cash', { session: { id: 'session-b', sessions: db.register_sessions } }); });
+      act(() => { result.current.addTender({ method: 'cash', amountMinor: 750 }); });
+      expect(result.current.order.payments.map((payment) => payment.sessionId)).toEqual(['session-a', 'session-b']);
+    } finally { cleanup(); await db.remove(); }
+  });
 });

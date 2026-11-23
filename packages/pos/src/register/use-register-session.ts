@@ -24,7 +24,7 @@ import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
-import { deriveDrawerTerms, deriveExpected, paymentLedgerRows, type LedgerRow } from './expected';
+import { deriveDrawerTerms, deriveExpected, parkedLedgerRows, paymentLedgerRows, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
 import {
@@ -97,6 +97,8 @@ export interface UseRegisterSessionOptions {
   deviceName?: string | null;
   /** `pos_orders`: a session's sales are those whose `sessionId` is its id. */
   orders: RxCollection<PosOrder> | null;
+  /** `order_drafts`, the sale's own: a parked sale's legs count in the session that took them (S3). Absent, none do. */
+  drafts?: RxCollection | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
   register: RegisterHost | null;
   /** The app's neutral store key (see `bindRegister`). */
@@ -126,7 +128,7 @@ export interface UseRegisterSessionOptions {
 type Reservation = RegisterBucket['closure_reservation'];
 type Snapshot = {
   rows: RegisterSession[]; closureRows: Closure[]; reservation: Reservation;
-  entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[];
+  entries: CashMovement[]; sales: PosOrder[]; refundRows: PosRefund[]; parked: { data?: unknown }[];
   /** The register's open and closure command rows (ADR-082 d4, d7, d9). */
   commandRows: RegisterCommand[];
 };
@@ -184,8 +186,8 @@ function currentSession(rows: RegisterSession[], closureRows: Closure[], reserva
 }
 
 /** A session's ledger rows, built from its orders' payments the way `writeClosure` builds them. */
-function ledgerRows(orders: readonly PosOrder[], replaced = replacedOrderIds(orders)): LedgerRow[] {
-  return paymentLedgerRows(orders.filter((order) => !replaced.has(order.id)));
+function ledgerRows(orders: readonly PosOrder[], parked: readonly { data?: unknown }[], replaced = replacedOrderIds(orders)): LedgerRow[] {
+  return [...paymentLedgerRows(orders.filter((order) => !replaced.has(order.id))), ...parkedLedgerRows(parked)];
 }
 
 /** The closure's counted map, as `closeSession` hands it to `writeClosure`: cash is always present. */
@@ -196,7 +198,7 @@ const sameVariance = (a: Record<string, number>, b: Record<string, number>) =>
 
 export function useRegisterSession(options: UseRegisterSessionOptions) {
   const { sessions, movements, closures, orders, register, storeKey, registerId, enabled, actor, timezone, tenderInProgress, expectedCloseTime, labels } = options;
-  const { commands, refunds } = options;
+  const { commands, refunds, drafts } = options;
   // ADR-082 d3: the store's threshold wins over the app's; the gate and RegisterCount use this one.
   const varianceThreshold = options.capabilities?.registerApproval?.thresholdMinor ?? options.varianceThreshold;
   const commandEnabled = (options.capabilities?.register ?? 0) >= 1;
@@ -235,14 +237,15 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
       } }) : of([] as RegisterCommand[]),
     ]).pipe(switchMap(([rows, closureRows, reservation, commandRows]) => {
       const current = currentSession(rows, closureRows, reservation);
-      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [], commandRows } as Snapshot);
+      if (!current) return of({ rows, closureRows, reservation, entries: [], sales: [], refundRows: [], parked: [], commandRows } as Snapshot);
       return combineLatest([
         watchFresh(movements, { selector: { session_id: current.id } }),
         watchFresh(orders, { selector: { sessionId: current.id } }),
         refunds ? watchFresh(refunds, { selector: { sessionId: current.id } }) : of([]),
-      ]).pipe(map(([entries, sales, refundRows]) => ({ rows, closureRows, reservation, entries, sales, refundRows, commandRows })));
+        drafts ? watchFresh(drafts, { selector: {} }) : of([]),
+      ]).pipe(map(([entries, sales, refundRows, parked]) => ({ rows, closureRows, reservation, entries, sales, refundRows, parked, commandRows })));
     }));
-  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds]);
+  }, [enabled, sessions, movements, closures, orders, register, storeKey, registerId, commandTarget, refunds, drafts]);
   // A latest-value ref: an `actions` object from an earlier render still sees the current flag.
   const tender = useRef(tenderInProgress);
   tender.current = tenderInProgress;
@@ -325,7 +328,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   const replaced = replacedOrderIds(sales);
   // The drawer ledger's terms; their `expected` is `deriveExpected`'s own result for the same rows.
   const terms = session
-    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, replaced), refunds: data?.refundRows ?? [] })
+    ? deriveDrawerTerms({ session: { id: session.id, countedFloatMinor: session.counted_float_minor }, movements: entries, ledgerRowsBySession: ledgerRows(sales, data?.parked ?? [], replaced), refunds: data?.refundRows ?? [] })
     : null;
   const expected = terms ? terms.expected : {};
   const now = new Date();
@@ -357,13 +360,14 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     if (!session) throw new RegisterSessionRequiredError();
     return session;
   };
+  const parkedFresh = async () => drafts ? readFresh(drafts, { selector: {} }) : [];
   // As `writeClosure` derives the Z's expected figures, from the same rows, past the query cache.
   const freshExpected = async (row: RegisterSession) => {
     const { movements, orders, refunds } = live();
     return deriveExpected({
       session: { id: row.id, countedFloatMinor: row.counted_float_minor },
       movements: await readFresh(movements, { selector: { session_id: row.id } }),
-      ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: row.id } })),
+      ledgerRowsBySession: ledgerRows(await readFresh(orders, { selector: { sessionId: row.id } }), await parkedFresh()),
       refunds: refunds ? await readFresh(refunds, { selector: { sessionId: row.id } }) : undefined,
     });
   };
@@ -535,6 +539,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
           movements: await readFresh(movements, { selector: { session_id: closed.id } }),
           orders: await readFresh(orders, { selector: { sessionId: closed.id } }),
+          drafts: await parkedFresh(),
           refunds: refunds ? await readFresh(refunds, { selector: { sessionId: closed.id } }) : undefined,
           resolveCashierName: labels?.resolveCashierName,
           labels: {
