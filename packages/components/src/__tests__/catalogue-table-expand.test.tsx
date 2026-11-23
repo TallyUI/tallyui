@@ -160,3 +160,25 @@ it("F5: a filtered row's + adds that variant", () => {
   press('variation-row-add-94');
   expect(onSelect).toHaveBeenCalledExactlyOnceWith({ product: shirt, variant: variants(shirt)[3] });
 });
+
+it('F6: a variant that leaves a group unset fits every value of it', () => {
+  mountProducts([tee]);
+  press('product-row-expand-80');
+  choose('variation-filter-80-Colour', 'Red');
+  expect(rowIds()).toEqual(['81', '83']);
+});
+
+it('F7: a picked group that no longer draws a select stops filtering', () => {
+  const { rerender } = render(<Catalogue products={[shirt]} traits={wooProductTraits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+    defaultViewState={{ view: 'table' }} tableRow={{ thumbnail: true, addButton: true, expand: true }} />, { wrapper });
+  press('product-row-expand-90');
+  choose('variation-filter-90-Size', 'S');
+  expect(rowIds()).toEqual(['91', '92']);
+  // A sync drops the S variants, so Size has one value left and draws no select.
+  const mOnly = { ...shirt, variations: [93, 94], attributes: [{ ...shirt.attributes[0], options: ['M'] }, shirt.attributes[1]],
+    variation_docs: shirt.variation_docs.slice(2) };
+  rerender(<Catalogue products={[mOnly]} traits={wooProductTraits} currency="EUR" onSelect={vi.fn()} lastSyncedAt={null}
+    defaultViewState={{ view: 'table' }} tableRow={{ thumbnail: true, addButton: true, expand: true }} />);
+  expect(screen.queryByTestId('variation-filter-90-Size')).toBeNull();
+  expect(rowIds()).toEqual(['93', '94']);
+});

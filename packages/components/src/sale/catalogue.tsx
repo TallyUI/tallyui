@@ -391,7 +391,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     const variants = entries.filter((entry) => traits.getId(entry.product) === id);
     if (variants.length === 0) return <Text className="px-3 py-1.5 text-sm text-muted-foreground">No variants to show.</Text>;
     const picked = variantFilters[id] ?? {};
-    const matching = variants.filter(({ variant }) => Object.entries(picked).every(([group, value]) => variant.options?.[group] === value));
+    const groups = (traits.getVariantOptions?.(product) ?? []).filter(({ values }) => values.length > 1);
+    // A variant leaving a group unset fits any value of it; a picked group that draws no select no longer filters.
+    const matching = variants.filter(({ variant: { options } }) => groups.every(({ name }) => !picked[name]
+      || options === undefined || !Object.prototype.hasOwnProperty.call(options, name) || options[name] === picked[name]));
     const pick = (group: string, value: string) => setVariantFilters((current) => {
       const next = { ...current[id] };
       if (value === '') delete next[group]; else next[group] = value;
@@ -401,10 +404,10 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     const bar = (
       <View key="filters" testID={`variation-filters-${id}`} className="flex-row items-center gap-2 border-t border-border px-3 py-1">
         <View className="min-w-0 flex-1 flex-row flex-wrap gap-2">
-          {(traits.getVariantOptions?.(product) ?? []).filter(({ values }) => values.length > 1).map(({ name, values }) => (
+          {groups.map(({ name, values }) => (
             <Select key={name} value={{ value: picked[name] ?? '', label: picked[name] ? `${name}: ${picked[name]}` : name }}
               onValueChange={(option) => { if (option) pick(name, option.value); }}>
-              <SelectTrigger testID={`variation-filter-${id}-${name}`} accessibilityLabel={name} className="h-9 w-auto">
+              <SelectTrigger testID={`variation-filter-${id}-${name}`} accessibilityLabel={picked[name] ? `${name}: ${picked[name]}` : name} className="h-9 w-auto">
                 <SelectValue className="text-sm text-foreground" />
               </SelectTrigger>
               <SelectContent>
