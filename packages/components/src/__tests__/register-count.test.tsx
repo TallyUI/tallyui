@@ -299,6 +299,16 @@ it('shows RegisterTenderInProgressError as its own message on Close', async () =
   expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
 });
 
+it('shows RegisterSaleSavingError as its own message on Close', async () => {
+  const message = 'A sale is still being saved. Wait for it to finish, or retry it if it failed, then close the register.';
+  const refused = Object.assign(new Error(message), { name: 'RegisterSaleSavingError' });
+  await renderFailing({ closeSession: async () => { throw refused; } });
+  enter('100.00');
+  fireEvent.click(closeButton());
+  await waitFor(() => expect(countError()).toBe(message));
+  expect(await db.register_sessions.find({ selector: { status: 'closed' } }).exec()).toHaveLength(0);
+});
+
 // ADR-082: `approve` gets the count and returns the store's proof, which RegisterCount carries to
 // `closeSession`. `closeSession` is spied, delegating to the hook's, so the real gate still runs.
 type Register = RegisterCountProps['register'];

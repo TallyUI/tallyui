@@ -1752,6 +1752,57 @@ describe('abandoning a hung save and locking from entry', () => {
     });
   });
 
+  describe('the save bound', () => {
+    it('a save that never settles fails after saveTimeoutMs and can be retried', async () => {
+      const completed = vi.fn(async () => {}).mockImplementationOnce(() => new Promise<void>(() => {}));
+      const { result } = renderSale(pricing, saleOpts({ onSaleCompleted: completed, saveTimeoutMs: 50 }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let settled = false;
+      act(() => { void result.current.complete().then(() => { settled = true; }); });
+      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      expect(result.current.error).toBe('The sale could not be saved: the save took too long');
+      expect(result.current.registerView().saving).toBe(true);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.registerView().saving).toBe(false);
+      expect(completed).toHaveBeenCalledTimes(2);
+    });
+
+    it('a timed-out save that resolves later, with no retry, shows the receipt', async () => {
+      let resolve!: () => void;
+      const { result } = renderSale(pricing, saleOpts({ saveTimeoutMs: 50,
+        onSaleCompleted: () => new Promise<void>((done) => { resolve = done; }) }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let settled = false;
+      act(() => { void result.current.complete().then(() => { settled = true; }); });
+      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      expect(result.current.error).toBe('The sale could not be saved: the save took too long');
+      await act(async () => { resolve(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.error).toBeNull();
+      expect(result.current.registerView().saving).toBe(false);
+    });
+
+    it('a timed-out save that rejects later changes nothing', async () => {
+      let reject!: (error: Error) => void;
+      const { result } = renderSale(pricing, saleOpts({ saveTimeoutMs: 50,
+        onSaleCompleted: () => new Promise<void>((_resolve, fail) => { reject = fail; }) }));
+      addSaleLines(result);
+      act(() => result.current.startTender('external'));
+      let settled = false;
+      act(() => { void result.current.complete().then(() => { settled = true; }); });
+      await waitFor(() => expect(settled).toBe(true), { timeout: 500 });
+      const { stage, error } = result.current;
+      expect(error).toBe('The sale could not be saved: the save took too long');
+      await act(async () => { reject(new Error('late failure')); });
+      expect(result.current.stage).toBe(stage);
+      expect(result.current.error).toBe(error);
+      expect(result.current.registerView().saving).toBe(true);
+    });
+  });
+
   // Removed (the Front desk, 2026-09-27; #149 review): this covered newSale() abandoning a built
   // order mid-stamp, so an old, abandoned attempt and a new one could be in flight in the same hook
   // at once. That's now impossible — newSale() refuses during the stamp instead (see the stamp-window

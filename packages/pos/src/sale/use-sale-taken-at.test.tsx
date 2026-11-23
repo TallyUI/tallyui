@@ -153,7 +153,7 @@ describe('useSale payment takenAt', () => {
     } finally { cleanup(); await db.remove(); }
   });
 
-  it('F4 S3: takenLegs() is [] at receipt and excludes reopened and pending legs', async () => {
+  it('F4 S3: registerView().takenLegs is [] at receipt and excludes reopened and pending legs', async () => {
     const db = await createRxDatabase<{ pos_orders: RxCollection<PosOrder>; order_drafts: RxCollection; register_sessions: RegisterSessionCollection }>({
       name: `takenlegs${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
     try {
@@ -167,20 +167,21 @@ describe('useSale payment takenAt', () => {
       const { result } = renderSale({ drafts: db.order_drafts, session: { id: 'session-a', sessions: db.register_sessions } }, false);
       await act(async () => { expect(await result.current.resume(reopened)).toBeNull(); });
       expect(result.current.order.payments).toEqual([expect.objectContaining({ reopened: true, sessionId: 'session-a' })]);
-      expect(result.current.takenLegs()).toEqual([]);
+      expect(result.current.registerView().takenLegs).toEqual([]);
       await act(async () => { await result.current.complete(); });
       expect(result.current.stage.kind).toBe('receipt');
       act(() => { result.current.add(entries[0], traits); }); // the receipt starts the next sale
       let pending: string | null = null, cash: string | null = null;
       act(() => { pending = result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
       act(() => { cash = result.current.addTender({ method: 'cash', amountMinor: 300 }); });
-      expect(result.current.takenLegs().map((leg) => leg.id)).toEqual([cash]);
+      expect(result.current.registerView().takenLegs.map((leg) => leg.id)).toEqual([cash]);
       act(() => { expect(result.current.setTenderStatus(pending!, 'captured')).toBe(true); });
       act(() => { result.current.addTender({ method: 'cash', amountMinor: 450 }); });
-      expect(result.current.takenLegs()).toHaveLength(3);
+      expect(result.current.registerView().takenLegs).toHaveLength(3);
       await act(async () => { await result.current.complete(); });
       expect(result.current.stage.kind).toBe('receipt');
-      expect(result.current.takenLegs()).toEqual([]);
+      expect(result.current.registerView().takenLegs).toEqual([]);
+      expect(result.current.registerView().saving).toBe(false);
     } finally { cleanup(); await db.remove(); }
   });
 

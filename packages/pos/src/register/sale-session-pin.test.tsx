@@ -19,7 +19,7 @@ import { addPosOrderCollection, type PosOrder } from '../pos-order';
 import { ensureRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator } from './schemas';
 import type { CashMovementCollection, ClosureCollection, RegisterSessionCollection } from './session-store';
-import { useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
+import { RegisterSaleSavingError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
 
 const traits = medusaConnector.traits.product;
 const product = { id: 'shirt', title: 'Shirt', status: 'published', variants: [
@@ -149,14 +149,14 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
   const sales = (closure: Closed, method: string) =>
     (closure.breakdowns.payment_methods as Record<string, { sales_minor: number }> | undefined)?.[method]?.sales_minor;
   /** The register and the sale wired as an app does, with `liveSale` reading the sale through a ref (S3). */
-  async function wired() {
+  async function wired(onSaleCompleted?: (posOrder: PosOrder) => Promise<void>) {
     const { order_drafts } = await db.addCollections({ order_drafts: { schema: orderDraftSchema } });
     const completed: PosOrder[] = [];
     const view = renderHook(() => {
       const saleRef = useRef<ReturnType<typeof useSale> | null>(null);
-      const register = useRegisterSession(registerOptions({ drafts: order_drafts, liveSale: () => saleRef.current?.takenLegs() ?? [] }));
+      const register = useRegisterSession(registerOptions({ drafts: order_drafts, liveSale: () => saleRef.current?.registerView() ?? { takenLegs: [], saving: false } }));
       const sale = useSale(pricing, { registerId, cashierRef, capabilities: { orderCreate: 12 }, drafts: order_drafts,
-        onSaleCompleted: async (posOrder) => { completed.push(posOrder); await db.pos_orders.insert(posOrder); }, session: register.saleSession });
+        onSaleCompleted: onSaleCompleted ?? (async (posOrder) => { completed.push(posOrder); await db.pos_orders.insert(posOrder); }), session: register.saleSession });
       saleRef.current = sale;
       return { register, sale };
     }, { wrapper: ({ children }: { children: ReactNode }) => <TaxProvider {...taxProviderProps(pricing)}>{children}</TaxProvider> });
@@ -230,6 +230,32 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
     expect(completed).toMatchObject([{ sessionId: b.id, payments: [{ method: 'external', amountMinor: 1000, sessionId: b.id }] }]);
     const closureB = await close(0);
     expect(sales(closureB, 'external')).toBe(1000);
+  });
+
+  it('G1 S3: close refuses while a completion from the cart has failed after storing, and the retried sale counts once', async () => {
+    const completed = vi.fn<(posOrder: PosOrder) => Promise<void>>(async () => {}).mockImplementationOnce(async (posOrder) => {
+      await db.pos_orders.insert(posOrder);
+      throw new Error('flush failed');
+    });
+    const { now, open, close } = await wired(completed);
+    await open(1000);
+    act(() => { now().sale.addCustomLine({ name: 'Item', priceMinor: 1000, taxStatus: 'none' }); });
+    act(() => { now().sale.addTender({ method: 'cash', amountMinor: 1000 }); }); // from the cart: no startTender, so the stage stays cart
+    await act(async () => { await now().sale.complete(); });
+    expect(now().sale.error).toBe('The sale could not be saved: flush failed');
+    expect(now().sale.registerView().saving).toBe(true);
+    await act(async () => {
+      await expect(now().register.actions.closeSession({ counted: { cash: 2000 } })).rejects.toBeInstanceOf(RegisterSaleSavingError);
+      await expect(now().register.actions.startCounting()).rejects.toBeInstanceOf(RegisterSaleSavingError);
+    });
+    expect(await db.closures.find().exec()).toHaveLength(0);
+    await waitFor(() => expect(now().register.expected.cash).toBe(2000));
+    await act(async () => { await now().sale.complete(); });
+    expect(now().sale.stage.kind).toBe('receipt');
+    expect(completed).toHaveBeenCalledTimes(2);
+    const closure = await close(2000);
+    expect(closure.till_expected.cash).toBe(2000);
+    expect(sales(closure, 'cash')).toBe(1000);
   });
 
   it('the same sequence without the confirmed session is still stamped, by the backstop, with a warning', async () => {
