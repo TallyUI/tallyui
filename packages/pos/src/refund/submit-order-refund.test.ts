@@ -455,4 +455,58 @@ describe('submitOrderRefund', () => {
     expect(second.record.status).toBe('unsent');
     expect(second.record.commandId).toBe(nextEnvelope.id);
   });
+
+  it('a second concurrent send of one envelope waits, so a lost answer keeps the refund pending', async () => {
+    let resolveSend!: (outcome: TransportOutcome) => void;
+    const response = new Promise<TransportOutcome>((resolve) => { resolveSend = resolve; });
+    let enteredSend!: () => void;
+    const sending = new Promise<void>((resolve) => { enteredSend = resolve; });
+    send.mockImplementationOnce(() => { enteredSend(); return response; })
+      .mockRejectedValueOnce(new Error('network'));
+    send.mockImplementation(async ([sent]) => ({ kind: 'results', results: [{ ...applied, id: sent.id }] }));
+    const first = submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    await sending;
+    const second = submitOrderRefund({ refunds, transport: { send }, envelope, now });
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(send).toHaveBeenCalledTimes(1);
+    resolveSend({ kind: 'unauthorized' });
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.outcome).toStrictEqual({ kind: 'unauthorized' });
+    expect(b.outcome).toStrictEqual({ kind: 'unknown', reason: 'transport_error' });
+    expect(b.record.status).toBe('pending');
+    expect(b.record.commandId).toBe(envelope.id);
+    await expect(submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now }))
+      .rejects.toBeInstanceOf(RefundAnswerPendingError);
+    expect(send.mock.calls).toStrictEqual([[[envelope]], [[envelope]]]);
+  });
+
+  it('a failed first call does not fail a queued second call for the same envelope', async () => {
+    const disk = new Error('disk');
+    vi.spyOn(refunds, 'insert').mockRejectedValueOnce(disk);
+    const [first, second] = await Promise.allSettled([
+      submitOrderRefund({ refunds, transport: { send }, envelope, now }),
+      submitOrderRefund({ refunds, transport: { send }, envelope, now }),
+    ]);
+    expect(first).toStrictEqual({ status: 'rejected', reason: disk });
+    expect(second).toMatchObject({
+      status: 'fulfilled', value: { outcome: { kind: 'applied' }, record: { status: 'applied' } },
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent first submits of two envelopes for one refund send one and refuse the other', async () => {
+    send.mockImplementation(async ([sent]) => ({ kind: 'results', results: [{ ...applied, id: sent.id }] }));
+    const answers = await Promise.allSettled([
+      submitOrderRefund({ refunds, transport: { send }, envelope, now }),
+      submitOrderRefund({ refunds, transport: { send }, envelope: nextEnvelope, now }),
+    ]);
+    const fulfilled = answers.filter((answer) => answer.status === 'fulfilled');
+    const failed = answers.filter((answer) => answer.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(fulfilled[0].value.outcome.kind).toBe('applied');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].reason).toBeInstanceOf(RefundAnswerPendingError);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(await refunds.find().exec()).toHaveLength(1);
+  });
 });

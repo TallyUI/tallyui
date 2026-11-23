@@ -12,10 +12,30 @@ export class RefundAnswerPendingError extends Error {
   }
 }
 
+// Calls for one refund envelope run one at a time in this process, because the till is single-instance (#1290).
+const inFlight = new WeakMap<PosRefundCollection, Map<string, Promise<unknown>>>();
+
 /** Online only, never queued; the record is written before the send.
  * An applied record is final; a pending one is resent only with its own envelope
  * (ADR-080 amendment 1). */
-export async function submitOrderRefund({ refunds, transport, envelope, now = () => new Date().toISOString() }: {
+export async function submitOrderRefund(args: {
+  refunds: PosRefundCollection; transport: CommandTransport<OrderRefundEnvelope>;
+  envelope: OrderRefundEnvelope; now?: () => string;
+}): Promise<{ outcome: OrderRefundOutcome; record: PosRefund }> {
+  const { refunds, envelope } = args;
+  let calls = inFlight.get(refunds);
+  if (!calls) { calls = new Map(); inFlight.set(refunds, calls); }
+  const key = `${envelope.payload.clientRefundId} ${envelope.id}`;
+  const run = (calls.get(key) ?? Promise.resolve()).catch(() => undefined).then(() => submitOnce(args));
+  calls.set(key, run);
+  try {
+    return await run;
+  } finally {
+    if (calls.get(key) === run) calls.delete(key);
+  }
+}
+
+async function submitOnce({ refunds, transport, envelope, now = () => new Date().toISOString() }: {
   refunds: PosRefundCollection; transport: CommandTransport<OrderRefundEnvelope>;
   envelope: OrderRefundEnvelope; now?: () => string;
 }): Promise<{ outcome: OrderRefundOutcome; record: PosRefund }> {
