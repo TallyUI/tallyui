@@ -110,7 +110,11 @@ function tillSource(order: TillOrder, receipt: ReceiptData, lines: TillLine[]) {
     status: 'completed', currency: order.currency, pricesIncludeTax: order.pricesIncludeTax,
     customer: order.customer && { id: order.customer.id, firstName: order.customer.name, email: order.customer.email },
     lines: lines.map((line) => tillLine(line, key)),
-    fees: (order.fees ?? []).map((fee) => ({ name: fee.name, ...tillCharge(fee, context, key) })),
+    fees: [
+      ...(order.fees ?? []).map((fee) => ({ name: fee.name, ...tillCharge(fee, context, key) })),
+      // ADR-094 detail 5: the rounding prints as WooCommerce carries it, a tax-free fee row named 'Rounding'.
+      ...(receipt.rounding ? [{ name: receipt.rounding.name, totalMinor: receipt.rounding.amountMinor, totalTaxMinor: 0 }] : []),
+    ],
     shipping: (order.shipping ?? []).map((row) => ({
       methodTitle: row.name, ...(row.methodId !== undefined ? { methodId: row.methodId } : {}), ...tillCharge(row, context, key),
     })),
