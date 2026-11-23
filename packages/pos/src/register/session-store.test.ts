@@ -756,14 +756,15 @@ describe('openSession without storeKey is deprecated (#1068)', () => {
 
 describe('cash rounding on the Z (ADR-094)', () => {
   // One sale of 10.02 including 10% tax (net 9.11, tax 0.91), taken as 10.00 in cash with its -2 entry, or as 10.02 unrounded.
-  async function closureOfOneSale(rounded: boolean) {
+  async function closureOfOneSale(rounded: boolean, legSessionId?: string) {
     await ensureRegister(db.register_sessions, 'web');
     const doc = await openSession(db.register_sessions, input);
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100_000 } });
     builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1002, currency: 'EUR' } });
     const taken = rounded ? 1000 : 1002;
     builder.addPayment({ method: 'cash', amountMinor: taken, tenderedMinor: taken, changeMinor: 0 }, rounded ? { minor: -2 } : undefined);
-    const order: PosOrder = { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } }), sessionId: doc.id };
+    const finalized = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
+    const order: PosOrder = { ...finalized, sessionId: doc.id, ...(legSessionId ? { payments: finalized.payments.map((payment) => ({ ...payment, sessionId: legSessionId })) } : {}) };
     const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 10000 + taken } });
     return writeClosure({
       closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000 + taken,
@@ -783,6 +784,12 @@ describe('cash rounding on the Z (ADR-094)', () => {
   it('an unrounded session\'s closure has no cash_rounding_minor key', async () => {
     const closure = await closureOfOneSale(false);
     expect(closure.period_sales_total_minor).toBe(1002);
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+  });
+
+  it('a rounded leg taken in another session counts its rounding there, not on this Z', async () => {
+    const closure = await closureOfOneSale(true, 'another-session');
+    expect(closure.period_sales_total_minor).toBe(0);
     expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
   });
 });

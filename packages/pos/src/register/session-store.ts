@@ -582,7 +582,14 @@ export async function writeClosure({
     }
   }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
-  const cashRoundingMinor = sum(bound.flatMap((order) => (order.cashRoundings ?? []).map((entry) => entry.minor)));
+  // ADR-094: a rounding counts where its leg's money counts (S3): a till leg, in the session that took it.
+  const cashRoundingMinor = sum(bound.flatMap((order) => {
+    const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
+    return (order.cashRoundings ?? []).filter((entry) => {
+      const leg = legs.get(entry.paymentId);
+      return leg !== undefined && (leg.sessionId ?? order.sessionId) === session.id;
+    }).map((entry) => entry.minor);
+  }));
   const draft: Closure = {
     id: session.id,
     session_id: session.id,
