@@ -93,4 +93,9 @@ describe('CartColumnsForm', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
     expect(value).toEqual(before);
   });
+
+  it('CF-level: the Columns heading carries level 4, below a host card title', () => {
+    show({});
+    expect(screen.getByRole('heading').getAttribute('aria-level')).toBe('4');
+  });
 });
