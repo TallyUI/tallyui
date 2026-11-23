@@ -582,7 +582,8 @@ export async function writeClosure({
     }
   }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
-  // ADR-094: a rounding counts where its leg's money counts (S3): a till leg, in the session that took it.
+  // ADR-094: a bound order's rounding counts as its leg's money does (S3): a till leg, in the session that took it.
+  // A parked or live sale's legs are in the takings, but their rounding is not counted here (lane backlog).
   const cashRoundingMinor = sum(bound.flatMap((order) => {
     const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
     return (order.cashRoundings ?? []).filter((entry) => {
