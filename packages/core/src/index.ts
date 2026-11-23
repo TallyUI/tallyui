@@ -123,3 +123,7 @@ export { parseCommandResult, CommandResultError } from './server/command-result'
 export { deriveSessionFigures, deriveVariance } from './server/register-figures';
 // Browser-safe: tax-rate.ts has no imports. The till and servers convert percentages to the same integer ppm.
 export { ratePpmFromPercent } from './server/tax-rate';
+// Browser-safe: round-ratio.ts has no imports. The till and servers round exact ratios the same way.
+export { roundRatio, type RoundingMode } from './server/round-ratio';
+// Browser-safe: refund-share.ts imports only types and round-ratio. The till and servers share one BigInt refund share (desk, 22 Nov).
+export { refundableLines, priceRefund, type RefundableOrderLine, type EarlierRefund, type RefundableLine, type PricedRefundLine, type PricedRefund } from './server/refund-share';

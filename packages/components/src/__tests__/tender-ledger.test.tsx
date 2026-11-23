@@ -4,7 +4,7 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { canVoidLeg, createOrderBuilder, NOTHING_DUE, orderDraftSchema, TaxProvider, taxProviderProps, useSale, writeOrderDraft, type Order } from '@tallyui/pos';
+import { canVoidLeg, createOrderBuilder, NOTHING_DUE, orderDraftSchema, TaxProvider, taxProviderProps, useSale, writeOrderDraft, type Order, type Payment } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
 import { Cart } from '../sale/cart';
 import { Tender } from '../sale/tender';
@@ -303,5 +303,99 @@ describe('TenderLedger leg times', () => {
     const pane = within(screen.getByTestId('tender-pane'));
     expect(pane.getByTestId('tender-ledger')).toBeTruthy();
     expect(pane.getByText(`Paid in full · ${clock(sale.order.payments[0].takenAt)}`)).toBeTruthy();
+  });
+});
+
+describe('TenderLedger beforeVoid (#1260)', () => {
+  type Hook = (leg: Payment) => boolean | void | Promise<boolean | void>;
+  /** The pane's own ledger, through Tender → TenderPane → TenderLedger; one €10 cash leg and one €15 external leg on €50. */
+  function guarded(beforeVoid: Hook, confirmVoid = false) {
+    render(<><SaleHarness settings={settings}>{(sale) => <Tender sale={sale} beforeVoid={beforeVoid} confirmVoid={confirmVoid} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 5000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 1000 }); });
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1500 }); });
+  }
+  /** A hook whose promise the test settles. */
+  function later() {
+    let settle!: (value: boolean | void) => void;
+    const hook = vi.fn<Hook>(() => new Promise<boolean | void>((resolve) => { settle = resolve; }));
+    return { hook, settle: async (value: boolean | void) => { await act(async () => { settle(value); }); } };
+  }
+  const status = (index: number) => text(`tender-leg-${leg(index)}-status`);
+
+  it('beforeVoid runs before the void, and the void waits for it (#1260)', async () => {
+    const { hook, settle } = later();
+    guarded(hook);
+    const before = status(1);
+    const target = sale.order.payments[1];
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook.mock.calls[0][0]).toMatchObject({ id: target.id, amountMinor: 1500 });
+    expect(status(1)).toBe(before);
+    expect(sale.order.paidMinor).toBe(2500);
+    await settle(undefined);
+    expect(status(1)).toBe('Cancelled');
+    expect(sale.order.paidMinor).toBe(1000);
+  });
+
+  it('beforeVoid returning false keeps the leg', async () => {
+    const hook = vi.fn<Hook>(async () => false);
+    guarded(hook);
+    const before = status(0);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(0)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(status(0)).toBe(before);
+    expect(sale.order.paidMinor).toBe(2500);
+  });
+
+  it('a throwing beforeVoid keeps the leg', async () => {
+    const hook = vi.fn<Hook>(() => { throw new Error('journal down'); });
+    guarded(hook);
+    const before = status(0);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(0)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(status(0)).toBe(before);
+    expect(sale.order.paidMinor).toBe(2500);
+  });
+
+  it('with confirmVoid the hook runs after Confirm, not on the first press', async () => {
+    const hook = vi.fn<Hook>(async () => undefined);
+    guarded(hook, true);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(screen.getByTestId('tender-leg-void-dialog')).toBeTruthy();
+    expect(hook).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByTestId('tender-leg-void-dialog-confirm')); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook.mock.calls[0][0].id).toBe(leg(1));
+    expect(status(1)).toBe('Cancelled');
+  });
+
+  it('Cancel payment is disabled while the hook is in flight', async () => {
+    const { hook, settle } = later();
+    guarded(hook);
+    const button = () => screen.getByTestId(`tender-leg-${leg(1)}-void`);
+    await act(async () => { fireEvent.click(button()); });
+    expect(button().getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { fireEvent.click(button()); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    await settle(undefined);
+    expect(status(1)).toBe('Cancelled');
+  });
+
+  it("Cart's tenderLedger passes beforeVoid through", async () => {
+    const { hook, settle } = later();
+    render(<SaleHarness settings={settings}>{(sale) => <><Tender sale={sale} ledger={false} /><Cart sale={sale} showTotal={false} tenderLedger={{ beforeVoid: hook }} /></>}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 5000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1500 }); });
+    await act(async () => { fireEvent.click(within(screen.getByTestId('cart-payments')).getByTestId(`tender-leg-${leg(0)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(text('tender-ledger-remaining')).toBe(money(3500));
+    await settle(undefined);
+    expect(text(`tender-leg-${leg(0)}-status`)).toBe('Cancelled');
+    expect(text('tender-ledger-remaining')).toBe(money(5000));
   });
 });

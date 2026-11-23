@@ -84,4 +84,11 @@ describe('CatalogueSettingsForm', () => {
     expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Tile Size', 'Champs']);
     expect(screen.queryByText('Tile Fields')).toBeNull();
   });
+
+  it('CS7: both headings carry level 4, below a host card title', () => {
+    show();
+    const headings = screen.getAllByRole('heading');
+    expect(headings.map((h) => h.textContent)).toEqual(['Tile Size', 'Tile Fields']);
+    expect(headings.map((h) => h.getAttribute('aria-level'))).toEqual(['4', '4']);
+  });
 });

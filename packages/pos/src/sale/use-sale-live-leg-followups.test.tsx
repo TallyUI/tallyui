@@ -15,7 +15,7 @@ import { createTaxContext, TaxProvider } from '../tax';
 import { initTenderState } from '../tender';
 import { catalogueEntries } from './catalogue';
 import { createStorePricedDiscountCodes, type StorePricedDiscountCodesOptions } from './store-priced-discount-codes';
-import { COUPONS_REPRICING, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, useSale } from './use-sale';
+import { COUPONS_REPRICING, NOTHING_DUE, PAYMENT_TAKEN, SALE_FINISHED, SALE_HAS_PAYMENT, SALE_PARTLY_PAID, SALE_CARD_IN_PROGRESS, useSale } from './use-sale';
 
 const entries = catalogueEntries([
   { id: 10, name: 'Shirt', price: '10.00', categories: [{ id: 7, name: 'Clothes' }] },
@@ -78,6 +78,46 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(hook.result.current.order.payments).toEqual(paid ? [expect.objectContaining({ method: 'cash', amountMinor: 500 })] : []);
     return hook;
   }
+
+  it('newSale refuses while a card leg is pending, naming the card payment', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const before = result.current.order, stage = result.current.stage;
+    expect(before.payments).toMatchObject([{ method: 'external', status: 'pending' }]);
+    act(() => result.current.newSale());
+    expect(result.current.order.lineItems).toEqual(before.lineItems);
+    expect(result.current.order.payments).toEqual(before.payments);
+    expect(result.current.order).toBe(before);
+    expect(result.current.stage).toEqual(stage);
+    expect(result.current.error).toBe(SALE_CARD_IN_PROGRESS);
+    expect(result.current.error).toBe('A card payment is still in progress. Finish or cancel it before starting a new sale.');
+  });
+
+  it('newSale refuses while a card leg is authorized', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const id = result.current.order.payments[0].id;
+    act(() => { expect(result.current.setTenderStatus(id, 'authorized')).toBe(true); });
+    const before = result.current.order, stage = result.current.stage;
+    expect(before.payments).toMatchObject([{ id, status: 'authorized' }]);
+    act(() => result.current.newSale());
+    expect(result.current.order).toBe(before);
+    expect(result.current.stage).toEqual(stage);
+    expect(result.current.error).toBe(SALE_CARD_IN_PROGRESS);
+  });
+
+  it('newSale after the pending leg fails starts the new sale', () => {
+    const { result } = renderSale();
+    act(() => { result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+    const before = result.current.order;
+    act(() => { expect(result.current.setTenderStatus(before.payments[0].id, 'failed')).toBe(true); });
+    act(() => result.current.newSale());
+    expect(result.current.order.id).not.toBe(before.id);
+    expect(result.current.order.lineItems).toEqual([]);
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.error).toBeNull();
+  });
 
   it('R1: a resumed draft with a captured leg and stale store-priced coupons does not re-price; the total is unchanged', async () => {
     const shop = store();
@@ -684,6 +724,18 @@ describe('useSale live-leg follow-ups (#1059 review)', () => {
     expect(result.current.error).toBe(dropped);
     expect(result.current.order.lineItems[0].quantity).toBe(1);
   });
+
+  it('P4 (row 502): a stale NOTHING_DUE clears when the pending leg that covered the sale fails', () => {
+    const { result } = renderSale();
+    const total = result.current.order.totalMinor;
+    let id = '';
+    act(() => { id = result.current.addTender({ method: 'external', amountMinor: total, status: 'pending' })!; });
+    act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: total })).toBeNull(); });
+    expect(result.current.error).toBe(NOTHING_DUE);
+    act(() => { expect(result.current.setTenderStatus(id, 'failed')).toBe(true); });
+    expect(result.current.order.balanceDueMinor).toBe(total);
+    expect(result.current.error).toBeNull();
+  });
 });
 
 describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () => {
@@ -764,8 +816,11 @@ describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () =
   it('R5: the hold ends with the sale: the next sale, even one carrying the same leg, has no held legs', async () => {
     const { result, cash } = await completed();
     act(() => { result.current.add(entries[0], traits); }); // the receipt's add starts the next sale
-    // Pending, so takenLeg never holds it (ADR-072 d3, amended 2026-11-22): only a held id could keep it.
-    act(() => { expect(result.current.addTender({ method: 'external', amountMinor: 100, status: 'pending' })).toEqual(expect.any(String)); });
+    // Failed, so takenLeg never holds it (ADR-072 d3, amended 2026-11-22) and it is not in motion (BUG 2): only a held id could keep it.
+    let leg: string | null = null;
+    act(() => { leg = result.current.addTender({ method: 'external', amountMinor: 100, status: 'pending' }); });
+    expect(leg).toEqual(expect.any(String));
+    act(() => { expect(result.current.setTenderStatus(leg!, 'failed')).toBe(true); });
     act(() => { result.current.startTender('external'); });
     await settle();
     const total = result.current.order.totalMinor;
@@ -781,6 +836,89 @@ describe('useSale: a resumed paid draft holds its taken legs (row 328 F3)', () =
     act(() => { result.current.startTender('external'); });
     await settle();
     expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: result.current.order.totalMinor })]);
+  });
+});
+
+describe('useSale: a held taken payment blocks the empty-sale resets (row 516)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `saleheldtaken${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  const storeOrder = { id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' };
+  const builderFor = (ref?: typeof storeOrder) => createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }), storeOrder: ref });
+  /** A second store order with one line, as R5 opens. */
+  function oneLineStoreOrder() {
+    const builder = builderFor(storeOrder);
+    builder.addLine({ productId: 'shirt', name: 'Shirt', storeLineId: '7', unitPrice: { amount: 1000, currency: 'GBP' } });
+    return builder.getSnapshot();
+  }
+
+  /** An empty cart holding a captured, stamped cash leg, opened from a store order with no lines. */
+  function heldTaken() {
+    const state = { currency: 'GBP' };
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProps} rounding={perOrder}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale({ currency: state.currency }, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 6 }, drafts: db.pos_drafts,
+    }), { wrapper: Wrapper });
+    const builder = builderFor(storeOrder);
+    builder.addPayment({ id: 'taken-cash', method: 'cash', amountMinor: 500, status: 'captured', takenAt: '2026-11-22T09:00:00.000Z' });
+    act(() => { expect(hook.result.current.openStoreOrder(builder.getSnapshot())).toBeNull(); });
+    const { order } = hook.result.current;
+    expect([order.lineItems, order.fees ?? [], order.shipping ?? []]).toEqual([[], [], []]);
+    expect(order.payments).toEqual([expect.objectContaining({ id: 'taken-cash' })]);
+    return { ...hook, state, before: order };
+  }
+
+  it('O1: openStoreOrder refuses with SALE_PARTLY_PAID, keeping the taken leg', () => {
+    const { result, before } = heldTaken();
+    act(() => { expect(result.current.openStoreOrder(oneLineStoreOrder())).toBe(SALE_PARTLY_PAID); });
+    expect(result.current.order).toBe(before);
+  });
+
+  it('O2: resume refuses with SALE_PARTLY_PAID and never touches the draft', async () => {
+    const { result, before } = heldTaken();
+    const draft = builderFor();
+    draft.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' } });
+    const draftId = await writeOrderDraft(db.pos_drafts, draft.getSnapshot());
+    await act(async () => { expect(await result.current.resume(draftId)).toBe(SALE_PARTLY_PAID); });
+    expect(await db.pos_drafts.findOne(draftId).exec()).not.toBeNull();
+    expect(result.current.order).toBe(before);
+  });
+
+  it('O3: the idle settings reset waits for the void, refused with SALE_PARTLY_PAID meanwhile', async () => {
+    const { result, rerender, state } = heldTaken();
+    state.currency = 'EUR';
+    rerender();
+    await settle();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ id: 'taken-cash' })]);
+    expect(result.current.order.currency).toBe('GBP');
+    expect(result.current.error).toBe(SALE_PARTLY_PAID);
+    act(() => { expect(result.current.voidTender('taken-cash')).toBe(true); });
+    rerender();
+    await settle();
+    expect(result.current.order.payments).toEqual([]);
+    expect(result.current.order.currency).toBe('EUR');
+  });
+
+  it('O4: switchSale to a new sale refuses with SALE_PARTLY_PAID', async () => {
+    const { result, before } = heldTaken();
+    await act(async () => { expect(await result.current.switchSale(null)).toBe(SALE_PARTLY_PAID); });
+    expect(result.current.order).toBe(before);
+  });
+
+  it('O5: once the leg is voided, openStoreOrder opens the next store order', () => {
+    const { result } = heldTaken();
+    act(() => { expect(result.current.voidTender('taken-cash')).toBe(true); });
+    const second = oneLineStoreOrder();
+    act(() => { expect(result.current.openStoreOrder(second)).toBeNull(); });
+    expect(result.current.order.id).toBe(second.id);
+    expect(result.current.order.lineItems).toHaveLength(1);
   });
 });
 
@@ -874,5 +1012,84 @@ describe('useSale: a resumed pre-4.2 captured leg counts as taken (row 517)', ()
     act(() => { result.current.startTender('external'); });
     await settle();
     expect(result.current.order.payments).toEqual([expect.objectContaining({ method: 'external', amountMinor: result.current.order.totalMinor })]);
+  });
+});
+
+describe('useSale: the reset guards and Back follow row 517\'s taken rule (rows 516 and 517)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `saletakenrule${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  const builderFor = (storeOrder?: { id: string; revision: string }) =>
+    createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }), storeOrder });
+  /** Resumes a draft parked before 4.2 holding one leg with no takenAt; with `line`, a Shirt line too. */
+  async function resumedLeg(payment: { id: string; method: 'cash' | 'external'; amountMinor: number; status?: 'pending' | 'voided' }, line: boolean) {
+    const builder = builderFor();
+    if (line) builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' } });
+    builder.addPayment(payment);
+    const draftId = await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    const state = { currency: 'GBP' };
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProps} rounding={perOrder}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale({ currency: state.currency }, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 6 }, drafts: db.pos_drafts,
+    }), { wrapper: Wrapper });
+    await act(async () => { expect(await hook.result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    expect(hook.result.current.order.payments).toEqual([expect.objectContaining({ id: payment.id })]);
+    expect(hook.result.current.order.payments[0]).not.toHaveProperty('takenAt');
+    return { ...hook, state };
+  }
+  const pendingCard = { id: 'pending-card', method: 'external' as const, amountMinor: 500, status: 'pending' as const };
+
+  it('T1a: a resumed leg that was pending and then failed is not held: Back drops it', async () => {
+    const { result } = await resumedLeg(pendingCard, true);
+    act(() => { expect(result.current.setTenderStatus('pending-card', 'failed')).toBe(true); });
+    act(() => { result.current.startTender('cash'); });
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('T1b: a resumed leg that was pending and then failed is not held: removeTender removes it', async () => {
+    const { result } = await resumedLeg(pendingCard, true);
+    act(() => { expect(result.current.setTenderStatus('pending-card', 'failed')).toBe(true); });
+    act(() => { result.current.removeTender('pending-card'); });
+    expect(result.current.error).not.toBe(PAYMENT_TAKEN);
+    expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('T2: a pre-4.2 leg voided before the park, with no takenAt, is dropped by Back (batch 7 Q1)', async () => {
+    const { result } = await resumedLeg({ id: 'old-void', method: 'cash', amountMinor: 500, status: 'voided' }, true);
+    act(() => { result.current.startTender('cash'); });
+    act(() => { result.current.cancelTender(); });
+    await settle();
+    expect(result.current.order.payments).toEqual([]);
+  });
+
+  it('T3: the reset guards refuse SALE_PARTLY_PAID for a resumed pre-4.2 captured leg with no takenAt', async () => {
+    const { result, rerender, state } = await resumedLeg({ id: 'old-cash', method: 'cash', amountMinor: 500 }, false);
+    const before = result.current.order;
+    const store = builderFor({ id: '41', revision: 'sha256:e9770195141c0459c5c766e9094d71e66766563f967c134c3a5449243749e298' });
+    store.addLine({ productId: 'shirt', name: 'Shirt', storeLineId: '7', unitPrice: { amount: 1000, currency: 'GBP' } });
+    act(() => { expect(result.current.openStoreOrder(store.getSnapshot())).toBe(SALE_PARTLY_PAID); });
+    const draft = builderFor();
+    draft.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' } });
+    const draftId = await writeOrderDraft(db.pos_drafts, draft.getSnapshot());
+    await act(async () => { expect(await result.current.resume(draftId)).toBe(SALE_PARTLY_PAID); });
+    expect(await db.pos_drafts.findOne(draftId).exec()).not.toBeNull();
+    await act(async () => { expect(await result.current.switchSale(null)).toBe(SALE_PARTLY_PAID); });
+    expect(result.current.order).toBe(before);
+    state.currency = 'EUR';
+    rerender();
+    await settle();
+    expect(result.current.order.payments).toEqual([expect.objectContaining({ id: 'old-cash' })]);
+    expect(result.current.order.currency).toBe('GBP');
+    expect(result.current.error).toBe(SALE_PARTLY_PAID);
   });
 });

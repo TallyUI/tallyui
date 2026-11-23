@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
-import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useFormatMoney } from '@tallyui/core';
 import { isPartlyPaid, type OpenSale } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
+import { CROSSFADE, EASE, NEW_TAB_WIDTH, PLUS_WIDTH } from '../lib/motion';
+import { useReducedMotion } from '../lib/use-reduced-motion';
 import { Text } from '../ui/text';
 
 const AGE_TICK_MS = 60_000; // Ages tick once a minute (v2).
@@ -52,6 +54,22 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew, className }: Op
   // v2 cart/tabs.tsx: on a blank cart the active position is the + cell, just past the last sale; no wrap.
   const activeIndex = blank ? sales.length : sales.findIndex((sale) => sale.current);
   const focusPending = useRef(false);
+  const reduced = useReducedMotion() !== false; // Reduced or unknown motion jumps, as cart-line-strip.tsx.
+  const width = useRef(new Animated.Value(blank ? NEW_TAB_WIDTH : PLUS_WIDTH)).current;
+  const fade = useRef(new Animated.Value(blank ? 1 : 0)).current;
+  const [label, setLabel] = useState(blank); // "New" stays mounted through its fade out (v2 FadeOut).
+  const was = useRef(blank);
+  useEffect(() => {
+    if (was.current === blank) return; // The values start at their target: nothing animates on mount.
+    was.current = blank;
+    if (blank) setLabel(true);
+    const go = (value: Animated.Value, toValue: number, done = () => {}) => {
+      if (reduced) { value.setValue(toValue); done(); return; }
+      Animated.timing(value, { toValue, duration: CROSSFADE, easing: EASE, useNativeDriver: false }).start(({ finished }) => { if (finished) done(); });
+    };
+    go(width, blank ? NEW_TAB_WIDTH : PLUS_WIDTH); // v2 cart/tabs.tsx: the + cell widens to "+ New" on the blank cart.
+    go(fade, blank ? 1 : 0, () => { if (!was.current) setLabel(false); });
+  }, [blank, reduced, width, fade]);
   const step = (delta: number) => {
     const at = activeIndex + delta;
     if (at < 0 || at > sales.length) return;
@@ -103,13 +121,15 @@ export function OpenSaleTabs({ sales, currency, onSelect, onNew, className }: Op
           );
         })}
       </ScrollView>
+      <Animated.View className="h-full overflow-hidden" style={{ width }}>
       <Pressable testID="new-sale-tab" ref={follow(blank)} accessibilityRole="tab" accessibilityLabel="New order" accessibilityState={{ selected: blank }} aria-selected={blank}
         // Already on the blank cart: + is a place, not an action (v2).
         onPress={() => { if (!blank) onNew(); }}
-        className={`h-full flex-row items-center justify-center gap-1.5 px-3 ${blank ? 'border-b-2 border-primary' : ''}`}>
+        className={`h-full w-full flex-row items-center justify-center gap-1.5 px-3 ${blank ? 'border-b-2 border-primary' : ''}`}>
         <Text className={blank ? 'text-primary' : 'text-foreground'}>+</Text>
-        {blank && <Text testID="new-sale-tab-label" className="font-semibold">New</Text>}
+        {(blank || (!reduced && label)) && <Animated.View style={{ opacity: fade, flexShrink: 0 }}><Text testID="new-sale-tab-label" className="font-semibold">New</Text></Animated.View>}
       </Pressable>
+      </Animated.View>
     </View>
   );
 }

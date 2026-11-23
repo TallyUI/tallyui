@@ -51,9 +51,11 @@ describe('useSale payment method ids (condition 5: method decides cash, methodId
   it('caps an external leg with an id at the balance and stores it with its id; setTender keeps the id', async () => {
     const onSaleCompleted = vi.fn<(order: PosOrder) => void>();
     const { result } = renderSale({ onSaleCompleted });
-    // setTender replaces only a leg that took no money (ADR-072 d3, amended 2026-11-22), so the capped leg is unstamped (pending).
-    act(() => { result.current.addTender({ method: 'external', methodId: 'stripe', amountMinor: 5000, status: 'pending' }); });
+    // setTender replaces only a leg that took no money and is not in motion (ADR-072 d3, amended 2026-11-22; BUG 2), so the capped leg is failed first.
+    let leg: string | null = null;
+    act(() => { leg = result.current.addTender({ method: 'external', methodId: 'stripe', amountMinor: 5000, status: 'pending' }); });
     expect(result.current.order.payments).toMatchObject([{ method: 'external', methodId: 'stripe', amountMinor: 2250 }]);
+    act(() => { expect(result.current.setTenderStatus(leg!, 'failed')).toBe(true); });
     act(() => result.current.setTender({ method: 'external', methodId: 'pp_system_default', amountMinor: 2250, reference: 'T-9' }));
     expect(result.current.order.payments).toMatchObject([{ method: 'external', methodId: 'pp_system_default', amountMinor: 2250, reference: 'T-9' }]);
     await act(async () => { await result.current.complete(); });

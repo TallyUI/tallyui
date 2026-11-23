@@ -76,6 +76,8 @@ export interface PosOrderPayment {
   reference?: string;
   /** When the till recorded the leg (`Payment.takenAt`); absent on store-held and older legs. */
   takenAt?: string;
+  /** The session the leg was taken in (`Payment.sessionId`, S3); absent means the order's session. */
+  sessionId?: string;
 }
 
 export interface PosOrder {
