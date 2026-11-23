@@ -52,14 +52,19 @@ function draftExtras(data: unknown): Pick<ParkedOrderSummary, 'paidMinor' | 'bal
 }
 
 /**
- * S3: a parked draft's captured till legs stamped with the session that took them, so that session counts their cash
- * while the sale is parked. A reopened leg is its refused order's, already counted there. Unreadable data has none.
+ * S3: the till legs a session counts while no stored order counts them: captured, stamped with the session that took
+ * them, not reopened (its refused order's, counted there) and not `counted` (an after-close sale's, in a closure already).
+ * One rule for a parked draft (`parkedTakenLegs`) and the live sale (`useSale`'s `takenLegs`).
  */
+export function sessionTakenLegs(payments: readonly Payment[], counted: (leg: Payment) => boolean = () => false): Payment[] {
+  return tillPayments(payments).filter((leg) => countsTowardPaid(leg) && !leg.reopened && !counted(leg) && typeof leg.sessionId === 'string');
+}
+
+/** S3: a parked draft's taken legs (`sessionTakenLegs`), so their session counts their cash while the sale is parked. Unreadable data has none. */
 export function parkedTakenLegs(data: unknown): Payment[] {
   try {
     const payments = savedDraft(data).payments;
-    return Array.isArray(payments)
-      ? tillPayments(payments).filter((leg) => countsTowardPaid(leg) && !leg.reopened && typeof leg.sessionId === 'string') : [];
+    return Array.isArray(payments) ? sessionTakenLegs(payments) : [];
   } catch {
     return [];
   }
@@ -131,7 +136,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
       ...(payment.methodId !== undefined ? { methodId: payment.methodId } : {}),
       ...(payment.units !== undefined ? { units: payment.units } : {}),
       ...(isTakenAt(payment.takenAt) ? { takenAt: payment.takenAt } : {}),
-      ...(payment.sessionId !== undefined ? { sessionId: payment.sessionId } : {}),
+      ...(typeof payment.sessionId === 'string' ? { sessionId: payment.sessionId } : {}),
     });
   }
 

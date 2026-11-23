@@ -110,7 +110,7 @@ it('useRegisterSession gives terms for an open session, with its expected', asyn
   const { result } = renderHook(() => useRegisterSession({
     sessions: rx.register_sessions, movements: rx.cash_movements, closures: rx.closures, orders: rx.pos_orders,
     register: rx.register_sessions, storeKey: 'store', registerId: 'register', enabled: true, actor: { id: '7', name: 'Pat' },
-    timezone: 'UTC', softwareVersion: '1.0.0', tenderInProgress: false,
+    timezone: 'UTC', softwareVersion: '1.0.0', tenderInProgress: false, drafts: null, liveSale: null,
   }));
   await waitFor(() => expect(result.current.terms?.paidIn.count).toBe(1));
   expect(result.current.terms?.expected).toStrictEqual(result.current.expected);

@@ -153,6 +153,37 @@ describe('useSale payment takenAt', () => {
     } finally { cleanup(); await db.remove(); }
   });
 
+  it('F4 S3: takenLegs() is [] at receipt and excludes reopened and pending legs', async () => {
+    const db = await createRxDatabase<{ pos_orders: RxCollection<PosOrder>; order_drafts: RxCollection; register_sessions: RegisterSessionCollection }>({
+      name: `takenlegs${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      await db.addCollections({ pos_orders: posOrderCollection(), order_drafts: { schema: orderDraftSchema }, register_sessions: registerSessionCreator() });
+      const builder = createOrderBuilder({ currency: 'EUR', taxContext: createTaxContext(taxProviderProps(pricing)) });
+      builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1250, currency: 'EUR' } });
+      builder.addPayment({ method: 'cash', amountMinor: 1250, sessionId: 'session-a' });
+      const refused: PosOrder = { ...finalizeOrder(builder.getSnapshot()), syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'x' } };
+      await db.pos_orders.insert(refused);
+      const reopened = await reopenRefusedOrder(refused.id, { orders: db.pos_orders, drafts: db.order_drafts, sessions: db.register_sessions, taxContext: createTaxContext(taxProviderProps(pricing)) });
+      const { result } = renderSale({ drafts: db.order_drafts, session: { id: 'session-a', sessions: db.register_sessions } }, false);
+      await act(async () => { expect(await result.current.resume(reopened)).toBeNull(); });
+      expect(result.current.order.payments).toEqual([expect.objectContaining({ reopened: true, sessionId: 'session-a' })]);
+      expect(result.current.takenLegs()).toEqual([]);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      act(() => { result.current.add(entries[0], traits); }); // the receipt starts the next sale
+      let pending: string | null = null, cash: string | null = null;
+      act(() => { pending = result.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' }); });
+      act(() => { cash = result.current.addTender({ method: 'cash', amountMinor: 300 }); });
+      expect(result.current.takenLegs().map((leg) => leg.id)).toEqual([cash]);
+      act(() => { expect(result.current.setTenderStatus(pending!, 'captured')).toBe(true); });
+      act(() => { result.current.addTender({ method: 'cash', amountMinor: 450 }); });
+      expect(result.current.takenLegs()).toHaveLength(3);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.takenLegs()).toEqual([]);
+    } finally { cleanup(); await db.remove(); }
+  });
+
   it("S3: complete() stamps the stored order's legs with the tender's session", async () => {
     const db = await createRxDatabase<{ register_sessions: RegisterSessionCollection }>({
       name: `completesession${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });

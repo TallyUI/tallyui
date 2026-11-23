@@ -7,6 +7,8 @@ import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
+import { sessionTakenLegs } from '../order/order-drafts';
+import type { Payment } from '../order/types';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -423,11 +425,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     const dropped = reason && (reason === 'nul' ? 'it contains a NUL character' : `it is over ${PAYLOAD_STRING_MAX} characters`);
     // addTender stamps a leg that enters captured; setTender's pre-filled leg waits for complete(), a pending one for capture.
     // Stamped here, never in addPayment, which the restore paths call too.
-    // S3: a taken leg is also stamped with its tender's session; a pending one here too, as its capture (setTenderStatus)
-    // is in the same tender and setPaymentStatus stamps only takenAt. No session, no stamp.
-    const sessionId = stamp ? legSessionId() : undefined;
-    const takenAt = { ...(stamp && legStatus({ status: tender.status }) === 'captured' ? { takenAt: new Date().toISOString() } : {}),
-      ...(sessionId !== undefined ? { sessionId } : {}) };
+    // S3: a leg entering captured is also stamped with its tender's session; a pending or authorized one gets its session
+    // at capture (setTenderStatus), which may be in a later session. No session, no stamp.
+    const captured = stamp && legStatus({ status: tender.status }) === 'captured', sessionId = captured ? legSessionId() : undefined;
+    const takenAt = { ...(captured ? { takenAt: new Date().toISOString() } : {}), ...(sessionId !== undefined ? { sessionId } : {}) };
     const kept = dropped ? { method: tender.method, amountMinor: tender.amountMinor, ...takenAt,
       ...(tender.tenderedMinor !== undefined ? { tenderedMinor: tender.tenderedMinor } : {}),
       ...(tender.changeMinor !== undefined ? { changeMinor: tender.changeMinor } : {}),
@@ -940,7 +941,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return false;
       const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
       if (payment && countedLeg(payment)) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return false; }
-      const changed = builderNow.current.setPaymentStatus(paymentId, status, status === 'captured' ? new Date().toISOString() : undefined);
+      // S3: a capture stamps the capturing tender's session on a leg that has none yet.
+      const changed = status === 'captured'
+        ? builderNow.current.setPaymentStatus(paymentId, status, new Date().toISOString(), legSessionId())
+        : builderNow.current.setPaymentStatus(paymentId, status);
       // With no live leg left, the sale can change again: SALE_HAS_PAYMENT goes, any other error stays.
       if (changed && status === 'failed' && !liveLeg()) setError((current) => current === SALE_HAS_PAYMENT ? null : current);
       // A leg moved, so the due changed: a stale NOTHING_DUE goes (row 502).
@@ -1075,6 +1079,15 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     newSale() {
       if (stageNow.current.kind !== 'receipt' && !inFlight.current && !pending.current && holdsTakenPayment()) return setError(SALE_PARTLY_PAID);
       resetSale();
+    },
+    /**
+     * S3: the live sale's legs its session counts now and no stored order counts yet, for `useRegisterSession`'s
+     * `liveSale`: captured till legs stamped with a session, not reopened and not counted by an after-close sale's closure
+     * (`sessionTakenLegs`, the rule a parked draft's legs follow). `[]` on the receipt, whose stored order counts them.
+     */
+    takenLegs(): Payment[] {
+      if (stageNow.current.kind === 'receipt') return [];
+      return sessionTakenLegs(builderNow.current.getSnapshot().payments, countedLeg);
     },
     /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
     async park(): Promise<string | null> {

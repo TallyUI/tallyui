@@ -122,6 +122,19 @@ reports no session rather than throwing.
 - `timezone` — an IANA zone, or `'device'`, deciding which business day a
   session opens on.
 - `softwareVersion` — the app's version, stamped on the closure.
+- `drafts` (required) — the sale's `order_drafts` collection, or `null` if
+  the app never parks a sale. A parked sale's taken legs count on the Z of
+  the session that took them.
+- `liveSale` (required) — a getter returning the live sale's taken legs
+  (`sale.takenLegs()`), or `null` if the app has no live sale. A leg still
+  in the cart (after `cancelTender`, say) then counts on its session's Z.
+  The register is created before the sale, so read the sale through a ref:
+  ```ts
+  const saleRef = useRef<ReturnType<typeof useSale> | null>(null)
+  const register = useRegisterSession({ …, liveSale: () => saleRef.current?.takenLegs() ?? [] })
+  const sale = useSale(…)
+  saleRef.current = sale
+  ```
 - `tenderInProgress` — true while a sale is at tender. While true,
   `startCounting` and `closeSession` refuse before any write, so a till
   can't close under a payment in progress.

@@ -83,6 +83,9 @@ export function useDemoRegister({
     timezone: 'UTC',
     softwareVersion: '1.0.0',
     tenderInProgress: false,
+    // S3: the demo register has no sale, so nothing parked and no live cart.
+    drafts: null,
+    liveSale: null,
     ...overrides,
   });
   return { register, ready: !!db, db };

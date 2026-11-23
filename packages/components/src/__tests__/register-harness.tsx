@@ -53,7 +53,7 @@ export function registerOptions(db: RegisterDb, overrides: Partial<UseRegisterSe
   return {
     sessions: db.register_sessions, movements: db.cash_movements, closures: db.closures, orders: db.pos_orders,
     register: db.register_sessions, storeKey: 'store', registerId: 'register', enabled: true, actor,
-    timezone: 'UTC', softwareVersion: '1.0.0', tenderInProgress: false, ...overrides,
+    timezone: 'UTC', softwareVersion: '1.0.0', tenderInProgress: false, drafts: null, liveSale: null, ...overrides,
   };
 }
 
