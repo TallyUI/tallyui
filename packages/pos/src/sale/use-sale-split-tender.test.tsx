@@ -236,6 +236,35 @@ describe('useSale split tender', () => {
     act(() => result.current.cancelTender());
     expect(result.current.order.payments).toEqual([]);
   });
+
+  it('Back keeps a pending card leg, and the terminal capture is recorded (BUG 2)', () => {
+    const { result } = renderSale();
+    expect(result.current.order.totalMinor).toBe(2250);
+    act(() => result.current.startTender('external'));
+    const prefill = result.current.order.payments[0].id;
+    act(() => { result.current.removeTender(prefill); });
+    let id: string | null = null;
+    act(() => { id = result.current.addTender({ method: 'external', amountMinor: 600, status: 'pending' }); });
+    expect(result.current.order.payments).toMatchObject([{ id, amountMinor: 600, status: 'pending' }]);
+    act(() => result.current.cancelTender());
+    expect(result.current.order.payments).toHaveLength(1);
+    expect(result.current.order.payments[0]).toMatchObject({ id, amountMinor: 600, status: 'pending' });
+    act(() => { expect(result.current.setTenderStatus(id!, 'captured')).toBe(true); });
+    expect(result.current.order.paidMinor).toBe(600);
+    expect(result.current.order.balanceDueMinor).toBe(1650);
+  });
+
+  it('a repeat startTender keeps a pending leg and fills only the remainder (BUG 2)', () => {
+    const { result } = renderSale();
+    act(() => result.current.startTender('external'));
+    const prefill = result.current.order.payments[0].id;
+    act(() => { result.current.removeTender(prefill); });
+    let id: string | null = null;
+    act(() => { id = result.current.addTender({ method: 'external', amountMinor: 600, status: 'pending' }); });
+    act(() => result.current.startTender('external'));
+    expect(result.current.order.payments).toHaveLength(2);
+    expect(result.current.order.payments).toMatchObject([{ id, amountMinor: 600, status: 'pending' }, { method: 'external', amountMinor: 1650 }]);
+  });
 });
 
 
