@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatMoney, MoneyFormatProvider } from '@tallyui/core';
-import { refundPayloadErrors } from '@tallyui/core/server';
+import { priceRefund, refundPayloadErrors } from '@tallyui/core/server';
 import { PortalHost } from '@tallyui/primitives';
-import { RefundForm, type RefundFormProps } from '../order/refund-form';
+import { RefundForm, type RefundFormProps, type RefundFormValue } from '../order/refund-form';
 import { RefundModal } from '../order/refund-modal';
 
 const fixture = {
@@ -194,4 +194,87 @@ it.each([
   fireEvent.change(screen.getByTestId('refund-adjustment'), { target: { value: text } });
   expect((screen.getByTestId('refund-submit') as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByTestId('refund-invalid').textContent).toBe('Enter a number.');
+});
+
+it.each([
+  ['1.02 rounded to 1.00 shows and refunds 1.00', 102, 100, -2],
+  ['1.03 rounded to 1.05 refunds 1.05, nothing stranded', 103, 105, 2],
+] as const)('%s', async (_, lineMinor, orderTotalMinor, cashRoundingMinor) => {
+  const { onConfirm, props } = renderForm({
+    lines: [{ id: 'a', name: 'Mug', quantity: 1, totalMinor: lineMinor, taxMinor: 0 }],
+    refunds: [], refundedMinor: 0, orderTotalMinor, cashRoundingMinor,
+  });
+  plus('a');
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+  expect.soft(screen.queryByTestId('refund-invalid')?.textContent ?? null).toBeNull();
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(orderTotalMinor));
+  expect(screen.getByTestId('refund-rounding').textContent).toBe(eur(cashRoundingMinor));
+  fireEvent.click(screen.getByTestId('refund-submit'));
+  fireEvent.click(screen.getByTestId('refund-confirm'));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+  const payload: RefundFormValue = onConfirm.mock.calls[0][0];
+  expect.soft(payload).toMatchObject({ adjustmentMinor: cashRoundingMinor, totalMinor: orderTotalMinor });
+  expect(payload.totalMinor).toBe(props.orderTotalMinor - props.refundedMinor);
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(payload.totalMinor));
+  expect(payload.totalMinor).toBe(priceRefund(props.lines, props.refunds, payload.lines).priced.reduce((sum, line) => sum + line.totalMinor, 0) + payload.shippingMinor + payload.adjustmentMinor);
+  expect(refundPayloadErrors({
+    clientRefundId: 'refund-1', orderId: 'order-1', registerId: 'register-1', sessionId: 'session-1',
+    createdAt: '2026-11-10T10:00:00.000Z', ...payload,
+  })).toStrictEqual([]);
+});
+
+it('a final partial refund that completes the order also carries the rounding', async () => {
+  const { rerender, props, onConfirm } = renderForm({
+    lines: ['a', 'b'].map((id) => ({ id, name: id, quantity: 1, totalMinor: 51, taxMinor: 0 })),
+    refunds: [], refundedMinor: 0, orderTotalMinor: 100, cashRoundingMinor: -2,
+  });
+  plus('a');
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(51));
+  expect(screen.queryByTestId('refund-rounding')).toBeNull();
+  const refunds = [{ lines: [{ orderLineId: 'a', quantity: 1 }] }];
+  rerender(<RefundForm {...props} refunds={refunds} refundedMinor={51} />);
+  plus('b');
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+  expect.soft(screen.queryByTestId('refund-invalid')?.textContent ?? null).toBeNull();
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(49));
+  expect(screen.getByTestId('refund-rounding').textContent).toBe(eur(-2));
+  fireEvent.click(screen.getByTestId('refund-submit'));
+  fireEvent.click(screen.getByTestId('refund-confirm'));
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+  const payload: RefundFormValue = onConfirm.mock.calls[0][0];
+  expect(payload).toMatchObject({ adjustmentMinor: -2, totalMinor: 49 });
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(payload.totalMinor));
+  expect(payload.totalMinor).toBe(priceRefund(props.lines, refunds, payload.lines).priced.reduce((sum, line) => sum + line.totalMinor, 0) + payload.shippingMinor + payload.adjustmentMinor);
+  expect(refundPayloadErrors({
+    clientRefundId: 'refund-1', orderId: 'order-1', registerId: 'register-1', sessionId: 'session-1',
+    createdAt: '2026-11-10T10:00:00.000Z', ...payload,
+  })).toStrictEqual([]);
+});
+
+it('a form whose lines are all refunded already shows no rounding', () => {
+  renderForm({
+    lines: ['a', 'b'].map((id) => ({ id, name: id, quantity: 1, totalMinor: 51, taxMinor: 0 })),
+    refunds: [{ lines: [{ orderLineId: 'a', quantity: 1 }, { orderLineId: 'b', quantity: 1 }] }],
+    refundedMinor: 0, orderTotalMinor: 100, cashRoundingMinor: -2,
+  });
+  fireEvent.change(screen.getByTestId('refund-adjustment'), { target: { value: '0.10' } });
+  expect(screen.queryByTestId('refund-rounding')).toBeNull();
+  expect(screen.getByTestId('refund-total').textContent).toBe(eur(10));
+});
+
+it('a cash refund off the increment says so', () => {
+  const { rerender, props } = renderForm({
+    lines: [{ id: 'a', name: 'Mug', quantity: 1, totalMinor: 51, taxMinor: 0 }],
+    refunds: [], refundedMinor: 0, orderTotalMinor: 51, cashIncrementMinor: 5,
+  });
+  plus('a');
+  expect(screen.getByTestId('refund-cash-step').textContent).toBe(`Cash cannot pay ${eur(51)} exactly. The smallest cash step is ${eur(5)}.`);
+  fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+  expect((screen.getByTestId('refund-submit') as HTMLButtonElement).disabled).toBe(false);
+  rerender(<RefundForm {...props} cashIncrementMinor={undefined} />);
+  expect(screen.queryByTestId('refund-cash-step')).toBeNull();
+  rerender(<RefundForm {...props} lines={[{ ...props.lines[0], totalMinor: 50 }]} orderTotalMinor={50} />);
+  expect(screen.queryByTestId('refund-cash-step')).toBeNull();
+  rerender(<RefundForm {...props} originalMethod={{ title: 'Card', available: true }} />);
+  expect(screen.queryByTestId('refund-cash-step')).toBeNull();
 });
