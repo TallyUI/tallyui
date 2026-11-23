@@ -30,6 +30,12 @@ describe('roundToIncrement', () => {
 });
 
 describe('roundedDue', () => {
+  it('does not round a non-cash method (#1277)', () => {
+    const card = paymentMethodOf('external');
+    card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
+    expect(roundedDue(1002, card)).toEqual({ dueMinor: 1002, roundingMinor: 0 });
+  });
+
   it('is the identity without a method or rounding', () => {
     expect(roundedDue(1003, null)).toEqual({ dueMinor: 1003, roundingMinor: 0 });
     expect(roundedDue(1003, paymentMethodOf('cash'))).toEqual({ dueMinor: 1003, roundingMinor: 0 });
@@ -79,6 +85,17 @@ describe('settlesAtRoundedDue', () => {
 });
 
 describe('tenderRounding', () => {
+  it('keeps an untouched prefill at the exact due for a non-cash method (#1277)', () => {
+    const card = paymentMethodOf('external');
+    card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
+    expect(tenderRounding({ entryMinor: 1002, entryDirty: false }, 1002, card)).toEqual({
+      roundedDueMinor: 1002,
+      roundingMinor: 0,
+      entryMinor: 1002,
+      appliedMinor: 1002,
+    });
+  });
+
   it.each([
     ['untouched prefill rounds up', 1003, false, 1003, 1005, 2, 1005, 1005],
     ['untouched prefill rounds down', 1002, false, 1002, 1000, -2, 1000, 1000],
