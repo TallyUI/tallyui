@@ -314,3 +314,9 @@ describe('vendurepos gap 2.10: a charge entered in the other tax mode, through t
     expect(sent.fees![0]).not.toHaveProperty('amountIncludesTax');
   });
 });
+
+describe('cash rounding on a WCPOS reprint (ADR-094)', () => {
+  // Needs #1258's Rounding fee row from receipt.rounding. Then: R1's PosOrder (1.02 settled in cash at 1.00, minor -2) through
+  // wcpos(wcposSourceFromPosOrder(...)) has a fee 'Rounding' with total -0.02, and lines plus fees add up to totals.total_incl.
+  it.todo('a reprinted cash-rounded sale has a Rounding fee row');
+});
