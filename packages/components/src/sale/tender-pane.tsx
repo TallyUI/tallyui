@@ -15,6 +15,7 @@ import {
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
+import { saleErrorText } from './sale-error-text';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 import { offeredMethods, tenderOf } from './offered-methods';
 import { heldTillLeg } from './held-leg';
@@ -92,7 +93,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const entry = state.entryDirty ? state.entryMinor : target;
   // ADR-094: the pane rounds exactly when addTender does: only on a store whose connector declares cashRounding, and only while no leg is in motion.
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
-  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null);
+  const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
@@ -278,7 +280,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       className={cn('rounded-md bg-primary px-4 py-3', !canComplete && 'opacity-50')}>
       <Text className="text-center font-semibold text-primary-foreground">{t('tender.complete_sale')}</Text>
     </Pressable>
-    {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+    {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
     {sale.canContinue ? <>
       <Text className="text-foreground">{t('tender.stored_will_send')}</Text>
       <Pressable accessibilityRole="button" onPress={() => sale.continueSale()} className="rounded-md bg-primary px-4 py-3">

@@ -17,6 +17,7 @@ import { OrderNoteSheet } from './order-note-sheet';
 import { TenderLedger } from './tender-ledger';
 import { ShoppingCartIcon } from '../ui';
 import { useT } from '../i18n';
+import { saleErrorText } from './sale-error-text';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
 export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, orderDiscountChips = true, checkout, noteSheet, tenderLedger, picker, lineEditor = 'inline',
@@ -85,6 +86,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     /** The empty cart's line. Default: v2's "Tap a product to start a sale". */
     emptyText?: string;
   }) {
+  const t = useT();
   const { order } = sale;
   const [noteOpen, setNoteOpen] = useState(false);
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
@@ -187,7 +189,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         className="text-muted-foreground">{emptyIcon}</View>}
       <Text testID="cart-empty-text" className="text-center text-muted-foreground">{emptyText}</Text>
       {/* The footer is gone, so a resume or coupon message on an empty cart shows here. */}
-      {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+      {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
     </View> : undefined}
     afterItems={<>
       {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
@@ -235,7 +237,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         fees={money(fees.reduce((sum, row) => sum + row.amountMinor, 0))}
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
-      {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+      {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
       {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
         note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />

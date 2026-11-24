@@ -1,6 +1,39 @@
 import { describe, it, expect } from 'vitest';
 import { paymentMethodOf, type PaymentRounding } from '@tallyui/core';
-import { roundToIncrement, roundedDue, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+import { cashVoidRefusal, roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+
+describe('cashVoidRefusal', () => {
+  it('a leg with no entry is not refused', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash', status: 'captured' }] }, 'a')).toBeUndefined();
+  });
+  it('a later captured leg with an entry refuses the void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBe('later_cash_rounding');
+  });
+  it('a later voided leg with an entry does not refuse the void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'voided' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBeUndefined();
+  });
+  it('a later leg with a zero entry does not refuse the void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 0 }] }, 'a')).toBeUndefined();
+  });
+  it('an entry only on an earlier leg does not refuse the later void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'b')).toBeUndefined();
+  });
+  it('an unknown payment id is not refused', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'unknown')).toBeUndefined();
+  });
+  it('the last of one to four captured entry-carrying legs is never refused', () => {
+    for (let count = 1; count <= 4; count++) {
+      const payments = Array.from({ length: count }, (_, i) => ({ id: String(i), method: 'cash', status: 'captured' as const }));
+      expect(cashVoidRefusal({ payments, cashRoundings: payments.map((leg) => ({ paymentId: leg.id, minor: 1 })) }, String(count - 1))).toBeUndefined();
+    }
+  });
+  it('a later card leg with an entry does not refuse the void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'external', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: -3 }] }, 'a')).toBeUndefined();
+  });
+  it('a later cash leg refuses even when a card leg sits between', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash', status: 'captured' }, { id: 'c', method: 'external', status: 'captured' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'c', minor: -1 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBe('later_cash_rounding');
+  });
+});
 
 const cash = (rounding: PaymentRounding) => ({
   ...paymentMethodOf('cash'),
@@ -30,6 +63,15 @@ describe('roundToIncrement', () => {
 });
 
 describe('roundedDue', () => {
+  it('rounds the unrounded remainder after a void, accounting for live entries', () => {
+    expect(roundedDue(501, cash({ incrementMinor: 5, mode: 'nearest' }), -2)).toStrictEqual({ dueMinor: 505, roundingMinor: 4 });
+  });
+
+  it('clamps a nonpositive unrounded remainder and leaves a zero balance unchanged', () => {
+    expect(roundedDue(1, cash({ incrementMinor: 5, mode: 'up' }), 3)).toStrictEqual({ dueMinor: 0, roundingMinor: -1 });
+    expect(roundedDue(0, cash({ incrementMinor: 5, mode: 'up' }), -2)).toStrictEqual({ dueMinor: 0, roundingMinor: 0 });
+  });
+
   it('does not round a non-cash method (#1277)', () => {
     const card = paymentMethodOf('external');
     card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
@@ -85,6 +127,12 @@ describe('settlesAtRoundedDue', () => {
 });
 
 describe('tenderRounding', () => {
+  it('prefills and applies the sale\'s single rounding after a void', () => {
+    expect(tenderRounding({ entryMinor: 501, entryDirty: false }, 501, cash({ incrementMinor: 5, mode: 'nearest' }), -2)).toStrictEqual({
+      roundedDueMinor: 505, roundingMinor: 4, entryMinor: 505, appliedMinor: 505,
+    });
+  });
+
   it('keeps an untouched prefill at the exact due for a non-cash method (#1277)', () => {
     const card = paymentMethodOf('external');
     card.defaults.rounding = { incrementMinor: 5, mode: 'nearest' };
@@ -119,5 +167,34 @@ describe('tenderRounding', () => {
       entryMinor: 1003,
       appliedMinor: 1003,
     });
+  });
+});
+
+describe('roundedRemainder', () => {
+  it('keeps cash payable and the sale rounding bounded across live entries', () => {
+    for (const mode of ['nearest', 'up', 'down'] as const) {
+      for (let unrounded = -6; unrounded <= 30; unrounded++) {
+        for (let entries = -4; entries <= 4; entries++) {
+          const balance = unrounded + entries;
+          if (balance <= 0) continue;
+          const due = roundedRemainder(balance, entries, { incrementMinor: 5, mode });
+          expect(due % 5).toBe(0);
+          if (unrounded <= 0) {
+            expect(due).toBe(0);
+          } else {
+            expect(due).toBe(roundToIncrement(unrounded, 5, mode));
+            if (mode === 'nearest') {
+              expect(Math.abs(due - unrounded)).toBeLessThanOrEqual(2);
+            } else if (mode === 'up') {
+              expect(due - unrounded).toBeGreaterThanOrEqual(0);
+              expect(due - unrounded).toBeLessThan(5);
+            } else {
+              expect(due - unrounded).toBeGreaterThan(-5);
+              expect(due - unrounded).toBeLessThanOrEqual(0);
+            }
+          }
+        }
+      }
+    }
   });
 });

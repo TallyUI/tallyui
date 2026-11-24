@@ -57,6 +57,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'noteDelivery',
   // the sale's extras (ADR-092 condition 1): the one pure test of which tax ids, meta and edited SKUs a downgrade did not send, never a hook or the store.
   'extrasNotSent',
+  // ADR-094 item 6 (desk ruling (i), #1292): the one pure refusal string the sale's error is translated from, never a hook or the store.
+  'VOID_LATER_CASH_FIRST',
   // ADR-090 W4e and gates 36/36c: the pure refund-due figures and refused till legs the orders list and the tender pane show.
   'refundDueOf', 'lockedRefundDueMinor', 'tillLegsTheStoreRefuses',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.
@@ -65,7 +67,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // initialTenderState is a pure constant that useTender resets to.
   'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   // inMotionMinor is pure, and the tender pane's pick target needs it.
-  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg',
+  // cashVoidRefusal (ADR-094 item 6, #1292): pure; the ledger and the cancel view check it before beforeVoid.
+  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg', 'cashVoidRefusal',
   // the tender picker (#1133 11c): the pure charged line figures used to price a unit pick.
   'splitUnitLines',
   // the tender picker (#1133 11c): the pure count of units captured or held by an in-motion leg.

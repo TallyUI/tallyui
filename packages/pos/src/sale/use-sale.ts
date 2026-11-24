@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { roundToIncrement, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { cashVoidRefusal, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -53,6 +53,8 @@ export const PAYMENT_TAKEN = 'This payment was taken. Void it instead of removin
 export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale already cover the total.';
 /** ADR-094: a cash due that rounds to nothing is entered against the last leg counting toward paid; with none, there is nothing to round against. */
 export const NOTHING_TO_ROUND_AGAINST = 'This sale rounds to nothing in cash: take it by another method.';
+/** voidTender's refusal for cashVoidRefusal's 'later_cash_rounding' (ADR-094 item 6); the components translate it as pos_checkout.void_later_cash_first. */
+export const VOID_LATER_CASH_FIRST = 'Void the later cash payment first.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
 export const SALE_FINISHED = 'This sale is finished. Start a new sale to change it.';
 /** startTender and complete() refuse with this while the order's store-priced coupons are stale or being priced again (TallyUI#710). */
@@ -940,7 +942,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) { setError(NOTHING_DUE); return null; }
-        const dueMinor = rule ? roundToIncrement(due, rule.incrementMinor, rule.mode) : due;
+        const entries = (snapshot.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+        const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
           clearStaleError();
           if (dueMinor > 0) {
@@ -983,6 +986,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (payment?.locked) return false;
       if (locked()) return false;
       if (!payment || (payment.method !== 'cash' && payment.method !== 'external') || !canVoidLeg(payment, paymentMethodOf(payment.method))) return false;
+      if (cashVoidRefusal(builderNow.current.getSnapshot(), paymentId)) { setError(VOID_LATER_CASH_FIRST); return false; }
       builderNow.current.setPaymentStatus(paymentId, 'voided');
       droppedReferences.current.delete(paymentId);
       clearStaleError();

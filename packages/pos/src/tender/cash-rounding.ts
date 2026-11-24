@@ -6,6 +6,7 @@
  */
 import { wireMethodOf, type PaymentMethodDescriptor, type PaymentRounding } from '@tallyui/core';
 import { appliedMinor, type TenderState } from './tender-state';
+import { countsTowardPaid, type PaymentLegStatus } from './payment-legs';
 
 /** How the method rounds to its increment. */
 export type RoundingMode = NonNullable<PaymentRounding>['mode'];
@@ -21,14 +22,34 @@ export function roundToIncrement(minor: number, incrementMinor: number, mode: Ro
   return remainder * 2 >= incrementMinor ? down + incrementMinor : down;
 }
 
+/** ADR-094: the sale rounds once, against its unrounded remainder. */
+export function roundedRemainder(balanceMinor: number, entriesMinor: number, rounding: NonNullable<PaymentRounding>): number {
+  if (balanceMinor <= 0) return balanceMinor;
+  const unrounded = balanceMinor - entriesMinor;
+  return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
+}
+
+/** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live cash leg's entry was computed against this leg's. */
+export type CashVoidRefusal = 'later_cash_rounding';
+/**
+ * ADR-094 item 6: a leg carrying a live rounding entry cannot be voided while a later live cash leg (wire method 'cash') carries one; the later cash is voided first. A non-cash leg's entry (the zero-remainder write-off) never blocks, so a leg the till cannot void never strands one it can.
+ */
+export function cashVoidRefusal(order: { payments: readonly { id: string; method?: string; status?: PaymentLegStatus }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }, paymentId: string): CashVoidRefusal | undefined {
+  const carries = (id: string) => (order.cashRoundings ?? []).some((entry) => entry.paymentId === id && entry.minor !== 0);
+  const at = order.payments.findIndex((leg) => leg.id === paymentId);
+  if (at < 0 || !carries(paymentId)) return undefined;
+  return order.payments.slice(at + 1).some((leg) => leg.method === 'cash' && countsTowardPaid(leg) && carries(leg.id)) ? 'later_cash_rounding' : undefined;
+}
 /** The balance under a cash method's rounding, with its signed difference. */
 export function roundedDue(
   balanceMinor: number,
   method: PaymentMethodDescriptor | null,
+  /** The sum of the order's live cashRoundings, already counted in the balance. */
+  entriesMinor = 0,
 ): { dueMinor: number; roundingMinor: number } {
   const rounding = method?.capture.mode === 'manual' && wireMethodOf(method) === 'cash' ? method.defaults.rounding : null;
   if (!rounding) return { dueMinor: balanceMinor, roundingMinor: 0 };
-  const dueMinor = roundToIncrement(balanceMinor, rounding.incrementMinor, rounding.mode);
+  const dueMinor = roundedRemainder(balanceMinor, entriesMinor, rounding);
   return { dueMinor, roundingMinor: dueMinor - balanceMinor };
 }
 
@@ -60,8 +81,10 @@ export function tenderRounding(
   state: Pick<TenderState, 'entryMinor' | 'entryDirty'>,
   balanceMinor: number,
   method: PaymentMethodDescriptor | null,
+  /** The sum of the order's live cashRoundings, already counted in the balance. */
+  entriesMinor = 0,
 ): TenderRounding {
-  const roundedDueMinor = roundedDue(balanceMinor, method).dueMinor;
+  const roundedDueMinor = roundedDue(balanceMinor, method, entriesMinor).dueMinor;
   const entryMinor = !state.entryDirty && state.entryMinor === balanceMinor ? roundedDueMinor : state.entryMinor;
   const legMinor = appliedMinor(entryMinor, balanceMinor);
   const roundingMinor = settlesAtRoundedDue({
