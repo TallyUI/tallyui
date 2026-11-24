@@ -73,15 +73,15 @@ describe('a WooCommerce sale with a converted line: receipt, recorded taxByRate,
       closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed,
       counted: order.totalMinor, otherTenders: {}, movements: [], orders: [stampedOrder], softwareVersion: '1.0.0',
     });
-    const zRates = closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number }>;
+    const zRates = closure.breakdowns.tax_rates as Record<string, { rate_ppm: number; net_minor: number; tax_minor: number }>;
     splits = {
       receipt: receipt.totals.taxLines.map(({ ratePpm, amountMinor }) => ({ ratePpm, amountMinor })),
       recorded: posOrder.taxByRate!.map(({ ratePpm, netMinor, amountMinor }) => ({ ratePpm, netMinor, amountMinor })),
       reportsFallback: reportOrderFromPosOrder(legacyOrder).taxes.map(({ ratePpm, netMinor, taxMinor }) => ({
         ratePpm, netMinor, amountMinor: taxMinor,
       })),
-      zReport: Object.entries(zRates).map(([rate, row]) => ({
-        ratePpm: Number(rate), netMinor: row.net_minor, amountMinor: row.tax_minor,
+      zReport: Object.values(zRates).map((row) => ({
+        ratePpm: row.rate_ppm, netMinor: row.net_minor, amountMinor: row.tax_minor,
       })),
     };
     for (const split of Object.values(splits)) split.sort((a, b) => a.ratePpm - b.ratePpm);

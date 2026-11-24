@@ -301,6 +301,80 @@ it('freezes a per-rate tax breakdown, summed across orders, that matches each or
   expect(closure.breakdowns).not.toHaveProperty('tax_rounding_mixed');
 });
 
+it('T1: keeps distinct tax identities at the same rate on the Z', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  // 'B.[1]' carries the characters a stored object key must not (RxDB reads nested fields by dot path).
+  for (const code of ['B.[1]', 'A']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
+  expect(rows).toEqual({
+    '50000:A': { name: 'Tax 5% (A)', rate_ppm: 50000, code: 'A', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+    '50000:B%2E%5B1%5D': { name: 'Tax 5% (B.[1])', rate_ppm: 50000, code: 'B.[1]', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+  });
+  expect(Object.keys(rows)).toEqual(['50000:A', '50000:B%2E%5B1%5D']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
+it('T2: orders Z tax rows by ascending rate without adding codes to unique-rate names', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: (taxClass) => taxClass === 'standard' ? 200000 : 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'standard' ? 1 : 2, code: taxClass ?? '', label: 'Tax',
+      rate: taxClass === 'standard' ? '20.0000' : '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const taxClass of ['standard', 'reduced']) {
+    builder.addLine({ productId: taxClass, name: taxClass, taxClass, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = Object.values(closure.breakdowns.tax_rates as Record<string, { name: string }>);
+  expect(rows.map((row) => row.name)).toEqual(['Tax 5%', 'Tax 20%']);
+});
+
+it('T3: names a code-less row beside a coded row at the same rate without an empty suffix', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass === 'A' ? '' : taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['A', 'B']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { name: string; tax_minor: number }>;
+  expect(Object.keys(rows)).toEqual(['50000:', '50000:B']);
+  expect(Object.values(rows).map((row) => row.name)).toEqual(['Tax 5%', 'Tax 5% (B)']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
+it('T4: a tax code holding a lone surrogate does not block the close', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['\uD800x', 'A']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
+  // 'A' (0x41) sorts before 0xD800 by code unit, whatever the device locale.
+  expect(Object.keys(rows)).toEqual(['50000:A', '50000:\uD800x']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
 it.each(([
   { granularity: 'per_order', mode: 'half_away_from_zero' },
   { granularity: 'woocommerce', roundAtSubtotal: false },
@@ -330,9 +404,11 @@ it.each(([
     otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0', timezone: 'UTC',
   });
   const rows = closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>;
+  const standardCode = rounding.granularity === 'woocommerce' ? 'standard' : '';
+  const reducedCode = rounding.granularity === 'woocommerce' ? 'reduced' : '';
   expect(rows).toEqual({
-    '200000': { name: 'Tax 20%', net_minor: 1200, tax_minor: 240, gross_minor: 1440 },
-    '100000': { name: 'Tax 10%', net_minor: 500, tax_minor: 50, gross_minor: 550 },
+    [`200000:${standardCode}`]: { name: 'Tax 20%', rate_ppm: 200000, ...(standardCode ? { code: standardCode } : {}), net_minor: 1200, tax_minor: 240, gross_minor: 1440 },
+    [`100000:${reducedCode}`]: { name: 'Tax 10%', rate_ppm: 100000, ...(reducedCode ? { code: reducedCode } : {}), net_minor: 500, tax_minor: 50, gross_minor: 550 },
   });
   expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(orders.reduce((sum, order) => sum + order.taxMinor, 0));
 });
@@ -420,12 +496,12 @@ it("splits each sale by its recorded tax rounding, sums its receipts' rows, and 
     closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: totalMinor,
     otherTenders: {}, movements: [], orders: [perLine.order, plain.order], softwareVersion: '1.0.0', timezone: 'UTC',
   });
-  const rows = closure.breakdowns.tax_rates as Record<string, { net_minor: number; tax_minor: number; gross_minor: number }>;
+  const rows = closure.breakdowns.tax_rates as Record<string, { rate_ppm: number; net_minor: number; tax_minor: number; gross_minor: number }>;
   for (const ratePpm of [190000, 70000]) {
     const receipts = [perLine, plain].map(({ receipt }) => receipt.find((row) => row.ratePpm === ratePpm)!);
     const net = receipts.reduce((sum, row) => sum + row.netMinor, 0);
     const tax = receipts.reduce((sum, row) => sum + row.amountMinor, 0);
-    expect(rows[ratePpm]).toMatchObject({ net_minor: net, tax_minor: tax, gross_minor: net + tax });
+    expect(Object.values(rows).find((row) => row.rate_ppm === ratePpm)).toMatchObject({ net_minor: net, tax_minor: tax, gross_minor: net + tax });
   }
   expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(perLine.order.taxMinor + plain.order.taxMinor);
   expect(closure.breakdowns.tax_rounding_mixed).toBe(true);
@@ -677,7 +753,7 @@ it('labels tax rates when the session holds a reopened order', async () => {
   const reopened = (await closeWith((id) => [tillRow(id), reopenedRow(id)])).breakdowns;
   expect(reopened.tax_includes_store_paid).toBe(true);
   // Whole-order figures, the store-paid 500 included: unchanged by the label.
-  expect(reopened.tax_rates).toEqual({ 100000: { name: 'Tax 10%', net_minor: 1000, tax_minor: 100, gross_minor: 1100 } });
+  expect(reopened.tax_rates).toEqual({ '100000:': { name: 'Tax 10%', rate_ppm: 100000, net_minor: 1000, tax_minor: 100, gross_minor: 1100 } });
   expect((await closeWith((id) => [tillRow(id)])).breakdowns).not.toHaveProperty('tax_includes_store_paid');
 });
 it('does not label tax rates for a reopened order the store held no money for', async () => {

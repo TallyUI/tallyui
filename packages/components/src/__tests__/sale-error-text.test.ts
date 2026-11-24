@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { CASH_NOT_PAYABLE, VOID_LATER_CASH_FIRST } from '@tallyui/pos';
+import { CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, VOID_LATER_CASH_FIRST } from '@tallyui/pos';
 import { saleErrorText } from '../sale/sale-error-text';
 import en from '../i18n/locales/en/components.json';
 
 const t = ((key: string) => `T:${key}`) as never;
 
 describe('saleErrorText', () => {
+  it('translates the cash waiting refusal through its matching English catalogue key', () => {
+    expect(saleErrorText(t, CASH_WAITS_FOR_PAYMENT)).toBe('T:pos_checkout.cash_waits_for_payment');
+    expect((en as Record<string, string>)['pos_checkout.cash_waits_for_payment']).toBe(CASH_WAITS_FOR_PAYMENT);
+  });
   it('translates the cash payable refusal through its matching English catalogue key', () => {
     const english = (en as Record<string, string>)['pos_checkout.cash_not_payable_typed'];
     expect(english).toBeTypeOf('string');
