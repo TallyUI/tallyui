@@ -9,7 +9,7 @@ import { useEffect, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
+  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
   type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -95,6 +95,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
   const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
+  const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
+    && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
+    ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
@@ -125,7 +128,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const [prefill] = unstamped;
   // startTender('external')'s one unstamped card leg for the rest, beside any kept taken or voided legs: its reference is edited in place.
   const cardReference = unstamped.length === 1 && prefill.method === 'external' && legStatus(prefill) === 'captured' && balance === 0;
-  const hint = partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
+  const hint = cashNotPayable ? (cashNotPayable.belowMinor === 0 ? t('pos_checkout.cash_not_payable_above', { above: money(cashNotPayable.aboveMinor) })
+    : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
+    : partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
@@ -142,7 +147,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || cashNotPayable !== null || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
@@ -248,7 +253,11 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           </View>)}
         </ScrollView>
       </> : null}
-      {chips.length || balanceChip !== null ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
+      {chips.length || balanceChip !== null || cashNotPayable ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
+        {cashNotPayable ? [cashNotPayable.belowMinor, cashNotPayable.aboveMinor].filter((minor) => minor !== 0).map((minor) => <Pressable key={minor}
+          testID={minor === cashNotPayable.belowMinor ? 'tender-payable-below' : 'tender-payable-above'} accessibilityRole="button" onPress={() => dispatch({ type: 'set-entry', minor })} className={button}>
+          <Text className="font-semibold text-foreground">{money(minor)}</Text>
+        </Pressable>) : null}
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
           onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
           <Text className="font-semibold text-foreground">{index === 0 ? t('pos_checkout.exact_amount', { amount: money(minor) }) : money(minor)}</Text>

@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { paymentMethodOf, type PaymentRounding } from '@tallyui/core';
-import { cashVoidRefusal, roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+
+describe('nearestPayableCash', () => {
+  it.each([
+    [501, 5, { belowMinor: 500, aboveMinor: 505 }],
+    [500, 5, null],
+    [3, 5, { belowMinor: 0, aboveMinor: 5 }],
+    [501, 1, null],
+    [501, 2.5, null],
+  ] as const)('%s at increment %s', (amountMinor, incrementMinor, expected) => {
+    expect(nearestPayableCash(amountMinor, incrementMinor)).toEqual(expected);
+  });
+});
 
 describe('cashVoidRefusal', () => {
   it('a leg with no entry is not refused', () => {
