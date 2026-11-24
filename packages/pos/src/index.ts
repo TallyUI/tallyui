@@ -160,7 +160,7 @@ export { noteDelivery, type NoteDelivery } from './pos-order';
 export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
-export { ADDRESS_CHANGE_REFUSED, NOTHING_DUE, NOTHING_TO_ROUND_AGAINST, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, VOID_LATER_CASH_FIRST, PAYMENT_TAKEN, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, type SaleRemoval } from './sale/use-sale';
+export { ADDRESS_CHANGE_REFUSED, NOTHING_DUE, NOTHING_TO_ROUND_AGAINST, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, CASH_PICK_LIMIT, CASH_SETTLE_LIMIT, CASH_PICK_ENTRIES_MAX, VOID_LATER_CASH_FIRST, PAYMENT_TAKEN, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, type SaleRemoval } from './sale/use-sale';
 export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
@@ -199,7 +199,7 @@ import { minorToDecimal as registerMinorToDecimal } from './register';
 /** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
 export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
-export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedDue, tenderRounding } from './tender';
+export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedPickTarget, remainderEntriesMinor, roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
 export { switchWarnings, handoverSlip } from './register';

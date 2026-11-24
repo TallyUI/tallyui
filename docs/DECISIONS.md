@@ -6962,5 +6962,44 @@ interface OrderCreatePayload {
      entries (the sale's unrounded remainder; 0 when that is not positive), so every such leg is a multiple of the
      increment, the live entries sum to one rounding of the sale, and earlier entries are never rewritten.
      A leg carrying an entry cannot be voided while a later live cash leg carries one: `voidTender` refuses with `VOID_LATER_CASH_FIRST` (the pure rule is `cashVoidRefusal`, reason `later_cash_rounding`), so cash entries unwind latest first. A non-cash leg's entry (the zero-remainder write-off) never blocks, so a leg the till cannot void never strands one it can; the cancel view voids latest first and checks the refusal before `beforeVoid`. Amended 2026-11-24 (Front desk, S8 (i)), verbatim: "Refuse the void of a cash leg carrying a rounding entry while a later live cash leg carries one; the cashier voids the later cash first." Amended again 2026-11-24 (Front desk), verbatim: "Refuse the void only when a later live CASH leg carries a rounding entry. A card leg's entry never blocks: it is a book write-off of a remainder, no cash moved on it, and a refusal that can strand a sale breaks the condition I set ("must never strand a sale"), which outranks the half-increment invariant." So the bound is stated for closed sales only (Front desk, 2026-11-24: entries on an open sale are history, not a debt; what a merchant's books see is the closed sale). For a CLOSED sale, paid minus the goods total equals the sum of the live entries, and that sum is under one increment in absolute value. An open or reopened sale may carry more, and must always be completable or cancellable. A property test pins both.
+  7. **A cash part pick rounds its own target.** Amended 2026-11-24 (Front desk, picks/legs ruling (b), option 1),
+     verbatim: "Cash rounding belongs to the cash actually handed over, so a cash part-pick leg rounds its own target
+     and carries its own rounding entry; per-payer sums differing from whole-sale rounding is how rounding stores work
+     in practice and is accepted." This narrows the Decision's "Part payments ... are never rounded" for cash picks
+     only:
+     - On a `cashRounding` store with no leg in motion, `addTender` rounds a cash part pick (a leg carrying `units`
+       and `tenderedMinor`) to the increment. The leg records the rounded amount and its own entry. A pick that
+       rounds to 0 is refused, and the pane says cash cannot pay it.
+     - A card or other non-cash pick is never rounded.
+     - A cash remainder rounds the remainder only. `remainderEntriesMinor` leaves out the entries of legs that carry
+       units, so an already rounded pick is never rounded again.
+     - The sale's `cashRoundings` is the sum of the leg entries, and the sale's total paid is the items total plus
+       that sum.
+     - Example (increment 0.05, nearest): two items of 3.33. Pick one and hand over 5.00: the leg is 3.35, with
+       change 1.65 and an entry of +0.02. The other 3.33 is then paid in cash: that leg is also 3.35, with an entry
+       of +0.02. The sale closes at 6.70, where one cash payment of the whole 6.66 would be 6.65. The ruling accepts
+       that difference.
+     - Item 6's closed-sale bound (entries under one increment) holds for a sale with no cash pick. With cash picks,
+       each entry is a single rounding, so the sum stays under one increment per rounded leg.
+     - A void of a rounded pick leg clears its entry, as for any leg (item 6's latest-first rule applies). Refunds do
+       not read leg entries. A refund of every line returns the order's whole rounding (the sum of all entries)
+       through item 4's `adjustmentMinor`. A partial refund returns none of a pick's entry, as for any other entry.
+     - **While a leg is in motion** nothing rounds (item 1). A cash pick whose target is not a whole number of cash
+       steps is refused with `CASH_WAITS_FOR_PAYMENT`, as any cash leg is then (front desk, 2026-11-24: "a cash pick
+       is refused or rounded in that state"). A pick already payable in steps is taken, unrounded, with no entry.
+     - **Entry cap.** The order.create shape accepts at most 16 entries. A cash pick that would add an entry is
+       refused with `CASH_PICK_LIMIT` once the sale has 15, so one slot stays free for the leg that settles the sale.
+       A pick that rounds exactly adds no entry and is still taken.
+       At 16 live entries, a cash leg that would add a 17th entry is refused with `CASH_SETTLE_LIMIT`. That covers a
+       settle that rounds, and a zero-remainder write-off onto a leg with no entry yet. It can happen after a void
+       frees the balance, or on a reopened order. Card, or a cash leg that needs no entry, still finishes the sale.
+     - Known gaps (accepted with the ruling):
+       - A pick that covers the whole balance is not a part pick. It settles through the ordinary rounded path, but
+         its leg carries units, so `remainderEntriesMinor` leaves its entry out of any later remainder (reached only
+         after a void).
+       - A zero-remainder write-off that lands on a pick leg is left out of later remainders in the same way. In
+         `down` mode, a write-off plus a later remainder can sum to more than one increment (−8 at increment 5); item 6's latest-first void
+         rule still unwinds it.
+       - Reopen drops the legs' units, so a reopened order's pick entries are counted with its remainder.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.

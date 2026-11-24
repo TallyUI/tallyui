@@ -58,7 +58,7 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // the sale's extras (ADR-092 condition 1): the one pure test of which tax ids, meta and edited SKUs a downgrade did not send, never a hook or the store.
   'extrasNotSent',
   // ADR-094 item 6 (desk ruling (i), #1292): the one pure refusal string the sale's error is translated from, never a hook or the store.
-  'VOID_LATER_CASH_FIRST', 'CASH_NOT_PAYABLE', 'CASH_WAITS_FOR_PAYMENT', 'nearestPayableCash',
+  'VOID_LATER_CASH_FIRST', 'CASH_NOT_PAYABLE', 'CASH_WAITS_FOR_PAYMENT', 'CASH_PICK_LIMIT', 'CASH_SETTLE_LIMIT', 'CASH_PICK_ENTRIES_MAX', 'nearestPayableCash', 'roundedPickTarget', 'remainderEntriesMinor',
   // ADR-090 W4e and gates 36/36c: the pure refund-due figures and refused till legs the orders list and the tender pane show.
   'refundDueOf', 'lockedRefundDueMinor', 'tillLegsTheStoreRefuses',
   // Settings › Display (plan unit 22): the two pure lists of choices the app settings parse against, never a hook or the store.

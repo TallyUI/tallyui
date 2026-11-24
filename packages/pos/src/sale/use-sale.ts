@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { cashVoidRefusal, nearestPayableCash, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -55,6 +55,11 @@ export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale al
 export const NOTHING_TO_ROUND_AGAINST = 'This sale rounds to nothing in cash: take it by another method.';
 export const CASH_NOT_PAYABLE = 'Cash cannot pay that amount: take a whole number of the smallest cash step.';
 export const CASH_WAITS_FOR_PAYMENT = 'Cash cannot pay that amount while another payment is in progress: finish that payment first.';
+// order-payload-shape.ts accepts at most 16 cashRoundings entries; one stays free for the leg that settles the sale.
+export const CASH_PICK_ENTRIES_MAX = 15;
+export const CASH_PICK_LIMIT = 'Too many rounded cash payments on this sale: take the rest as one payment.';
+// order-payload-shape.ts accepts at most 16 entries, so a non-pick cash leg may not add a 17th.
+export const CASH_SETTLE_LIMIT = 'Too many rounded cash payments on this sale: take the rest by another method.';
 /** voidTender's refusal for cashVoidRefusal's 'later_cash_rounding' (ADR-094 item 6); the components translate it as pos_checkout.void_later_cash_first. */
 export const VOID_LATER_CASH_FIRST = 'Void the later cash payment first.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
@@ -907,7 +912,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). A cash part pick rounds its own target on a cashRounding store (ADR-094). */
     addTender(input: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured'; rounding?: PaymentRounding }): string | null {
       const { rounding, ...tender } = input;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
@@ -915,6 +920,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // ADR-094: a cash leg is rounded only against a store whose connector declares cashRounding; otherwise, BASE's leg.
       // A leg in motion means this cash leg does not settle the sale, so nothing rounds: BASE's row 500 leg, but the leg it records must still be a whole number of cash steps (refused with CASH_WAITS_FOR_PAYMENT otherwise).
       const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true
+        && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
+      // ADR-094 (cash picks): a cash part pick rounds its own target and carries its own entry.
+      const pickRule = rounding && tender.method === 'cash' && opts.capabilities?.cashRounding === true
         && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor < 0 || (tender.amountMinor === 0 && !rule)) return null;
       if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
@@ -927,11 +935,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
         if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
       }
+      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, pickRule) : tender.amountMinor;
+      if (tender.tenderedMinor !== undefined && pickMinor === 0) return null;
       if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
-        || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < tender.amountMinor)) return null;
+        || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < pickMinor)) return null;
       if (tender.tenderedMinor !== undefined) {
         const snapshot = builderNow.current.getSnapshot();
         if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
+        if (pickMinor !== tender.amountMinor && (snapshot.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX) { setError(CASH_PICK_LIMIT); return null; }
+        if (rounding && opts.capabilities?.cashRounding === true && tender.method === 'cash' && inMotionMinor(snapshot.payments) > 0
+          && nearestPayableCash(tender.amountMinor, rounding.incrementMinor) !== null) { setError(CASH_WAITS_FOR_PAYMENT); return null; }
       }
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();
@@ -944,15 +957,19 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) { setError(NOTHING_DUE); return null; }
-        const entries = (snapshot.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+        const entries = remainderEntriesMinor(snapshot);
         const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
+          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
+          const roundings = snapshot.cashRoundings ?? [];
+          // The 16-entry cap: a settle that adds an entry (a rounded leg, or a write-off onto a leg with none) is refused at 16.
+          if (roundings.length >= CASH_PICK_ENTRIES_MAX + 1 && (dueMinor > 0 ? dueMinor !== due
+            : against !== undefined && !roundings.some((entry) => entry.paymentId === against.id))) { setError(CASH_SETTLE_LIMIT); return null; }
           clearStaleError();
           if (dueMinor > 0) {
             return addOne({ ...tender, amountMinor: dueMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - dueMinor }, true, { minor: dueMinor - due });
           }
           // A remainder that rounds to zero closes the sale: no leg, its entry goes on the last leg counting toward paid.
-          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
           if (!against) { setError(NOTHING_TO_ROUND_AGAINST); return null; }
           builderNow.current.addCashRounding({ paymentId: against.id, minor: -due });
           return against.id;
@@ -968,7 +985,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return addOne({ ...tender, amountMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - amountMinor }, true);
       }
       clearStaleError();
-      return addOne({ ...tender, changeMinor: tender.tenderedMinor - tender.amountMinor }, true);
+      return addOne({ ...tender, amountMinor: pickMinor, changeMinor: tender.tenderedMinor - pickMinor }, true,
+        pickMinor !== tender.amountMinor ? { minor: pickMinor - tender.amountMinor } : undefined);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
