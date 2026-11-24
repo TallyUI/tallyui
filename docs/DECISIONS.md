@@ -5758,6 +5758,10 @@ interface OrderCreatePayload {
        `modifiedAfter` reads by creation date, so an order created before the range and paid in it is missed there.
        Known gap: an order whose paid date is earlier than its created date (an import, or dates edited by hand) and
        which was created after the range is not read, so it is missed from the range it was paid in.
+       Only the WooCommerce connector sets `paidAt`, and it lists `modifiedAfter`. Medusa (`toMedusaStoreOrder`) and
+       Vendure (`toVendureStoreOrder`) set no `paidAt`, and Shopify has no order read, so their reports stay on the
+       placed day. A connector that starts setting `paidAt` lists `modifiedAfter` in the same change; otherwise its
+       created-day read drops orders paid on a later day and never fetches ones created earlier, an undercount.
 - **Open:**
   - **Live confirmation.** The WooCommerce mapping is tested against the order document recorded from WCPOS
     1.10.20's push response (order 136), plus one order derived from it by hand. That `wcpos/v2/orders` returns the
