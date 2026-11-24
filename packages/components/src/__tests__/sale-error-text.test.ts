@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CASH_NOT_PAYABLE, CASH_PICK_LIMIT, CASH_WAITS_FOR_PAYMENT, VOID_LATER_CASH_FIRST } from '@tallyui/pos';
+import { CASH_NOT_PAYABLE, CASH_PICK_LIMIT, CASH_SETTLE_LIMIT, CASH_WAITS_FOR_PAYMENT, VOID_LATER_CASH_FIRST } from '@tallyui/pos';
 import { saleErrorText } from '../sale/sale-error-text';
 import en from '../i18n/locales/en/components.json';
 
@@ -19,6 +19,10 @@ describe('saleErrorText', () => {
   it('translates the cash pick limit through its matching English catalogue key', () => {
     expect(saleErrorText(t, CASH_PICK_LIMIT)).toBe('T:pos_checkout.cash_pick_limit');
     expect((en as Record<string, string>)['pos_checkout.cash_pick_limit']).toBe(CASH_PICK_LIMIT);
+  });
+  it('translates the cash settle limit through its matching English catalogue key', () => {
+    expect(saleErrorText(t, CASH_SETTLE_LIMIT)).toBe('T:pos_checkout.cash_settle_limit');
+    expect((en as Record<string, string>)['pos_checkout.cash_settle_limit']).toBe(CASH_SETTLE_LIMIT);
   });
   it('translates the core void refusal through its catalogue key', () => {
     expect(saleErrorText(t, VOID_LATER_CASH_FIRST)).toBe('T:pos_checkout.void_later_cash_first');

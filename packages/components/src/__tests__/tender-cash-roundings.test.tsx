@@ -8,7 +8,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor, type PaymentRounding, type ServerCapabilities } from '@tallyui/core';
 import {
-  buildReceiptData, CASH_NOT_PAYABLE, CASH_PICK_LIMIT, CASH_WAITS_FOR_PAYMENT, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
+  buildReceiptData, CASH_NOT_PAYABLE, CASH_PICK_LIMIT, CASH_SETTLE_LIMIT, CASH_WAITS_FOR_PAYMENT, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
@@ -1084,4 +1084,61 @@ it('PK11: while a card leg is pending a cash pick not payable in steps is refuse
   expect(leg).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
   expect(sale.order.payments).toHaveLength(2);
   expect(sale.order.cashRoundings ?? []).toEqual([]);
+});
+
+// #1299 review (b3): order-payload-shape.ts accepts 16 cashRoundings entries; a cash leg that settles the sale may not add a 17th.
+const SETTLE_LIMIT_COPY = 'Too many rounded cash payments on this sale: take the rest by another method.';
+/** 15 lines of 333 and one of 1003 (5998), a card leg, 15 rounded picks (+2 each) and a cash settle of `settleMinor`: 16 entries; the card is then voided. */
+function sixteenEntries(cardMinor: number, settleMinor: number) {
+  const ids = startLines([...Array.from({ length: 15 }, () => 333), 1003]);
+  let cardId = '';
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: cardMinor })!; });
+  for (const id of ids.slice(0, 15)) cashPick(id, 500);
+  expect(sale.order.cashRoundings).toHaveLength(15);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: settleMinor, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+}
+
+it('PK12: at 16 entries a cash settle that would add an entry is refused; card finishes the sale', () => {
+  sixteenEntries(501, 500); // 5998 + 30 - 501 - 5025 = 502 due, rounded to 500 (-2)
+  // 5998 + 30 - 2 = 6026 due; 15 * 335 + 500 paid: 501 left, the settle's -2 rounds it to 505 (a +4 entry).
+  expect(sale.order.balanceDueMinor).toBe(501);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 505, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 501 })).toBeTypeOf('string'); });
+  expect(sale.order.balanceDueMinor).toBe(0);
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.cashRoundings!.length).toBeLessThanOrEqual(16);
+});
+
+it('PK13: at 16 entries, a cash settle that needs no entry is still taken', () => {
+  sixteenEntries(500, 505); // 503 due, rounded to 505 (+2)
+  // The settle took 505 against 503 (+2): 500 left, and 500 less the +2 rounds back to 500, so no entry.
+  expect(sale.order.balanceDueMinor).toBe(500);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500, rounding: five })).toBeTypeOf('string'); });
+  expect(lastLeg()).toMatchObject({ method: 'cash', amountMinor: 500 });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
+
+it('PK14: at 16 entries a zero-remainder write-off onto a leg with no entry is refused', () => {
+  sixteenEntries(500, 505); // 503 due, rounded to 505 (+2)
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 497 })).toBeTypeOf('string'); });
+  // 3 left less the +2 is 1, which rounds to 0: the write-off would put a new -3 entry on the card.
+  expect(sale.order.balanceDueMinor).toBe(3);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 3 })).toBeTypeOf('string'); });
+  expect(sale.order.balanceDueMinor).toBe(0);
+  expect(sale.order.cashRoundings).toHaveLength(16);
 });

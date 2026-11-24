@@ -113,6 +113,11 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-094: a cash due rounded to nothing still settles the sale (v2 tender-pane.tsx:1062), where the store's connector declares cashRounding.
   const zeroDue = sale.capabilities?.cashRounding === true && !partPick && figures.roundedDueMinor === 0 && figures.roundingMinor !== 0
     && inMotionMinor(order.payments) === 0;
+  // The 16-entry cap as addTender applies it: a settle that adds an entry is refused at 16; a write-off onto a leg with one is not.
+  const lastCounted = order.payments.filter(countsTowardPaid).at(-1);
+  const settleLimit = !partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0
+    && (order.cashRoundings ?? []).length > CASH_PICK_ENTRIES_MAX
+    && !(zeroDue && lastCounted !== undefined && (order.cashRoundings ?? []).some((e) => e.paymentId === lastCounted.id));
   const entryChange = zeroDue ? 0 : partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
@@ -141,6 +146,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
     : cashWaits ? t('pos_checkout.cash_waits_for_payment')
     : pickLimit ? t('pos_checkout.cash_pick_limit')
+    : settleLimit ? t('pos_checkout.cash_settle_limit')
     : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? t('pos_checkout.change_due', { amount: money(entry - pickTarget) }) : '')
@@ -159,7 +165,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
@@ -211,7 +217,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 

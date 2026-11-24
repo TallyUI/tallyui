@@ -58,6 +58,8 @@ export const CASH_WAITS_FOR_PAYMENT = 'Cash cannot pay that amount while another
 // order-payload-shape.ts accepts at most 16 cashRoundings entries; one stays free for the leg that settles the sale.
 export const CASH_PICK_ENTRIES_MAX = 15;
 export const CASH_PICK_LIMIT = 'Too many rounded cash payments on this sale: take the rest as one payment.';
+// order-payload-shape.ts accepts at most 16 entries, so a non-pick cash leg may not add a 17th.
+export const CASH_SETTLE_LIMIT = 'Too many rounded cash payments on this sale: take the rest by another method.';
 /** voidTender's refusal for cashVoidRefusal's 'later_cash_rounding' (ADR-094 item 6); the components translate it as pos_checkout.void_later_cash_first. */
 export const VOID_LATER_CASH_FIRST = 'Void the later cash payment first.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
@@ -958,12 +960,16 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const entries = remainderEntriesMinor(snapshot);
         const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
+          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
+          const roundings = snapshot.cashRoundings ?? [];
+          // The 16-entry cap: a settle that adds an entry (a rounded leg, or a write-off onto a leg with none) is refused at 16.
+          if (roundings.length >= CASH_PICK_ENTRIES_MAX + 1 && (dueMinor > 0 ? dueMinor !== due
+            : against !== undefined && !roundings.some((entry) => entry.paymentId === against.id))) { setError(CASH_SETTLE_LIMIT); return null; }
           clearStaleError();
           if (dueMinor > 0) {
             return addOne({ ...tender, amountMinor: dueMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - dueMinor }, true, { minor: dueMinor - due });
           }
           // A remainder that rounds to zero closes the sale: no leg, its entry goes on the last leg counting toward paid.
-          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
           if (!against) { setError(NOTHING_TO_ROUND_AGAINST); return null; }
           builderNow.current.addCashRounding({ paymentId: against.id, minor: -due });
           return against.id;
