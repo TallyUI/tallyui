@@ -1187,11 +1187,14 @@ it('PK17: at 16 entries on a cash-only store whose cash cannot be voided the hin
   expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_PARK_COPY);
 });
 
+const cashAndTillCash = [...cashOnly, { ...cash, id: 'till-cash', capabilities: { ...cash.capabilities, void: false }, defaults: { ...cash.defaults, rounding: five } }];
 it('PK18: at 16 entries on a cash-only store a later plain cash part payment is not the leg the hint means', () => {
-  sixteenEntries(501, 500, 1003, cashOnly);
+  sixteenEntries(501, 500, 1003, cashAndTillCash);
   expect(sale.order.balanceDueMinor).toBe(501);
   let part = '';
-  act(() => { part = sale.addTender({ method: 'cash', amountMinor: 200, rounding: five })!; });
+  // The latest cash leg (the 200, till-cash) cannot be voided, so a hint that named it would say park.
+  // The latest rounded leg (the 500 settle, cash) can be voided, so the hint says void.
+  act(() => { part = sale.addTender({ method: 'cash', methodId: 'till-cash', amountMinor: 200, rounding: five })!; });
   expect(part).toBeTypeOf('string');
   expect(sale.order.cashRoundings).toHaveLength(16);
   expect(sale.order.balanceDueMinor).toBe(301);
