@@ -799,3 +799,29 @@ it.each(unflagged)('%s down: without the cashRounding flag the pane takes the ex
   expect(sale.stage.kind).toBe('receipt');
   expect(sale.error).toBeNull();
 });
+
+// Picks/legs follow-up (b), the desk's sequence as it stands today (reproduction, not the fix): increment 0.05, items 3.33
+// and 6.70 split by item. Pick 3.33, cash 5.00: a 3.33 leg with change 1.67; the rest, 6.70, settles in cash; the sale
+// closes at 10.03 paid all in cash, unrounded, where one cash payment of the whole sale would be 10.05.
+it('PK0 (repro): a cash part pick records an unpayable leg and the sale closes unrounded', async () => {
+  render(<SaleHarness capabilities={carries}>{() => <SharedTender methods={rounding(five)} />}</SaleHarness>);
+  act(() => { expect(sale.addCustomLine({ name: 'A', priceMinor: 333, taxStatus: 'none' })).toMatchObject({ id: expect.any(String) }); });
+  act(() => { expect(sale.addCustomLine({ name: 'B', priceMinor: 670, taxStatus: 'none' })).toMatchObject({ id: expect.any(String) }); });
+  act(() => sale.startTender('cash'));
+  expect(sale.order.totalMinor).toBe(1003);
+  const [first] = sale.order.lineItems;
+  press('tender-split-chip');
+  act(() => tender.picker!.onPick(first.id, 1));
+  enter(500);
+  press('tender-take');
+  expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 333, tenderedMinor: 500, changeMinor: 167 }]);
+  expect(sale.order.balanceDueMinor).toBe(670);
+  expect(text('tender-entry-amount')).toBe(money(670));
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(2);
+  expect(sale.order.payments[1]).toMatchObject({ method: 'cash', amountMinor: 670 });
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(1003);
+  expect('cashRoundings' in posOrder).toBe(false);
+  expect(posOrder.payments.map((leg) => leg.method)).toEqual(['cash', 'cash']);
+});
