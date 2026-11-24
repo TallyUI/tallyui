@@ -1158,8 +1158,8 @@ it('PK15: at 16 entries a zero-remainder write-off onto a leg that already has a
 });
 
 // A store whose only method is rounded cash has no other method to take the rest by: void the latest cash leg, or park.
-const SETTLE_LIMIT_VOID_COPY = 'Too many rounded cash payments on this sale: void the latest rounded cash payment, then take the rest again.';
-const SETTLE_LIMIT_PARK_COPY = 'Too many rounded cash payments on this sale, and the latest rounded cash payment cannot be voided here, so this sale can only be parked.';
+const settleLimitVoidCopy = (minor: number) => `Too many rounded cash payments on this sale: void the ${money(minor)} cash payment, then take the rest again.`;
+const settleLimitParkCopy = (minor: number) => `Too many rounded cash payments on this sale, and the ${money(minor)} cash payment cannot be voided here, so this sale can only be parked.`;
 const cashOnly = [{ ...cash, defaults: { ...cash.defaults, rounding: five } }];
 const cashOnlyNoVoid = [{ ...cash, capabilities: { ...cash.capabilities, void: false }, defaults: { ...cash.defaults, rounding: five } }];
 
@@ -1168,7 +1168,7 @@ it('PK16: at 16 entries on a cash-only store the hint says to void the latest ca
   expect(sale.order.balanceDueMinor).toBe(501);
   press('tender-method-cash');
   expect(disabled('tender-take')).toBe(true);
-  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_VOID_COPY);
+  expect(text('tender-entry-hint')).toBe(settleLimitVoidCopy(500));
   const latest = sale.order.payments.filter((leg) => countsTowardPaid(leg) && leg.method === 'cash' && (sale.order.cashRoundings ?? []).some((e) => e.paymentId === leg.id)).at(-1)!;
   act(() => { expect(sale.voidTender(latest.id)).toBe(true); });
   expect(sale.order.cashRoundings).toHaveLength(15);
@@ -1184,7 +1184,7 @@ it('PK17: at 16 entries on a cash-only store whose cash cannot be voided the hin
   sixteenEntries(501, 500, 1003, cashOnlyNoVoid);
   press('tender-method-cash');
   expect(disabled('tender-take')).toBe(true);
-  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_PARK_COPY);
+  expect(text('tender-entry-hint')).toBe(settleLimitParkCopy(500));
 });
 
 const cashAndTillCash = [...cashOnly, { ...cash, id: 'till-cash', capabilities: { ...cash.capabilities, void: false }, defaults: { ...cash.defaults, rounding: five } }];
@@ -1200,7 +1200,7 @@ it('PK18: at 16 entries on a cash-only store a later plain cash part payment is 
   expect(sale.order.balanceDueMinor).toBe(301);
   press('tender-method-cash');
   expect(disabled('tender-take')).toBe(true);
-  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_VOID_COPY);
+  expect(text('tender-entry-hint')).toBe(settleLimitVoidCopy(500));
   const settle = sale.order.cashRoundings!.at(-1)!.paymentId;
   act(() => { expect(sale.voidTender(settle)).toBe(true); });
   expect(sale.order.cashRoundings).toHaveLength(15);
