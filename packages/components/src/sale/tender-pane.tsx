@@ -222,7 +222,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : changeLeads ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 
