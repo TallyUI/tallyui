@@ -216,9 +216,11 @@ it('R7c: with a leg in motion, a cash leg that is not a whole number of cash ste
   expect(sale.order.payments).toMatchObject([{ method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0 }]);
   let cardId: string | null = null;
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
+  expect(screen.queryByTestId('tender-tendered-line')).toBeNull();
   enter(2130);
   expect(disabled('tender-take')).toBe(true);
   expect(text('tender-entry-hint')).toBe(CASH_WAITS_FOR_PAYMENT);
+  expect(screen.queryByTestId('tender-tendered-line')).toBeNull();
   act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 2130, rounding: nearest })).toBeNull(); });
   expect(sale.error).toBe(CASH_WAITS_FOR_PAYMENT);
   expect(sale.order.payments).toHaveLength(2);
