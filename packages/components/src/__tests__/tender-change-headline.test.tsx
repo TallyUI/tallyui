@@ -64,4 +64,13 @@ describe('Tender change headline', () => {
     for (const key of ['Clear', '5', '0', '0', '0']) press(key);
     noChange();
   });
+
+  it('change still leads when a payment in motion covers only part of the balance', () => {
+    start(3125);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' }); });
+    for (const key of ['Clear', '5', '0', '0', '0']) press(key);
+    expect(text('tender-entry-hint')).toBe(`Change ${money(2875)}`);
+    expect(screen.queryByTestId('tender-tendered-line')).not.toBeNull();
+    expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
+  });
 });
