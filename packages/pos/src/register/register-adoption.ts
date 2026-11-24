@@ -1,9 +1,9 @@
 import type { ServerCapabilities } from '@tallyui/core';
-import { CLOSURE_HOLDING_REJECTIONS, NON_BLOCKING_REJECTIONS } from '../outbox/register-outbox';
+import { CLOSURE_HOLDING_REJECTIONS, isRegisterRequeueable, NON_BLOCKING_REJECTIONS } from '../outbox/register-outbox';
 import { readFresh } from '../rxdb';
 import { uuidv7 } from '../pos-order/uuidv7';
 import { countVariance, overThreshold } from './register-count.helpers';
-import { adoptStoreCounters, renumberClosures, type RegisterHost } from './register-document';
+import { adoptStoreCounters, renumberClosures, settleStoreRefunds, type RegisterHost } from './register-document';
 import { registerCommandsLogger, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import type { Closure, RegisterSession } from './schemas';
 import { isKnownSessionStatus, RegisterSessionRequiredError, RegisterTakeOverError, type ClosureCollection,
@@ -69,6 +69,35 @@ async function renumberRefused(commands: RegisterCommandCollection, closures: Cl
     });
   }
 }
+
+/**
+ * Rule R: the anchor N is the newest applied closure answer for a closure row of this store (another store's answer
+ * never anchors) whose `closure.number` is its counters' last number (a replayed older closure carries today's counters
+ * with its old number, so it never anchors), and S the largest refunds figure read at N. Nothing is written when any
+ * store figure is past N, while any closure of this store numbered above N exists, or when any closure submit of this
+ * register is pending (it may be in flight) or refused with a refusal that can still reach the store (refused for its
+ * number, held for its approval, or one the outbox resends); no row is rewritten.
+ */
+async function settleRefunds(answers: RegisterCommand[], commands: RegisterCommandCollection, closures: ClosureCollection,
+  host: RegisterHost, storeKey: string, registerId: string) {
+  const [submits, local] = await Promise.all([
+    readFresh(commands, { selector: { registerId, type: 'register.closure.submit' } }),
+    readFresh(closures, { selector: { register_id: registerId } }),
+  ]);
+  const own = new Set(local.filter(({ store_key }) => (store_key ?? storeKey) === storeKey).map(({ id }) => id));
+  const store = answers.flatMap(({ type, syncStatus, result, payload }) => {
+    const [number, refunds] = [figure(result?.counters?.lastClosureNumber), figure(result?.counters?.perpetualRefundsTotalMinor)];
+    return syncStatus === 'applied' && number !== undefined && refunds !== undefined ? [{ number, refunds,
+      anchor: type === 'register.closure.submit' && result?.closure?.number === number && own.has(payload.closureId as string) }] : [];
+  });
+  const n = Math.max(-1, ...store.filter(({ anchor }) => anchor).map(({ number }) => number));
+  if (n < 0 || store.some(({ number }) => number > n)) return;
+  const blocks = (code = '') => code === 'register_closure_number_invalid' || CLOSURE_HOLDING_REJECTIONS.has(code) || isRegisterRequeueable(code);
+  if (local.some(({ number, store_key }) => (store_key ?? storeKey) === storeKey && number > n) || submits.some(({ syncStatus, error }) =>
+    syncStatus === 'pending' || (syncStatus === 'rejected' && blocks(error?.code)))) return;
+  await settleStoreRefunds(host, storeKey, registerId, { lastClosureNumber: n,
+    perpetualRefundsTotalMinor: Math.max(...store.filter(({ number }) => number === n).map(({ refunds }) => refunds)) });
+}
 type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSessionCollection; sessionId: string; now?: string };
 
 /**
@@ -77,6 +106,8 @@ type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSe
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
  * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`),
  * and given `closures` too, a closure refused for its number is renumbered once and requeued (#655, `renumberRefused`).
+ * Given `closures`, applied closure answers then set the register's perpetual refunds to the store's (`settleStoreRefunds`) when nothing of this till's is unsent;
+ * refunds are raised only from answers at the newest closure number.
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
 export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey, closures }: {
@@ -119,7 +150,15 @@ export async function adoptRegisterResults({ commands, sessions, registerId, hos
       if (row) await row.incrementalModify(modify);
     }
     const counters = answers.filter((answer) => answer.syncStatus === 'applied' && answer.result?.counters).map((answer) => answer.result?.counters);
-    if (host && storeKey && counters.length) await adoptStoreCounters(host, storeKey, registerId, counters);
+    // Refunds are raised only from the newest closure number's answers: an older one may echo the till's inflated figure.
+    const top = Math.max(-1, ...counters.map((entry) => figure(entry?.lastClosureNumber) ?? -1));
+    const raising = counters.map((entry) => {
+      if (!entry || figure(entry.lastClosureNumber) === top) return entry;
+      const { perpetualRefundsTotalMinor: _older, ...rest } = entry;
+      return rest;
+    });
+    if (host && storeKey && counters.length) await adoptStoreCounters(host, storeKey, registerId, raising);
+    if (host && storeKey && closures) await settleRefunds(answers, commands, closures, host, storeKey, registerId);
     if (host && storeKey && closures) await renumberRefused(commands, closures, host, storeKey, registerId);
   }).catch((error: unknown) => {
     registerCommandsLogger.error('Register result adoption failed', { context: { registerId, error: String(error) } });

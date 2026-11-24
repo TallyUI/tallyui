@@ -32,9 +32,10 @@ import {
   readBoundRegister,
   readRegister,
   RegisterIdInvalidError,
+  settleStoreRefunds,
   unbindRegister,
 } from './register-document';
-import { registerSessionCreator } from './schemas';
+import { registerSessionCreator, type Closure } from './schemas';
 import type { RegisterSessionCollection } from './session-store';
 
 let database: RxDatabase<{ register_sessions: RegisterSessionCollection }>;
@@ -142,4 +143,22 @@ it('mints unique closure numbers concurrently, independently by store, and adds 
     perpetual_sales_total_minor: 2030,
     perpetual_refunds_total_minor: 1,
   });
+});
+
+it('settleStoreRefunds sets the store\'s refunds at the same last number with an applied reservation, and otherwise writes nothing', async () => {
+  await ensureRegister(db, 'web');
+  const draft = { id: 'c1', period_sales_total_minor: 500, period_refunds_total_minor: 1200 } as Closure;
+  await mintClosureNumber(db, 'site', 'a', draft);
+  const unapplied = await readRegister(db);
+  await settleStoreRefunds(db, 'site', 'a', { lastClosureNumber: 1, perpetualRefundsTotalMinor: 1000 });
+  expect(await readRegister(db)).toStrictEqual(unapplied);
+  await advancePerpetual(db, 'site', 'a', { salesMinor: 500, refundsMinor: 1200, closureId: 'c1' });
+  const applied = await readRegister(db);
+  await settleStoreRefunds(db, 'site', 'a', { lastClosureNumber: 2, perpetualRefundsTotalMinor: 1000 });
+  expect(await readRegister(db)).toStrictEqual(applied);
+  expect(applied?.stores.site.registers?.a).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1200,
+    closure_reservation: { applied: true } });
+  await settleStoreRefunds(db, 'site', 'a', { lastClosureNumber: 1, perpetualRefundsTotalMinor: 1000 });
+  expect((await readRegister(db))?.stores.site.registers?.a)
+    .toStrictEqual({ ...applied?.stores.site.registers?.a, perpetual_refunds_total_minor: 1000 });
 });

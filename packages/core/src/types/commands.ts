@@ -229,7 +229,7 @@ export interface RegisterCommandResult {
   resumed?: { fromSessionId: string };
   /** The session this open took over (register v2). */
   superseded?: { sessionId: string; openedAt?: string; deviceId?: string; deviceName?: string };
-  /** The register's counters: a floor for the till's own, never lowered. */
+  /** The register's counters: a floor for the till's own, never lowered, except perpetual refunds, which the till raises only from the store's figures at its newest closure number and sets to the store's figure from its own newest applied closure answer once nothing of its own is unsent (@tallyui/pos settleStoreRefunds). */
   counters?: { lastClosureNumber: number; perpetualSalesTotalMinor: number; perpetualRefundsTotalMinor: number };
   /** `register.closure.submit` only. */
   closure?: { serverClosureId: string; number: number; expected?: Record<string, number>; variance?: Record<string, number> };
