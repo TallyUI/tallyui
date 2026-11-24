@@ -51,4 +51,17 @@ describe('Tender change headline', () => {
     expect(screen.queryByTestId('tender-tendered-line')).toBeNull();
     expect(text('tender-entry-hint')).not.toMatch(/^Change/);
   });
+
+  it('no change shows while a payment in motion covers the balance', () => {
+    start(3125);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 3125, status: 'pending' }); });
+    const noChange = () => {
+      expect(screen.queryByTestId('tender-tendered-line')).toBeNull();
+      expect(text('tender-entry-hint')).not.toMatch(/Change/);
+      expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).toBe('true');
+    };
+    noChange();
+    for (const key of ['Clear', '5', '0', '0', '0']) press(key);
+    noChange();
+  });
 });
