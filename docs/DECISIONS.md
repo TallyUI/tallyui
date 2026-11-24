@@ -6990,6 +6990,9 @@ interface OrderCreatePayload {
      - **Entry cap.** The order.create shape accepts at most 16 entries. A cash pick that would add an entry is
        refused with `CASH_PICK_LIMIT` once the sale has 15, so one slot stays free for the leg that settles the sale.
        A pick that rounds exactly adds no entry and is still taken.
+       At 16 live entries, a cash leg that would add a 17th entry is refused with `CASH_SETTLE_LIMIT`. That covers a
+       settle that rounds, and a zero-remainder write-off onto a leg with no entry yet. It can happen after a void
+       frees the balance, or on a reopened order. Card, or a cash leg that needs no entry, still finishes the sale.
      - Known gaps (accepted with the ruling):
        - A pick that covers the whole balance is not a part pick. It settles through the ordinary rounded path, but
          its leg carries units, so `remainderEntriesMinor` leaves its entry out of any later remainder (reached only
