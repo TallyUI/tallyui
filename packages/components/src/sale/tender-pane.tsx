@@ -118,6 +118,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const settleLimit = !partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0
     && (order.cashRoundings ?? []).length > CASH_PICK_ENTRIES_MAX
     && !(zeroDue && lastCounted !== undefined && (order.cashRoundings ?? []).some((e) => e.paymentId === lastCounted.id));
+  // With no other method, a cash-only store frees an entry by voiding its latest rounded cash leg, which no later cash leg's entry blocks; offered methods are all manual capture.
+  const otherWay = offered.some((m) => !(wireMethodOf(m) === 'cash' && m.defaults.rounding));
+  const lastRounded = order.payments.filter(countsTowardPaid).filter((leg) => leg.method === 'cash' && (order.cashRoundings ?? []).some((e) => e.paymentId === leg.id)).at(-1);
   const entryChange = zeroDue ? 0 : partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
@@ -147,7 +150,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
     : cashWaits ? t('pos_checkout.cash_waits_for_payment')
     : pickLimit ? t('pos_checkout.cash_pick_limit')
-    : settleLimit ? t('pos_checkout.cash_settle_limit')
+    : settleLimit ? (otherWay ? t('pos_checkout.cash_settle_limit')
+      : lastRounded && voidableLeg(order, offered, lastRounded) ? t('pos_checkout.cash_settle_limit_void', { amount: money(lastRounded.amountMinor) })
+        : t('pos_checkout.cash_settle_limit_park', { amount: lastRounded ? money(lastRounded.amountMinor) : '' }))
     : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')
