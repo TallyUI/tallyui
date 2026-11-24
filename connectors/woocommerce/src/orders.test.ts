@@ -23,6 +23,7 @@ describe('WooCommerce orders', () => {
       totalMinor: 3291, taxMinor: 116, discountMinor: 0, discountTaxMinor: 0,
       fees: [], shipping: [], coupons: [],
       payments: [{ method: 'pos_cash', title: 'Cash', kind: 'cash', amountMinor: 3291 }], refunds: [], needsPayment: false,
+      createdVia: 'woocommerce-pos',
     });
     expect(order.customer).toBeNull();
     expect(order.lines).toHaveLength(4);
@@ -93,6 +94,17 @@ describe('WooCommerce orders', () => {
     expect(toWooStoreOrder({ ...raw, needs_payment: false }).needsPayment).toBe(false);
     for (const needsPayment of [{}, { needs_payment: 'yes' }, { needs_payment: 1 }, { needs_payment: null }]) {
       expect(toWooStoreOrder({ ...raw, ...needsPayment })).not.toHaveProperty('needsPayment');
+    }
+  });
+
+  it('reads created_via only when it is a non-empty string', () => {
+    const raw = {
+      id: 9, status: 'pending', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10', payment_method: 'cod',
+    };
+    expect(toWooStoreOrder({ ...raw, created_via: 'checkout' }).createdVia).toBe('checkout');
+    for (const createdVia of [{}, { created_via: '' }, { created_via: null }, { created_via: 7 }]) {
+      expect(toWooStoreOrder({ ...raw, ...createdVia })).not.toHaveProperty('createdVia');
     }
   });
 

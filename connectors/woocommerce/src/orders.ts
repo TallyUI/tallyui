@@ -102,6 +102,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
 
   const clientOrderId = posUuid(raw.meta_data);
   const revision = nonEmpty(raw._rxdb_revision);
+  const createdVia = nonEmpty(raw.created_via);
   const totalMinor = minor(raw.total, currency);
   const ledger = paymentLedger(raw.meta_data);
   const paymentRecordUnreadable = ledger.present && ledger.payments === null;
@@ -168,6 +169,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     payments: storePayments(raw, currency, totalMinor),
     ...(paymentRecordUnreadable ? { paymentRecordUnreadable: true } : {}),
     ...(typeof raw.needs_payment === 'boolean' ? { needsPayment: raw.needs_payment } : {}),
+    ...(createdVia ? { createdVia } : {}),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
