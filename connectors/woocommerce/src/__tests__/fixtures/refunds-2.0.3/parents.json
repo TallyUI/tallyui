@@ -1,0 +1,510 @@
+[
+  {
+    "id": 21,
+    "parent_id": 0,
+    "status": "refunded",
+    "currency": "USD",
+    "version": "10.4.3",
+    "prices_include_tax": false,
+    "date_created": "2026-11-25T05:32:36",
+    "date_modified": "2026-11-25T05:32:45",
+    "discount_total": "0.000000",
+    "discount_tax": "0.000000",
+    "shipping_total": "0.000000",
+    "shipping_tax": "0.000000",
+    "cart_tax": "0.000000",
+    "total": "5.000000",
+    "total_tax": "0.000000",
+    "customer_id": 0,
+    "order_key": "wc_order_6rJ7FfNwNw4po",
+    "billing": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "email": "spike@example.test",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "phone": ""
+    },
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "21",
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "283f86bd-e2dc-4eed-aa2d-b80acfa89dc4"
+      }
+    ],
+    "line_items": [
+      {
+        "id": 13,
+        "name": "Spike Juice",
+        "product_id": 12,
+        "variation_id": 0,
+        "quantity": 1,
+        "tax_class": "zero-rate",
+        "subtotal": "5.000000",
+        "subtotal_tax": "0.000000",
+        "total": "5.000000",
+        "total_tax": "0.000000",
+        "taxes": [],
+        "meta_data": [
+          {
+            "id": 114,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          },
+          {
+            "key": "_woocommerce_pos_uuid",
+            "value": "eba2c4d4-44cb-4a5d-815e-bf65d2afefdb"
+          }
+        ],
+        "sku": "SPK-JUICE",
+        "global_unique_id": "",
+        "price": 5,
+        "image": {
+          "id": 0,
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [],
+    "shipping_lines": [],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [
+      {
+        "id": 24,
+        "reason": "",
+        "total": "-5.000000"
+      }
+    ],
+    "payment_url": "http://localhost:8930/checkout/order-pay/21/?pay_for_order=true&key=wc_order_6rJ7FfNwNw4po",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-24T18:32:36",
+    "date_modified_gmt": "2026-11-24T18:32:45",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "$",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/21",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/21/actions/email_templates"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:7f3ef379210300a138471bc6c31afa8fb2bab4fbdfba90496eecaa2caa67dbec",
+    "_rxdb_digest": "14825364552332731701",
+    "tax_ids": [],
+    "links": {
+      "payment": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/order-pay/21/?pay_for_order=1&key=wc_order_6rJ7FfNwNw4po"
+        }
+      ],
+      "receipt": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/wcpos-receipt/21/?key=wc_order_6rJ7FfNwNw4po"
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "parent_id": 0,
+    "status": "processing",
+    "currency": "EUR",
+    "version": "10.4.3",
+    "prices_include_tax": false,
+    "date_created": "2026-11-25T05:32:36",
+    "date_modified": "2026-11-25T05:32:40",
+    "discount_total": "0.000000",
+    "discount_tax": "0.000000",
+    "shipping_total": "0.000000",
+    "shipping_tax": "0.000000",
+    "cart_tax": "0.600000",
+    "total": "6.600000",
+    "total_tax": "0.600000",
+    "customer_id": 0,
+    "order_key": "wc_order_TawhmBWT0SS35",
+    "billing": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "email": "spike@example.test",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "phone": ""
+    },
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "20",
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "1528a431-9c98-4c99-99e2-711479c1dca5"
+      }
+    ],
+    "line_items": [
+      {
+        "id": 11,
+        "name": "Spike Muffin",
+        "product_id": 11,
+        "variation_id": 0,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "6.000000",
+        "subtotal_tax": "0.600000",
+        "total": "6.000000",
+        "total_tax": "0.600000",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.600000",
+            "subtotal": "0.600000"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 104,
+            "key": "_reduced_stock",
+            "value": "2",
+            "display_key": "_reduced_stock",
+            "display_value": "2"
+          },
+          {
+            "key": "_woocommerce_pos_uuid",
+            "value": "30c78eb6-46c4-41a5-9793-d55f75667f74"
+          }
+        ],
+        "sku": "SPK-MUFFIN",
+        "global_unique_id": "",
+        "price": 3,
+        "image": {
+          "id": 0,
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 12,
+        "rate_code": "TAX-1",
+        "rate_id": 1,
+        "label": "Tax",
+        "compound": false,
+        "tax_total": "0.600000",
+        "shipping_tax_total": "0.000000",
+        "rate_percent": 10,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [
+      {
+        "id": 23,
+        "reason": "",
+        "total": "-2.500000"
+      }
+    ],
+    "payment_url": "http://localhost:8930/checkout/order-pay/20/?pay_for_order=true&key=wc_order_TawhmBWT0SS35",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-24T18:32:36",
+    "date_modified_gmt": "2026-11-24T18:32:40",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "\u20ac",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/20",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/20/actions/email_templates"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:27e0a9abc1a0a6f3e7293d6ac75ad1934bad791aba87a98622e73c6c51b92ed6",
+    "_rxdb_digest": "1681445420268673824",
+    "tax_ids": [],
+    "links": {
+      "payment": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/order-pay/20/?pay_for_order=1&key=wc_order_TawhmBWT0SS35"
+        }
+      ],
+      "receipt": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/wcpos-receipt/20/?key=wc_order_TawhmBWT0SS35"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "parent_id": 0,
+    "status": "processing",
+    "currency": "USD",
+    "version": "10.4.3",
+    "prices_include_tax": false,
+    "date_created": "2026-11-25T05:32:36",
+    "date_modified": "2026-11-25T05:32:36",
+    "discount_total": "0.000000",
+    "discount_tax": "0.000000",
+    "shipping_total": "0.000000",
+    "shipping_tax": "0.000000",
+    "cart_tax": "0.800000",
+    "total": "8.800000",
+    "total_tax": "0.800000",
+    "customer_id": 0,
+    "order_key": "wc_order_NKBwzLR11mo1P",
+    "billing": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "email": "spike@example.test",
+      "phone": ""
+    },
+    "shipping": {
+      "first_name": "Spike",
+      "last_name": "Refunds",
+      "company": "",
+      "address_1": "1 Spike St",
+      "address_2": "",
+      "city": "Sydney",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "AU",
+      "phone": ""
+    },
+    "payment_method": "pos_cash",
+    "payment_method_title": "Cash",
+    "transaction_id": "",
+    "customer_ip_address": "",
+    "customer_user_agent": "",
+    "created_via": "rest-api",
+    "customer_note": "",
+    "date_completed": null,
+    "date_paid": null,
+    "cart_hash": "",
+    "number": "19",
+    "meta_data": [
+      {
+        "key": "_woocommerce_pos_uuid",
+        "value": "06fac88c-e9d6-47bd-ad93-69e0be5caec4"
+      }
+    ],
+    "line_items": [
+      {
+        "id": 9,
+        "name": "Spike Coffee",
+        "product_id": 10,
+        "variation_id": 0,
+        "quantity": 2,
+        "tax_class": "",
+        "subtotal": "8.000000",
+        "subtotal_tax": "0.800000",
+        "total": "8.000000",
+        "total_tax": "0.800000",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "0.800000",
+            "subtotal": "0.800000"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 88,
+            "key": "_reduced_stock",
+            "value": "1",
+            "display_key": "_reduced_stock",
+            "display_value": "1"
+          },
+          {
+            "id": 131,
+            "key": "_restock_refunded_items",
+            "value": "1",
+            "display_key": "_restock_refunded_items",
+            "display_value": "1"
+          },
+          {
+            "key": "_woocommerce_pos_uuid",
+            "value": "51064524-b3e4-43b2-89e7-3c02fd4cbf55"
+          }
+        ],
+        "sku": "SPK-COFFEE",
+        "global_unique_id": "",
+        "price": 4,
+        "image": {
+          "id": 0,
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "tax_lines": [
+      {
+        "id": 10,
+        "rate_code": "TAX-1",
+        "rate_id": 1,
+        "label": "Tax",
+        "compound": false,
+        "tax_total": "0.800000",
+        "shipping_tax_total": "0.000000",
+        "rate_percent": 10,
+        "meta_data": []
+      }
+    ],
+    "shipping_lines": [],
+    "fee_lines": [],
+    "coupon_lines": [],
+    "refunds": [
+      {
+        "id": 22,
+        "reason": "Damaged",
+        "total": "-4.400000"
+      }
+    ],
+    "payment_url": "http://localhost:8930/checkout/order-pay/19/?pay_for_order=true&key=wc_order_NKBwzLR11mo1P",
+    "is_editable": false,
+    "needs_payment": false,
+    "needs_processing": true,
+    "date_created_gmt": "2026-11-24T18:32:36",
+    "date_modified_gmt": "2026-11-24T18:32:36",
+    "date_completed_gmt": null,
+    "date_paid_gmt": null,
+    "currency_symbol": "$",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/19",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders"
+        }
+      ],
+      "email_templates": [
+        {
+          "embeddable": true,
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/19/actions/email_templates"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:6cdec491d96860d0feb4c31342890da5b9978601d6f73e9c0a6542eb2b2d3659",
+    "_rxdb_digest": "2825024038044060576",
+    "tax_ids": [],
+    "links": {
+      "payment": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/order-pay/19/?pay_for_order=1&key=wc_order_NKBwzLR11mo1P"
+        }
+      ],
+      "receipt": [
+        {
+          "href": "https://localhost:8930/wcpos-checkout/wcpos-receipt/19/?key=wc_order_NKBwzLR11mo1P"
+        }
+      ]
+    }
+  }
+]
