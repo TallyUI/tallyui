@@ -96,7 +96,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
   const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
-    && state.entryDirty && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
+    && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
     ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
@@ -128,7 +128,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const [prefill] = unstamped;
   // startTender('external')'s one unstamped card leg for the rest, beside any kept taken or voided legs: its reference is edited in place.
   const cardReference = unstamped.length === 1 && prefill.method === 'external' && legStatus(prefill) === 'captured' && balance === 0;
-  const hint = cashNotPayable ? t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) })
+  const hint = cashNotPayable ? (cashNotPayable.belowMinor === 0 ? t('pos_checkout.cash_not_payable_above', { above: money(cashNotPayable.aboveMinor) })
+    : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
     : partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })

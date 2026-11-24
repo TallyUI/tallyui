@@ -107,6 +107,7 @@
 	"pos_checkout.to_pay": "To pay",
 	"pos_checkout.void_later_cash_first": "Void the later cash payment first.",
 	"pos_checkout.cash_not_payable": "Cash cannot pay that exactly. Take {below} or {above}.",
+	"pos_checkout.cash_not_payable_above": "Cash cannot pay that exactly. Take {above}.",
 	"pos_checkout.cash_not_payable_typed": "Cash cannot pay that amount: take a whole number of the smallest cash step.",
 	"pos_checkout.void_on_method": "Void {amount} on {title}",
 	"receipt.email_queued": "Receipt email queued",
