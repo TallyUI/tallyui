@@ -495,6 +495,66 @@ it('P5: the payable above chip sets 2.05 and enables confirm', () => {
   expect(disabled('tender-take')).toBe(false);
 });
 
+it('P6: an untouched cash plan share is refused with payable alternatives', () => {
+  startCustom(1003, rounding(five), carries);
+  press('tender-split-chip');
+  press('tender-split-even-2');
+  expect(tender.state.entryMinor).toBe(502);
+  expect(tender.state.entryDirty).toBe(false);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(`Cash cannot pay that exactly. Take ${money(500)} or ${money(505)}.`);
+  expect(screen.getByTestId('tender-payable-below').textContent).toBe(money(500));
+  expect(screen.getByTestId('tender-payable-above').textContent).toBe(money(505));
+  press('tender-payable-below');
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(sale.order.payments[0]).toMatchObject({ method: 'cash', amountMinor: 500, tenderedMinor: 500, changeMinor: 0 });
+  expect(sale.order.cashRoundings ?? []).toEqual([]);
+});
+
+it('P7: cash below the smallest step offers only the payable amount above', () => {
+  startCustom(1003, rounding(five), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });
+  enter(3);
+  expect(text('tender-entry-hint')).toBe(`Cash cannot pay that exactly. Take ${money(5)}.`);
+  expect(screen.queryByTestId('tender-payable-below')).toBeNull();
+  expect(screen.getByTestId('tender-payable-above').textContent).toBe(money(5));
+});
+
+it('P8: a settling non-multiple takes the rounded due and gives change', () => {
+  startCustom(1003, rounding(five), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });
+  enter(501);
+  expect(disabled('tender-take')).toBe(false);
+  press('tender-take');
+  expect(sale.order.payments[1]).toMatchObject({ method: 'cash', amountMinor: 500, tenderedMinor: 501, changeMinor: 1 });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: sale.order.payments[1].id, minor: -2 }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
+
+it('P9: up rounding refuses a short non-multiple in the pane and core', () => {
+  const rule: PaymentRounding = { incrementMinor: 5, mode: 'up' };
+  startCustom(1003, rounding(rule), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });
+  enter(201);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(`Cash cannot pay that exactly. Take ${money(200)} or ${money(205)}.`);
+  let result: string | null = null;
+  act(() => { result = sale.addTender({ method: 'cash', amountMinor: 201, rounding: rule }); });
+  expect(result).toBeNull();
+  expect(sale.error).toBe(CASH_NOT_PAYABLE);
+});
+
+it('P10: an untouched cash due without a plan stays payable', () => {
+  startCustom(1003, rounding(five), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });
+  press('tender-method-cash');
+  expect(tender.state.plan).toBeNull();
+  expect(tender.state.entryDirty).toBe(false);
+  expect(disabled('tender-take')).toBe(false);
+  expect(screen.queryByTestId('tender-payable-above')).toBeNull();
+});
+
 it('S8: a void between two cash settles still rounds the sale once (10.03 takes 10.05 in cash)', () => {
   startCustom(1003, rounding(five), carries);
   let cardId: string | null = null;
