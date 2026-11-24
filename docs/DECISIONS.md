@@ -6934,7 +6934,11 @@ interface OrderCreatePayload {
      no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
      While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
      leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
-     pane shows no rounding.
+     pane shows no rounding. The leg it records must still be a whole number of cash steps: on a store that declares
+     cashRounding, a cash leg whose amount (the entry, capped at the due less the legs in motion) is not a multiple
+     of the increment is refused with `CASH_WAITS_FOR_PAYMENT`, and the pane disables Take with the same message.
+     The cashier finishes or cancels the payment in motion first; then this rule applies as usual (desk, 2026-11-24:
+     "(a) Leg in motion: 31.25 sale, cash 10.00, card 21.23 pending, cash 21.30 records a 0.02 cash leg.").
   2. **Storage.** `pos_orders` goes to version 21 with an identity migration; an unrounded order is stored byte for
      byte as before, with no `cashRoundings` key.
   3. **The capability, not a version.** `ServerCapabilities.cashRounding` is set only by a connector that carries the
