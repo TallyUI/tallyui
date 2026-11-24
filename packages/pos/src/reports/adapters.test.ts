@@ -164,6 +164,23 @@ it('maps a StoreOrder', () => {
   expect('costMinor' in joined.lines[1]).toBe(false);
 });
 
+it('places a paid store order on its paidAt', () => {
+  expect(reportOrderFromStoreOrder({ ...storeOrder, paidAt: '2026-11-03T09:00:00.000Z' }).at).toBe('2026-11-03T09:00:00.000Z');
+});
+
+it('counts a store order on its paid day, not on the day it was placed or changed', () => {
+  const a = reportOrderFromStoreOrder({ ...storeOrder, id: 'a', placedAt: '2026-11-01T10:00:00.000Z', paidAt: '2026-11-01T10:00:00.000Z' });
+  const b = reportOrderFromStoreOrder({ ...storeOrder, id: 'b', placedAt: '2026-11-01T10:00:00.000Z', paidAt: '2026-11-05T10:00:00.000Z' });
+  const c = reportOrderFromStoreOrder({
+    ...storeOrder, id: 'c', placedAt: '2026-11-05T09:00:00.000Z', paidAt: '2026-11-07T09:00:00.000Z', totalMinor: 2000,
+  });
+  const range = { from: '2026-11-05', to: '2026-11-06' };
+  const timezone = 'UTC';
+  const onlyB = salesFigures({ orders: [b], range, timezone }).totals;
+  expect(salesFigures({ orders: [a, b, c], range, timezone }).totals).toStrictEqual(onlyB);
+  expect(salesFigures({ orders: [a], range, timezone }).totals).not.toStrictEqual(onlyB);
+});
+
 it("carries a store order's needsPayment", () => {
   expect(reportOrderFromStoreOrder({ ...storeOrder, needsPayment: true }).needsPayment).toBe(true);
   expect(reportOrderFromStoreOrder({ ...storeOrder, needsPayment: false }).needsPayment).toBe(false);

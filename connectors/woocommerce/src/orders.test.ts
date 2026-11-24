@@ -568,10 +568,11 @@ describe('WooCommerce orders', () => {
       await orders.listOrders(context, {
         page: 2, perPage: 10, search: 'ada', status: 'cancelled', customerId: '3', cashierId: '2', storeId: '1',
         createdVia: 'woocommerce-pos', dateRange: { after: '2026-11-10T00:00:00.000Z', before: '2026-11-11T00:00:00.000Z' },
+        modifiedAfter: '2026-11-01T00:00:00.000Z',
       });
       expect(spy).toHaveBeenCalledExactlyOnceWith(
         `${context.baseUrl}/orders?page=2&per_page=10&orderby=date&order=desc&search=ada&status=cancelled&customer=3&pos_cashier=2`
-          + '&pos_store=1&created_via=woocommerce-pos&dates_are_gmt=true&after=2026-11-09T23%3A59%3A59&before=2026-11-11T00%3A00%3A00',
+          + '&pos_store=1&created_via=woocommerce-pos&dates_are_gmt=true&after=2026-11-09T23%3A59%3A59&before=2026-11-11T00%3A00%3A00&modified_after=2026-10-31T23%3A59%3A59',
         request,
       );
     });
@@ -613,9 +614,26 @@ describe('WooCommerce orders', () => {
       expect(filterParams(spy.mock.calls[0]![0])).toStrictEqual(expected);
     });
 
+    it.each([
+      [{ modifiedAfter: '2026-11-10T00:00:00.000Z' }, [['dates_are_gmt', 'true'], ['modified_after', '2026-11-09T23:59:59']]],
+      [{ modifiedAfter: '2026-11-10T09:36:28.400Z' }, [['dates_are_gmt', 'true'], ['modified_after', '2026-11-10T09:36:28']]],
+      [{ modifiedAfter: '2026-11-10T00:00:00.000Z', dateRange: { before: '2026-11-11T00:00:00.000Z' } },
+        [['dates_are_gmt', 'true'], ['before', '2026-11-11T00:00:00'], ['modified_after', '2026-11-09T23:59:59']]],
+    ])('sends modifiedAfter %o as GMT whole seconds', async (query, expected) => {
+      const spy = emptyList();
+      await orders.listOrders(context, query);
+      expect(filterParams(spy.mock.calls[0]![0])).toStrictEqual(expected);
+    });
+
     it.each([{ after: '2026-11-10T09:36:28' }, { before: '2026-11-10T09:36:28+00:00' }])('refuses dateRange %o before any request', async (dateRange) => {
       const spy = emptyList();
       await expect(orders.listOrders(context, { dateRange })).rejects.toBeInstanceOf(TypeError);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('refuses a modifiedAfter without a Z before any request', async () => {
+      const spy = emptyList();
+      await expect(orders.listOrders(context, { modifiedAfter: '2026-11-10T09:36:28' })).rejects.toBeInstanceOf(TypeError);
       expect(spy).not.toHaveBeenCalled();
     });
   });
@@ -624,7 +642,7 @@ describe('WooCommerce orders', () => {
     const connector = createWooCommerceConnector();
     expect(connector.listOrders).toBeTypeOf('function');
     expect(connector.getOrders).toBeTypeOf('function');
-    expect(connector.orderFilters).toStrictEqual(['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange']);
+    expect(connector.orderFilters).toStrictEqual(['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange', 'modifiedAfter']);
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json([list[0]]));
     await expect(connector.getOrders!(context, ['136'])).resolves.toMatchObject([{ id: '136' }]);
   });

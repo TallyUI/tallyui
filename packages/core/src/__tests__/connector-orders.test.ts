@@ -9,9 +9,9 @@ describe('TallyConnector order history types', () => {
     expectTypeOf<TallyConnector['orderFilters']>().toEqualTypeOf<readonly OrderFilterField[] | undefined>();
   });
 
-  it('names exactly the eight order filter fields', () => {
+  it('names exactly the nine order filter fields', () => {
     expectTypeOf<OrderFilterField>().toEqualTypeOf<
-      'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange'
+      'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange' | 'modifiedAfter'
     >();
   });
 
@@ -20,6 +20,7 @@ describe('TallyConnector order history types', () => {
       page: 2, perPage: 25, search: 'x', status: 'completed', customerId: '0', cashierId: '3', registerId: 'reg-1',
       paymentMethod: 'pos_cash', storeId: '2', createdVia: 'woocommerce-pos',
       dateRange: { after: '2026-11-01T00:00:00.000Z', before: '2026-11-02T00:00:00.000Z' },
+      modifiedAfter: '2026-11-01T00:00:00.000Z',
     } satisfies Required<ListOrdersQuery>;
     expectTypeOf(query).toExtend<ListOrdersQuery>();
     expectTypeOf<{ dateRange: { after: string } }>().toExtend<ListOrdersQuery>();

@@ -52,9 +52,10 @@ export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, method
   };
 }
 
+/** A store order as a report row, on its paid day (`paidAt`); an order with no `paidAt` (unpaid, or a store that records none) stays on its placed day. */
 export function reportOrderFromStoreOrder(order: StoreOrder, join?: LineJoin): ReportOrder {
   return {
-    id: order.id, at: order.placedAt, totalMinor: order.totalMinor, taxMinor: order.taxMinor, discountMinor: order.discountMinor,
+    id: order.id, at: order.paidAt ?? order.placedAt, totalMinor: order.totalMinor, taxMinor: order.taxMinor, discountMinor: order.discountMinor,
     lines: order.lines.map((line) => ({
       key: line.variantId || line.productId || line.name, name: line.name, quantity: line.quantity,
       netMinor: line.totalMinor, taxMinor: line.taxMinor, ...joinedLine(line, join),

@@ -50,7 +50,7 @@ export type { Repository } from './repository';
 export { createOrderBuilder, createOrderManager, allocateOrderDiscount, taxFiguresForBasket } from './order';
 export { orderDraftSchema, writeOrderDraft, restoreOrderDraft, parkedOrderSummaries$ } from './order';
 export { useParkedSales } from './order';
-export { useStoreOrdersInRange } from './store-orders';
+export { salesRangeQuery, useStoreOrdersInRange } from './store-orders';
 export type { OrderDownloadProgress, StoreOrdersInRange, StoreOrdersRangeQuery } from './store-orders';
 export type { BasketLine } from './order';
 export { couponPricingBasis } from './order';
