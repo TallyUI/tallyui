@@ -87,6 +87,11 @@ export interface OrderOutbox {
   state$: Observable<OutboxState>;
 }
 
+// The hook's record() awaits this so a recorded order is in state.pending before it resolves (vendurepos/app#470).
+const stateRefreshers = new WeakMap<OrderOutbox, () => Promise<void>>();
+/** Recounts and publishes the outbox's state; internal to @tallyui/pos (not exported from the package). */
+export const refreshOutboxState = (outbox: OrderOutbox): Promise<void> => stateRefreshers.get(outbox)?.() ?? Promise.resolve();
+
 export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   const { collection, transport, deviceId } = options;
   // A reopened sale goes as order.update, never order.create (ADR-090 decision 4).
@@ -551,7 +556,7 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
   }
 
   updateState().catch(() => {});
-  return {
+  const outbox: OrderOutbox = {
     state$,
     flush,
     async requeue(orderIds) {
@@ -635,4 +640,6 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       state$.next({ ...state$.value, nextAttemptAt: undefined });
     },
   };
+  stateRefreshers.set(outbox, () => updateState());
+  return outbox;
 }
