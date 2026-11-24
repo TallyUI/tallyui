@@ -87,15 +87,20 @@ function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrd
   }] : [];
 }
 
+/** Reads a WooCommerce `*_gmt` date: a value with no zone suffix is UTC. */
+const gmtDate = (text: string) => new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
+
 /** Maps a WooCommerce order resource (as WCPOS `wcpos/v2/orders` serves it) to a `StoreOrder` (ADR-081). */
 export function toWooStoreOrder(raw: unknown): StoreOrder {
   if (!isRow(raw) || raw.id === undefined || raw.id === null || typeof raw.currency !== 'string' || typeof raw.date_created_gmt !== 'string') {
     throw unexpected();
   }
   const currency = raw.currency;
-  const dateText = raw.date_created_gmt;
-  const placed = new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(dateText) ? dateText : `${dateText}Z`);
+  const placed = gmtDate(raw.date_created_gmt);
   if (Number.isNaN(placed.getTime())) throw unexpected();
+  const paidText = nonEmpty(raw.date_paid_gmt);
+  const paid = paidText ? gmtDate(paidText) : undefined;
+  const paidAt = paid && !Number.isNaN(paid.getTime()) ? paid.toISOString() : undefined;
 
   const billing = isRow(raw.billing) ? raw.billing : {};
   const customerId = positiveId(raw.customer_id);
@@ -125,6 +130,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     ...(revision ? { revision } : {}),
     status: String(raw.status),
     placedAt: placed.toISOString(),
+    ...(paidAt ? { paidAt } : {}),
     currency,
     pricesIncludeTax: raw.prices_include_tax === true,
     customer,

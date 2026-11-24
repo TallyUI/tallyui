@@ -23,7 +23,7 @@ describe('WooCommerce orders', () => {
       totalMinor: 3291, taxMinor: 116, discountMinor: 0, discountTaxMinor: 0,
       fees: [], shipping: [], coupons: [],
       payments: [{ method: 'pos_cash', title: 'Cash', kind: 'cash', amountMinor: 3291 }], refunds: [], needsPayment: false,
-      createdVia: 'woocommerce-pos', cashierId: '2',
+      createdVia: 'woocommerce-pos', cashierId: '2', paidAt: '2026-10-06T04:54:03.000Z',
     });
     expect(order).not.toHaveProperty('storeId');
     expect(order).not.toHaveProperty('registerId');
@@ -85,6 +85,21 @@ describe('WooCommerce orders', () => {
     };
     expect(toWooStoreOrder(raw).payments).toStrictEqual([]);
     expect(toWooStoreOrder({ ...raw, date_paid: null, date_paid_gmt: '' }).payments).toStrictEqual([]);
+    expect(toWooStoreOrder(raw)).not.toHaveProperty('paidAt');
+    expect(toWooStoreOrder({ ...raw, date_paid: null, date_paid_gmt: '' })).not.toHaveProperty('paidAt');
+  });
+
+  it('reads date_paid_gmt as a UTC instant only when it parses', () => {
+    const raw = {
+      id: 9, status: 'completed', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10', payment_method: 'pos_cash',
+    };
+    expect(toWooStoreOrder({ ...raw, date_paid_gmt: '2026-10-06T04:54:03' }).paidAt).toBe('2026-10-06T04:54:03.000Z');
+    expect(toWooStoreOrder({ ...raw, date_paid_gmt: '2026-10-06T06:54:03+02:00' }).paidAt).toBe('2026-10-06T04:54:03.000Z');
+    for (const paid of [{ date_paid_gmt: 'not a date' }, { date_paid_gmt: null }, { date_paid_gmt: 7 }, { date_paid: '2026-10-06T04:54:03' }]) {
+      expect(() => toWooStoreOrder({ ...raw, ...paid })).not.toThrow();
+      expect(toWooStoreOrder({ ...raw, ...paid })).not.toHaveProperty('paidAt');
+    }
   });
 
   it('reads needs_payment only when it is a boolean', () => {
