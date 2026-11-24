@@ -55,6 +55,9 @@ export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale al
 export const NOTHING_TO_ROUND_AGAINST = 'This sale rounds to nothing in cash: take it by another method.';
 export const CASH_NOT_PAYABLE = 'Cash cannot pay that amount: take a whole number of the smallest cash step.';
 export const CASH_WAITS_FOR_PAYMENT = 'Cash cannot pay that amount while another payment is in progress: finish that payment first.';
+// order-payload-shape.ts accepts at most 16 cashRoundings entries; one stays free for the leg that settles the sale.
+export const CASH_PICK_ENTRIES_MAX = 15;
+export const CASH_PICK_LIMIT = 'Too many rounded cash payments on this sale: take the rest as one payment.';
 /** voidTender's refusal for cashVoidRefusal's 'later_cash_rounding' (ADR-094 item 6); the components translate it as pos_checkout.void_later_cash_first. */
 export const VOID_LATER_CASH_FIRST = 'Void the later cash payment first.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
@@ -937,6 +940,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (tender.tenderedMinor !== undefined) {
         const snapshot = builderNow.current.getSnapshot();
         if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
+        if (pickMinor !== tender.amountMinor && (snapshot.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX) { setError(CASH_PICK_LIMIT); return null; }
+        if (rounding && opts.capabilities?.cashRounding === true && tender.method === 'cash' && inMotionMinor(snapshot.payments) > 0
+          && nearestPayableCash(tender.amountMinor, rounding.incrementMinor) !== null) { setError(CASH_WAITS_FOR_PAYMENT); return null; }
       }
       if (tender.method === 'external') {
         const snapshot = builderNow.current.getSnapshot();

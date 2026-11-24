@@ -8,7 +8,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor, type PaymentRounding, type ServerCapabilities } from '@tallyui/core';
 import {
-  buildReceiptData, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
+  buildReceiptData, CASH_NOT_PAYABLE, CASH_PICK_LIMIT, CASH_WAITS_FOR_PAYMENT, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
@@ -1024,4 +1024,64 @@ it.each(unflagged)('PK0 %s: without the cashRounding flag a cash part pick is no
   expect(posOrder.totalMinor).toBe(1003);
   expect('cashRoundings' in posOrder).toBe(false);
   expect(posOrder.payments.map((leg) => leg.method)).toEqual(['cash', 'cash']);
+});
+
+// #1299 review: order-payload-shape.ts accepts 16 cashRoundings entries, so a 16th pick entry is refused (one stays for the settle).
+it('PK9: 15 rounded cash picks are taken; the 16th that would add an entry is refused; the remainder settles with the 16th entry', async () => {
+  const ids = startLines([...Array.from({ length: 16 }, () => 333), 335, 670]);
+  for (const id of ids.slice(0, 15)) {
+    const leg = cashPick(id, 500);
+    expect(leg).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
+    expect(sale.order.cashRoundings?.at(-1)).toEqual({ paymentId: leg.id, minor: 2 });
+  }
+  expect(sale.order.cashRoundings).toHaveLength(15);
+  const sixteenth = ids[15];
+  pickLine(sixteenth);
+  enter(500);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe('Too many rounded cash payments on this sale: take the rest as one payment.');
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 333, tenderedMinor: 500, units: { [sixteenth]: 1 }, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_PICK_LIMIT);
+  expect(sale.order.payments).toHaveLength(15);
+  press('tender-split-chip'); // closing Split clears the pick
+  // A pick that rounds exactly adds no entry, so it is still taken at the cap.
+  const exact = cashPick(ids[16], 500);
+  expect(exact).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
+  expect(sale.order.cashRoundings).toHaveLength(15);
+  press('tender-take');
+  const rest = lastLeg();
+  expect(rest).toMatchObject({ method: 'cash', amountMinor: 1005 });
+  expect(sale.order.cashRoundings?.at(-1)).toEqual({ paymentId: rest.id, minor: 2 });
+  const posOrder = await complete();
+  expect(posOrder.cashRoundings).toHaveLength(16);
+  expect(posOrder.totalMinor).toBe(15 * 333 + 335 + 333 + 670 + 32);
+  balances(posOrder, 6333);
+});
+
+it('PK10: the split heading after a typed cash pick shows the rest the Take leaves', () => {
+  const [a] = startLines([333, 670]);
+  pickLine(a);
+  enter(500);
+  expect(text('tender-split-heading')).toBe(`After this payment · ${money(670)}`);
+  press('tender-take');
+  expect(sale.order.balanceDueMinor).toBe(670);
+});
+
+it('PK11: while a card leg is pending a cash pick not payable in steps is refused; one payable in steps is taken unrounded', () => {
+  const [a, b] = startLines([333, 335, 3000]);
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' })).toBeTypeOf('string'); });
+  pickLine(a);
+  enter(500);
+  expect(text('tender-entry-hint')).toBe(CASH_WAITS_FOR_PAYMENT);
+  expect(disabled('tender-take')).toBe(true);
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 333, tenderedMinor: 500, units: { [a]: 1 }, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_WAITS_FOR_PAYMENT);
+  expect(sale.order.payments).toHaveLength(1);
+  press('tender-split-chip'); // closing Split clears the pick
+  const leg = cashPick(b, 500);
+  expect(leg).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
+  expect(sale.order.payments).toHaveLength(2);
+  expect(sale.order.cashRoundings ?? []).toEqual([]);
 });
