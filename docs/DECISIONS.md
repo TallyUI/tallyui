@@ -5780,8 +5780,8 @@ interface OrderCreatePayload {
      - **WooCommerce reads WCPOS `GET wcpos/v2/refunds`**, the plugin's read-only proxy of `wc/v3/refunds` (WCPOS
        2.0.0 and later).
        - It sends `dateRange` as `after`/`before` with `dates_are_gmt=true`, rounded as `listOrders` rounds them, and
-         `orderId` as `parent`. It sends `dp=6`, as the orders read does, so the store's price decimals never round an
-         amount.
+         `orderId` as `parent`. It sends `dp=6`, as WCPOS's orders proxy forces for orders, so the store's price
+         decimals never round an amount.
        - Each page's parent orders are read in one `orders?include=` request, for their currency only. A parent that
          read leaves out makes an orphan.
        - `refundedAt` is `date_created_gmt` read as UTC; `amountMinor` is `|amount|` in the parent's currency.
@@ -5793,27 +5793,33 @@ interface OrderCreatePayload {
          store upgraded to 2.0 is seen on the next call.
        - The connector never guesses from a 404.
      - **`@tallyui/pos` scopes and counts refunds; nothing is silently counted or dropped.**
-       `useStoreRefundsInRange(connector, context, query)` pages `listRefunds` as decision 6 pages orders. It returns
-       `{ refunds, orphans, unreadable, unscoped, otherCurrency, progress, error, complete }`. `unreadable` counts the
-       rows the connector could not read: shown with a count, never summed. Refunds are kept once by id across pages,
-       as decision 6 keeps orders.
+       `useStoreRefundsInRange(connector, context, { range, timezone, currency, scope? })` pages `listRefunds` as
+       decision 6 pages orders. Its `refunds` is `undefined` when the store has no dated refunds, so the report uses
+       the embedded basis. It returns `{ refunds, orphans, unreadable, unscoped, otherCurrency, progress, error,
+       complete }`. `unreadable` counts the rows the connector could not read: shown with a count, never summed.
+       Refunds are kept once by id across pages, as decision 6 keeps orders.
        - **Scope.** When the report is scoped by store, cashier or register, a refund counts only when its order
-         matches that scope. An order not among those the report already loaded is fetched with `getOrders`. An order
-         still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no register:
-         ADR-090 decision 6), makes the refund `unscoped`: shown with a count, never summed. With no scope, nothing
-         extra is fetched.
+         matches that scope. Each page's orders are fetched with one `getOrders` call, each order once per read. An
+         order still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no
+         register: ADR-090 decision 6), makes the refund `unscoped`: shown with a count, never summed. An order with
+         a different value in any set field puts the refund outside the report, even when another set field is
+         missing. With no scope, nothing extra is fetched.
        - **Currency.** A refund counts only in the report's currency. One in another currency goes to
          `otherCurrency`, shown with its own count and amount per currency, never summed into the report's figures.
        - **One refund figure per report, named.** `SalesTotals` gains `refundBasis: 'dated' | 'embedded'` and
          `grossAfterRefundsMinor = grossMinor` less the basis figure. With `listRefunds`, the basis is `dated`: the
          hook's counted refunds, `refundsMinor`. Without it, the basis is `embedded`: the orders' own refunds,
-         `embeddedRefundsMinor`. A report never subtracts both; the other figure may be shown, never subtracted.
+         `embeddedRefundsMinor`. So the basis is `dated` exactly when `salesFigures` is given `refunds` (even
+         empty), and `embedded` when it is given none. A report never subtracts both; the other figure may be shown,
+         never subtracted.
        - **Tax basis.** A refund is gross, so it comes off `grossMinor` (tax included) only, never off `netMinor`
          (`grossMinor − taxMinor − roundingMinor`) or any product, category or tax row. No net-of-tax refund figure
          is derived, because a refund row gives no tax split.
        - **Day boundaries.** The report range is store days in the store's timezone. The hook converts its first and
          last day's bounds to UTC instants with a `Z` for `dateRange.after`/`before`, and `salesFigures` places each
-         refund on its store day by `refundedAt` (`businessDayOf`).
+         refund on its store day by `refundedAt` (`businessDayOf`). With `compare`, the hook's `range` spans both
+         periods; `salesFigures` places each refund in its own period. The report uses `refunds` only once the read
+         is `complete`; a read in progress or ended by an error is partial and is shown as such, never summed.
      - **Other connectors.** Medusa and Vendure do not change: their refunds sit under payments, and whether those
        rows carry a date is not checked. Adopting the member is a separate job for each platform.
 - **Open:**
@@ -5836,11 +5842,14 @@ interface OrderCreatePayload {
     and `discountMinor` can differ from the original by that discount's tax conversion.
   - **Refunds, live read.** The WooCommerce refunds mapping is tested against a `wcpos/v2/refunds` page and its
     parent orders recorded from a local wp-env store with WCPOS 2.0.3, never a dev or demo store.
+  - **Refunds at `dp=6`.** The recorded page was read without `dp`, so its amounts have two decimals; the `dp=6`
+    answer is not recorded.
   - **Refunds, cost.** A store-wide read of a long range costs one parent read per refunds page, plus one
     `getOrders` read per scoped page.
 - **Evidence:** `connectors/woocommerce/src/orders.test.ts`, `packages/pos/src/receipt/reprint.test.ts`,
   `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`,
-  `connectors/woocommerce/src/refunds.test.ts`, `packages/core/src/__tests__/connector-refunds.test.ts`.
+  `connectors/woocommerce/src/refunds.test.ts`, `packages/core/src/__tests__/connector-refunds.test.ts`,
+  `packages/pos/src/store-orders/use-store-refunds-in-range.test.tsx`, `packages/pos/src/reports/sales-figures.test.ts`.
 
 ## ADR-082 Register contract 3: the close carries the store's approval
 
