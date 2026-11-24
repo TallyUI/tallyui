@@ -435,6 +435,7 @@ it('#1277: with cashRounding, a non-cash method with a rounding increment shows 
   expect(sale.order.cashRoundings ?? []).toEqual([]);
 });
 
+// This refusal applies only when no items are picked; a full pick keeps its own rule (W19 in tender-picks.test.tsx).
 it('P1: typed cash 2.01 below the rounded due is refused with payable alternatives', () => {
   startCustom(1003, rounding(five), carries);
   act(() => { sale.addTender({ method: 'external', amountMinor: 501 }); });

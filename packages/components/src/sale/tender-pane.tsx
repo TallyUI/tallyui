@@ -95,7 +95,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
   const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
-  const cashNotPayable = rounds && !partPick && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
+  const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
     && state.entryDirty && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
     ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
