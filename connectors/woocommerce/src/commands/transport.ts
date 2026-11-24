@@ -1,6 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
+import { wooLedgerVersion } from '../store-settings';
 import { createWooCall, type Answer } from './http';
 
 export type WooTransportOutcome =
@@ -273,10 +274,9 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     if (options.ledgerPayments !== undefined) return capability(options.ledgerPayments);
     if (siteLedger === undefined) {
       const site = await call('site', { method: 'GET' });
-      const version = site.body?.wcpos_version;
-      const major = typeof version === 'string' ? /^(\d+)\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.trim())?.[1] : undefined;
-      if (major === undefined) return site;
-      siteLedger = Number(major) >= 2;
+      const ledger = wooLedgerVersion(site.body?.wcpos_version);
+      if (ledger === undefined) return site;
+      siteLedger = ledger;
     }
     return siteLedger;
   };

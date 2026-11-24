@@ -44,7 +44,6 @@ it('matches WooCommerce order #136 through connector settings, product traits an
     multiplePayments: false,
     coupons: false,
     lineTax: { none: true, classes: true },
-    cashRounding: true,
   });
   const { result } = renderHook(() => useTax(), {
     wrapper: ({ children }: { children: ReactNode }) => (

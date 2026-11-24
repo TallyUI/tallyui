@@ -23,6 +23,12 @@ const WOO_ORDER_LINES_20_FLOOR: readonly [number, number, number] = [2, 0, 4];
 // The 2.0 route stops at 6: v7's note and v8's tax address were never sent (20 Nov stock 2.0.4 proof; desk ruling).
 const WOO_ORDER_LINES_20_CAP = 6;
 
+/** Whether a /site wcpos_version is a WCPOS 2.0+ (ledger) store; undefined when the version cannot be read. */
+export function wooLedgerVersion(version: unknown): boolean | undefined {
+  const major = typeof version === 'string' ? /^(\d+)\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.exec(version.trim())?.[1] : undefined;
+  return major === undefined ? undefined : Number(major) >= 2;
+}
+
 /** True when the version is at or above the floor; a prerelease of the floor itself is below it. */
 function atLeast(version: unknown, floor: readonly [number, number, number]): boolean {
   if (typeof version !== 'string') return false;
@@ -229,7 +235,8 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       lineTax: { none: true, classes: true },
       // ADR-094: only the fork's order_create_v5 store was shown to take a tax-none ±0.05 Rounding fee line, tax off and on, exclusive
       // and inclusive (22 Nov fork proofs). Stock stores declare nothing: their code was read, not tested.
-      ...(fork ? { cashRounding: true } : {}),
+      // Only on a version that reads as pre-2.0: a 2.0+ (ledger) store's transport refuses cashRoundings, and an unreadable one cannot be classified (desk, 2026-11-24).
+      ...(fork && wooLedgerVersion(wcposVersion) === false ? { cashRounding: true } : {}),
       ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
       // WCPOS 2.0's per-store register_sessions setting: the register transport sends to sessions, movements and closures.
       ...(stores[0].register_sessions === true ? { register: 3 } : {}),
