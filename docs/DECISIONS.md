@@ -5686,7 +5686,8 @@ interface OrderCreatePayload {
 ## ADR-081 Order history in core: optional `listOrders`/`getOrders`, and reprint from a stored order (G7)
 
 - **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Amended by ADR-090:** decision 5,
-  reopen-to-edit · **Amended 2026-11-21:** decision 6, a ranged read with progress · **Relates to:** ADR-079
+  reopen-to-edit · **Amended 2026-11-21:** decision 6, a ranged read with progress · **Amended 2026-11-24:**
+  decision 6, a store sale counts on its paid day · **Relates to:** ADR-079
   (Vendure order history, whose "Open: a core order-history contract waits for a second platform" this settles),
   ADR-080 (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order
   transport)
@@ -5749,6 +5750,12 @@ interface OrderCreatePayload {
        pushed past a page boundary mid-read is missed until the next read.
      - It is still an online read, with no collection and no cache (decision 1). The app owns the date range and any
        limit on it. WCPOS v2's Reports opens on the store's today.
+     - **A store sale counts on its paid day (front desk ruling, 2026-11-24: "modified_after widens the pull only;
+       the paid-date test stays exact on the device").** `reportOrderFromStoreOrder` sets `at` to
+       `StoreOrder.paidAt`, or `placedAt` when the order has none. `ListOrdersQuery.modifiedAfter` (WooCommerce
+       `modified_after`, with `dates_are_gmt`) widens a report's read; `salesRangeQuery` sends it with
+       `dateRange.before` only, and `salesFigures`' range test on the device decides. A connector that does not list
+       `modifiedAfter` reads by creation date, so an order created before the range and paid in it is missed there.
 - **Open:**
   - **Live confirmation.** The WooCommerce mapping is tested against the order document recorded from WCPOS
     1.10.20's push response (order 136), plus one order derived from it by hand. That `wcpos/v2/orders` returns the

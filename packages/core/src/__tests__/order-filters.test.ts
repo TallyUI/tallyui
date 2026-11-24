@@ -7,6 +7,7 @@ import {
 const EVERY_FIELD: ListOrdersQuery = {
   status: 'completed', customerId: '0', cashierId: '3', registerId: 'reg-1', paymentMethod: 'pos_cash', storeId: '2',
   createdVia: 'woocommerce-pos', dateRange: { after: '2026-11-01T00:00:00.000Z', before: '2026-11-02T00:00:00.000Z' },
+  modifiedAfter: '2026-11-01T00:00:00.000Z',
 };
 
 const ONE_FIELD: Record<OrderFilterField, ListOrdersQuery> = {
@@ -18,6 +19,7 @@ const ONE_FIELD: Record<OrderFilterField, ListOrdersQuery> = {
   storeId: { storeId: '2' },
   createdVia: { createdVia: 'checkout' },
   dateRange: { dateRange: { before: '2026-11-02T00:00:00Z' } },
+  modifiedAfter: { modifiedAfter: '2026-11-01T00:00:00Z' },
 };
 
 function refusal(run: () => void): UnsupportedOrderFilterError {
@@ -31,9 +33,9 @@ function refusal(run: () => void): UnsupportedOrderFilterError {
 }
 
 describe('ORDER_FILTER_FIELDS', () => {
-  it('lists the eight fields in order', () => {
+  it('lists the nine fields in order', () => {
     expect(ORDER_FILTER_FIELDS).toEqual([
-      'status', 'customerId', 'cashierId', 'registerId', 'paymentMethod', 'storeId', 'createdVia', 'dateRange',
+      'status', 'customerId', 'cashierId', 'registerId', 'paymentMethod', 'storeId', 'createdVia', 'dateRange', 'modifiedAfter',
     ]);
   });
 });
@@ -66,7 +68,7 @@ describe('assertOrderFiltersSupported', () => {
 
   it('names exactly the unsupported fields, in OrderFilterField order', () => {
     const error = refusal(() => assertOrderFiltersSupported(EVERY_FIELD, ['dateRange', 'status', 'customerId', 'storeId']));
-    expect(error.fields).toEqual(['cashierId', 'registerId', 'paymentMethod', 'createdVia']);
+    expect(error.fields).toEqual(['cashierId', 'registerId', 'paymentMethod', 'createdVia', 'modifiedAfter']);
     expect(refusal(() => assertOrderFiltersSupported({ customerId: '1', status: 'x' }, [])).fields).toEqual(['status', 'customerId']);
   });
 
@@ -83,6 +85,14 @@ describe('assertOrderFiltersSupported', () => {
 
   it('checks a supported dateRange', () => {
     expect(() => assertOrderFiltersSupported({ dateRange: { after: '2026-11-01T00:00:00' } }, ['dateRange'])).toThrow(TypeError);
+  });
+
+  it('checks a supported modifiedAfter as a UTC instant ending in Z', () => {
+    expect(() => assertOrderFiltersSupported({ modifiedAfter: '2026-11-01T00:00:00Z' }, ['modifiedAfter'])).not.toThrow();
+    for (const modifiedAfter of ['2026-11-01T00:00:00', '2026-11-01T00:00:00+00:00']) {
+      expect(() => assertOrderFiltersSupported({ modifiedAfter }, ['modifiedAfter'])).toThrow(TypeError);
+      expect(() => assertOrderFiltersSupported({ modifiedAfter }, ['modifiedAfter'])).toThrow(/^modifiedAfter must be/);
+    }
   });
 });
 

@@ -106,7 +106,7 @@ export interface StoreOrder {
 
 /** The filter fields a connector may support on listOrders. */
 export type OrderFilterField =
-  | 'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange';
+  | 'status' | 'customerId' | 'cashierId' | 'registerId' | 'paymentMethod' | 'storeId' | 'createdVia' | 'dateRange' | 'modifiedAfter';
 
 /**
  * One page of order history, filtered on the server (#721). A connector maps each filter field its own way; a field the
@@ -134,6 +134,11 @@ export interface ListOrdersQuery {
   createdVia?: string;
   /** Created at or after `after` and before `before`: ISO 8601 instants in UTC with a `Z` (`2026-11-11T00:00:00.000Z`). Either end may be absent. */
   dateRange?: { after?: string; before?: string };
+  /**
+   * Changed at or after this instant: ISO 8601 UTC with a `Z`, as `dateRange` takes. It widens a read to orders created
+   * earlier and changed since, such as one paid in a report's range (WooCommerce: `modified_after`).
+   */
+  modifiedAfter?: string;
 }
 
 /** One page of an order list: its orders, whether more follow, and how many the whole query matches when the store says. */

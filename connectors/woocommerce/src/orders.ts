@@ -201,7 +201,7 @@ const wholeNumber = (value: number | undefined, fallback: number) => (value === 
  * `pos_register`, but neither is listed: `pos_register` matches only the `_wcpos_register` meta, which orders TallyUI
  * rings never carry (ADR-090 decision 6), so a register filter would hide them.
  */
-export const WOO_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange'];
+export const WOO_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange', 'modifiedAfter'];
 
 /** A validated UTC instant, rounded up to the whole second and shifted by `shiftSeconds`, as `YYYY-MM-DDTHH:MM:SS` in UTC. */
 const wooGmtSecond = (instant: string, shiftSeconds: number) =>
@@ -212,10 +212,11 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
   return {
     /**
      * Filters on the server: status, customerId (customer), cashierId (pos_cashier), storeId (pos_store), createdVia
-     * (created_via) and dateRange; any other filter field is refused. An id that is not all digits, or an empty status
-     * or createdVia, matches no order, so it resolves an empty page without a request. dateRange is sent in GMT (dates_are_gmt): WooCommerce compares
+     * (created_via), dateRange and modifiedAfter (modified_after); any other filter field is refused. An id that is not
+     * all digits, or an empty status or createdVia, matches no order, so it resolves an empty page without a request. dateRange is sent in GMT (dates_are_gmt): WooCommerce compares
      * whole seconds strictly, so the inclusive `after` goes as its instant rounded up to the second minus one second,
-     * and the exclusive `before` as its instant rounded up to the second.
+     * and the exclusive `before` as its instant rounded up to the second. modifiedAfter is inclusive too, so it is sent
+     * rounded as `after` is.
      */
     async listOrders(context: SyncContext, query = {}) {
       assertOrderFiltersSupported(query, WOO_ORDER_FILTERS);
@@ -234,9 +235,10 @@ export function createWooOrders(): Required<Pick<TallyConnector, 'listOrders' | 
       }
       if (query.createdVia !== undefined) params.set('created_via', query.createdVia);
       const { after, before } = query.dateRange ?? {};
-      if (after !== undefined || before !== undefined) params.set('dates_are_gmt', 'true');
+      if (after !== undefined || before !== undefined || query.modifiedAfter !== undefined) params.set('dates_are_gmt', 'true');
       if (after !== undefined) params.set('after', wooGmtSecond(after, -1));
       if (before !== undefined) params.set('before', wooGmtSecond(before, 0));
+      if (query.modifiedAfter !== undefined) params.set('modified_after', wooGmtSecond(query.modifiedAfter, -1));
       const { body, headers } = await customerRequest(context, `orders?${params}`, { method: 'GET' });
       if (!Array.isArray(body)) throw unexpected();
       let unreadable = 0;
