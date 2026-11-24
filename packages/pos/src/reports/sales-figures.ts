@@ -23,6 +23,10 @@ export interface SalesTotals {
   /** v2 ordersSummary: the largest order total; null with no orders. */
   largestMinor?: number | null;
   margin: Margin;
+  /** Which refund figure `grossAfterRefundsMinor` subtracts: `refundsMinor` or `embeddedRefundsMinor`. A report never subtracts both. */
+  refundBasis: 'dated' | 'embedded';
+  /** `grossMinor` less the basis figure. Gross refunds come off gross only, never off `netMinor` or any row. */
+  grossAfterRefundsMinor: number;
 }
 export interface PaymentRow { method: string; label: string; amountMinor: number; orders: number }
 export interface GroupRow { key: string; name: string; quantity: number; netMinor: number; margin: Margin }
@@ -30,6 +34,10 @@ export interface TaxRow { key: string; ratePpm: number; code?: string; label: st
 export interface DayPoint { day: StoreDay; grossMinor: number; orderCount: number; refundsMinor: number }
 export interface SalesFiguresInput {
   orders: readonly ReportOrder[];
+  /**
+   * Dated refunds. Pass `undefined` (not `[]`) when the store has none, so the report uses its orders' embedded
+   * refunds. `useStoreRefundsInRange().refunds` is already in that shape.
+   */
   refunds?: readonly ReportRefund[];
   range: DayRange;
   compare?: DayRange;
@@ -130,6 +138,7 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
     orderCount: orders.length, averageMinor: 0,
     items: lines.reduce((sum, line) => sum + (Number.isFinite(line.quantity) ? line.quantity : 0), 0),
     margin: marginOf(lines),
+    refundBasis: input.refunds !== undefined ? 'dated' : 'embedded', grossAfterRefundsMinor: 0,
   };
   const series: DayPoint[] = daysOf(range).map((day) => ({ day, grossMinor: 0, orderCount: 0, refundsMinor: 0 }));
   const byDay = new Map(series.map((point) => [point.day, point]));
@@ -148,6 +157,8 @@ function periodFigures(input: SalesFiguresInput, range: DayRange) {
     byDay.get(businessDayOf(refund.at, input.timezone))!.refundsMinor += Math.abs(refund.amountMinor);
   }
   totals.netMinor = totals.grossMinor - totals.taxMinor - totals.roundingMinor;
+  totals.grossAfterRefundsMinor =
+    totals.grossMinor - (totals.refundBasis === 'dated' ? totals.refundsMinor : totals.embeddedRefundsMinor);
   totals.averageMinor = orders.length ? Math.round(totals.grossMinor / orders.length) : 0;
   Object.assign(totals, orderSpread(orders.map((order) => order.totalMinor)));
   return { orders, refunds, totals, series };

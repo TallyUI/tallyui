@@ -58,7 +58,7 @@ export interface ReportRefund {
   orderId: string;
   /** ISO 8601 UTC instant the refund was made. */
   at: string;
-  /** Positive. */
+  /** Zero or more. Gross, tax included. */
   amountMinor: number;
 }
 

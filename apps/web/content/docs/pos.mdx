@@ -343,6 +343,10 @@ Keep `connector` and `context` the same objects across renders, from state, a re
 
 For a sales report, build the query with `salesRangeQuery({ after, before }, connector.orderFilters)`. When the connector lists `modifiedAfter`, it reads orders changed since the range start and created before its end, so an order created earlier and paid in the range is included. `reportOrderFromStoreOrder` places each order on its paid day (`paidAt`), or its placed day when it has none, and `salesFigures` drops the ones outside the range. Otherwise the read is by creation date, as before. Do not build a report's read as `dateRange: { after, before }` yourself: on a connector that records `paidAt`, an order paid on a later day than it was created is then fetched for the wrong day and dropped from both.
 
+### Store refunds in a range
+
+`useStoreRefundsInRange(connector, context, { range, timezone, currency, scope? })` reads the refunds made in the report's store days from `connector.listRefunds`, page by page, and returns `refunds`, `orphans`, `unreadable`, `unscoped`, `otherCurrency`, `progress`, `error` and `complete`. Pass its `refunds` to `salesFigures`: it is `undefined` when the store has no dated refunds (no `listRefunds`, or WCPOS below 2.0), and the report then subtracts its orders' embedded refunds instead, as `refundBasis` and `grossAfterRefundsMinor` say. Show `orphans`, `unscoped`, `unreadable` and `otherCurrency` with their counts, and never add them to a figure.
+
 ## Repositories
 
 `createRepository` wraps an RxDB collection with a clean read/write API that returns plain JSON objects instead of RxDB documents:

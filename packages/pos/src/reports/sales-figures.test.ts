@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createOrderBuilder } from '../order/order-builder';
 import { finalizeOrder } from '../pos-order/finalize';
 import { reportOrderFromPosOrder } from './adapters';
@@ -194,7 +194,7 @@ it('lists inclusive calendar days and returns zeros for an empty period', () => 
   const result = salesFigures({ orders: [], range, timezone: 'UTC' });
   expect(result.totals).toEqual({
     grossMinor: 0, netMinor: 0, taxMinor: 0, discountMinor: 0, refundsMinor: 0, embeddedRefundsMinor: 0, roundingMinor: 0,
-    orderCount: 0, averageMinor: 0, medianMinor: 0, largestMinor: null, items: 0,
+    orderCount: 0, averageMinor: 0, medianMinor: 0, largestMinor: null, items: 0, refundBasis: 'embedded', grossAfterRefundsMinor: 0,
     margin: { costedNetMinor: 0, costMinor: 0, profitMinor: 0, marginPct: null, missingLines: 0, missingQuantity: 0 },
   });
   expect(result.series).toEqual([{ day: range.from, grossMinor: 0, orderCount: 0, refundsMinor: 0 }]);
@@ -213,7 +213,7 @@ it('keeps gross separate from dated and embedded refunds', () => {
   ] });
   expect(result.totals).toEqual({
     grossMinor: 1501, netMinor: 1351, taxMinor: 150, discountMinor: 75, refundsMinor: 250, embeddedRefundsMinor: 200, roundingMinor: 0,
-    orderCount: 2, averageMinor: 751, medianMinor: 751, largestMinor: 1000, items: 1,
+    orderCount: 2, averageMinor: 751, medianMinor: 751, largestMinor: 1000, items: 1, refundBasis: 'dated', grossAfterRefundsMinor: 1251,
     margin: { costedNetMinor: 900, costMinor: 600, profitMinor: 300, marginPct: 1 / 3, missingLines: 0, missingQuantity: 0 },
   });
   expect(result.refunds).toEqual({ count: 2, amountMinor: 250, orders: 1 });
@@ -283,4 +283,49 @@ it('a taxed rounded sale: gross 10.00 = net 9.11 + tax 0.91 + rounding -0.02', (
   const { totals } = salesFigures({ range, timezone: 'UTC', orders: [roundedSale(1002, 100_000, true)] });
   expect(totals).toMatchObject({ grossMinor: 1000, netMinor: 911, taxMinor: 91, roundingMinor: -2 });
   expect(totals.netMinor + totals.taxMinor + totals.roundingMinor).toBe(totals.grossMinor);
+});
+
+describe('one refund figure per report (ADR-081 decision 7)', () => {
+  const refunded = order({ totalMinor: 2000, refunds: [{ id: 'r1', amountMinor: 300 }] });
+  const dated: ReportRefund[] = [{ id: 'r1', orderId: 'o1', at: '2026-11-10T12:00:00.000Z', amountMinor: 300 }];
+
+  it('F1 subtracts a refund carried both dated and embedded once, by the dated basis', () => {
+    const { totals } = salesFigures({ range, timezone: 'UTC', orders: [refunded], refunds: dated });
+    expect(totals).toMatchObject({ refundsMinor: 300, embeddedRefundsMinor: 300, refundBasis: 'dated', grossAfterRefundsMinor: 1700 });
+  });
+
+  it('F2 uses the embedded basis when no dated refunds are given', () => {
+    const { totals } = salesFigures({ range, timezone: 'UTC', orders: [refunded] });
+    expect(totals).toMatchObject({ refundsMinor: 0, refundBasis: 'embedded', grossAfterRefundsMinor: 1700 });
+  });
+
+  it('F3 keeps the dated basis for an empty list and leaves the embedded refund unsubtracted', () => {
+    const { totals } = salesFigures({ range, timezone: 'UTC', orders: [refunded], refunds: [] });
+    expect(totals).toMatchObject({ refundBasis: 'dated', grossAfterRefundsMinor: 2000, embeddedRefundsMinor: 300 });
+  });
+
+  it('F4 takes a taxed refund off gross only', () => {
+    const taxed = order({ totalMinor: 1150, taxMinor: 150, lines: [line({ netMinor: 1000, taxMinor: 150 })],
+      taxes: [{ ratePpm: 150_000, label: 'VAT', taxMinor: 150, netMinor: 1000 }] });
+    const result = salesFigures({ range, timezone: 'UTC', orders: [taxed], refunds: [{ ...dated[0], amountMinor: 1150 }] });
+    expect(result.totals).toMatchObject({ grossMinor: 1150, grossAfterRefundsMinor: 0, netMinor: 1000, taxMinor: 150 });
+    expect(result.products[0].netMinor).toBe(1000);
+    expect(result.taxes[0]).toMatchObject({ taxMinor: 150, netMinor: 1000 });
+  });
+
+  it('F5 places a refund on its store day across UTC midnight', () => {
+    const { totals, refunds } = salesFigures({ range, timezone: 'America/New_York', orders: [], refunds: [
+      { id: 'late', orderId: 'o1', at: '2026-11-11T04:30:00.000Z', amountMinor: 100 },
+      { id: 'next', orderId: 'o1', at: '2026-11-11T05:30:00.000Z', amountMinor: 40 },
+    ] });
+    expect(totals).toMatchObject({ refundsMinor: 100, grossAfterRefundsMinor: -100 });
+    expect(refunds.count).toBe(1);
+  });
+
+  it("F6 gives the comparison period its own basis and figure", () => {
+    const { comparison } = salesFigures({ range, compare: { from: '2026-11-09', to: '2026-11-09' }, timezone: 'UTC',
+      orders: [order({ at: '2026-11-09T10:00:00.000Z' })],
+      refunds: [{ ...dated[0], at: '2026-11-09T11:00:00.000Z', amountMinor: 200 }] });
+    expect(comparison?.totals).toMatchObject({ refundBasis: 'dated', grossMinor: 1000, refundsMinor: 200, grossAfterRefundsMinor: 800 });
+  });
 });
