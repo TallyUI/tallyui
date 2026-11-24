@@ -86,6 +86,8 @@ export interface StoreOrder {
    * (WooCommerce: a WCPOS payment ledger of another schema); `payments` is then the order's paid-state
    * fallback, and a reopen must refuse the order. Absent otherwise. */
   paymentRecordUnreadable?: true;
+  /** The store says the order still owes money (WooCommerce: `needs_payment`); absent when the store does not say. */
+  needsPayment?: boolean;
   refunds: StoreOrderRefund[];
 }
 

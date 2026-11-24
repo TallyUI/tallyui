@@ -64,6 +64,7 @@ export function reportOrderFromStoreOrder(order: StoreOrder, join?: LineJoin): R
       ratePpm, ...(code !== undefined ? { code } : {}), label, taxMinor: amountMinor, netMinor: null,
     })),
     refunds: order.refunds.map(({ id, amountMinor }) => ({ id, amountMinor })),
+    ...(order.needsPayment !== undefined ? { needsPayment: order.needsPayment } : {}),
   };
 }
 
