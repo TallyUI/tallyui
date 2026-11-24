@@ -88,6 +88,11 @@ async function readPages(
  * - A page with `hasMore: false`, its orders resolved, finishes: `complete: true`, `progress: null`. Any other
  *   rejection, from `listRefunds` or `getOrders`, stops the read: `error` is it, `progress` is `null`, what was
  *   counted stays.
+ * - Pass `refunds` to `salesFigures` only once `complete` is `true`. While `progress` is set the list is partial.
+ *   After an `error` it is partial and `complete` stays `false`: the report shows the error and gives no refund
+ *   figure. It does not fall back to the embedded basis, so it never passes `undefined` for a failed read. With a
+ *   report `compare` period, `query.range` spans both periods. `unscoped`, `otherCurrency`, `orphans` and
+ *   `unreadable` then count the whole read, not each period.
  * - A `query` that differs by value, or a new `connector` or `context`, abandons the read and starts again from
  *   page 1, showing none of the old rows; an equal new object changes nothing. Unmounting abandons the read.
  *
