@@ -6984,8 +6984,19 @@ interface OrderCreatePayload {
      - A void of a rounded pick leg clears its entry, as for any leg (item 6's latest-first rule applies). Refunds do
        not read leg entries. A refund of every line returns the order's whole rounding (the sum of all entries)
        through item 4's `adjustmentMinor`. A partial refund returns none of a pick's entry, as for any other entry.
-     - Known gaps:
-       - A cash pick taken while a leg is in motion is not rounded (item 1).
+     - **While a leg is in motion** nothing rounds (item 1). A cash pick whose target is not a whole number of cash
+       steps is refused with `CASH_WAITS_FOR_PAYMENT`, as any cash leg is then (front desk, 2026-11-24: "a cash pick
+       is refused or rounded in that state"). A pick already payable in steps is taken, unrounded, with no entry.
+     - **Entry cap.** The order.create shape accepts at most 16 entries. A cash pick that would add an entry is
+       refused with `CASH_PICK_LIMIT` once the sale has 15, so one slot stays free for the leg that settles the sale.
+       A pick that rounds exactly adds no entry and is still taken.
+     - Known gaps (accepted with the ruling):
+       - A pick that covers the whole balance is not a part pick. It settles through the ordinary rounded path, but
+         its leg carries units, so `remainderEntriesMinor` leaves its entry out of any later remainder (reached only
+         after a void).
+       - A zero-remainder write-off that lands on a pick leg is left out of later remainders in the same way. In
+         `down` mode, a write-off plus a later remainder can sum to more than one increment (−8 at increment 5); item 6's latest-first void
+         rule still unwinds it.
        - Reopen drops the legs' units, so a reopened order's pick entries are counted with its remainder.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.
