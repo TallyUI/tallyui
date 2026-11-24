@@ -235,8 +235,8 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       lineTax: { none: true, classes: true },
       // ADR-094: only the fork's order_create_v5 store was shown to take a tax-none ±0.05 Rounding fee line, tax off and on, exclusive
       // and inclusive (22 Nov fork proofs). Stock stores declare nothing: their code was read, not tested.
-      // Never on a WCPOS 2.0+ (ledger) store, whose transport refuses cashRoundings.
-      ...(fork && wooLedgerVersion(wcposVersion) !== true ? { cashRounding: true } : {}),
+      // Only on a version that reads as pre-2.0: a 2.0+ (ledger) store's transport refuses cashRoundings, and an unreadable one cannot be classified (desk, 2026-11-24).
+      ...(fork && wooLedgerVersion(wcposVersion) === false ? { cashRounding: true } : {}),
       ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
       // WCPOS 2.0's per-store register_sessions setting: the register transport sends to sessions, movements and closures.
       ...(stores[0].register_sessions === true ? { register: 3 } : {}),

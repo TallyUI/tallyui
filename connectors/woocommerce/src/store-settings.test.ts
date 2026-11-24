@@ -521,13 +521,13 @@ describe('readWooCapabilities', () => {
     expect(await readWooCapabilities(context)).toMatchObject({ coupons: false });
   });
 
-  it('rejects coupons when site answers 404 without changing the other capabilities', async () => {
+  it('rejects coupons and cash rounding when site answers 404 without changing the other capabilities', async () => {
     fetchMock.mockResolvedValueOnce(Response.json(stores))
       .mockResolvedValueOnce(Response.json(statusBody))
       .mockResolvedValueOnce(new Response(null, { status: 404 }));
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 5, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false },
-      multiplePayments: false, coupons: false, lineTax: { none: true, classes: true }, cashRounding: true,
+      multiplePayments: false, coupons: false, lineTax: { none: true, classes: true },
     });
   });
 
@@ -763,6 +763,14 @@ describe('readWooCapabilities', () => {
     statusBody = { capabilities: ['order_create_v5'] };
     siteBody = { wcpos_version: '1.11.0' };
     expect(await readWooCapabilities(context)).toMatchObject({ cashRounding: true });
+  });
+
+  it.each([[{}], [{ wcpos_version: 'garbage' }], [{ wcpos_version: '' }], [{ wcpos_version: 2 }], [null]])('W2: leaves cashRounding out on a fork store whose /site version cannot be read (%j): fail closed', async (body) => {
+    statusBody = { capabilities: ['order_create_v5'] };
+    siteBody = body;
+    const caps = await readWooCapabilities(context);
+    expect(caps).toBeDefined();
+    expect('cashRounding' in caps!).toBe(false);
   });
 
   it.each(['HTTP 500', 'network'])('W2: leaves cashRounding out when /status fails (%s)', async (failure) => {
