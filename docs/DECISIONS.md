@@ -5756,6 +5756,8 @@ interface OrderCreatePayload {
        `modified_after`, with `dates_are_gmt`) widens a report's read; `salesRangeQuery` sends it with
        `dateRange.before` only, and `salesFigures`' range test on the device decides. A connector that does not list
        `modifiedAfter` reads by creation date, so an order created before the range and paid in it is missed there.
+       Known gap: an order whose paid date is earlier than its created date (an import, or dates edited by hand) and
+       which was created after the range is not read, so it is missed from the range it was paid in.
 - **Open:**
   - **Live confirmation.** The WooCommerce mapping is tested against the order document recorded from WCPOS
     1.10.20's push response (order 136), plus one order derived from it by hand. That `wcpos/v2/orders` returns the
