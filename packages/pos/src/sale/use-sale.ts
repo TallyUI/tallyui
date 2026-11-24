@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { cashVoidRefusal, nearestPayableCash, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -906,7 +906,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). */
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). A cash part pick rounds its own target on a cashRounding store (ADR-094). */
     addTender(input: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured'; rounding?: PaymentRounding }): string | null {
       const { rounding, ...tender } = input;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
@@ -914,6 +914,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // ADR-094: a cash leg is rounded only against a store whose connector declares cashRounding; otherwise, BASE's leg.
       // A leg in motion means this cash leg does not settle the sale, so nothing rounds: BASE's row 500 leg.
       const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true
+        && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
+      // ADR-094 (cash picks): a cash part pick rounds its own target and carries its own entry.
+      const pickRule = rounding && tender.method === 'cash' && opts.capabilities?.cashRounding === true
         && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor < 0 || (tender.amountMinor === 0 && !rule)) return null;
       if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
@@ -926,8 +929,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
         if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
       }
+      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, pickRule) : tender.amountMinor;
+      if (tender.tenderedMinor !== undefined && pickMinor === 0) return null;
       if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
-        || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < tender.amountMinor)) return null;
+        || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < pickMinor)) return null;
       if (tender.tenderedMinor !== undefined) {
         const snapshot = builderNow.current.getSnapshot();
         if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
@@ -943,7 +948,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const snapshot = builderNow.current.getSnapshot();
         const due = snapshot.balanceDueMinor - inMotionMinor(snapshot.payments);
         if (due <= 0) { setError(NOTHING_DUE); return null; }
-        const entries = (snapshot.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
+        const entries = remainderEntriesMinor(snapshot);
         const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
           clearStaleError();
@@ -963,7 +968,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         return addOne({ ...tender, amountMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - amountMinor }, true);
       }
       clearStaleError();
-      return addOne({ ...tender, changeMinor: tender.tenderedMinor - tender.amountMinor }, true);
+      return addOne({ ...tender, amountMinor: pickMinor, changeMinor: tender.tenderedMinor - pickMinor }, true,
+        pickMinor !== tender.amountMinor ? { minor: pickMinor - tender.amountMinor } : undefined);
     },
     setTenderStatus(paymentId: string, status: 'authorized' | 'captured' | 'failed'): boolean {
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
