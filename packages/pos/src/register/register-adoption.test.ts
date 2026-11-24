@@ -1044,6 +1044,22 @@ describe('adoptRegisterResults', () => {
       await settle();
       expect(await refunds()).toBe(1200);
     });
+
+    it('R23: an older closure still pending while a newer one is applied: no write', async () => {
+      const id = await first();
+      const next = await closeWith(2000, day(1));
+      await reconcile();
+      expect(await refunds()).toBe(1200);
+      const before = await submit(id);
+      expect(before.syncStatus).toBe('pending');
+      await apply(next, counters(2, 5000, 1000), 2);
+      await settle();
+      expect(await refunds()).toBe(1200);
+      const after = await submit(id);
+      expect(after.syncStatus).toBe('pending');
+      expect(after.commandId).toBe(before.commandId);
+      expect(after.payload).toStrictEqual(before.payload);
+    });
   });
 });
 
