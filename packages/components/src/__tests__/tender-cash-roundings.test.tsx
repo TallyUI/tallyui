@@ -1089,8 +1089,8 @@ it('PK11: while a card leg is pending a cash pick not payable in steps is refuse
 // #1299 review (b3): order-payload-shape.ts accepts 16 cashRoundings entries; a cash leg that settles the sale may not add a 17th.
 const SETTLE_LIMIT_COPY = 'Too many rounded cash payments on this sale: take the rest by another method.';
 /** 15 lines of 333 and one of 1003 (5998), a card leg, 15 rounded picks (+2 each) and a cash settle of `settleMinor`: 16 entries; the card is then voided. */
-function sixteenEntries(cardMinor: number, settleMinor: number, lastLineMinor = 1003) {
-  const ids = startLines([...Array.from({ length: 15 }, () => 333), lastLineMinor]);
+function sixteenEntries(cardMinor: number, settleMinor: number, lastLineMinor = 1003, methods = rounding(five)) {
+  const ids = startLines([...Array.from({ length: 15 }, () => 333), lastLineMinor], methods);
   let cardId = '';
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: cardMinor })!; });
   for (const id of ids.slice(0, 15)) cashPick(id, 500);
@@ -1155,4 +1155,32 @@ it('PK15: at 16 entries a zero-remainder write-off onto a leg that already has a
   expect(sale.order.cashRoundings).toHaveLength(16);
   expect(sale.order.cashRoundings!.at(-1)).toEqual({ paymentId: settle, minor: -1 });
   expect(sale.order.balanceDueMinor).toBe(0);
+});
+
+// A store whose only method is rounded cash has no other method to take the rest by: void the latest cash leg, or park.
+const SETTLE_LIMIT_VOID_COPY = 'Too many rounded cash payments on this sale: void the latest cash payment, then take the rest again.';
+const SETTLE_LIMIT_PARK_COPY = 'Too many rounded cash payments on this sale, and the latest cash payment cannot be voided here, so this sale can only be parked.';
+const cashOnly = [{ ...cash, defaults: { ...cash.defaults, rounding: five } }];
+const cashOnlyNoVoid = [{ ...cash, capabilities: { ...cash.capabilities, void: false }, defaults: { ...cash.defaults, rounding: five } }];
+
+it('PK16: at 16 entries on a cash-only store the hint says to void the latest cash payment, and that frees an entry', () => {
+  sixteenEntries(501, 500, 1003, cashOnly);
+  expect(sale.order.balanceDueMinor).toBe(501);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_VOID_COPY);
+  const latest = sale.order.payments.filter((leg) => countsTowardPaid(leg) && leg.method === 'cash').at(-1)!;
+  act(() => { expect(sale.voidTender(latest.id)).toBe(true); });
+  expect(sale.order.cashRoundings).toHaveLength(15);
+  expect(sale.order.balanceDueMinor).toBe(1001);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 1000, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
+
+it('PK17: at 16 entries on a cash-only store whose cash cannot be voided the hint says the sale can only be parked', () => {
+  sixteenEntries(501, 500, 1003, cashOnlyNoVoid);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_PARK_COPY);
 });
