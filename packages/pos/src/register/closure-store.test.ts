@@ -307,7 +307,8 @@ it('T1: keeps distinct tax identities at the same rate on the Z', async () => {
     getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass, label: 'Tax',
       rate: '5.0000', priority: 1, compound: false, shipping: true }],
   } });
-  for (const code of ['B', 'A']) {
+  // 'B.[1]' carries the characters a stored object key must not (RxDB reads nested fields by dot path).
+  for (const code of ['B.[1]', 'A']) {
     builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
   }
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
@@ -315,10 +316,10 @@ it('T1: keeps distinct tax identities at the same rate on the Z', async () => {
   const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
   const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
   expect(rows).toEqual({
-    '["A",50000]': { name: 'Tax 5% (A)', rate_ppm: 50000, code: 'A', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
-    '["B",50000]': { name: 'Tax 5% (B)', rate_ppm: 50000, code: 'B', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+    '50000:A': { name: 'Tax 5% (A)', rate_ppm: 50000, code: 'A', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+    '50000:B%2E%5B1%5D': { name: 'Tax 5% (B.[1])', rate_ppm: 50000, code: 'B.[1]', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
   });
-  expect(Object.keys(rows)).toEqual(['["A",50000]', '["B",50000]']);
+  expect(Object.keys(rows)).toEqual(['50000:A', '50000:B%2E%5B1%5D']);
   expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
 });
 
