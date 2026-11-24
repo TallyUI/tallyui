@@ -47,6 +47,11 @@ function posUuid(metaData: unknown): string | undefined {
   return entry ? (entry.value as string) : undefined;
 }
 
+/** The first `meta_data` value for `key` when it is a non-empty string. */
+const metaText = (metaData: unknown, key: string) => nonEmpty(rows(metaData).find((meta) => meta.key === key)?.value);
+/** A WordPress id held as text; WooCommerce writes 0 for "none". */
+const wpId = (value: string | undefined) => (value && /^\d+$/.test(value) && value !== '0' ? value : undefined);
+
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
 /** The `_wcpos_payments` ledger: absent, readable (schema 1 with a payments array), or present but unreadable. */
@@ -101,6 +106,9 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     : null;
 
   const clientOrderId = posUuid(raw.meta_data);
+  const cashierId = wpId(metaText(raw.meta_data, '_pos_user'));
+  const storeId = wpId(metaText(raw.meta_data, '_pos_store'));
+  const registerId = metaText(raw.meta_data, '_wcpos_register');
   const revision = nonEmpty(raw._rxdb_revision);
   const createdVia = nonEmpty(raw.created_via);
   const totalMinor = minor(raw.total, currency);
@@ -111,6 +119,9 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     id: String(raw.id),
     reference: String(raw.number ?? raw.id),
     ...(clientOrderId ? { clientOrderId } : {}),
+    ...(cashierId ? { cashierId } : {}),
+    ...(storeId ? { storeId } : {}),
+    ...(registerId ? { registerId } : {}),
     ...(revision ? { revision } : {}),
     status: String(raw.status),
     placedAt: placed.toISOString(),

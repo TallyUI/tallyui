@@ -23,8 +23,10 @@ describe('WooCommerce orders', () => {
       totalMinor: 3291, taxMinor: 116, discountMinor: 0, discountTaxMinor: 0,
       fees: [], shipping: [], coupons: [],
       payments: [{ method: 'pos_cash', title: 'Cash', kind: 'cash', amountMinor: 3291 }], refunds: [], needsPayment: false,
-      createdVia: 'woocommerce-pos',
+      createdVia: 'woocommerce-pos', cashierId: '2',
     });
+    expect(order).not.toHaveProperty('storeId');
+    expect(order).not.toHaveProperty('registerId');
     expect(order.customer).toBeNull();
     expect(order.lines).toHaveLength(4);
     expect(order.lines[0]).toStrictEqual({
@@ -106,6 +108,22 @@ describe('WooCommerce orders', () => {
     for (const createdVia of [{}, { created_via: '' }, { created_via: null }, { created_via: 7 }]) {
       expect(toWooStoreOrder({ ...raw, ...createdVia })).not.toHaveProperty('createdVia');
     }
+  });
+
+  it('reads cashier, store and register from order meta', () => {
+    const raw = {
+      id: 9, status: 'pending', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10', payment_method: 'cod',
+    };
+    const meta = (key: string, value: unknown) => ({ ...raw, meta_data: [{ key, value }] });
+    expect(toWooStoreOrder({ ...raw, meta_data: [
+      { key: '_pos_user', value: '7' }, { key: '_pos_store', value: '3' }, { key: '_wcpos_register', value: 'reg-a1' },
+    ] })).toMatchObject({ cashierId: '7', storeId: '3', registerId: 'reg-a1' });
+    for (const value of ['0', '', 'abc', 3]) expect(toWooStoreOrder(meta('_pos_store', value))).not.toHaveProperty('storeId');
+    expect(toWooStoreOrder(meta('_pos_user', '0'))).not.toHaveProperty('cashierId');
+    expect(toWooStoreOrder(meta('_wcpos_register', ''))).not.toHaveProperty('registerId');
+    const bare = toWooStoreOrder(raw);
+    for (const field of ['cashierId', 'storeId', 'registerId']) expect(bare).not.toHaveProperty(field);
   });
 
   it('reports the captured rows of a payment ledger in order', () => {
