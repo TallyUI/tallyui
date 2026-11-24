@@ -22,6 +22,13 @@ export function roundToIncrement(minor: number, incrementMinor: number, mode: Ro
   return remainder * 2 >= incrementMinor ? down + incrementMinor : down;
 }
 
+/** The nearest payable cash amounts, or null when the amount is already payable. */
+export function nearestPayableCash(amountMinor: number, incrementMinor: number): { belowMinor: number; aboveMinor: number } | null {
+  if (!Number.isInteger(incrementMinor) || incrementMinor <= 1 || amountMinor % incrementMinor === 0) return null;
+  const belowMinor = Math.floor(amountMinor / incrementMinor) * incrementMinor;
+  return { belowMinor, aboveMinor: belowMinor + incrementMinor };
+}
+
 /** ADR-094: the sale rounds once, against its unrounded remainder. */
 export function roundedRemainder(balanceMinor: number, entriesMinor: number, rounding: NonNullable<PaymentRounding>): number {
   if (balanceMinor <= 0) return balanceMinor;

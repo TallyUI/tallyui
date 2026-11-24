@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { cashVoidRefusal, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { createLogger } from '../logging';
@@ -53,6 +53,7 @@ export const PAYMENT_TAKEN = 'This payment was taken. Void it instead of removin
 export const NOTHING_DUE = 'Nothing is left to pay: the payments on this sale already cover the total.';
 /** ADR-094: a cash due that rounds to nothing is entered against the last leg counting toward paid; with none, there is nothing to round against. */
 export const NOTHING_TO_ROUND_AGAINST = 'This sale rounds to nothing in cash: take it by another method.';
+export const CASH_NOT_PAYABLE = 'Cash cannot pay that amount: take a whole number of the smallest cash step.';
 /** voidTender's refusal for cashVoidRefusal's 'later_cash_rounding' (ADR-094 item 6); the components translate it as pos_checkout.void_later_cash_first. */
 export const VOID_LATER_CASH_FIRST = 'Void the later cash payment first.';
 /** On the receipt the finished sale refuses edits and re-tender with this; `add` starts the next sale instead (v2 #2861). */
@@ -956,6 +957,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           return against.id;
         }
         if (tender.amountMinor === 0) return null; // only the zero-remainder settle takes nothing
+        if (rule && nearestPayableCash(tender.amountMinor, rule.incrementMinor)) { setError(CASH_NOT_PAYABLE); return null; }
         const amountMinor = Math.min(tender.amountMinor, due);
         clearStaleError();
         return addOne({ ...tender, amountMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - amountMinor }, true);
