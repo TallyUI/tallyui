@@ -339,6 +339,42 @@ it('T2: orders Z tax rows by ascending rate without adding codes to unique-rate 
   expect(rows.map((row) => row.name)).toEqual(['Tax 5%', 'Tax 20%']);
 });
 
+it('T3: names a code-less row beside a coded row at the same rate without an empty suffix', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass === 'A' ? '' : taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['A', 'B']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { name: string; tax_minor: number }>;
+  expect(Object.keys(rows)).toEqual(['50000:', '50000:B']);
+  expect(Object.values(rows).map((row) => row.name)).toEqual(['Tax 5%', 'Tax 5% (B)']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
+it('T4: a tax code holding a lone surrogate does not block the close', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['\uD800x', 'A']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
+  // 'A' (0x41) sorts before 0xD800 by code unit, whatever the device locale.
+  expect(Object.keys(rows)).toEqual(['50000:A', '50000:\uD800x']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
 it.each(([
   { granularity: 'per_order', mode: 'half_away_from_zero' },
   { granularity: 'woocommerce', roundAtSubtotal: false },

@@ -560,11 +560,13 @@ export async function writeClosure({
     }
   }
   const payment_methods = Object.fromEntries(methodTotals);
-  // Rows use receipt tax identities (code plus rate), never merging taxes at the same rate. Each line is in the mode
+  // Rows are keyed by code plus rate (desk ruling: "name plus rate"), never merging taxes at the same rate; two WooCommerce
+  // rate ids that share a code and a rate, split on the receipt, are one row here. Each line is in the mode
   // its receipt rounded it in (`taxedLinesFor`). Each order is split by the
-  // tax rounding it recorded (#287), so its rows are its receipt's; absent is the default, today's split.
+  // tax rounding it recorded (#287); absent is the default, today's split.
   // RxDB reads stored fields by dot path, so the key carries no '[', ']', '\\' or '.'; never integer-like, so row order is insertion order.
-  const taxRateKey = (code: string | undefined, ratePpm: number) => `${ratePpm}:${encodeURIComponent(code ?? '').replace(/\./g, '%2E')}`;
+  // One pass escapes '%' with the rest, so the key stays injective; it never throws (a lone surrogate is kept as is).
+  const taxRateKey = (code: string | undefined, ratePpm: number) => `${ratePpm}:${(code ?? '').replace(/[%.[\]\\]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
   const taxRates = new Map<string, { ratePpm: number; code?: string; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
   for (const order of bound) {
@@ -625,8 +627,8 @@ export async function writeClosure({
       ...(session.count_note?.trim() ? { variance_note: session.count_note } : {}),
       payment_methods,
       tax_rates: Object.fromEntries(
-        [...taxRates.values()].sort((a, b) => a.ratePpm - b.ratePpm || (a.code ?? '').localeCompare(b.code ?? '')).map(({ ratePpm, code, net_minor, tax_minor }) => [ // Numeric keys sorted automatically; identity keys need an explicit sort.
-          taxRateKey(code, ratePpm), { name: `Tax ${ratePpm / 10000}%${[...taxRates.values()].filter((row) => row.ratePpm === ratePpm).length > 1 ? ` (${code ?? ''})` : ''}`, rate_ppm: ratePpm, ...(code ? { code } : {}), net_minor, tax_minor, gross_minor: net_minor + tax_minor },
+        [...taxRates.values()].sort((a, b) => a.ratePpm - b.ratePpm || ((a.code ?? '') < (b.code ?? '') ? -1 : (a.code ?? '') > (b.code ?? '') ? 1 : 0)).map(({ ratePpm, code, net_minor, tax_minor }) => [ // Numeric keys sorted automatically; identity keys need an explicit sort.
+          taxRateKey(code, ratePpm), { name: `Tax ${ratePpm / 10000}%${[...taxRates.values()].filter((row) => row.ratePpm === ratePpm).length > 1 && code ? ` (${code})` : ''}`, rate_ppm: ratePpm, ...(code ? { code } : {}), net_minor, tax_minor, gross_minor: net_minor + tax_minor },
         ]),
       ),
       // The session's sales used more than one tax rounding (#287): the Z report says so.
