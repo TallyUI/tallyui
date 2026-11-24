@@ -22,7 +22,7 @@ describe('WooCommerce orders', () => {
       placedAt: '2026-10-06T04:54:03.000Z', currency: 'USD', pricesIncludeTax: false,
       totalMinor: 3291, taxMinor: 116, discountMinor: 0, discountTaxMinor: 0,
       fees: [], shipping: [], coupons: [],
-      payments: [{ method: 'pos_cash', title: 'Cash', kind: 'cash', amountMinor: 3291 }], refunds: [],
+      payments: [{ method: 'pos_cash', title: 'Cash', kind: 'cash', amountMinor: 3291 }], refunds: [], needsPayment: false,
     });
     expect(order.customer).toBeNull();
     expect(order.lines).toHaveLength(4);
@@ -82,6 +82,18 @@ describe('WooCommerce orders', () => {
     };
     expect(toWooStoreOrder(raw).payments).toStrictEqual([]);
     expect(toWooStoreOrder({ ...raw, date_paid: null, date_paid_gmt: '' }).payments).toStrictEqual([]);
+  });
+
+  it('reads needs_payment only when it is a boolean', () => {
+    const raw = {
+      id: 9, status: 'pending', currency: 'USD', date_created_gmt: '2026-10-06T04:54:03',
+      discount_total: '0', discount_tax: '0', total_tax: '0', total: '15.10', payment_method: 'cod',
+    };
+    expect(toWooStoreOrder({ ...raw, needs_payment: true }).needsPayment).toBe(true);
+    expect(toWooStoreOrder({ ...raw, needs_payment: false }).needsPayment).toBe(false);
+    for (const needsPayment of [{}, { needs_payment: 'yes' }, { needs_payment: 1 }, { needs_payment: null }]) {
+      expect(toWooStoreOrder({ ...raw, ...needsPayment })).not.toHaveProperty('needsPayment');
+    }
   });
 
   it('reports the captured rows of a payment ledger in order', () => {

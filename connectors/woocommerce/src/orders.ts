@@ -167,6 +167,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     totalMinor,
     payments: storePayments(raw, currency, totalMinor),
     ...(paymentRecordUnreadable ? { paymentRecordUnreadable: true } : {}),
+    ...(typeof raw.needs_payment === 'boolean' ? { needsPayment: raw.needs_payment } : {}),
     refunds: rows(raw.refunds).map((refund) => {
       const reason = nonEmpty(refund.reason);
       return { id: String(refund.id), amountMinor: Math.abs(minor(refund.total, currency)), ...(reason ? { reason } : {}) };
