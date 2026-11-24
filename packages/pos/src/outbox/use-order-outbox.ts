@@ -162,7 +162,7 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
         if (current.current === opened) {
           // Publish the stored order in state.pending before resolving: a caller that renders on resolve must see it (vendurepos/app#470).
           try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
-          void opened.outbox.flush();
+          if (current.current === opened) void opened.outbox.flush(); // the store can switch or unmount during the refresh: a stopped outbox is never flushed again
         }
       } finally {
         savesInFlight.current--;
