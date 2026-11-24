@@ -76,6 +76,8 @@ export interface StoreOrder {
   status: string;
   /** ISO 8601, UTC. */
   placedAt: string;
+  /** When the store recorded the order as paid (WooCommerce: `date_paid_gmt`); absent while unpaid, or when the store records none. ISO 8601, UTC. */
+  paidAt?: string;
   currency: string;
   pricesIncludeTax: boolean;
   customer: { id?: string; name?: string; email?: string } | null;
