@@ -8,10 +8,11 @@ import { abandonSession, adoptRegisterResults, closureApprovalStatus, isLiveAtSt
   takeOverSession } from './register-adoption';
 import { reconcileRegisterCommands, registerCommandCollection, type RegisterCommand, type RegisterCommandCollection } from './register-commands';
 import { advancePerpetual, ensureRegister, mintClosureNumber, readRegister } from './register-document';
-import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
+import { cashMovementSchema, closureSchema, registerSessionCreator, type Closure, type RegisterSession } from './schemas';
 import { closeSession, openSession, recordMovement, startCounting, writeClosure, RegisterSessionRequiredError, RegisterTakeOverError,
   type CashMovementCollection, type ClosureCollection, type RegisterSessionCollection } from './session-store';
 import type { PosOrder } from '../pos-order/types';
+import type { PosRefund } from '../refund/pos-refund';
 
 describe('adoptRegisterResults', () => {
   let db: RxDatabase<{
@@ -737,6 +738,244 @@ describe('adoptRegisterResults', () => {
       expect((await submit(id)).commandId).not.toBe(once.commandId);
       expect((await closure(id)).number).toBe(42);
       expect((await bucket())?.last_closure_number).toBe(42);
+    });
+  });
+
+  describe('settling perpetual refunds to the store (rule R)', () => {
+    const settle = () => adoptRegisterResults({ commands: db.register_commands, sessions: db.register_sessions,
+      registerId: 'register', host: db.register_sessions, storeKey: 'store', closures: db.closures });
+    const bucket = async () => (await readRegister(db.register_sessions))?.stores.store?.registers?.register;
+    const refunds = async () => (await bucket())?.perpetual_refunds_total_minor;
+    const submit = (id: string) => db.register_commands.findOne(`closure.submit:${id}`).exec(true);
+    const closure = async (id: string) => (await db.closures.findOne(id).exec(true)).toJSON();
+    const counters = (lastClosureNumber: number, perpetualSalesTotalMinor: number, perpetualRefundsTotalMinor: number) =>
+      ({ lastClosureNumber, perpetualSalesTotalMinor, perpetualRefundsTotalMinor });
+    /** The store applied the closure's submit: its counters, and `closure.number` unless `number` is null. */
+    const apply = async (id: string, store: Record<string, unknown>, number: number | null) => (await submit(id)).incrementalPatch({
+      syncStatus: 'applied', result: { counters: store, ...(number === null ? {} : { closure: { serverClosureId: 'x', number } }) } as RegisterCommand['result'] });
+    const refuse = async (id: string, code: string, data?: Record<string, unknown>) => (await submit(id)).incrementalPatch({
+      syncStatus: 'rejected', error: { code, message: 'Refused', ...(data ? { data } : {}) } });
+    /** A later session whose applied open carries the store's counters. */
+    const openAnswered = async (store: ReturnType<typeof counters>) => {
+      const s = await openSession(db.register_sessions, { registerId: 'register', expectedFloatMinor: 10000,
+        countedFloatMinor: 10000, openedBy: '7', businessDay: { year: 2026, month: 9, day: 28 }, storeKey: 'store' });
+      await reconcile();
+      await (await command(s.id)).incrementalPatch({ syncStatus: 'applied', result: { counters: store } });
+    };
+    const day = (n: number) => `2026-11-1${n}T17:00:00.000Z`;
+    /** Opens, closes and writes a closure with one cash sale of `salesMinor` and one applied cash refund of `refundsMinor`. */
+    const closeWith = async (salesMinor: number, closedAt: string, storeKey = 'store', refundsMinor = 0) => {
+      const s = await openSession(db.register_sessions, { registerId: 'register', expectedFloatMinor: 10000,
+        countedFloatMinor: 10000, openedBy: '7', businessDay: { year: 2026, month: 9, day: 28 }, storeKey });
+      await reconcile();
+      const closed = await closeSession(db.register_sessions, s.id, { counted: { cash: 10000 + salesMinor - refundsMinor } });
+      const sale = { id: `sale-${s.id}`, commandId: `command-${s.id}`, createdAt: closedAt, updatedAt: closedAt, currency: 'EUR',
+        pricesIncludeTax: false, lines: [], subtotalMinor: salesMinor, discountMinor: 0, taxMinor: 0, totalMinor: salesMinor,
+        customer: null, syncStatus: 'applied', sessionId: s.id, cashierRef: '7', taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' }, payments: [{ id: `pay-${s.id}`, method: 'cash', amountMinor: salesMinor }] } as PosOrder;
+      const refund = { id: `refund-${s.id}`, commandId: `refund-command-${s.id}`, orderId: `sale-${s.id}`, sessionId: s.id, registerId: 'register',
+        envelope: {}, status: 'applied', result: { byMethod: { cash: refundsMinor } }, createdAt: closedAt, updatedAt: closedAt } as unknown as PosRefund;
+      await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey,
+        session: { ...closed.toJSON(), closed_at_gmt: closedAt } as RegisterSession, counted: 10000 + salesMinor - refundsMinor, otherTenders: {},
+        movements: [], orders: [sale], refunds: refundsMinor ? [refund] : [], softwareVersion: '1.0.0' });
+      return s.id;
+    };
+    /** Closure #1 with 3000 sales and 1200 refunds (P = 1200), its submit queued. */
+    const first = async () => {
+      const id = await closeWith(3000, day(0), 'store', 1200);
+      await reconcile();
+      return id;
+    };
+
+    it('R1: the store applied the newest closure: the till takes its refunds, 1200 down to 1000', async () => {
+      const id = await first();
+      expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1200 });
+      await apply(id, counters(1, 3000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_sales_total_minor: 3000, perpetual_refunds_total_minor: 1000 });
+    });
+
+    it('R2: the store agrees with the till: nothing is written', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1200), 1);
+      // The document's data, not its revision: adoptStoreCounters' no-op modify still bumps the revision on every run.
+      const before = await readRegister(db.register_sessions);
+      await settle();
+      expect(await readRegister(db.register_sessions)).toStrictEqual(before);
+      expect(await refunds()).toBe(1200);
+      await settle();
+      expect(await readRegister(db.register_sessions)).toStrictEqual(before);
+      expect(await refunds()).toBe(1200);
+    });
+
+    it('R3: another till has closed since: the store\'s figure only raises, and R writes nothing', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      await openAnswered(counters(2, 9000, 1500));
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1500 });
+    });
+
+    it('R4: a later closure\'s submit is pending: no write until its own answer, then that answer\'s figure', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      const next = await closeWith(2000, day(1), 'store', 200);
+      await reconcile();
+      await settle();
+      expect(await refunds()).toBe(1400);
+      await apply(next, counters(2, 5000, 1200), 2);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1200 });
+    });
+
+    it('R5: two later closures pending: no write until both are applied, then the newest answer\'s figure', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      const [second, third] = [await closeWith(2000, day(1), 'store', 200), await closeWith(1000, day(2), 'store', 300)];
+      await reconcile();
+      await settle();
+      expect(await refunds()).toBe(1700);
+      await apply(second, counters(2, 5000, 1200), 2);
+      await settle();
+      expect(await refunds()).toBe(1700);
+      await apply(third, counters(3, 6000, 1500), 3);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 3, perpetual_refunds_total_minor: 1500 });
+    });
+
+    it('R6: a closure above the anchor with no submit row yet: no write', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      const next = await closeWith(2000, day(1), 'store', 200);
+      expect(await db.register_commands.findOne(`closure.submit:${next}`).exec()).toBeNull();
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1400 });
+    });
+
+    it('R7: a later closure answered with the till\'s own figure: no write, and its command is never rewritten', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      const next = await closeWith(2000, day(1), 'store', 200);
+      await reconcile();
+      const { commandId, payload } = (await submit(next)).toJSON();
+      expect(payload.perpetualRefundsTotalMinor).toBe(1400);
+      await apply(next, counters(2, 5000, 1400), 2);
+      await settle();
+      expect(await refunds()).toBe(1400);
+      const after = (await submit(next)).toJSON();
+      expect([after.commandId, after.payload]).toStrictEqual([commandId, payload]);
+    });
+
+    it('R8: a reserved closure not yet applied: no write', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      await mintClosureNumber(db.register_sessions, 'store', 'register', { ...(await closure(id)), id: 'draft' } as Closure);
+      expect(await bucket()).toMatchObject({ closure_reservation: { applied: false, row: { id: 'draft' } } });
+      await settle();
+      expect(await refunds()).toBe(1200);
+    });
+
+    it('R9: a closure refused for its number: R writes nothing, and renumbering goes on as before', async () => {
+      const refused = await closeWith(3000, day(0), 'store', 1200);
+      const anchor = await closeWith(2000, day(1));
+      await reconcile();
+      await apply(anchor, counters(2, 5000, 1000), 2);
+      await refuse(refused, 'register_closure_number_invalid');
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1200 });
+      expect((await submit(refused)).syncStatus).toBe('rejected');
+      await refuse(refused, 'register_closure_number_invalid', { counters: counters(41, 500000, 2000) });
+      await settle();
+      expect((await submit(refused)).toJSON()).toMatchObject({ syncStatus: 'pending', payload: { number: 42, perpetualRefundsTotalMinor: 3200 } });
+      expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_sales_total_minor: 503000, perpetual_refunds_total_minor: 3200 });
+    });
+
+    it('R10: a closure refused for its approval: no write', async () => {
+      const refused = await closeWith(3000, day(0), 'store', 1200);
+      const anchor = await closeWith(2000, day(1));
+      await reconcile();
+      await apply(anchor, counters(2, 5000, 1000), 2);
+      await refuse(refused, 'register_approval_required');
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1200 });
+    });
+
+    it('R11: a resent answer, adopted twice, settles the same both times', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1000 });
+      const once = await readRegister(db.register_sessions);
+      await settle();
+      expect(await readRegister(db.register_sessions)).toStrictEqual(once);
+    });
+
+    it('R12: a replayed older closure carries today\'s counters with its old number, and the newest has no closure number: no write', async () => {
+      const older = await closeWith(3000, day(0), 'store', 1200);
+      const newest = await closeWith(2000, day(1));
+      await reconcile();
+      await apply(newest, counters(2, 5000, 1000), null);
+      await apply(older, counters(2, 5000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1200 });
+    });
+
+    it('R13: a replayed older closure beside the newest closure\'s own answer: the newest anchors', async () => {
+      const older = await closeWith(3000, day(0), 'store', 1200);
+      const newest = await closeWith(2000, day(1));
+      await reconcile();
+      await apply(newest, counters(2, 5000, 1000), 2);
+      await apply(older, counters(2, 5000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 2, perpetual_refunds_total_minor: 1000 });
+    });
+
+    it('R14: a closure renumbered after another till\'s settles to its own answer', async () => {
+      const id = await closeWith(3000, day(0));
+      await reconcile();
+      await refuse(id, 'register_closure_number_invalid', { counters: counters(41, 500000, 1200) });
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_refunds_total_minor: 1200 });
+      expect((await submit(id)).toJSON()).toMatchObject({ syncStatus: 'pending', payload: { number: 42 } });
+      await apply(id, counters(42, 503000, 1000), 42);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 42, perpetual_refunds_total_minor: 1000 });
+    });
+
+    it('R15: never below any store figure read at the anchor\'s number', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      await openAnswered(counters(1, 3000, 1100));
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1100 });
+    });
+
+    it('R16: malformed counters: no write', async () => {
+      const id = await first();
+      for (const store of [counters(1, 3000, -5), { ...counters(1, 3000, 0), perpetualRefundsTotalMinor: '1000' },
+        { perpetualSalesTotalMinor: 3000, perpetualRefundsTotalMinor: 1000 }]) {
+        await apply(id, store, 1);
+        await settle();
+        expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1200 });
+      }
+    });
+
+    it('R17: sales are never lowered: only refunds take the store\'s figure', async () => {
+      const id = await first();
+      await apply(id, counters(1, 1000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ perpetual_sales_total_minor: 3000, perpetual_refunds_total_minor: 1000 });
+    });
+
+    it('R18: another store\'s closure numbered above the anchor does not count', async () => {
+      for (let i = 0; i < 3; i++) await mintClosureNumber(db.register_sessions, 'other', 'register');
+      const elsewhere = await closeWith(500, day(0), 'other');
+      const id = await first();
+      // The other store's submit is answered, so only its row's number is at issue.
+      await (await submit(elsewhere)).incrementalPatch({ syncStatus: 'applied' });
+      expect(await closure(elsewhere)).toMatchObject({ store_key: 'other', number: 4 });
+      await apply(id, counters(1, 3000, 1000), 1);
+      await settle();
+      expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1000 });
     });
   });
 });

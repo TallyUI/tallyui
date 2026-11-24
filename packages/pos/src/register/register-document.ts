@@ -268,6 +268,22 @@ export function renumberClosures(host: RegisterHost, storeKey: string, registerI
 }
 
 /**
+ * Sets the register's perpetual refunds to the store's figure from its newest applied closure answer (rule R), so it
+ * lowers as well as raises: the one exception to "never lowered". Nothing is written when the register's last number
+ * isn't `lastClosureNumber` (a mint has started since, or the till is behind), when a reserved closure is not yet
+ * applied, or when the figure is already the store's. Every other field stays, sales included, so a repeat changes nothing.
+ */
+export function settleStoreRefunds(host: RegisterHost, storeKey: string, registerId: string,
+  { lastClosureNumber, perpetualRefundsTotalMinor }: Pick<StoreCounters, 'lastClosureNumber' | 'perpetualRefundsTotalMinor'>) {
+  return modifyStore(host, storeKey, (store) => {
+    const register = store?.registers?.[registerId] ?? {};
+    if (register.last_closure_number !== lastClosureNumber || register.closure_reservation?.applied === false
+      || register.perpetual_refunds_total_minor === perpetualRefundsTotalMinor) return undefined;
+    return withRegister(store, registerId, { ...register, perpetual_refunds_total_minor: perpetualRefundsTotalMinor });
+  });
+}
+
+/**
  * Adds a closed period to the register's perpetual totals. With `closureId`, it applies that
  * reserved closure once: the totals become the reservation's, and a repeat does nothing.
  */
