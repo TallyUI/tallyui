@@ -10,6 +10,7 @@ import { createWooReconcileFeed, MAX_IDS_PER_REQUEST } from './reconcile/feed';
 import { createWooCouponFeed, wooCouponReconcile } from './reconcile/coupons';
 import { createWooCustomers } from './customers';
 import { createWooOrders, WOO_ORDER_FILTERS } from './orders';
+import { createWooRefunds } from './refunds';
 import { wooStoreSettings, readWooCapabilities } from './store-settings';
 import { wooListRegisters } from './registers';
 import { wooClosures } from './closures';
@@ -58,6 +59,8 @@ export function createWooCommerceConnector(): TallyConnector {
     ...customers,
     // WCPOS wcpos/v2/orders: order history (ADR-081).
     ...createWooOrders(),
+    // WCPOS wcpos/v2/refunds: refunds dated by when they were made (ADR-081 decision 7).
+    ...createWooRefunds(),
     orderFilters: WOO_ORDER_FILTERS,
     replication: {
       // One replication per collection; the reconcile feed is last, so its fetch wins duplicates;
@@ -143,6 +146,7 @@ export const woocommerceConnector: TallyConnector = createWooCommerceConnector()
 export { wooStoreSettings, readWooCapabilities, WOO_ORDER_CREATE_VERSION, WOO_NOTE_ORDER_CREATE_VERSION } from './store-settings';
 export { createWooCustomers, toWooCustomer } from './customers';
 export { createWooOrders, toWooStoreOrder } from './orders';
+export { createWooRefunds, toWooStoreRefund } from './refunds';
 export { createWooCommandTransport, toWooOrderPayload, type WooCommandTransportOptions } from './commands/transport';
 export { createWooRegisterTransport, wooApproveSession, type WooRegisterTransportOptions } from './commands/register-transport';
 export type { ApproverCredentials } from '@tallyui/core';

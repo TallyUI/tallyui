@@ -5687,8 +5687,8 @@ interface OrderCreatePayload {
 
 - **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Amended by ADR-090:** decision 5,
   reopen-to-edit · **Amended 2026-11-21:** decision 6, a ranged read with progress · **Amended 2026-11-24:**
-  decision 6, a store sale counts on its paid day · **Relates to:** ADR-079
-  (Vendure order history, whose "Open: a core order-history contract waits for a second platform" this settles),
+  decision 6, a store sale counts on its paid day · **Amended 2026-11-24:** decision 7, refunds dated by when they
+  were made · **Relates to:** ADR-079 (Vendure order history, whose "Open: a core order-history contract waits for a second platform" this settles),
   ADR-080 (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order
   transport)
 - **Context:**
@@ -5762,6 +5762,55 @@ interface OrderCreatePayload {
        Vendure (`toVendureStoreOrder`) set no `paidAt`, and Shopify has no order read, so their reports stay on the
        placed day. A connector that starts setting `paidAt` lists `modifiedAfter` in the same change; otherwise its
        created-day read drops orders paid on a later day and never fetches ones created earlier, an undercount.
+  7. **Refunds dated by when they were made (front desk ruling, 2026-11-24).** Built in two steps: the core member
+     and the WooCommerce read, then the `@tallyui/pos` hook.
+     - **The member.** `TallyConnector` gains an optional, online, read-only `listRefunds(context, query?)`. Its
+       query is `{ page?, perPage? (1..100, default 25), dateRange?: { after?, before? }, orderId? }`; `dateRange`
+       selects by when the refund was made, not when its order was placed. It returns `{ refunds, orphans, hasMore,
+       unreadable?, total? }`, newest first, one page per call, with no collection and no cache (decision 1). It
+       rejects as `listOrders` does. A connector without it is unchanged, and the app keeps counting refunds on their
+       order's day (decision 6).
+     - **`StoreRefund` is `{ id, orderId, refundedAt, currency, amountMinor, reason? }`.** `orderId` is the refunded
+       order's `StoreOrder.id`. `currency` is that order's: a store's refund row carries none, so the connector reads
+       it from the order. `amountMinor` is positive and gross, tax included: WooCommerce's refund `amount` is the
+       refunded total with its tax.
+     - **An orphan is a refund whose order the store did not return:** `{ id, orderId, refundedAt }`, with no amount,
+       because there is no currency to read it in. Orphans are returned, never dropped and never counted. A refund
+       of a trashed WooCommerce order is one: the order read does not return trashed orders.
+     - **WooCommerce reads WCPOS `GET wcpos/v2/refunds`**, the plugin's read-only proxy of `wc/v3/refunds` (WCPOS
+       2.0.0 and later).
+       - It sends `dateRange` as `after`/`before` with `dates_are_gmt=true`, rounded as `listOrders` rounds them, and
+         `orderId` as `parent`.
+       - Each page's parent orders are read in one `orders?include=` request, for their currency only. A parent that
+         read leaves out makes an orphan.
+       - `refundedAt` is `date_created_gmt` read as UTC; `amountMinor` is `|amount|` in the parent's currency.
+     - **Below WCPOS 2.0.0, "not supported".** The connector reads `/site` `wcpos_version` once per store.
+       - A version below 2.0.0, a 2.0.0 prerelease, or an answer with no readable version makes `listRefunds` reject
+         with `StoreRefundsUnsupportedError` before any refunds request. The app treats that like an absent member.
+       - A failed `/site` read rejects as any read does and is tried again on the next call.
+       - The connector never guesses from a 404.
+     - **`@tallyui/pos` scopes and counts refunds; nothing is silently counted or dropped.**
+       `useStoreRefundsInRange(connector, context, query)` pages `listRefunds` as decision 6 pages orders. It returns
+       `{ refunds, orphans, unscoped, otherCurrency, progress, error, complete }`.
+       - **Scope.** When the report is scoped by store, cashier or register, a refund counts only when its order
+         matches that scope. An order not among those the report already loaded is fetched with `getOrders`. An order
+         still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no register:
+         ADR-090 decision 6), makes the refund `unscoped`: shown with a count, never summed. With no scope, nothing
+         extra is fetched.
+       - **Currency.** A refund counts only in the report's currency. One in another currency goes to
+         `otherCurrency`, shown with its own count and amount per currency, never summed into the report's figures.
+       - **One refund figure per report, named.** `SalesTotals` gains `refundBasis: 'dated' | 'embedded'` and
+         `grossAfterRefundsMinor = grossMinor` less the basis figure. With `listRefunds`, the basis is `dated`: the
+         hook's counted refunds, `refundsMinor`. Without it, the basis is `embedded`: the orders' own refunds,
+         `embeddedRefundsMinor`. A report never subtracts both; the other figure may be shown, never subtracted.
+       - **Tax basis.** A refund is gross, so it comes off `grossMinor` (tax included) only, never off `netMinor`
+         (`grossMinor − taxMinor − roundingMinor`) or any product, category or tax row. No net-of-tax refund figure
+         is derived, because a refund row gives no tax split.
+       - **Day boundaries.** The report range is store days in the store's timezone. The hook converts its first and
+         last day's bounds to UTC instants with a `Z` for `dateRange.after`/`before`, and `salesFigures` places each
+         refund on its store day by `refundedAt` (`businessDayOf`).
+     - **Other connectors.** Medusa and Vendure do not change: their refunds sit under payments, and whether those
+       rows carry a date is not checked. Adopting the member is a separate job for each platform.
 - **Open:**
   - **Live confirmation.** The WooCommerce mapping is tested against the order document recorded from WCPOS
     1.10.20's push response (order 136), plus one order derived from it by hand. That `wcpos/v2/orders` returns the
@@ -5780,8 +5829,13 @@ interface OrderCreatePayload {
     in the display mode. An order finalized below `order.create` v3 (no `display`) keeps a converted line's discount
     only in the line's own mode. Its line totals and order total still match, but `displayAmountMinor`, `subtotalMinor`
     and `discountMinor` can differ from the original by that discount's tax conversion.
+  - **Refunds, live read.** The WooCommerce refunds mapping is tested against a `wcpos/v2/refunds` page and its
+    parent orders recorded from a local wp-env store with WCPOS 2.0.3, never a dev or demo store.
+  - **Refunds, cost.** A store-wide read of a long range costs one parent read per refunds page, plus one
+    `getOrders` read per scoped page.
 - **Evidence:** `connectors/woocommerce/src/orders.test.ts`, `packages/pos/src/receipt/reprint.test.ts`,
-  `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`.
+  `packages/components/src/__tests__/receipt.test.tsx`, `packages/core/src/__tests__/connector-orders.test.ts`,
+  `connectors/woocommerce/src/refunds.test.ts`, `packages/core/src/__tests__/connector-refunds.test.ts`.
 
 ## ADR-082 Register contract 3: the close carries the store's approval
 
