@@ -36,6 +36,19 @@ export function roundedRemainder(balanceMinor: number, entriesMinor: number, rou
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
+/** ADR-094 (cash picks): a cash part pick rounds its own target; 0 means cash cannot pay it. */
+export function roundedPickTarget(targetMinor: number, rounding: PaymentRounding | null | undefined): number {
+  return rounding ? roundToIncrement(targetMinor, rounding.incrementMinor, rounding.mode) : targetMinor;
+}
+
+/** ADR-094: the live entries a remainder rounds against, leaving out a pick leg's own entry (its leg carries units). */
+export function remainderEntriesMinor(order: { payments: readonly { id: string; units?: Readonly<Record<string, number>> }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }): number {
+  return (order.cashRoundings ?? []).reduce((sum, entry) => {
+    const units = order.payments.find((leg) => leg.id === entry.paymentId)?.units;
+    return !units || Object.keys(units).length === 0 ? sum + entry.minor : sum;
+  }, 0);
+}
+
 /** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live cash leg's entry was computed against this leg's. */
 export type CashVoidRefusal = 'later_cash_rounding';
 /**

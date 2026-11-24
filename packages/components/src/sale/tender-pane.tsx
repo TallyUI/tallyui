@@ -9,7 +9,7 @@ import { useEffect, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, tenderRounding, tillLegsTheStoreRefuses,
+  activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses,
   type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -90,23 +90,34 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const pick = state.plan || Object.keys(state.pickedUnits).length === 0 ? null : pickFigure(order, state.pickedUnits);
   const target = pick ? Math.min(pick.minor, balance - inMotionMinor(order.payments)) : balance;
   const partPick = pick !== null && target < balance;
-  const entry = state.entryDirty ? state.entryMinor : target;
   // ADR-094: the pane rounds exactly when addTender does: only on a store whose connector declares cashRounding, and only while no leg is in motion.
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
-  const entries = (order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0);
-  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, target, null) : tenderRounding(state, balance, rounds ? method : null, entries);
+  // ADR-094 (cash picks): a cash part pick rounds its own target; addTender rounds the leg, the pane shows the same figure.
+  const pickRounding = rounds && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding ? method.defaults.rounding : null;
+  const pickTarget = partPick ? roundedPickTarget(target, pickRounding) : target;
+  const entry = state.entryDirty ? state.entryMinor : pickTarget;
+  const entries = remainderEntriesMinor(order);
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, pickTarget, null) : tenderRounding(state, balance, rounds ? method : null, entries);
   const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
     && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
     ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
-  const cashWaits = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) > 0 && !partPick && method !== null
-    && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding && figures.entryMinor > 0
-    && nearestPayableCash(Math.min(figures.entryMinor, balance - inMotionMinor(order.payments)), method.defaults.rounding.incrementMinor) !== null;
-  const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
+  const cashWaits = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) > 0 && method !== null
+    && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding && (partPick
+      ? nearestPayableCash(target, method.defaults.rounding.incrementMinor) !== null
+      : figures.entryMinor > 0 && nearestPayableCash(Math.min(figures.entryMinor, balance - inMotionMinor(order.payments)), method.defaults.rounding.incrementMinor) !== null);
+  // order-payload-shape.ts's 16-entry cap: a pick that would add an entry is refused once the sale has CASH_PICK_ENTRIES_MAX.
+  const pickLimit = partPick && pickTarget !== target && (order.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX;
+  const pickRefused = (partPick && entry > 0 && (givesChange ? entry < pickTarget : entry !== pickTarget))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
   // ADR-094: a cash due rounded to nothing still settles the sale (v2 tender-pane.tsx:1062), where the store's connector declares cashRounding.
   const zeroDue = sale.capabilities?.cashRounding === true && !partPick && figures.roundedDueMinor === 0 && figures.roundingMinor !== 0
     && inMotionMinor(order.payments) === 0;
+  // The 16-entry cap as addTender applies it: a settle that adds an entry is refused at 16; a write-off onto a leg with one is not.
+  const lastCounted = order.payments.filter(countsTowardPaid).at(-1);
+  const settleLimit = !partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0
+    && (order.cashRoundings ?? []).length > CASH_PICK_ENTRIES_MAX
+    && !(zeroDue && lastCounted !== undefined && (order.cashRoundings ?? []).some((e) => e.paymentId === lastCounted.id));
   const entryChange = zeroDue ? 0 : partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
@@ -121,9 +132,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const splitOn = state.splitView || plan !== null;
   // v2 tender-figures.ts: a typed part payment comes first, and the ways divide what is left after it.
   const typed = state.entryDirty && figures.appliedMinor > 0 && figures.appliedMinor < balance;
-  const restMinor = balance - (typed ? figures.appliedMinor : 0);
+  const restMinor = balance - (typed ? (partPick ? target : figures.appliedMinor) : 0);
   const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
-  const dueMinor = partPick ? target : planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
+  const dueMinor = partPick ? pickTarget : planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
@@ -134,8 +145,11 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const hint = cashNotPayable ? (cashNotPayable.belowMinor === 0 ? t('pos_checkout.cash_not_payable_above', { above: money(cashNotPayable.aboveMinor) })
     : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
     : cashWaits ? t('pos_checkout.cash_waits_for_payment')
-    : partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
-    : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
+    : pickLimit ? t('pos_checkout.cash_pick_limit')
+    : settleLimit ? t('pos_checkout.cash_settle_limit')
+    : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
+    : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
+    : givesChange && entry > pickTarget ? t('pos_checkout.change_due', { amount: money(entry - pickTarget) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
     : zeroDue ? ''
@@ -151,7 +165,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || cashNotPayable !== null || cashWaits || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
@@ -159,7 +173,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     // No pick stands (a plan is set, or nothing is picked): the leg carries no units. Otherwise it carries the picks that stand (pickFigure), never the raw ones.
     const units = pick === null ? {} : { units: pick.picks };
     const id = tender.method === 'cash'
-      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry } : {}),
+      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry, ...(method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) } : {}),
         ...(!partPick && method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) })
       : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
     if (id === null) { setRefusal(true); return; }
@@ -203,7 +217,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 
