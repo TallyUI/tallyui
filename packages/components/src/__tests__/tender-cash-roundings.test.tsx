@@ -12,6 +12,7 @@ import {
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
+import { cancelRefusedLeg } from '../sale/cancel-payment-view';
 import { Tender } from '../sale/tender';
 import { useTender } from '../sale/use-tender';
 import { blue, pricing, SaleHarness, sale, traits } from './sale-harness';
@@ -339,36 +340,79 @@ function mulberry32(seed: number) {
   };
 }
 
-it('property (desk): live entries never reach a full increment, and latest-first always unwinds', () => {
-  for (let seed = 1; seed <= 120; seed++) {
+it('property (desk): a closed sale\'s entries stay under one increment; an open sale can always close or cancel', () => {
+  for (let seed = 1; seed <= 200; seed++) {
     const random = mulberry32(seed);
     const rule: PaymentRounding = { incrementMinor: 5, mode: (['nearest', 'up', 'down'] as const)[Math.floor(random() * 3)] };
     const price = 1000 + Math.floor(random() * 1000);
     const steps: string[] = [`${rule.mode}, price ${price}`];
     startCustom(price, rounding(rule), carries);
-    for (let step = 0; step < 8; step++) {
-      const choice = Math.floor(random() * 5);
+    for (let step = 0; step < 14; step++) {
+      const choice = Math.floor(random() * 6);
       const due = sale.order.balanceDueMinor;
       const live = sale.order.payments.filter(countsTowardPaid);
-      if (choice === 4 && live.length) {
+      if (choice === 5 && live.length) {
         const leg = live[Math.floor(random() * live.length)];
-        steps.push(`void payment ${sale.order.payments.indexOf(leg)}`);
-        act(() => { sale.voidTender(leg.id); });
-      } else if (choice < 4 && due > 0 && (choice !== 0 || due > 1)) {
+        act(() => { steps.push(`void payment ${sale.order.payments.indexOf(leg)}: ${sale.voidTender(leg.id)}`); });
+      } else if (choice < 5 && due > 0 && (choice !== 0 || due > 1)) {
         const amountMinor = choice === 0 ? 1 + Math.floor(random() * (due - 1))
-          : choice === 1 ? due + 10 : choice === 2 ? 0 : 1 + Math.floor(random() * due);
-        const method = choice === 3 ? 'external' : 'cash';
+          : choice === 1 ? due : choice === 2 ? due + 10 : choice === 3 ? 0 : 1 + Math.floor(random() * due);
+        const method = choice === 4 ? 'external' : 'cash';
         steps.push(`${method} ${amountMinor} (due ${due})`);
         act(() => { sale.addTender({ method, amountMinor, ...(method === 'cash' ? { rounding: rule } : {}) }); });
       } else steps.push(`skip ${choice} (due ${due})`);
-      expect(Math.abs((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0)), `seed ${seed}: ${steps.join('; ')}`).toBeLessThan(5);
+      const sum = (sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0);
+      const remaining = sale.order.payments.filter(countsTowardPaid);
+      const message = `seed ${seed}: ${steps.join('; ')}`;
+      if (sale.order.balanceDueMinor === 0 && remaining.length) {
+        expect(sale.order.paidMinor - price, message).toBe(sum);
+        expect(Math.abs(sum), message).toBeLessThan(5);
+      } else expect(cancelRefusedLeg(sale.order, remaining), message).toBeUndefined();
     }
-    for (const leg of sale.order.payments.filter(countsTowardPaid).reverse()) {
-      act(() => { expect(sale.voidTender(leg.id), `seed ${seed}: ${steps.join('; ')}`).toBe(true); });
+    if (seed % 2 === 0 && !(sale.order.balanceDueMinor === 0 && sale.order.payments.some(countsTowardPaid))) {
+      const amountMinor = sale.order.balanceDueMinor + 10;
+      steps.push(`closing cash ${amountMinor} (due ${sale.order.balanceDueMinor})`);
+      act(() => { sale.addTender({ method: 'cash', amountMinor, rounding: rule }); });
+      const message = `seed ${seed}: ${steps.join('; ')}`;
+      const sum = (sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0);
+      expect(sale.order.balanceDueMinor, message).toBe(0);
+      expect(sale.order.payments.some(countsTowardPaid), message).toBe(true);
+      expect(sale.order.paidMinor - price, message).toBe(sum);
+      expect(Math.abs(sum), message).toBeLessThan(5);
+    } else if (seed % 2 === 1) {
+      for (const leg of sale.order.payments.filter(countsTowardPaid).reverse()) {
+        steps.push(`cancel: void payment ${sale.order.payments.indexOf(leg)}`);
+        act(() => { expect(sale.voidTender(leg.id), `seed ${seed}: ${steps.join('; ')}`).toBe(true); });
+      }
     }
     cleanup();
   }
-}, 60_000);
+}, 120_000);
+
+it('1012 (desk review): a reopened write-off may carry -6 while open; cash 5 closes it at -2', () => {
+  startCustom(1012, rounding(five), carries);
+  const steps: string[] = ['nearest, price 1012'];
+  let card10 = '', cash1000 = '', card9 = '', cash5 = '', card5 = '';
+  steps.push('card 10'); act(() => { card10 = sale.addTender({ method: 'external', amountMinor: 10 })!; });
+  steps.push('cash 1000'); act(() => { cash1000 = sale.addTender({ method: 'cash', amountMinor: 1000, rounding: five })!; });
+  steps.push('void card 10'); act(() => { expect(sale.voidTender(card10), steps.join('; ')).toBe(true); });
+  steps.push('card 9'); act(() => { card9 = sale.addTender({ method: 'external', amountMinor: 9 })!; });
+  steps.push('cash 5'); act(() => { cash5 = sale.addTender({ method: 'cash', amountMinor: 5, rounding: five })!; });
+  steps.push('void card 9'); act(() => { expect(sale.voidTender(card9), steps.join('; ')).toBe(true); });
+  steps.push('card 5'); act(() => { card5 = sale.addTender({ method: 'external', amountMinor: 5 })!; });
+  steps.push('cash 0'); act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
+  expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(0);
+  expect(sale.order.cashRoundings, steps.join('; ')).toEqual([{ paymentId: cash1000, minor: -2 }, { paymentId: cash5, minor: 4 }, { paymentId: card5, minor: -4 }]);
+  expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-2);
+  expect(sale.order.paidMinor - 1012, steps.join('; ')).toBe(-2);
+  steps.push('void cash 5'); act(() => { expect(sale.voidTender(cash5), steps.join('; ')).toBe(true); });
+  expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-6);
+  expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(1);
+  steps.push('cash 5'); act(() => { sale.addTender({ method: 'cash', amountMinor: 5, rounding: five }); });
+  expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(0);
+  expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-2);
+  expect(sale.order.paidMinor - 1012, steps.join('; ')).toBe(-2);
+});
 
 it('S7: without cashRounding, the due the pane shows is the due the leg takes', () => {
   startCustom(1002, rounding(five), { orderCreate: 12 });
