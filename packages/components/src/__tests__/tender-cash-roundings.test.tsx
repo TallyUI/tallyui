@@ -8,7 +8,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor, type PaymentRounding, type ServerCapabilities } from '@tallyui/core';
 import {
-  buildReceiptData, CASH_NOT_PAYABLE, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
+  buildReceiptData, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
@@ -209,7 +209,7 @@ it('R7: an entry on a pending leg is dead, stays dead when it fails, and lives o
   expect(builder.getSnapshot()).toMatchObject({ totalMinor: 3120, paidMinor: 3120, balanceDueMinor: 0, cashRoundings: [{ paymentId: second, minor: -5 }] });
 });
 
-it('R7c: with a leg in motion the cash Take is not rounded: BASE\'s net leg, and no entry when the pending leg fails', () => {
+it('R7c: with a leg in motion, a cash leg that is not a whole number of cash steps is refused', () => {
   start(2, rounding(nearest), carries);
   enter(1000);
   press('tender-take');
@@ -217,23 +217,14 @@ it('R7c: with a leg in motion the cash Take is not rounded: BASE\'s net leg, and
   let cardId: string | null = null;
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
   enter(2130);
-  // By hand, tenderRounding(entry 2130 dirty, balance 3125 - 1000 = 2125, null): rounded due 2125, rounding 0,
-  // applied min(2130, 2125) = 2125, so no "Rounded from" and Take reads 21.25. entryChange =
-  // 2130 - min(2125, max(0, 2125 - 2123) + 0) = 2130 - 2 = 2128, the change the leg records; tillChange is 0 before Take.
-  expect(screen.getByTestId('tender-figure').textContent).not.toContain('Rounded from');
-  expect(text('tender-take')).toBe(`Take ${money(2125)} in Cash`);
-  expect(text('tender-entry-hint')).toBe(`Change ${money(2128)}`);
-  expect(screen.queryByTestId('tender-change')).toBeNull();
-  press('tender-take');
-  // By hand, use-sale.ts's non-rule path: due = 3125 - 1000 - 2123 (in motion) = 2, so the leg is min(2130, 2) = 2,
-  // tendered 2130, change 2130 - 2 = 2128.
-  expect(sale.order.payments).toHaveLength(3);
-  expect(sale.order.payments[2]).toMatchObject({ method: 'cash', amountMinor: 2, tenderedMinor: 2130, changeMinor: 2128 });
-  expect(text('tender-change')).toBe(`Change ${money(2128)}`);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(CASH_WAITS_FOR_PAYMENT);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 2130, rounding: nearest })).toBeNull(); });
+  expect(sale.error).toBe(CASH_WAITS_FOR_PAYMENT);
+  expect(sale.order.payments).toHaveLength(2);
   expect(sale.order).not.toHaveProperty('cashRoundings');
   act(() => { expect(sale.setTenderStatus(cardId!, 'failed')).toBe(true); });
-  expect(sale.order).not.toHaveProperty('cashRoundings');
-  expect(sale.order.totalMinor).toBe(3125);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 2130, rounding: nearest })).toBeTypeOf('string'); });
 });
 
 it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 on the card leg', () => {
@@ -248,6 +239,41 @@ it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 
   expect(sale.order.payments).toHaveLength(2);
   expect(sale.order.cashRoundings).toEqual([{ paymentId: cardId, minor: -2 }]);
   expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
+});
+
+it('R7e: after the pending card captures, Take at zero writes off the remainder on that card', () => {
+  start(2, rounding(nearest), carries);
+  enter(1000);
+  press('tender-take');
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
+  enter(2130);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(CASH_WAITS_FOR_PAYMENT);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 2130, rounding: nearest })).toBeNull(); });
+  expect(sale.error).toBe(CASH_WAITS_FOR_PAYMENT);
+  expect(sale.order.payments).toHaveLength(2);
+  expect(sale.order).not.toHaveProperty('cashRoundings');
+  act(() => { expect(sale.setTenderStatus(cardId!, 'captured')).toBe(true); });
+  expect(sale.order.balanceDueMinor).toBe(2);
+  enter(0);
+  expect(disabled('tender-take')).toBe(false);
+  press('tender-take');
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cardId, minor: -2 }]);
+  expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
+});
+
+it('R7f: a part payment while a leg is in motion must be a whole number of cash steps', () => {
+  start(2, rounding(nearest), carries);
+  act(() => { sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
+  enter(502);
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(CASH_WAITS_FOR_PAYMENT);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 502, rounding: nearest })).toBeNull(); });
+  enter(1000);
+  expect(disabled('tender-take')).toBe(false);
+  press('tender-take');
+  expect(sale.order.payments[1]).toMatchObject({ method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0 });
 });
 
 const five: PaymentRounding = { incrementMinor: 5, mode: 'nearest' };
@@ -769,6 +795,16 @@ it('R12: the receipt and the customer display show the rounding', async () => {
     presentation_hints: {}, i18n: { welcome: 'Hello there' }, idle: { afterCompleteMs: 8000 },
   }, view: { screen: 'cart', cart: displayCart(receipt) } }} />);
   expect(document.body.textContent).toContain(`Rounding${formatMoney({ amount: 5, currency: 'EUR' }, 'en-US')}`);
+});
+
+it.each(unflagged)('%s in motion: without cashRounding the 0.02 cash leg is still recorded', (_name, before) => {
+  start(2, rounding(nearest), before);
+  enter(1000);
+  press('tender-take');
+  act(() => { sale.addTender({ method: 'external', amountMinor: 2123, status: 'pending' }); });
+  enter(2130);
+  press('tender-take');
+  expect(sale.order.payments[2]).toMatchObject({ method: 'cash', amountMinor: 2, tenderedMinor: 2130, changeMinor: 2128 });
 });
 
 it.each(unflagged)('%s up: without the cashRounding flag the pane does not round, and the stock-store sale completes with no cashRoundings (S7)', async (_name, before) => {

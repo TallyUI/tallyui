@@ -98,6 +98,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
     && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
     ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
+  const cashWaits = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) > 0 && !partPick && method !== null
+    && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding && figures.entryMinor > 0
+    && nearestPayableCash(Math.min(figures.entryMinor, balance - inMotionMinor(order.payments)), method.defaults.rounding.incrementMinor) !== null;
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < target : entry !== target))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
@@ -130,6 +133,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const cardReference = unstamped.length === 1 && prefill.method === 'external' && legStatus(prefill) === 'captured' && balance === 0;
   const hint = cashNotPayable ? (cashNotPayable.belowMinor === 0 ? t('pos_checkout.cash_not_payable_above', { above: money(cashNotPayable.aboveMinor) })
     : t('pos_checkout.cash_not_payable', { below: money(cashNotPayable.belowMinor), above: money(cashNotPayable.aboveMinor) }))
+    : cashWaits ? t('pos_checkout.cash_waits_for_payment')
     : partPick ? (pickRefused || entry === target ? t('pos_checkout.pick_amount_due', { amount: money(target) })
     : givesChange && entry > target ? t('pos_checkout.change_due', { amount: money(entry - target) }) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
@@ -147,7 +151,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || cashNotPayable !== null || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || noChange || pickRefused || cashNotPayable !== null || cashWaits || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
