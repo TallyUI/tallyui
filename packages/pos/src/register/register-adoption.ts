@@ -104,10 +104,9 @@ type SessionTarget = { commands: RegisterCommandCollection; sessions: RegisterSe
  * Applied opens fill a missing resume id; refused opens make open/counting sessions conflict.
  * Superseded rejections make open/counting sessions terminal; a conflict session leaves only by an applied open or abandon (ADR-078 decision 9); terminal/unknown states stay untouched.
  * Applied conflict opens restore the latest transition's counting state, otherwise open; pending rows do nothing.
- * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`),
+ * Given `host` and `storeKey`, applied rows also raise the register's counters to the store's (#651, `adoptStoreCounters`; refunds only from answers at the highest closure number among them),
  * and given `closures` too, a closure refused for its number is renumbered once and requeued (#655, `renumberRefused`).
- * Given `closures`, applied closure answers then set the register's perpetual refunds to the store's (`settleStoreRefunds`) when nothing of this till's is unsent;
- * refunds are raised only from answers at the newest closure number.
+ * Given `closures`, applied closure answers then set the register's perpetual refunds to the store's (`settleStoreRefunds`) when nothing of this till's is unsent.
  * Answers are walked in seq/key order; adoption is idempotent and safe to run at any time.
  */
 export async function adoptRegisterResults({ commands, sessions, registerId, host, storeKey, closures }: {
