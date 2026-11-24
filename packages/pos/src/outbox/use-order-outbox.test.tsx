@@ -4,7 +4,7 @@
 // `Harness` component became `renderHook` over `useOrderOutbox`, wired the way medusapos's `use-outbox` wires it
 // (base URL as `storeKey`, an HTTP transport reading the latest token), with memory RxDB in place of `openOrderStore`.
 // The second block covers the hook's own options and guards.
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection } from 'rxdb';
@@ -228,6 +228,31 @@ describe('useOrderOutbox options', () => {
   const fakeTransport = (send: CommandTransport<OrderCreateEnvelope>['send']) => () => ({ send });
   const appliedResults: CommandTransport<OrderCreateEnvelope>['send'] = async (batch) => ({ kind: 'results', results: batch.map((command) =>
     ({ id: command.id, status: 'applied', serverRefs: { orderId: `server-${command.id}`, totalMinor: command.payload.totalMinor } })) });
+
+  it('counts the order in state.pending by the time record() resolves, so no render shows the caller resolved without it', async () => {
+    const sending = deferred<void>();
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope>['send']>(async (batch) => { await sending.promise; return appliedResults(batch); });
+    const renders: Array<{ receipt: boolean; pending: number }> = [];
+    let showReceipt!: () => void;
+    renderHook(() => {
+      outbox = useOrderOutbox({ storeKey: session.baseUrl, deviceId: 'register-1', open: openStore, transport: fakeTransport(send) });
+      const [receipt, setReceipt] = useState(false);
+      showReceipt = () => setReceipt(true);
+      renders.push({ receipt, pending: outbox.state.pending });
+      return outbox;
+    });
+    await waitFor(() => expect(outbox.orders).not.toBeNull());
+    // The first sale's send is held in flight, so the outbox's run is busy and publishes no new count until it ends:
+    // the second sale's pending row must still be counted before its record() resolves (vendurepos/app#470).
+    await act(async () => { await outbox.record(sale()); });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    void outbox.record(sale()).then(() => { showReceipt(); });
+    await waitFor(() => expect(renders.some((r) => r.receipt)).toBe(true));
+    expect(renders.filter((r) => r.receipt).map((r) => r.pending)).toEqual(expect.arrayContaining([2]));
+    expect(renders.filter((r) => r.receipt).every((r) => r.pending === 2)).toBe(true);
+    await act(async () => { sending.resolve(); });
+    await waitFor(() => expect(outbox.recent.every((order) => order.syncStatus === 'applied')).toBe(true));
+  });
 
   it('the outbox reads the latest getMaxOrderCreateVersion at call time', async () => {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
