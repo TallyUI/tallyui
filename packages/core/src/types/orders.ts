@@ -61,6 +61,15 @@ export interface StoreOrder {
   reference: string;
   /** The till's `PosOrder.id` when a till created the order; absent otherwise. It is also what an `order.reopen` sends as `clientOrderId`. */
   clientOrderId?: string;
+  /** The cashier the store records for the order, as `ListOrdersQuery.cashierId` filters it (WooCommerce: the WordPress user id in `_pos_user`); absent when the store records none. */
+  cashierId?: string;
+  /** The store (outlet) the order was rung at, as `ListOrdersQuery.storeId` filters it (WooCommerce: `_pos_store`); absent when the store records none, as a single-store install does. */
+  storeId?: string;
+  /**
+   * The register the store itself records for the order, as `ListOrdersQuery.registerId` filters it (WooCommerce: `_wcpos_register`,
+   * which only WCPOS writes). It is neither the till's drawer nor its device id, and it is absent on every order TallyUI rings (ADR-090 decision 6).
+   */
+  registerId?: string;
   /** The store's current revision of the order, which `OrderReopenPayload.baseRevision` and `OrderUpdatePayload.baseRevision` carry; absent when the store has none. */
   revision?: string;
   /** The platform's own status word (WooCommerce: `completed`, `refunded`, …); the app labels it. */
