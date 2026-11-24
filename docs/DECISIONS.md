@@ -5819,7 +5819,11 @@ interface OrderCreatePayload {
          last day's bounds to UTC instants with a `Z` for `dateRange.after`/`before`, and `salesFigures` places each
          refund on its store day by `refundedAt` (`businessDayOf`). With `compare`, the hook's `range` spans both
          periods; `salesFigures` places each refund in its own period. The report uses `refunds` only once the read
-         is `complete`; a read in progress or ended by an error is partial and is shown as such, never summed.
+         is `complete`; a read in progress or ended by an error is partial and is shown as such, never summed. A
+         read that ends in an error leaves `refunds` partial and `complete` false: the report shows the error and no
+         refund figure, and never falls back to the embedded basis. With a spanning range, `unscoped`,
+         `otherCurrency`, `orphans` and `unreadable` count the whole read, not each period. The consuming app tests
+         the error state when it wires the hook (G3c).
      - **Other connectors.** Medusa and Vendure do not change: their refunds sit under payments, and whether those
        rows carry a date is not checked. Adopting the member is a separate job for each platform.
 - **Open:**
