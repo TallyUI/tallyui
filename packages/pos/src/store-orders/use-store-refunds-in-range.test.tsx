@@ -99,6 +99,18 @@ describe('useStoreRefundsInRange', () => {
     expect(result.current.otherCurrency).toEqual([]);
   });
 
+  it('H4b puts a refund outside the report when one set field differs, even with another missing', async () => {
+    const { connector } = fakeConnector(
+      [Promise.resolve(page([refund('rP', 'P'), refund('rQ', 'Q'), refund('rR', 'R')]))],
+      [{ id: 'P', storeId: '2' } as StoreOrder, { id: 'Q', storeId: '1' } as StoreOrder,
+        { id: 'R', storeId: '1', registerId: '5' } as StoreOrder],
+    );
+    const { result } = render(connector, { ...query, scope: { storeId: '1', registerId: '5' } });
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(ids(result.current.refunds)).toEqual(['rR']);
+    expect(ids(result.current.unscoped)).toEqual(['rQ']);
+  });
+
   it('H5 asks for each order once per read', async () => {
     const { getOrders, connector } = fakeConnector(
       [Promise.resolve(page([refund('r1', 'A')], { hasMore: true })), Promise.resolve(page([refund('r2', 'A'), refund('r3', 'E')]))],
@@ -152,6 +164,17 @@ describe('useStoreRefundsInRange', () => {
     expect(ids(result.current.refunds)).toEqual(['r1', 'r2']);
     await act(async () => {});
     expect(listRefunds).toHaveBeenCalledTimes(3);
+  });
+
+  it("H9b ignores a last page's unreadable when it adds no new id", async () => {
+    const { connector } = fakeConnector([
+      Promise.resolve(page([refund('r1')], { unreadable: 2, hasMore: true })),
+      Promise.resolve(page([refund('r1')], { unreadable: 5, hasMore: false })),
+    ]);
+    const { result } = render(connector);
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(result.current).toMatchObject({ unreadable: 2, complete: true, error: null });
+    expect(ids(result.current.refunds)).toEqual(['r1']);
   });
 
   it('H10 treats an unsupported store as one with no dated refunds', async () => {

@@ -5795,22 +5795,23 @@ interface OrderCreatePayload {
      - **`@tallyui/pos` scopes and counts refunds; nothing is silently counted or dropped.**
        `useStoreRefundsInRange(connector, context, { range, timezone, currency, scope? })` pages `listRefunds` as
        decision 6 pages orders. Its `refunds` is `undefined` when the store has no dated refunds, so the report uses
-       the embedded basis. It returns
-       `{ refunds, orphans, unreadable, unscoped, otherCurrency, progress, error, complete }`. `unreadable` counts the
-       rows the connector could not read: shown with a count, never summed. Refunds are kept once by id across pages,
-       as decision 6 keeps orders.
+       the embedded basis. It returns `{ refunds, orphans, unreadable, unscoped, otherCurrency, progress, error,
+       complete }`. `unreadable` counts the rows the connector could not read: shown with a count, never summed.
+       Refunds are kept once by id across pages, as decision 6 keeps orders.
        - **Scope.** When the report is scoped by store, cashier or register, a refund counts only when its order
          matches that scope. Each page's orders are fetched with one `getOrders` call, each order once per read. An
-         order still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no register:
-         ADR-090 decision 6), makes the refund `unscoped`: shown with a count, never summed. With no scope, nothing
-         extra is fetched.
+         order still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no
+         register: ADR-090 decision 6), makes the refund `unscoped`: shown with a count, never summed. An order with
+         a different value in any set field puts the refund outside the report, even when another set field is
+         missing. With no scope, nothing extra is fetched.
        - **Currency.** A refund counts only in the report's currency. One in another currency goes to
          `otherCurrency`, shown with its own count and amount per currency, never summed into the report's figures.
        - **One refund figure per report, named.** `SalesTotals` gains `refundBasis: 'dated' | 'embedded'` and
          `grossAfterRefundsMinor = grossMinor` less the basis figure. With `listRefunds`, the basis is `dated`: the
          hook's counted refunds, `refundsMinor`. Without it, the basis is `embedded`: the orders' own refunds,
-         `embeddedRefundsMinor`. So the basis is `dated` exactly when `salesFigures` is given `refunds` (even empty),
-         and `embedded` when it is given none. A report never subtracts both; the other figure may be shown, never subtracted.
+         `embeddedRefundsMinor`. So the basis is `dated` exactly when `salesFigures` is given `refunds` (even
+         empty), and `embedded` when it is given none. A report never subtracts both; the other figure may be shown,
+         never subtracted.
        - **Tax basis.** A refund is gross, so it comes off `grossMinor` (tax included) only, never off `netMinor`
          (`grossMinor − taxMinor − roundingMinor`) or any product, category or tax row. No net-of-tax refund figure
          is derived, because a refund row gives no tax split.
