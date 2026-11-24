@@ -2,13 +2,13 @@
 // signed difference in Order.cashRoundings, counted in totalMinor; a till rounds only against a store whose connector
 // declares the cashRounding capability. The harness is tender-picks.test.tsx's, with the store's capabilities.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor, type PaymentRounding, type ServerCapabilities } from '@tallyui/core';
 import {
-  buildReceiptData, createOrderBuilder, displayCart, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
+  buildReceiptData, countsTowardPaid, createOrderBuilder, displayCart, legStatus, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
@@ -29,9 +29,9 @@ const carries: ServerCapabilities = { orderCreate: 12, cashRounding: true };
 const unflagged: [string, ServerCapabilities][] = [['R13', { orderCreate: 12 }], ['R13b', { orderCreate: 12, cashRounding: false }]];
 
 let tender: ReturnType<typeof useTender>;
-function SharedTender({ methods }: { methods?: PaymentMethodDescriptor[] }) {
+function SharedTender({ methods, beforeVoid }: { methods?: PaymentMethodDescriptor[]; beforeVoid?: Parameters<typeof Tender>[0]['beforeVoid'] }) {
   tender = useTender(sale, methods);
-  return <Tender sale={sale} tender={tender} methods={methods} />;
+  return <Tender sale={sale} tender={tender} methods={methods} beforeVoid={beforeVoid} />;
 }
 const money = (amount: number) => formatMoney({ amount, currency: 'EUR' }) ?? '';
 const text = (id: string) => screen.getByTestId(id).textContent;
@@ -48,8 +48,8 @@ function start(quantity = 2, methods?: PaymentMethodDescriptor[], capabilities?:
   return id;
 }
 /** R2's sale: one untaxed custom line of 3122 (order.create 5 or above, which every cap here gives). */
-function startCustom(priceMinor: number, methods: PaymentMethodDescriptor[], capabilities: ServerCapabilities) {
-  render(<SaleHarness capabilities={capabilities}>{() => <SharedTender methods={methods} />}</SaleHarness>);
+function startCustom(priceMinor: number, methods: PaymentMethodDescriptor[], capabilities: ServerCapabilities, beforeVoid?: Parameters<typeof Tender>[0]['beforeVoid']) {
+  render(<SaleHarness capabilities={capabilities}>{() => <SharedTender methods={methods} beforeVoid={beforeVoid} />}</SaleHarness>);
   act(() => { expect(sale.addCustomLine({ name: 'Item', priceMinor, taxStatus: 'none' })).toMatchObject({ id: expect.any(String) }); });
   act(() => sale.startTender('cash'));
 }
@@ -250,6 +250,106 @@ it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 
 });
 
 const five: PaymentRounding = { incrementMinor: 5, mode: 'nearest' };
+
+it('10.08 (desk): the void of a cash leg is allowed when only a card carries a later entry', () => {
+  startCustom(1008, [rounding(five)[0], { ...card, capabilities: { ...card.capabilities, void: false } }], carries);
+  let part = '', cashA = '', cardId = '';
+  act(() => { part = sale.addTender({ method: 'cash', amountMinor: 500 })!; });
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 510, rounding: five })!; });
+  act(() => { expect(sale.voidTender(part)).toBe(true); });
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 497 })!; });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: 2 }, { paymentId: cardId, minor: -3 }]);
+  act(() => { expect(sale.voidTender(cashA)).toBe(true); });
+  expect(legStatus(sale.order.payments.find((leg) => leg.id === cardId)!)).toBe('captured');
+  expect(Math.abs((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0))).toBeLessThan(5);
+});
+
+it('10.08 (desk): Cancel and void finishes with a card the till cannot void', () => {
+  startCustom(1008, [rounding(five)[0], { ...card, capabilities: { ...card.capabilities, void: false } }], carries);
+  let part = '', cashA = '', cardId = '';
+  act(() => { part = sale.addTender({ method: 'cash', amountMinor: 500 })!; });
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 510, rounding: five })!; });
+  act(() => { expect(sale.voidTender(part)).toBe(true); });
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 497 })!; });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
+  fireEvent.click(screen.getByText('Back'));
+  press('tender-cancel-confirm');
+  expect(sale.stage.kind).toBe('cart');
+  expect(sale.order.payments.find((leg) => leg.id === cashA)?.status).toBe('voided');
+  expect(legStatus(sale.order.payments.find((leg) => leg.id === cardId)!)).toBe('captured');
+});
+
+it('S8 (i): Cancel and void voids latest first and reaches the cart', async () => {
+  const beforeVoid = vi.fn<NonNullable<Parameters<typeof Tender>[0]['beforeVoid']>>(() => undefined);
+  startCustom(1003, rounding(five), carries, beforeVoid);
+  let cardId = '', cashA = '', cashB = '';
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 })!; });
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five })!; });
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  act(() => { cashB = sale.addTender({ method: 'cash', amountMinor: 505, rounding: five })!; });
+  fireEvent.click(screen.getByText('Back'));
+  await act(async () => { press('tender-cancel-confirm'); });
+  expect(beforeVoid.mock.calls.map(([leg]) => leg.id)).toEqual([cashB, cashA]);
+  expect(sale.order.payments.filter((leg) => leg.method === 'cash').map((leg) => leg.status)).toEqual(['voided', 'voided']);
+  expect(sale.stage.kind).toBe('cart');
+  expect(sale.order.cashRoundings).toBeUndefined();
+});
+
+it('S8 (i): a refused void from the ledger never reaches beforeVoid', async () => {
+  const journal: string[] = [];
+  const beforeVoid = vi.fn<NonNullable<Parameters<typeof Tender>[0]['beforeVoid']>>((leg) => { journal.push(leg.id); });
+  startCustom(1003, rounding(five), carries, beforeVoid);
+  let cardId = '', cashA = '';
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 })!; });
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five })!; });
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 505, rounding: five }); });
+  await act(async () => { press(`tender-leg-${cashA}-void`); });
+  expect(journal).toEqual([]);
+  expect(sale.error).toBe(VOID_LATER_CASH_FIRST);
+  expect(sale.order.payments.find((leg) => leg.id === cashA)?.status).not.toBe('voided');
+});
+
+function mulberry32(seed: number) {
+  return () => {
+    let value = seed += 0x6D2B79F5;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+it('property (desk): live entries never reach a full increment, and latest-first always unwinds', () => {
+  for (let seed = 1; seed <= 120; seed++) {
+    const random = mulberry32(seed);
+    const rule: PaymentRounding = { incrementMinor: 5, mode: (['nearest', 'up', 'down'] as const)[Math.floor(random() * 3)] };
+    const price = 1000 + Math.floor(random() * 1000);
+    const steps: string[] = [`${rule.mode}, price ${price}`];
+    startCustom(price, rounding(rule), carries);
+    for (let step = 0; step < 8; step++) {
+      const choice = Math.floor(random() * 5);
+      const due = sale.order.balanceDueMinor;
+      const live = sale.order.payments.filter(countsTowardPaid);
+      if (choice === 4 && live.length) {
+        const leg = live[Math.floor(random() * live.length)];
+        steps.push(`void payment ${sale.order.payments.indexOf(leg)}`);
+        act(() => { sale.voidTender(leg.id); });
+      } else if (choice < 4 && due > 0 && (choice !== 0 || due > 1)) {
+        const amountMinor = choice === 0 ? 1 + Math.floor(random() * (due - 1))
+          : choice === 1 ? due + 10 : choice === 2 ? 0 : 1 + Math.floor(random() * due);
+        const method = choice === 3 ? 'external' : 'cash';
+        steps.push(`${method} ${amountMinor} (due ${due})`);
+        act(() => { sale.addTender({ method, amountMinor, ...(method === 'cash' ? { rounding: rule } : {}) }); });
+      } else steps.push(`skip ${choice} (due ${due})`);
+      expect(Math.abs((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0)), `seed ${seed}: ${steps.join('; ')}`).toBeLessThan(5);
+    }
+    for (const leg of sale.order.payments.filter(countsTowardPaid).reverse()) {
+      act(() => { expect(sale.voidTender(leg.id), `seed ${seed}: ${steps.join('; ')}`).toBe(true); });
+    }
+    cleanup();
+  }
+}, 60_000);
 
 it('S7: without cashRounding, the due the pane shows is the due the leg takes', () => {
   startCustom(1002, rounding(five), { orderCreate: 12 });

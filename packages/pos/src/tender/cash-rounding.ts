@@ -29,17 +29,16 @@ export function roundedRemainder(balanceMinor: number, entriesMinor: number, rou
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
-/** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live leg's entry was computed against this leg's. */
+/** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live cash leg's entry was computed against this leg's. */
 export type CashVoidRefusal = 'later_cash_rounding';
 /**
- * ADR-094 item 6: a leg carrying a live rounding entry cannot be voided while a later leg that counts toward paid carries one;
- * the later one is voided first. The latest entry-carrying leg is never refused, so a sale cannot be stranded by this rule.
+ * ADR-094 item 6: a leg carrying a live rounding entry cannot be voided while a later live cash leg (wire method 'cash') carries one; the later cash is voided first. A non-cash leg's entry (the zero-remainder write-off) never blocks, so a leg the till cannot void never strands one it can.
  */
-export function cashVoidRefusal(order: { payments: readonly { id: string; status?: PaymentLegStatus }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }, paymentId: string): CashVoidRefusal | undefined {
+export function cashVoidRefusal(order: { payments: readonly { id: string; method?: string; status?: PaymentLegStatus }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }, paymentId: string): CashVoidRefusal | undefined {
   const carries = (id: string) => (order.cashRoundings ?? []).some((entry) => entry.paymentId === id && entry.minor !== 0);
   const at = order.payments.findIndex((leg) => leg.id === paymentId);
   if (at < 0 || !carries(paymentId)) return undefined;
-  return order.payments.slice(at + 1).some((leg) => countsTowardPaid(leg) && carries(leg.id)) ? 'later_cash_rounding' : undefined;
+  return order.payments.slice(at + 1).some((leg) => leg.method === 'cash' && countsTowardPaid(leg) && carries(leg.id)) ? 'later_cash_rounding' : undefined;
 }
 /** The balance under a cash method's rounding, with its signed difference. */
 export function roundedDue(

@@ -4,28 +4,34 @@ import { cashVoidRefusal, roundToIncrement, roundedDue, roundedRemainder, settle
 
 describe('cashVoidRefusal', () => {
   it('a leg with no entry is not refused', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a', status: 'captured' }] }, 'a')).toBeUndefined();
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash', status: 'captured' }] }, 'a')).toBeUndefined();
   });
   it('a later captured leg with an entry refuses the void', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a' }, { id: 'b', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBe('later_cash_rounding');
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBe('later_cash_rounding');
   });
   it('a later voided leg with an entry does not refuse the void', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a' }, { id: 'b', status: 'voided' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBeUndefined();
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'voided' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBeUndefined();
   });
   it('a later leg with a zero entry does not refuse the void', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a' }, { id: 'b', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 0 }] }, 'a')).toBeUndefined();
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 0 }] }, 'a')).toBeUndefined();
   });
   it('an entry only on an earlier leg does not refuse the later void', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a' }, { id: 'b', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'b')).toBeUndefined();
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'b')).toBeUndefined();
   });
   it('an unknown payment id is not refused', () => {
-    expect(cashVoidRefusal({ payments: [{ id: 'a' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'unknown')).toBeUndefined();
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }], cashRoundings: [{ paymentId: 'a', minor: -2 }] }, 'unknown')).toBeUndefined();
   });
   it('the last of one to four captured entry-carrying legs is never refused', () => {
     for (let count = 1; count <= 4; count++) {
-      const payments = Array.from({ length: count }, (_, i) => ({ id: String(i), status: 'captured' as const }));
+      const payments = Array.from({ length: count }, (_, i) => ({ id: String(i), method: 'cash', status: 'captured' as const }));
       expect(cashVoidRefusal({ payments, cashRoundings: payments.map((leg) => ({ paymentId: leg.id, minor: 1 })) }, String(count - 1))).toBeUndefined();
     }
+  });
+  it('a later card leg with an entry does not refuse the void', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash' }, { id: 'b', method: 'external', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: -3 }] }, 'a')).toBeUndefined();
+  });
+  it('a later cash leg refuses even when a card leg sits between', () => {
+    expect(cashVoidRefusal({ payments: [{ id: 'a', method: 'cash', status: 'captured' }, { id: 'c', method: 'external', status: 'captured' }, { id: 'b', method: 'cash', status: 'captured' }], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'c', minor: -1 }, { paymentId: 'b', minor: 4 }] }, 'a')).toBe('later_cash_rounding');
   });
 });
 

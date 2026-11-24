@@ -7,6 +7,7 @@ import { useState, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import { canVoidLeg, countsTowardPaid, legStatus, type Payment, type PaymentLegStatus, type useSale } from '@tallyui/pos';
+import { cashVoidRefusal } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
 import { useT } from '../i18n';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -66,6 +67,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
   const question = askedLeg && asked ? cancelLine(t, money, askedLeg, asked, true, askedLeg.amountMinor) : undefined;
 
   const cancel = async (leg: Payment) => {
+    if (cashVoidRefusal(order, leg.id)) { sale.voidTender(leg.id); return; } // ADR-094 item 6: the core refuses and sets the error; beforeVoid never journals a refused void
     if (!beforeVoid) { sale.voidTender(leg.id); return; }
     setVoiding((ids) => new Set(ids).add(leg.id));
     let go = false;

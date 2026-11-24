@@ -67,7 +67,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // initialTenderState is a pure constant that useTender resets to.
   'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   // inMotionMinor is pure, and the tender pane's pick target needs it.
-  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg',
+  // cashVoidRefusal (ADR-094 item 6, #1292): pure; the ledger and the cancel view check it before beforeVoid.
+  'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg', 'cashVoidRefusal',
   // the tender picker (#1133 11c): the pure charged line figures used to price a unit pick.
   'splitUnitLines',
   // the tender picker (#1133 11c): the pure count of units captured or held by an in-motion leg.

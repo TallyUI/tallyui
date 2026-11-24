@@ -8,7 +8,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, TaxProvider, taxProviderProps, tillLegsTheStoreRefuses, useSale, writeOrderDraft, type Order, type Payment } from '@tallyui/pos';
 import { Tender } from '../sale/tender';
-import { cancelLegs, cashToReturnMinor } from '../sale/cancel-payment-view';
+import { cancelLegs, cancelRefusedLeg, cashToReturnMinor } from '../sale/cancel-payment-view';
 import { blue, click, pricing, SaleHarness, sale, traits } from './sale-harness';
 
 const settings = { ...pricing, taxRatesPpm: { default: 0 } };
@@ -58,27 +58,29 @@ describe('the cancel-payment view runs beforeVoid (#1260)', () => {
     const hook = vi.fn<Hook>(() => new Promise<boolean | void>((resolve) => { settle = resolve; }));
     return { hook, settle: async (value: boolean | void) => { await act(async () => { settle(value); }); } };
   }
-  it('V1 awaits each hook in ledger order before voiding its leg', async () => {
+  it('V1 awaits each hook latest first before voiding its leg', async () => {
     const { hook, settle } = later();
     const [first, second] = await guarded(hook);
     expect(hook).toHaveBeenCalledTimes(1);
-    expect(hook).toHaveBeenNthCalledWith(1, first);
-    expect(status(first.id)).toBe('captured');
+    expect(hook).toHaveBeenNthCalledWith(1, second);
+    expect(status(second.id)).toBe('captured');
     expect(sale.stage.kind).toBe('tender');
     await settle(undefined);
-    expect(status(first.id)).toBe('voided');
-    expect(status(second.id)).toBe('captured');
+    expect(status(second.id)).toBe('voided');
+    expect(status(first.id)).toBe('captured');
     expect(hook).toHaveBeenCalledTimes(2);
-    expect(hook).toHaveBeenNthCalledWith(2, second);
+    expect(hook).toHaveBeenNthCalledWith(2, first);
     await settle(undefined);
     expect([status(first.id), status(second.id)]).toEqual(['voided', 'voided']);
     expect(hook).toHaveBeenCalledTimes(2);
     expect(sale.stage.kind).toBe('cart');
   });
-  it('V2 false on the second leg keeps it and closes the view', async () => {
+  it('V2 false on the latest leg keeps both legs and closes the view', async () => {
     const hook = vi.fn<Hook>((leg) => leg.method !== 'external');
     const [first, second] = await guarded(hook);
-    expect([status(first.id), status(second.id)]).toEqual(['voided', 'captured']);
+    expect([status(first.id), status(second.id)]).toEqual(['captured', 'captured']);
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook).toHaveBeenCalledWith(second);
     expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
     expect(sale.stage.kind).toBe('tender');
   });
@@ -239,6 +241,25 @@ describe('row 501: the cash to return, through the pane', () => {
     back();
     expect(text('tender-cancel-leg-gross')).toBe(`Return ${money(1500)} cash to the customer`);
   }, 20_000);
+});
+
+describe('cancelRefusedLeg (ADR-094 item 6)', () => {
+  const base = createOrderBuilder({ currency: 'EUR', taxContext }).getSnapshot();
+  const a: Payment = { id: 'a', method: 'cash', amountMinor: 500, status: 'captured' };
+  const b: Payment = { id: 'b', method: 'cash', amountMinor: 505, status: 'captured' };
+  const c: Payment = { id: 'c', method: 'external', amountMinor: 497, status: 'captured' };
+  it('(a) both cash legs are voidable', () => {
+    const order: Order = { ...base, payments: [a, b], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] };
+    expect(cancelRefusedLeg(order, [a, b])).toBeUndefined();
+  });
+  it('(b) the later cash leg is not voidable', () => {
+    const order: Order = { ...base, payments: [a, b], cashRoundings: [{ paymentId: 'a', minor: -2 }, { paymentId: 'b', minor: 4 }] };
+    expect(cancelRefusedLeg(order, [a])).toBe(a);
+  });
+  it('(c) the later card leg is not voidable', () => {
+    const order: Order = { ...base, payments: [a, c], cashRoundings: [{ paymentId: 'a', minor: 2 }, { paymentId: 'c', minor: -3 }] };
+    expect(cancelRefusedLeg(order, [a])).toBeUndefined();
+  });
 });
 
 describe('row 501: cashToReturnMinor', () => {

@@ -6,7 +6,7 @@
 import { useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFormatMoney, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
-import { canVoidLeg, countsTowardPaid, lockedRefundDueMinor, type Order, type useSale } from '@tallyui/pos';
+import { canVoidLeg, cashVoidRefusal, countsTowardPaid, lockedRefundDueMinor, type Order, type useSale } from '@tallyui/pos';
 import { useT } from '../i18n';
 import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
@@ -30,6 +30,13 @@ export function voidableLeg(order: Order, offered: PaymentMethodDescriptor[], le
 /** The legs the view lists: taken here, still counting, and not held. */
 export function cancelLegs(order: Order): Leg[] {
   return order.payments.filter((leg) => countsTowardPaid(leg) && leg.takenAt !== undefined && !heldTillLeg(order, leg));
+}
+
+/** ADR-094 item 6: the first of `voidable` the core would refuse once every other voidable leg is voided, or undefined. Checked before any beforeVoid, so a refused void is never journalled. */
+export function cancelRefusedLeg(order: Order, voidable: Leg[]): Leg | undefined {
+  const ids = new Set(voidable.map((leg) => leg.id));
+  const after = { ...order, payments: order.payments.map((leg) => (ids.has(leg.id) ? { ...leg, status: 'voided' as const } : leg)) };
+  return voidable.find((leg) => cashVoidRefusal(after, leg.id));
 }
 
 // Row 501: a net leg (with `tenderedMinor`) returns its `amountMinor`; a leg without `tenderedMinor` is netted as finalize nets it.
@@ -57,13 +64,15 @@ export function CancelPaymentView({ sale, methods, onClose, beforeVoid }: { sale
   const offered = offeredMethods(methods);
   const legs = cancelLegs(order);
   const voidable = legs.filter((leg) => voidableLeg(order, offered, leg));
-  // Void the voidable legs in ledger order; a refused void closes the view and the pane shows the sale's error.
+  const latestFirst = [...voidable].reverse();
+  // Void latest first (ADR-094 item 6: a later cash rounding is voided before the one it was computed against). A leg the core would refuse closes the view before any beforeVoid, and the pane shows the sale's error.
   const confirm = async () => {
     if (voiding) return;
-    if (!beforeVoid) { for (const leg of voidable) if (!sale.voidTender(leg.id)) return onClose(); sale.cancelTender(); return; }
+    const refused = cancelRefusedLeg(order, voidable); if (refused) { sale.voidTender(refused.id); return onClose(); }
+    if (!beforeVoid) { for (const leg of latestFirst) if (!sale.voidTender(leg.id)) return onClose(); sale.cancelTender(); return; }
     setVoiding(true);
     try {
-      for (const leg of voidable) {
+      for (const leg of latestFirst) {
         let go = false;
         try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ }
         if (!go || !sale.voidTender(leg.id)) return onClose();
