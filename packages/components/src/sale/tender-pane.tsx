@@ -122,7 +122,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
-  const changeLeads = !noChange && !cashWaits && entryChange > 0;
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const changeLeads = !cannotTake && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
   const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
   const rows = rowsSince(order.payments, state.plan).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
@@ -149,11 +150,11 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : settleLimit ? t('pos_checkout.cash_settle_limit')
     : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
-    : givesChange && entry > pickTarget ? t('pos_checkout.change_due', { amount: money(entry - pickTarget) }) : '')
+    : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
     : zeroDue ? ''
-    : entryChange > 0 ? t('pos_checkout.change_due', { amount: money(entryChange) })
+    : entryChange > 0 ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entryChange) }))
       : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their void.
   const refused = tillLegsTheStoreRefuses(order);
@@ -165,7 +166,6 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
 
   function take() {
     if (!method || pickRefused) return;
@@ -217,7 +217,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : changeLeads ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 
