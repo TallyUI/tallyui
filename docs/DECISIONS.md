@@ -5817,7 +5817,9 @@ interface OrderCreatePayload {
          is derived, because a refund row gives no tax split.
        - **Day boundaries.** The report range is store days in the store's timezone. The hook converts its first and
          last day's bounds to UTC instants with a `Z` for `dateRange.after`/`before`, and `salesFigures` places each
-         refund on its store day by `refundedAt` (`businessDayOf`).
+         refund on its store day by `refundedAt` (`businessDayOf`). With `compare`, the hook's `range` spans both
+         periods; `salesFigures` places each refund in its own period. The report uses `refunds` only once the read
+         is `complete`; a read in progress or ended by an error is partial and is shown as such, never summed.
      - **Other connectors.** Medusa and Vendure do not change: their refunds sit under payments, and whether those
        rows carry a date is not checked. Adopting the member is a separate job for each platform.
 - **Open:**

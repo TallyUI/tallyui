@@ -111,6 +111,18 @@ describe('useStoreRefundsInRange', () => {
     expect(ids(result.current.unscoped)).toEqual(['rQ']);
   });
 
+  it('H4c applies the scope before the currency', async () => {
+    const { connector } = fakeConnector(
+      [Promise.resolve(page([refund('e6', 'S6', 250, 'EUR'), refund('eN', 'SN', 300, 'EUR'), refund('e5', 'S5', 400, 'EUR')]))],
+      [storeOrder('S6', '6'), storeOrder('SN'), storeOrder('S5', '5')],
+    );
+    const { result } = render(connector, { ...query, scope: { registerId: '5' } });
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(result.current.refunds).toEqual([]);
+    expect(ids(result.current.unscoped)).toEqual(['eN']);
+    expect(result.current.otherCurrency).toEqual([{ currency: 'EUR', count: 1, amountMinor: 400 }]);
+  });
+
   it('H5 asks for each order once per read', async () => {
     const { getOrders, connector } = fakeConnector(
       [Promise.resolve(page([refund('r1', 'A')], { hasMore: true })), Promise.resolve(page([refund('r2', 'A'), refund('r3', 'E')]))],
@@ -179,6 +191,16 @@ describe('useStoreRefundsInRange', () => {
 
   it('H10 treats an unsupported store as one with no dated refunds', async () => {
     const { connector } = fakeConnector([Promise.reject(new StoreRefundsUnsupportedError('x'))]);
+    const { result } = render(connector);
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(result.current).toEqual(NO_DATED);
+  });
+
+  it('H10b drops the pages already read when a later page is unsupported, so dated and embedded never mix', async () => {
+    const { connector } = fakeConnector([
+      Promise.resolve(page([refund('r1')], { hasMore: true })),
+      Promise.reject(new StoreRefundsUnsupportedError('x')),
+    ]);
     const { result } = render(connector);
     await waitFor(() => expect(result.current.complete).toBe(true));
     expect(result.current).toEqual(NO_DATED);

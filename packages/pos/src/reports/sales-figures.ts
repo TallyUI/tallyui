@@ -35,8 +35,9 @@ export interface DayPoint { day: StoreDay; grossMinor: number; orderCount: numbe
 export interface SalesFiguresInput {
   orders: readonly ReportOrder[];
   /**
-   * Dated refunds. Pass `undefined` (not `[]`) when the store has none, so the report uses its orders' embedded
-   * refunds. `useStoreRefundsInRange().refunds` is already in that shape.
+   * Dated refunds, for every period the report shows. Pass `undefined` (not `[]`) when the store has no dated refunds
+   * (no `listRefunds`, or the store does not support it), so the report uses its orders' embedded refunds.
+   * `useStoreRefundsInRange().refunds` is already in that shape; pass it only once the read is `complete`.
    */
   refunds?: readonly ReportRefund[];
   range: DayRange;
