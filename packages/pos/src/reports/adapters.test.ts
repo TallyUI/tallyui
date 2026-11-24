@@ -173,6 +173,9 @@ it("a store order's unpaid remainder follows needsPayment", () => {
   const rows = (order: StoreOrder) => salesFigures({
     orders: [reportOrderFromStoreOrder(order)], range: { from: '2000-01-01', to: '2100-01-01' }, timezone: 'UTC',
   }).payments.rows.map(({ method, amountMinor }) => ({ method, amountMinor }));
+  const taken = (order: StoreOrder) => salesFigures({
+    orders: [reportOrderFromStoreOrder(order)], range: { from: '2000-01-01', to: '2100-01-01' }, timezone: 'UTC',
+  }).payments.takenMinor;
   const below = { payments: [storeOrder.payments[0]!] };
   const paid = [{ method: 'cash', amountMinor: 1000 }, { method: 'card', amountMinor: 540 }];
   expect(rows({ ...storeOrder, ...below, needsPayment: true })).toEqual([{ method: 'cash', amountMinor: 1000 }, { method: 'unpaid', amountMinor: 540 }]);
@@ -181,6 +184,10 @@ it("a store order's unpaid remainder follows needsPayment", () => {
   expect(rows({ ...storeOrder, needsPayment: true })).toEqual(paid);
   expect(rows({ ...storeOrder, needsPayment: false })).toEqual(paid);
   expect(rows(storeOrder)).toEqual(paid);
+  expect(taken({ ...storeOrder, ...below, needsPayment: true })).toBe(1000);
+  expect(taken({ ...storeOrder, ...below, needsPayment: false })).toBe(1540);
+  expect(taken({ ...storeOrder, ...below })).toBe(1540);
+  expect(taken({ ...storeOrder, needsPayment: true })).toBe(1540);
 });
 
 it('maps only an applied PosRefund, dated when it was made', () => {
