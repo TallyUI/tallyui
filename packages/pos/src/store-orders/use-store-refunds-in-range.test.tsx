@@ -255,6 +255,27 @@ describe('useStoreRefundsInRange', () => {
     expect(listRefunds).toHaveBeenCalledTimes(3);
   });
 
+  it('H13c ignores the orders of an abandoned read that resolve after the new query starts', async () => {
+    const old = deferred<StoreOrder[]>();
+    const { getOrders, connector } = fakeConnector(
+      [Promise.resolve(page([refund('r1', 'A')])), Promise.resolve(page([refund('r2', 'B')]))],
+      [() => old.promise, () => Promise.resolve([storeOrder('B', '5')])],
+    );
+    const q1: StoreRefundsRangeQuery = { ...query, scope: { registerId: '5' } };
+    const q2: StoreRefundsRangeQuery = { ...q1, timezone: 'Europe/Berlin' };
+    const { result, rerender } = renderHook(({ q }) => useStoreRefundsInRange(connector, context, q), {
+      initialProps: { q: q1 },
+    });
+    await waitFor(() => expect(getOrders).toHaveBeenCalledTimes(1));
+    rerender({ q: q2 });
+    await waitFor(() => expect(result.current.complete).toBe(true));
+    expect(ids(result.current.refunds)).toEqual(['r2']);
+
+    await act(async () => old.resolve([storeOrder('A', '5')]));
+    expect(ids(result.current.refunds)).toEqual(['r2']);
+    expect(result.current.complete).toBe(true);
+  });
+
   it('H13b makes one page-1 call under StrictMode and none after unmount', async () => {
     const page1 = deferred<StoreRefundPage>();
     const { listRefunds, connector } = fakeConnector([page1.promise]);

@@ -25,7 +25,10 @@ export interface SalesTotals {
   margin: Margin;
   /** Which refund figure `grossAfterRefundsMinor` subtracts: `refundsMinor` or `embeddedRefundsMinor`. A report never subtracts both. */
   refundBasis: 'dated' | 'embedded';
-  /** `grossMinor` less the basis figure. Gross refunds come off gross only, never off `netMinor` or any row. */
+  /**
+   * `grossMinor` less the basis figure; negative when refunds exceed gross. Gross refunds come off gross only, never
+   * off `netMinor` or any row.
+   */
   grossAfterRefundsMinor: number;
 }
 export interface PaymentRow { method: string; label: string; amountMinor: number; orders: number }
