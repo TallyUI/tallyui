@@ -857,7 +857,12 @@ describe('adoptRegisterResults', () => {
       const next = await closeWith(2000, day(1), 'store', 200);
       await reconcile();
       const { commandId, payload } = (await submit(next)).toJSON();
+      const row = await closure(next);
       expect(payload.perpetualRefundsTotalMinor).toBe(1400);
+      await settle();
+      expect(await refunds()).toBe(1400);
+      const pending = (await submit(next)).toJSON();
+      expect([pending.commandId, pending.payload, await closure(next)]).toStrictEqual([commandId, payload, row]);
       await apply(next, counters(2, 5000, 1400), 2);
       await settle();
       expect(await refunds()).toBe(1400);
@@ -976,6 +981,68 @@ describe('adoptRegisterResults', () => {
       await apply(id, counters(1, 3000, 1000), 1);
       await settle();
       expect(await bucket()).toMatchObject({ last_closure_number: 1, perpetual_refunds_total_minor: 1000 });
+    });
+
+    it('R18b: another store\'s applied closure answer never anchors: this store\'s refunds are not lowered', async () => {
+      for (let i = 0; i < 3; i++) await mintClosureNumber(db.register_sessions, 'other', 'register');
+      const elsewhere = await closeWith(500, day(0), 'other');
+      const id = await first();
+      await apply(elsewhere, counters(4, 500, 0), 4);
+      await apply(id, counters(1, 3000, 1000), 1);
+      await settle();
+      expect(await refunds()).toBe(1200);
+    });
+
+    it('R19: a closure of this store above the anchor, with no submit and no number in the bucket: no write', async () => {
+      const id = await first();
+      await apply(id, counters(1, 3000, 1000), 1);
+      await db.closures.insert({ ...(await closure(id)), id: 'later', number: 2, store_key: 'store' } as Closure);
+      expect(await bucket()).toMatchObject({ last_closure_number: 1 });
+      await settle();
+      expect(await refunds()).toBe(1200);
+    });
+
+    it('R20: an older answer with the till\'s inflated figure never raises refunds above the newest answer\'s', async () => {
+      const one = await closeWith(3000, day(0), 'store', 1500);
+      await reconcile();
+      expect(await refunds()).toBe(1500);
+      await apply(one, counters(1, 3000, 1500), 1);
+      const two = await closeWith(2000, day(1), 'store', 100);
+      await reconcile();
+      expect(await refunds()).toBe(1600);
+      await apply(two, counters(2, 5000, 1000), 2);
+      await settle();
+      expect(await refunds()).toBe(1000);
+      await settle();
+      expect(await refunds()).toBe(1000);
+      const three = await closeWith(1000, day(2), 'store', 200);
+      await reconcile();
+      await settle();
+      expect(await closure(three)).toMatchObject({ perpetual_refunds_total_minor: 1200 });
+      expect((await submit(three)).payload.perpetualRefundsTotalMinor).toBe(1200);
+      expect(await refunds()).toBe(1200);
+    });
+
+    it('R21: a final refusal of an earlier closure does not block: the newest answer\'s figure', async () => {
+      const id = await first();
+      const next = await closeWith(2000, day(1));
+      await reconcile();
+      expect(await refunds()).toBe(1200);
+      await refuse(id, 'register_session_superseded');
+      await apply(next, counters(2, 5000, 1000), 2);
+      await settle();
+      expect(await refunds()).toBe(1000);
+    });
+
+    it('R22: a refusal the outbox resends blocks: no write', async () => {
+      const id = await first();
+      const next = await closeWith(2000, day(1));
+      await reconcile();
+      expect(await refunds()).toBe(1200);
+      await refuse(id, 'network_timeout');
+      await apply(next, counters(2, 5000, 1000), 2);
+      await settle();
+      expect(await refunds()).toBe(1200);
     });
   });
 });
