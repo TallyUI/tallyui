@@ -88,6 +88,8 @@ export interface StoreOrder {
   paymentRecordUnreadable?: true;
   /** The store says the order still owes money (WooCommerce: `needs_payment`); absent when the store does not say. */
   needsPayment?: boolean;
+  /** Where the order was created, in the platform's own words, as `ListOrdersQuery.createdVia` filters it (WooCommerce: `woocommerce-pos`, `checkout`, `admin`); absent when the store records none. */
+  createdVia?: string;
   refunds: StoreOrderRefund[];
 }
 
