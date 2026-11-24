@@ -375,6 +375,23 @@ it('T4: a tax code holding a lone surrogate does not block the close', async () 
   expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
 });
 
+it('T5: codes at one rate sort by code unit, not by locale', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'a' ? 1 : 2, code: taxClass ?? '', label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['a', 'B']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
+  // 'B' (0x42) sorts before 'a' (0x61) by code unit; localeCompare would put 'a' first.
+  expect(Object.keys(rows)).toEqual(['50000:B', '50000:a']);
+});
+
 it.each(([
   { granularity: 'per_order', mode: 'half_away_from_zero' },
   { granularity: 'woocommerce', roundAtSubtotal: false },
