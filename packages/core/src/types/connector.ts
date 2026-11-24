@@ -6,7 +6,7 @@ import type { ReplicationAdapter } from './replication';
 import type { CatalogueReconcileAdapter, FingerprintReconcileAdapter, IdReconcileAdapter, StockReconcileAdapter } from './reconcile';
 import type { StoreSettings, StoreSettingsChoice } from './store-settings';
 import type { Customer, CustomerInput, CustomerPage, CustomerPatch } from './customers';
-import type { ListOrdersQuery, OrderFilterField, StoreOrder, StoreOrderPage } from './orders';
+import type { ListOrdersQuery, ListRefundsQuery, OrderFilterField, StoreOrder, StoreOrderPage, StoreRefundPage } from './orders';
 import type { PaymentMethodDescriptor } from './payment-methods';
 import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
@@ -424,6 +424,13 @@ export interface TallyConnector {
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
    */
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
+  /**
+   * The store's refunds, newest first, one page per call, dated by when each was made (ADR-081 decision 7): online only,
+   * read-only. Rejects as `listOrders` does; a `dateRange` end that is not a UTC instant ending in Z is a TypeError
+   * (`assertOrderDateRange`); a store that cannot serve dated refunds rejects with `StoreRefundsUnsupportedError`.
+   * `undefined` when the connector has no dated refunds: the app keeps counting refunds on their order's day.
+   */
+  listRefunds?: (context: SyncContext, query?: ListRefundsQuery) => Promise<StoreRefundPage>;
   /**
    * The store's register directory (v2 parity A4): online only, read-only. Rejects with `ConnectorUnauthorizedError`
    * for credentials; a connector's own errors otherwise. `undefined` when the connector has no register directory.

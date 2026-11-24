@@ -150,3 +150,43 @@ export interface StoreOrderPage {
   /** Every order the query matches across all pages; undefined when the store gives no count. It still counts orders left out as `unreadable`. */
   total?: number;
 }
+
+/** A refund the store recorded, dated by when it was made (ADR-081 decision 7). */
+export interface StoreRefund {
+  id: string;
+  /** The refunded order's `StoreOrder.id`. */
+  orderId: string;
+  /** When the refund was made: ISO 8601, UTC, with a `Z`. */
+  refundedAt: string;
+  /** The refunded order's currency. A store's refund row carries none, so the connector reads it from the order. */
+  currency: string;
+  /** Zero or more. Gross: the refunded total, tax included (WooCommerce: the refund's `amount`). It comes off a tax-inclusive sales figure only, never a net-of-tax one. */
+  amountMinor: number;
+  reason?: string;
+}
+
+/** A refund whose order the store did not return: no currency, so no amount. Never counted, never dropped. */
+export interface StoreRefundOrphan { id: string; orderId: string; refundedAt: string }
+
+export interface ListRefundsQuery {
+  /** 1-based; default 1. */
+  page?: number;
+  /** 1..100; default 25. */
+  perPage?: number;
+  /** Made at or after `after` and before `before`: ISO 8601 instants in UTC with a `Z`. Selects by when the refund was made, not when its order was placed. Either end may be absent. */
+  dateRange?: { after?: string; before?: string };
+  /** Only the refunds of this order (`StoreOrder.id`). */
+  orderId?: string;
+}
+
+/** One page of refunds, newest first. */
+export interface StoreRefundPage {
+  refunds: StoreRefund[];
+  /** Refunds on this page whose order the store did not return. */
+  orphans: StoreRefundOrphan[];
+  hasMore: boolean;
+  /** Rows on this page the connector could not read and left out; absent when every row read. */
+  unreadable?: number;
+  /** Every refund the query matches across all pages, orphans and unreadable rows included; undefined when the store gives no count. */
+  total?: number;
+}

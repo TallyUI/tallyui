@@ -1,0 +1,183 @@
+[
+  {
+    "id": 24,
+    "parent_id": 21,
+    "date_created": "2026-11-25T05:32:45",
+    "date_created_gmt": "2026-11-24T18:32:45",
+    "amount": "5.00",
+    "reason": "",
+    "refunded_by": 1,
+    "refunded_payment": false,
+    "meta_data": [
+      {
+        "id": 65,
+        "key": "_refund_type",
+        "value": "full"
+      }
+    ],
+    "line_items": [],
+    "shipping_lines": [],
+    "tax_lines": [],
+    "fee_lines": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/21/refunds/24",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/21/refunds"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/21"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:c0264358034beb4479dbbec4f728bac3caa163dba2440a0785255d63fc4914e9"
+  },
+  {
+    "id": 23,
+    "parent_id": 20,
+    "date_created": "2026-11-25T05:32:40",
+    "date_created_gmt": "2026-11-24T18:32:40",
+    "amount": "2.50",
+    "reason": "",
+    "refunded_by": 1,
+    "refunded_payment": false,
+    "meta_data": [
+      {
+        "id": 60,
+        "key": "_refund_type",
+        "value": "partial"
+      }
+    ],
+    "line_items": [],
+    "shipping_lines": [],
+    "tax_lines": [],
+    "fee_lines": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/20/refunds/23",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/20/refunds"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/20"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:225f341765dbe891912584feca5600e781ce92368a7c162a5e7729cf9cb72827"
+  },
+  {
+    "id": 22,
+    "parent_id": 19,
+    "date_created": "2026-11-25T05:32:36",
+    "date_created_gmt": "2026-11-24T18:32:36",
+    "amount": "4.40",
+    "reason": "Damaged",
+    "refunded_by": 1,
+    "refunded_payment": false,
+    "meta_data": [
+      {
+        "id": 55,
+        "key": "_refund_type",
+        "value": "partial"
+      }
+    ],
+    "line_items": [
+      {
+        "id": 14,
+        "name": "Spike Coffee",
+        "product_id": 10,
+        "variation_id": 0,
+        "quantity": -1,
+        "tax_class": "",
+        "subtotal": "-4.00",
+        "subtotal_tax": "-0.40",
+        "total": "-4.00",
+        "total_tax": "-0.40",
+        "taxes": [
+          {
+            "id": 1,
+            "total": "-0.40",
+            "subtotal": "-0.40"
+          }
+        ],
+        "meta_data": [
+          {
+            "id": 124,
+            "key": "_refunded_item_id",
+            "value": "9",
+            "display_key": "_refunded_item_id",
+            "display_value": "9"
+          }
+        ],
+        "sku": "SPK-COFFEE",
+        "global_unique_id": "",
+        "price": 4,
+        "image": {
+          "id": "",
+          "src": ""
+        },
+        "parent_name": null
+      }
+    ],
+    "shipping_lines": [],
+    "tax_lines": [
+      {
+        "id": 15,
+        "rate_code": "TAX-1",
+        "rate_id": 1,
+        "label": "Tax",
+        "compound": false,
+        "tax_total": "-0.40",
+        "shipping_tax_total": "0.00",
+        "rate_percent": 10,
+        "meta_data": []
+      }
+    ],
+    "fee_lines": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/19/refunds/22",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/19/refunds"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8930/wp-json/wc/v3/orders/19"
+        }
+      ]
+    },
+    "_rxdb_revision": "sha256:d4df74077c14ad83a694c6b90d8af48e7e1cd573efd7975f761be4d41ffd98e5"
+  }
+]

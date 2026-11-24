@@ -16,6 +16,12 @@ export class UnsupportedOrderFilterError extends Error {
   }
 }
 
+/** listRefunds cannot read this store's refunds (for example, a plugin too old to serve them). The app treats it as an absent listRefunds. */
+export class StoreRefundsUnsupportedError extends Error {
+  readonly code = 'store_refunds_unsupported';
+  constructor(message: string) { super(message); this.name = 'StoreRefundsUnsupportedError'; }
+}
+
 /** The filter fields a query sets (a field counts when its value is not undefined; dateRange counts when after or before is set). */
 export function orderFilterFields(query: ListOrdersQuery | undefined): OrderFilterField[] {
   if (!query) return [];

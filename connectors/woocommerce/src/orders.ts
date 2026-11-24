@@ -16,7 +16,7 @@ const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.filter(isR
 const nonEmpty = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : undefined);
 const positiveId = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? String(value) : undefined);
 
-function minor(text: unknown, currency: string): number {
+export function minor(text: unknown, currency: string): number {
   if (typeof text !== 'string') throw unexpected();
   const trimmed = text.trim();
   const negative = /^-\d/.test(trimmed);
@@ -88,7 +88,7 @@ function storePayments(raw: Row, currency: string, totalMinor: number): StoreOrd
 }
 
 /** Reads a WooCommerce `*_gmt` date: a value with no zone suffix is UTC. */
-const gmtDate = (text: string) => new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
+export const gmtDate = (text: string) => new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`);
 
 /** Maps a WooCommerce order resource (as WCPOS `wcpos/v2/orders` serves it) to a `StoreOrder` (ADR-081). */
 export function toWooStoreOrder(raw: unknown): StoreOrder {
@@ -204,7 +204,7 @@ const wholeNumber = (value: number | undefined, fallback: number) => (value === 
 export const WOO_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange', 'modifiedAfter'];
 
 /** A validated UTC instant, rounded up to the whole second and shifted by `shiftSeconds`, as `YYYY-MM-DDTHH:MM:SS` in UTC. */
-const wooGmtSecond = (instant: string, shiftSeconds: number) =>
+export const wooGmtSecond = (instant: string, shiftSeconds: number) =>
   new Date((Math.ceil(Date.parse(instant) / 1000) + shiftSeconds) * 1000).toISOString().slice(0, 19);
 
 /** WCPOS `wcpos/v2/orders`: order history, read-only (ADR-081). */

@@ -46,6 +46,11 @@ export function wooPluginSupportsCoupons(version: unknown): boolean {
   return atLeast(version, WOO_COUPONS_MIN_PLUGIN);
 }
 
+/** WCPOS 2.0.0 and later serve wcpos/v2/refunds; a 2.0.0 prerelease, a 1.x or an unreadable version does not count. */
+export function wooPluginSupportsRefunds(version: unknown): boolean {
+  return atLeast(version, [2, 0, 0]);
+}
+
 /** A plain `1.10.N` with N >= 20 and no prerelease or build suffix: the stock 1.10 line the version route serves. */
 export function wooOnOrderLinesLine(version: unknown): boolean {
   return typeof version === 'string' && /^1\.10\.\d+$/.test(version.trim()) && atLeast(version, WOO_ORDER_LINES_FLOOR);

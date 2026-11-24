@@ -55,8 +55,9 @@ export type {
 export type { ReceiptTemplate, ReceiptTemplateKind } from './types/receipt-templates';
 export type {
   StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage, OrderFilterField,
+  StoreRefund, StoreRefundOrphan, ListRefundsQuery, StoreRefundPage,
 } from './types/orders';
-export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
+export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, StoreRefundsUnsupportedError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
 export type { RegisterInfo } from './types/registers';
 export type { ApproverCredentials, Correction, StoreClosure, ClosureReads } from './types/closures';
 export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
