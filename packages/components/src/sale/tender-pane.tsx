@@ -111,7 +111,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
   const left = balance + figures.roundingMinor - figures.appliedMinor;
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
-  const changeLeads = !noChange && entryChange > 0;
+  const changeLeads = !noChange && !cashWaits && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
   const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
   const rows = rowsSince(order.payments, state.plan).map(({ title, amountMinor }) => ({ title, minor: amountMinor }));
@@ -203,7 +203,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits ? 'text-warning-text' : entryChange > 0 ? 'text-success' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 
