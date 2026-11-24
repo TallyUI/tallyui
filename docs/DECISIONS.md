@@ -6956,5 +6956,6 @@ interface OrderCreatePayload {
      33.70 of goods is the bug, whichever path got there." A settling cash leg rounds the balance less the live
      entries (the sale's unrounded remainder; 0 when that is not positive), so every such leg is a multiple of the
      increment, the live entries sum to one rounding of the sale, and earlier entries are never rewritten.
+     A leg carrying an entry cannot be voided while a later live leg carries one: `voidTender` refuses with `VOID_LATER_CASH_FIRST` (the pure rule is `cashVoidRefusal`, reason `later_cash_rounding`), so entries unwind latest first and the latest is never refused. Amended 2026-11-24 (Front desk, S8 (i)), verbatim: "Refuse the void of a cash leg carrying a rounding entry while a later live cash leg carries one; the cashier voids the later cash first." The rule keys on the entry, which in the zero-remainder case sits on a non-cash leg.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.

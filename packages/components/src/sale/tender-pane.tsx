@@ -15,6 +15,7 @@ import {
 import { cn } from '@tallyui/theme';
 import { QUICK_CASH_STEPS } from '../checkout/cash-tendered';
 import { useT } from '../i18n';
+import { saleErrorText } from './sale-error-text';
 import { DIGIT_ROWS, Keypad } from '../input/keypad';
 import { offeredMethods, tenderOf } from './offered-methods';
 import { heldTillLeg } from './held-leg';
@@ -279,7 +280,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       className={cn('rounded-md bg-primary px-4 py-3', !canComplete && 'opacity-50')}>
       <Text className="text-center font-semibold text-primary-foreground">{t('tender.complete_sale')}</Text>
     </Pressable>
-    {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{sale.error}</Text> : null}
+    {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
     {sale.canContinue ? <>
       <Text className="text-foreground">{t('tender.stored_will_send')}</Text>
       <Pressable accessibilityRole="button" onPress={() => sale.continueSale()} className="rounded-md bg-primary px-4 py-3">

@@ -6,6 +6,7 @@
  */
 import { wireMethodOf, type PaymentMethodDescriptor, type PaymentRounding } from '@tallyui/core';
 import { appliedMinor, type TenderState } from './tender-state';
+import { countsTowardPaid, type PaymentLegStatus } from './payment-legs';
 
 /** How the method rounds to its increment. */
 export type RoundingMode = NonNullable<PaymentRounding>['mode'];
@@ -28,6 +29,18 @@ export function roundedRemainder(balanceMinor: number, entriesMinor: number, rou
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
+/** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live leg's entry was computed against this leg's. */
+export type CashVoidRefusal = 'later_cash_rounding';
+/**
+ * ADR-094 item 6: a leg carrying a live rounding entry cannot be voided while a later leg that counts toward paid carries one;
+ * the later one is voided first. The latest entry-carrying leg is never refused, so a sale cannot be stranded by this rule.
+ */
+export function cashVoidRefusal(order: { payments: readonly { id: string; status?: PaymentLegStatus }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }, paymentId: string): CashVoidRefusal | undefined {
+  const carries = (id: string) => (order.cashRoundings ?? []).some((entry) => entry.paymentId === id && entry.minor !== 0);
+  const at = order.payments.findIndex((leg) => leg.id === paymentId);
+  if (at < 0 || !carries(paymentId)) return undefined;
+  return order.payments.slice(at + 1).some((leg) => countsTowardPaid(leg) && carries(leg.id)) ? 'later_cash_rounding' : undefined;
+}
 /** The balance under a cash method's rounding, with its signed difference. */
 export function roundedDue(
   balanceMinor: number,

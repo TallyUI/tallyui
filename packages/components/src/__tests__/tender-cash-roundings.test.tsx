@@ -8,7 +8,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { formatMoney, paymentMethodOf, type PaymentMethodDescriptor, type PaymentRounding, type ServerCapabilities } from '@tallyui/core';
 import {
-  buildReceiptData, createOrderBuilder, displayCart, NOTHING_TO_ROUND_AGAINST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
+  buildReceiptData, createOrderBuilder, displayCart, NOTHING_TO_ROUND_AGAINST, VOID_LATER_CASH_FIRST, orderDraftSchema, posOrderCollection, reopenRefusedOrder,
   restoreOrderDraft, takingsByMethod, TaxProvider, taxProviderProps, toOrderCreateEnvelope, useSale, writeOrderDraft, type Order, type PosOrder,
 } from '@tallyui/pos';
 import { CustomerDisplayScreen } from '../sale/customer-display-screen';
@@ -311,6 +311,55 @@ it('S8: after the void the pane shows and takes the sale\'s single rounding', ()
   const liveCash = sale.order.payments.filter((p) => p.method === 'cash' && p.status !== 'voided');
   for (const leg of liveCash) expect(leg.amountMinor % 5).toBe(0);
   expect((sale.order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0)).toBe(2);
+});
+
+it('S8 (i): a void that a later entry was computed against is refused; voiding the later cash first unwinds to zero', () => {
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  let cashA: string | null = null;
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  let cashB: string | null = null;
+  act(() => { cashB = sale.addTender({ method: 'cash', amountMinor: 505, rounding: five }); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: -2 }, { paymentId: cashB, minor: 4 }]);
+  act(() => { expect(sale.voidTender(cashA!)).toBe(false); });
+  expect(sale.error).toBe(VOID_LATER_CASH_FIRST);
+  expect(sale.order.payments.find((p) => p.id === cashA)?.status).not.toBe('voided');
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: -2 }, { paymentId: cashB, minor: 4 }]);
+  // The later leg is never refused, so the sale cannot be stranded.
+  act(() => { expect(sale.voidTender(cashB!)).toBe(true); });
+  act(() => { expect(sale.voidTender(cashA!)).toBe(true); });
+  expect((sale.order.cashRoundings ?? []).reduce((sum, e) => sum + e.minor, 0)).toBe(0);
+  expect(sale.order.balanceDueMinor).toBe(1003);
+});
+
+it('S8 (i): a later cash leg with no entry does not block the void', () => {
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  let cashA: string | null = null;
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  // A part payment is never rounded (R5), so cash B carries no entry.
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 200, rounding: five }); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: -2 }]);
+  act(() => { expect(sale.voidTender(cashA!)).toBe(true); });
+  expect(sale.order.cashRoundings).toBeUndefined();
+  expect(sale.order.balanceDueMinor).toBe(803);
+});
+
+it('S8 (i): the refused void shows the translated string in the pane', () => {
+  // Drive the same sequence, then the pane's error line reads the catalogue's English.
+  startCustom(1003, rounding(five), carries);
+  let cardId: string | null = null;
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 }); });
+  let cashA: string | null = null;
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five }); });
+  act(() => { expect(sale.voidTender(cardId!)).toBe(true); });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 505, rounding: five }); });
+  act(() => { expect(sale.voidTender(cashA!)).toBe(false); });
+  expect(screen.getAllByRole('alert').map((node) => node.textContent)).toContain('Void the later cash payment first.');
 });
 
 it('invariant 1: with a live card and no prior cash the cash leg takes a payable 5.00', () => {

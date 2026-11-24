@@ -105,6 +105,7 @@
 	"pos_checkout.tendered": "Tendered",
 	"pos_checkout.this_payment": "This payment",
 	"pos_checkout.to_pay": "To pay",
+	"pos_checkout.void_later_cash_first": "Void the later cash payment first.",
 	"pos_checkout.void_on_method": "Void {amount} on {title}",
 	"receipt.email_queued": "Receipt email queued",
 	"receipt.email_sent": "Email sent",
