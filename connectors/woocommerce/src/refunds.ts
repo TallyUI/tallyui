@@ -27,19 +27,23 @@ export function toWooStoreRefund(row: unknown, currency: string): StoreRefund {
 
 /** WCPOS `wcpos/v2/refunds` (2.0.0 and later): refunds dated by when they were made, read-only (ADR-081 decision 7). */
 export function createWooRefunds(): Required<Pick<TallyConnector, 'listRefunds'>> {
-  // Whether each store (by baseUrl) serves the refunds read. A failed /site read is not kept, so the next call reads it again.
-  const supported = new Map<string, boolean>();
+  // The stores (by baseUrl) that serve the refunds read. Only a supported answer is kept; a failed or unsupported /site
+  // read is read again on the next call, so a store upgraded to 2.0 is seen.
+  const supported = new Map<string, true>();
   return {
-    /** dateRange goes as listOrders sends it, orderId as `parent`; an orderId that is not all digits matches no refund, so
+    /** dateRange goes as listOrders sends it, orderId as `parent`; an orderId that is not a positive integer matches no refund, so
      * it resolves an empty page without a request. Each page's parent orders are read in one request, for their currency only. */
     async listRefunds(context: SyncContext, query = {}) {
       assertOrderDateRange(query.dateRange);
-      if (query.orderId !== undefined && !/^\d+$/.test(query.orderId)) return { refunds: [], orphans: [], hasMore: false };
-      if (!supported.has(context.baseUrl)) supported.set(context.baseUrl, wooPluginSupportsRefunds((await customerRequest(context, 'site')).body?.wcpos_version));
-      if (!supported.get(context.baseUrl)) throw new StoreRefundsUnsupportedError('listRefunds needs WCPOS 2.0.0 or later');
+      if (query.orderId !== undefined && !/^[1-9]\d*$/.test(query.orderId)) return { refunds: [], orphans: [], hasMore: false };
+      if (!supported.has(context.baseUrl)) {
+        if (!wooPluginSupportsRefunds((await customerRequest(context, 'site')).body?.wcpos_version)) throw new StoreRefundsUnsupportedError('listRefunds needs WCPOS 2.0.0 or later');
+        supported.set(context.baseUrl, true);
+      }
       const page = Math.max(1, wholeNumber(query.page, 1));
       const perPage = Math.max(1, Math.min(MAX_PER_PAGE, wholeNumber(query.perPage, 25)));
-      const params = new URLSearchParams({ page: String(page), per_page: String(perPage), orderby: 'date', order: 'desc' });
+      // The store's price decimals would round the amount (a 0-decimal store sends 4.40 as "4"); WCPOS reads orders at dp=6 too.
+      const params = new URLSearchParams({ page: String(page), per_page: String(perPage), orderby: 'date', order: 'desc', dp: '6' });
       const { after, before } = query.dateRange ?? {};
       if (after !== undefined || before !== undefined) params.set('dates_are_gmt', 'true');
       if (after !== undefined) params.set('after', wooGmtSecond(after, -1));

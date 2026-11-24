@@ -68,6 +68,14 @@ describe('WooCommerce listRefunds', () => {
     failing.store.siteThrows = false;
     await expect(failing.list()).resolves.toMatchObject({ refunds: [] });
     expect(failing.urls.filter((url) => url.endsWith('/site'))).toHaveLength(2);
+
+    const upgraded = setup({ site: {} });
+    await expect(upgraded.list()).rejects.toBeInstanceOf(StoreRefundsUnsupportedError);
+    upgraded.store.site = { wcpos_version: '2.0.3' };
+    await expect(upgraded.list()).resolves.toMatchObject({ refunds: [] });
+    expect(upgraded.urls.filter((url) => url.endsWith('/site'))).toHaveLength(2);
+    await upgraded.list();
+    expect(upgraded.urls.filter((url) => url.endsWith('/site'))).toHaveLength(2);
   });
 
   it('R3 maps the recorded page in its parents\' currencies', async () => {
@@ -96,17 +104,17 @@ describe('WooCommerce listRefunds', () => {
   it('R6 sends the query as listOrders does', async () => {
     const { urls, list: read } = setup();
     await read({});
-    expect(urls.at(-1)).toMatch(/\/refunds\?page=1&per_page=25&orderby=date&order=desc$/);
+    expect(urls.at(-1)).toMatch(/\/refunds\?page=1&per_page=25&orderby=date&order=desc&dp=6$/);
     await read({ page: 2, perPage: 500, dateRange: { after: '2026-11-05T00:00:00.000Z', before: '2026-11-06T00:00:00.000Z' }, orderId: '137' });
     expect(urls.at(-1)).toMatch(new RegExp(
-      '/refunds\\?page=2&per_page=100&orderby=date&order=desc&dates_are_gmt=true'
+      '/refunds\\?page=2&per_page=100&orderby=date&order=desc&dp=6&dates_are_gmt=true'
       + '&after=2026-11-04T23%3A59%3A59&before=2026-11-06T00%3A00%3A00&parent=137$',
     ));
   });
 
   it('R7 makes no request for an orderId that matches no order or a malformed dateRange', async () => {
     const { urls, list: read } = setup();
-    for (const orderId of ['abc', '']) {
+    for (const orderId of ['abc', '', '0', '007']) {
       await expect(read({ orderId })).resolves.toStrictEqual({ refunds: [], orphans: [], hasMore: false });
     }
     await expect(read({ dateRange: { after: '2026-11-05' } })).rejects.toBeInstanceOf(TypeError);
@@ -139,5 +147,20 @@ describe('WooCommerce listRefunds', () => {
     const empty = setup({ refunds: [] });
     await empty.list();
     expect(empty.urls.filter((url) => url.includes('/orders?'))).toStrictEqual([]);
+  });
+
+  it('R11 reads a dp=6 amount in the order\'s currency, whatever its sign', async () => {
+    const row = { id: 9, parent_id: 7, amount: '4.400000', date_created_gmt: '2026-11-05T13:30:00' };
+    for (const amount of ['4.400000', '-4.400000']) {
+      const page = await setup({ refunds: [{ ...row, amount }], orders: [{ id: 7, currency: 'USD' }] }).list();
+      expect(page.refunds).toMatchObject([{ id: '9', currency: 'USD', amountMinor: 440 }]);
+    }
+  });
+
+  it('R12 returns a refund whose order has no currency as an orphan', async () => {
+    const orders = parents.map((order) => (order.id === 20 ? { ...order, currency: '' } : order));
+    const page = await setup({ refunds: list, orders }).list();
+    expect(page.orphans).toStrictEqual([{ id: '23', orderId: '20', refundedAt: '2026-11-24T18:32:40.000Z' }]);
+    expect(page.refunds).toStrictEqual([recorded[0], recorded[2]]);
   });
 });

@@ -5688,9 +5688,9 @@ interface OrderCreatePayload {
 - **Date:** 2026-10-14 · **Status:** Accepted (front desk ruling, 2026-10-14) · **Amended by ADR-090:** decision 5,
   reopen-to-edit · **Amended 2026-11-21:** decision 6, a ranged read with progress · **Amended 2026-11-24:**
   decision 6, a store sale counts on its paid day · **Amended 2026-11-24:** decision 7, refunds dated by when they
-  were made · **Relates to:** ADR-079 (Vendure order history, whose "Open: a core order-history contract waits for a second platform" this settles),
-  ADR-080 (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073 (the WooCommerce order
-  transport)
+  were made · **Relates to:** ADR-079 (Vendure order history, whose "Open: a core order-history contract waits for a
+  second platform" this settles), ADR-080 (`order.refund` v1), ADR-065 (the stored order's display figures), ADR-073
+  (the WooCommerce order transport)
 - **Context:**
   - The tallyui-woocommerce app's M6 needs to browse past orders, reprint one and refund it
     (~/agent/handoff/tallyui-woo-g7-gap-2026-10-14.md). Before this change, `TallyConnector` had no order read. The
@@ -5772,26 +5772,31 @@ interface OrderCreatePayload {
        order's day (decision 6).
      - **`StoreRefund` is `{ id, orderId, refundedAt, currency, amountMinor, reason? }`.** `orderId` is the refunded
        order's `StoreOrder.id`. `currency` is that order's: a store's refund row carries none, so the connector reads
-       it from the order. `amountMinor` is positive and gross, tax included: WooCommerce's refund `amount` is the
-       refunded total with its tax.
+       it from the order. `amountMinor` is zero or more and gross, tax included: WooCommerce's refund `amount` is
+       the refunded total with its tax.
      - **An orphan is a refund whose order the store did not return:** `{ id, orderId, refundedAt }`, with no amount,
        because there is no currency to read it in. Orphans are returned, never dropped and never counted. A refund
        of a trashed WooCommerce order is one: the order read does not return trashed orders.
      - **WooCommerce reads WCPOS `GET wcpos/v2/refunds`**, the plugin's read-only proxy of `wc/v3/refunds` (WCPOS
        2.0.0 and later).
        - It sends `dateRange` as `after`/`before` with `dates_are_gmt=true`, rounded as `listOrders` rounds them, and
-         `orderId` as `parent`.
+         `orderId` as `parent`. It sends `dp=6`, as the orders read does, so the store's price decimals never round an
+         amount.
        - Each page's parent orders are read in one `orders?include=` request, for their currency only. A parent that
          read leaves out makes an orphan.
        - `refundedAt` is `date_created_gmt` read as UTC; `amountMinor` is `|amount|` in the parent's currency.
-     - **Below WCPOS 2.0.0, "not supported".** The connector reads `/site` `wcpos_version` once per store.
+     - **Below WCPOS 2.0.0, "not supported".** The connector reads `/site` `wcpos_version` until a store answers 2.0.0
+       or later, then keeps that answer.
        - A version below 2.0.0, a 2.0.0 prerelease, or an answer with no readable version makes `listRefunds` reject
          with `StoreRefundsUnsupportedError` before any refunds request. The app treats that like an absent member.
-       - A failed `/site` read rejects as any read does and is tried again on the next call.
+       - A failed `/site` read rejects as any read does; neither a failure nor an unsupported answer is kept, so a
+         store upgraded to 2.0 is seen on the next call.
        - The connector never guesses from a 404.
      - **`@tallyui/pos` scopes and counts refunds; nothing is silently counted or dropped.**
        `useStoreRefundsInRange(connector, context, query)` pages `listRefunds` as decision 6 pages orders. It returns
-       `{ refunds, orphans, unscoped, otherCurrency, progress, error, complete }`.
+       `{ refunds, orphans, unreadable, unscoped, otherCurrency, progress, error, complete }`. `unreadable` counts the
+       rows the connector could not read: shown with a count, never summed. Refunds are kept once by id across pages,
+       as decision 6 keeps orders.
        - **Scope.** When the report is scoped by store, cashier or register, a refund counts only when its order
          matches that scope. An order not among those the report already loaded is fetched with `getOrders`. An order
          still missing, or one that carries no scope field (for example, an order TallyUI rang, which has no register:

@@ -160,7 +160,7 @@ export interface StoreRefund {
   refundedAt: string;
   /** The refunded order's currency. A store's refund row carries none, so the connector reads it from the order. */
   currency: string;
-  /** Positive. Gross: the refunded total, tax included (WooCommerce: the refund's `amount`). */
+  /** Zero or more. Gross: the refunded total, tax included (WooCommerce: the refund's `amount`). It comes off a tax-inclusive sales figure only, never a net-of-tax one. */
   amountMinor: number;
   reason?: string;
 }
