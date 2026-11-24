@@ -1172,8 +1172,10 @@ it('PK16: at 16 entries on a cash-only store the hint says to void the latest ca
   const latest = sale.order.payments.filter((leg) => countsTowardPaid(leg) && leg.method === 'cash').at(-1)!;
   act(() => { expect(sale.voidTender(latest.id)).toBe(true); });
   expect(sale.order.cashRoundings).toHaveLength(15);
-  expect(sale.order.balanceDueMinor).toBe(1001);
-  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 1000, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.balanceDueMinor).toBe(1003); // the voided settle's -2 entry drops out with it
+  expect(text('tender-entry-hint')).not.toBe(SETTLE_LIMIT_VOID_COPY);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 1005, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings!.at(-1)!.minor).toBe(2);
   expect(sale.order.cashRoundings).toHaveLength(16);
   expect(sale.order.balanceDueMinor).toBe(0);
 });
