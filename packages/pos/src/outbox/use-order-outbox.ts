@@ -4,7 +4,7 @@ import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { watchFresh } from '../rxdb';
-import { createOrderOutbox } from './order-outbox';
+import { createOrderOutbox, refreshOutboxState } from './order-outbox';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
@@ -38,7 +38,7 @@ export interface UseOrderOutboxResult {
   /** The newest 50 orders, newest first; empty until the current store is ready. */
   recent: PosOrder[];
   /**
-   * Stores a finalized order, then flushes. Throws the opening error, or "Orders are not ready.", before the store is ready.
+   * Stores a finalized order, then flushes. It resolves only once `state.pending` counts the order. Throws the opening error, or "Orders are not ready.", before the store is ready.
    * Recording an order whose `id` is already stored, not deleted, with the same money-bearing content (`sameSale`;
    * a retried `complete()`) counts as stored, never overwrites it, and still flushes, whatever the stored `commandId`
    * (a requeue mints a new one; the difference is logged at warn). Other content rejects with `OrderContentMismatchError`.
@@ -159,7 +159,11 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
               storedCommandId: inDb.commandId, recordedCommandId: posOrder.commandId });
           }
         }
-        if (current.current === opened) void opened.outbox.flush();
+        if (current.current === opened) {
+          // Publish the stored order in state.pending before resolving: a caller that renders on resolve must see it (vendurepos/app#470).
+          try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
+          void opened.outbox.flush();
+        }
       } finally {
         savesInFlight.current--;
         setSavesInFlightCount(savesInFlight.current);
