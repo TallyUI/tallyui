@@ -560,11 +560,12 @@ export async function writeClosure({
     }
   }
   const payment_methods = Object.fromEntries(methodTotals);
-  // Same per-rate split a receipt shows (`taxLinesByRate`), run per order so each order's rates
-  // add up to its own taxMinor, then summed across the session's orders by rate. Each line is in the mode
+  // Rows use receipt tax identities (code plus rate), never merging taxes at the same rate. Each line is in the mode
   // its receipt rounded it in (`taxedLinesFor`). Each order is split by the
   // tax rounding it recorded (#287), so its rows are its receipt's; absent is the default, today's split.
-  const taxRates = new Map<string, { ratePpm: number; net_minor: number; tax_minor: number }>();
+  // RxDB reads stored fields by dot path, so the key carries no '[', ']', '\\' or '.'; never integer-like, so row order is insertion order.
+  const taxRateKey = (code: string | undefined, ratePpm: number) => `${ratePpm}:${encodeURIComponent(code ?? '').replace(/\./g, '%2E')}`;
+  const taxRates = new Map<string, { ratePpm: number; code?: string; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
   for (const order of bound) {
     // Grouped by the rule applied: a `custom` sale used the default figures, so it joins the default's group.
@@ -572,10 +573,10 @@ export async function writeClosure({
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
     const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
-    for (const { ratePpm, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
-      const existing = taxRates.get(String(ratePpm));
-      taxRates.set(String(ratePpm), {
-        ratePpm,
+    for (const { ratePpm, code, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
+      const existing = taxRates.get(taxRateKey(code, ratePpm));
+      taxRates.set(taxRateKey(code, ratePpm), {
+        ratePpm, code,
         net_minor: (existing?.net_minor ?? 0) + netMinor,
         tax_minor: (existing?.tax_minor ?? 0) + amountMinor,
       });
@@ -624,8 +625,8 @@ export async function writeClosure({
       ...(session.count_note?.trim() ? { variance_note: session.count_note } : {}),
       payment_methods,
       tax_rates: Object.fromEntries(
-        [...taxRates.values()].map(({ ratePpm, net_minor, tax_minor }) => [
-          ratePpm, { name: `Tax ${ratePpm / 10000}%`, net_minor, tax_minor, gross_minor: net_minor + tax_minor },
+        [...taxRates.values()].sort((a, b) => a.ratePpm - b.ratePpm || (a.code ?? '').localeCompare(b.code ?? '')).map(({ ratePpm, code, net_minor, tax_minor }) => [ // Numeric keys sorted automatically; identity keys need an explicit sort.
+          taxRateKey(code, ratePpm), { name: `Tax ${ratePpm / 10000}%${[...taxRates.values()].filter((row) => row.ratePpm === ratePpm).length > 1 ? ` (${code ?? ''})` : ''}`, rate_ppm: ratePpm, ...(code ? { code } : {}), net_minor, tax_minor, gross_minor: net_minor + tax_minor },
         ]),
       ),
       // The session's sales used more than one tax rounding (#287): the Z report says so.
