@@ -1089,8 +1089,8 @@ it('PK11: while a card leg is pending a cash pick not payable in steps is refuse
 // #1299 review (b3): order-payload-shape.ts accepts 16 cashRoundings entries; a cash leg that settles the sale may not add a 17th.
 const SETTLE_LIMIT_COPY = 'Too many rounded cash payments on this sale: take the rest by another method.';
 /** 15 lines of 333 and one of 1003 (5998), a card leg, 15 rounded picks (+2 each) and a cash settle of `settleMinor`: 16 entries; the card is then voided. */
-function sixteenEntries(cardMinor: number, settleMinor: number) {
-  const ids = startLines([...Array.from({ length: 15 }, () => 333), 1003]);
+function sixteenEntries(cardMinor: number, settleMinor: number, lastLineMinor = 1003) {
+  const ids = startLines([...Array.from({ length: 15 }, () => 333), lastLineMinor]);
   let cardId = '';
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: cardMinor })!; });
   for (const id of ids.slice(0, 15)) cashPick(id, 500);
@@ -1141,4 +1141,18 @@ it('PK14: at 16 entries a zero-remainder write-off onto a leg with no entry is r
   act(() => { expect(sale.addTender({ method: 'external', amountMinor: 3 })).toBeTypeOf('string'); });
   expect(sale.order.balanceDueMinor).toBe(0);
   expect(sale.order.cashRoundings).toHaveLength(16);
+});
+
+it('PK15: at 16 entries a zero-remainder write-off onto a leg that already has an entry is still taken', () => {
+  sixteenEntries(2, 1000, 1001); // 5996 + 30 - 2 - 5025 = 999 due, rounded to 1000 (+1)
+  // 5996 + 31 - 6025 = 2 left; less the settle's +1 that is 1, which rounds to 0: the write-off merges onto the settle leg.
+  expect(sale.order.balanceDueMinor).toBe(2);
+  const settle = sale.order.cashRoundings!.at(-1)!.paymentId;
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(false);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBe(settle); });
+  expect(sale.error).toBeNull();
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.cashRoundings!.at(-1)).toEqual({ paymentId: settle, minor: -1 });
+  expect(sale.order.balanceDueMinor).toBe(0);
 });
