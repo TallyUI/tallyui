@@ -301,6 +301,43 @@ it('freezes a per-rate tax breakdown, summed across orders, that matches each or
   expect(closure.breakdowns).not.toHaveProperty('tax_rounding_mixed');
 });
 
+it('T1: keeps distinct tax identities at the same rate on the Z', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'A' ? 1 : 2, code: taxClass, label: 'Tax',
+      rate: '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const code of ['B', 'A']) {
+    builder.addLine({ productId: code, name: code, taxClass: code, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>;
+  expect(rows).toEqual({
+    '["A",50000]': { name: 'Tax 5% (A)', rate_ppm: 50000, code: 'A', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+    '["B",50000]': { name: 'Tax 5% (B)', rate_ppm: 50000, code: 'B', net_minor: 10000, tax_minor: 500, gross_minor: 10500 },
+  });
+  expect(Object.keys(rows)).toEqual(['["A",50000]', '["B",50000]']);
+  expect(Object.values(rows).reduce((sum, row) => sum + row.tax_minor, 0)).toBe(sale.taxMinor);
+});
+
+it('T2: orders Z tax rows by ascending rate without adding codes to unique-rate names', async () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: {
+    pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: (taxClass) => taxClass === 'standard' ? 200000 : 50000,
+    getTaxRates: (taxClass) => [{ id: taxClass === 'standard' ? 1 : 2, code: taxClass, label: 'Tax',
+      rate: taxClass === 'standard' ? '20.0000' : '5.0000', priority: 1, compound: false, shipping: true }],
+  } });
+  for (const taxClass of ['standard', 'reduced']) {
+    builder.addLine({ productId: taxClass, name: taxClass, taxClass, unitPrice: { amount: 10000, currency: 'EUR' } });
+  }
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const sale = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const closure = await closeWith((sessionId) => [{ ...sale, sessionId }]);
+  const rows = Object.values(closure.breakdowns.tax_rates as Record<string, { name: string }>);
+  expect(rows.map((row) => row.name)).toEqual(['Tax 5%', 'Tax 20%']);
+});
+
 it.each(([
   { granularity: 'per_order', mode: 'half_away_from_zero' },
   { granularity: 'woocommerce', roundAtSubtotal: false },
