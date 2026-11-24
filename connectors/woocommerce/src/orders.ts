@@ -176,7 +176,11 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
 
 const wholeNumber = (value: number | undefined, fallback: number) => (value === undefined || !Number.isFinite(value) ? fallback : Math.trunc(value));
 
-/** The ListOrdersQuery filters `wcpos/v2/orders` honours; it has no payment-method or register filter (it ignores both). */
+/**
+ * The ListOrdersQuery filters this connector sends to `wcpos/v2/orders`. WCPOS 2.0 also accepts `payment_method` and
+ * `pos_register`, but neither is listed: `pos_register` matches only the `_wcpos_register` meta, which orders TallyUI
+ * rings never carry (ADR-090 decision 6), so a register filter would hide them.
+ */
 export const WOO_ORDER_FILTERS: readonly OrderFilterField[] = ['status', 'customerId', 'cashierId', 'storeId', 'createdVia', 'dateRange'];
 
 /** A validated UTC instant, rounded up to the whole second and shifted by `shiftSeconds`, as `YYYY-MM-DDTHH:MM:SS` in UTC. */
