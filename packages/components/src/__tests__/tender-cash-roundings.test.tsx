@@ -311,6 +311,25 @@ it('S8 (i): a refused void from the ledger never reaches beforeVoid', async () =
   expect(sale.order.payments.find((leg) => leg.id === cashA)?.status).not.toBe('voided');
 });
 
+it('S8 (i): Cancel and void never journals a void the core refuses', async () => {
+  const journal: string[] = [];
+  const beforeVoid = vi.fn<NonNullable<Parameters<typeof Tender>[0]['beforeVoid']>>((leg) => { journal.push(leg.id); });
+  const nonVoidableCash = { ...rounding(five)[0], id: 'cash-no-void', title: 'Cash without void', capabilities: { ...cash.capabilities, void: false } };
+  startCustom(1003, [...rounding(five), nonVoidableCash], carries, beforeVoid);
+  let cardId = '', cashA = '', cashB = '';
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 501 })!; });
+  act(() => { cashA = sale.addTender({ method: 'cash', amountMinor: 500, rounding: five })!; });
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  act(() => { cashB = sale.addTender({ method: 'cash', methodId: nonVoidableCash.id, amountMinor: 505, rounding: five })!; });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: -2 }, { paymentId: cashB, minor: 4 }]);
+  fireEvent.click(screen.getByText('Back'));
+  await act(async () => { press('tender-cancel-confirm'); });
+  expect(journal).toEqual([]);
+  expect(sale.error).toBe(VOID_LATER_CASH_FIRST);
+  expect(sale.order.payments.find((leg) => leg.id === cashA)?.status).not.toBe('voided');
+  expect(sale.order.payments.find((leg) => leg.id === cashB)?.status).not.toBe('voided');
+});
+
 function mulberry32(seed: number) {
   return () => {
     let value = seed += 0x6D2B79F5;
