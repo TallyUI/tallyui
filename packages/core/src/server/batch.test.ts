@@ -217,7 +217,7 @@ describe('precheckCommand', () => {
     expect(precheckCommand({ ...command, type: 'register.session.open', payload } as never, allVersions)).toBeUndefined()
   })
 
-  it('leaves a supported order.reopen to the plugin payload check (ADR-090)', () => {
+  it('accepts a valid order.reopen at a supported version (ADR-090)', () => {
     expect(precheckCommand({ ...command, type: 'order.reopen', payload: validReopen }, { ...server, orderReopen: [1] })).toBeUndefined()
   })
 
@@ -245,7 +245,7 @@ describe('precheckCommand', () => {
       } })
   })
 
-  it('leaves a supported order.refund to the plugin payload check (ADR-080)', () => {
+  it('accepts a valid order.refund at a supported version (ADR-080)', () => {
     expect(precheckCommand({ ...command, type: 'order.refund', payload: validRefund }, { ...server, orderRefund: [1] })).toBeUndefined()
   })
 

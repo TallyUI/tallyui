@@ -833,13 +833,16 @@ the rest are the refusal codes of ADR-080 decision 5
 `docs/DECISIONS.md:5408–5418`), each a per-command `rejected` result.
 
 - **The envelope.** `type` `order.refund` passes `validateBatch`
-  (`packages/core/src/server/batch.ts:34`). `precheckCommand` refuses a
+  (`packages/core/src/server/batch.ts`). `precheckCommand` refuses a
   `version` the server's own `supported.orderRefund` list does not hold
   as `unsupported_version`, with `data: { orderRefund }` the server's
   highest version, or 0 and the message "this server takes no refunds"
-  when it lists none (`batch.ts:69–77`). The till's own capability is
+  when it lists none (`unsupportedOptional` in `batch.ts`). At a
+  supported version it then repeats the shape check and refuses a
+  malformed payload as `invalid_payload`, at most ten errors (#1346).
+  The till's own capability is
   `SUPPORTED_ORDER_REFUND_VERSIONS = [1]`
-  (`packages/core/src/server/versions.ts:11`).
+  (`packages/core/src/server/versions.ts`).
 - **The payload as a whole.** It must be a plain object, or the only
   error is `payload: expected an object` (`refund-payload-shape.ts:4–9`).
   A field outside the table is `<field>: unknown field for order.refund
