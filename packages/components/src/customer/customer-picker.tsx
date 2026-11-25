@@ -41,15 +41,15 @@ export function customerEmailError(email: string, t: TFunction): string | undefi
   return email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email) ? t('customers.invalid_email', { max: EMAIL_MAX }) : undefined;
 }
 
-/** The cashier's text for a customer search or create error (CustomerPicker's and CustomerDropdown's). */
-export function customerErrorText(error: unknown): string {
+/** The cashier's text for a customer search or create error, read from the `customers.error_*` catalogue keys; an `invalid` error keeps the store's own reason (CustomerPicker's, CustomerEditor's and CustomerDropdown's). */
+export function customerErrorText(error: unknown, t: TFunction): string {
   if (error instanceof CustomerServiceError) {
-    return error.code === 'network' ? "Couldn't reach the store. Try again."
-      : error.code === 'server' ? "The store couldn't do that. Try again." : error.message;
+    return error.code === 'network' ? t('customers.error_network')
+      : error.code === 'server' ? t('customers.error_server') : error.message;
   }
-  return error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? 'Sign in again to continue.'
-    : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? "Your account isn't allowed to do this on this store. Ask the store owner."
-      : 'Something went wrong. Try again.';
+  return error instanceof ConnectorUnauthorizedError && error.code === 'unauthorized' ? t('customers.error_unauthorized')
+    : error instanceof ConnectorUnauthorizedError && error.code === 'forbidden' ? t('customers.error_forbidden')
+      : t('customers.error_unknown');
 }
 
 export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search', showAvatar = false, withGuest = false }: CustomerPickerProps) {
@@ -68,7 +68,7 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   function handleError(error: unknown) {
-    setError(customerErrorText(error));
+    setError(customerErrorText(error, t));
     if (!(error instanceof CustomerServiceError)) onError?.(error);
   }
 

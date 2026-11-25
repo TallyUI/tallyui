@@ -180,6 +180,15 @@ describe('CustomerPicker', () => {
     }
   });
 
+  it('the error texts read from the catalogue', async () => {
+    const response = deferred<Customer[]>();
+    render(<I18nProvider locale="fr" resources={{ fr: { 'customers.error_network': 'Boutique injoignable' } }}><CustomerPicker search={() => response.promise} selected={null} onSelect={vi.fn()} online /></I18nProvider>);
+    typeQuery('a');
+    await advance();
+    await act(async () => response.reject(new CustomerServiceError('network', 'offline')));
+    expect(screen.getByRole('alert').textContent).toBe('Boutique injoignable');
+  });
+
   it('a parent re-render with a new search function does not resend or drop the search', async () => {
     const response = deferred<Customer[]>();
     const search = vi.fn((_query: string) => response.promise);
