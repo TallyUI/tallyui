@@ -169,8 +169,9 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
     const custom = line.custom;
     let price = major(line.unitPriceMinor);
     if (p.coupons?.length) {
-      const discount = inclusive && (line.discountMinor ?? 0) > 0
-        ? stored?.discountMinor : line.discountMinor ?? 0;
+      // An inclusive line's wire discount is net and can round to 0 (#1342): the stored gross one is what Woo needs.
+      const discount = !inclusive ? line.discountMinor ?? 0
+        : stored?.discountMinor ?? ((line.discountMinor ?? 0) > 0 ? undefined : 0);
       if (discount === undefined) return { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } };
       const quantity = BigInt(line.quantity), minor = BigInt(line.unitPriceMinor) * quantity - BigInt(discount);
       if (inclusive) {

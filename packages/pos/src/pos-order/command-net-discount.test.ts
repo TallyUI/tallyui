@@ -122,7 +122,8 @@ describe('net line discounts with store-priced coupons (#786)', () => {
     });
   });
 
-  it('keeps the WooCommerce-inclusive coupon sale line discounts from the base commit', () => {
-    expect(paidEnvelope(wooSale()).payload.lines.map((line) => line.discountMinor ?? 0)).toEqual([55, 0]);
+  it('sends the WooCommerce-inclusive coupon sale line discount net of its pre-coupon tax', () => {
+    // #1342: the old [55, 0] took the tax after the discount from coupon-reduced taxLines; 80 gross at 20% is 66.67 net.
+    expect(paidEnvelope(wooSale()).payload.lines.map((line) => line.discountMinor ?? 0)).toEqual([67, 0]);
   });
 });
