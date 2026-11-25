@@ -157,18 +157,22 @@ describe('OrderSyncNotices order left on the store (#1101)', () => {
     });
     it.each<[string, PosOrder, string]>([
       ['changed, status and amount', cancel('changed', { storeStatus: 'pos-partial', capturedMinor: 500 }),
-        "Order #115 changed on the store (now pos-partial, $5.00 paid). Nothing was cancelled from this till. Check it in the store's admin."],
+        "Order #115 changed on the store: $5.00 is paid there. Nothing was cancelled from this till. Check it in the store's admin."],
       ['changed, capturedMinor 0', cancel('changed', { storeStatus: 'processing', capturedMinor: 0 }),
-        "Order #115 changed on the store (now processing). Nothing was cancelled from this till. Check it in the store's admin."],
-      ['changed, capturedMinor absent', cancel('changed', { storeStatus: 'processing' }),
-        "Order #115 changed on the store (now processing). Nothing was cancelled from this till. Check it in the store's admin."],
-      ['changed, storeStatus absent', cancel('changed', { capturedMinor: 500 }),
         "Order #115 changed on the store. Nothing was cancelled from this till. Check it in the store's admin."],
+      ['changed, capturedMinor absent', cancel('changed', { storeStatus: 'processing' }),
+        "Order #115 changed on the store. Nothing was cancelled from this till. Check it in the store's admin."],
+      ['changed, storeStatus absent', cancel('changed', { capturedMinor: 500 }),
+        "Order #115 changed on the store: $5.00 is paid there. Nothing was cancelled from this till. Check it in the store's admin."],
     ])('20: %s replaces the left line and keeps the sentence', (_name, sale, line) => {
       const { container } = render(<OrderSyncNotices order={sale} />);
       expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
       expect(screen.queryByTestId('order-left-on-store-x')).toBeNull();
       expect(container.textContent).toBe(`${PLATFORM_ERROR}${line}`);
+    });
+    it('20: the store status word appears nowhere in the changed text', () => {
+      const { container } = render(<OrderSyncNotices order={cancel('changed', { storeStatus: 'pos-partial', capturedMinor: 500 })} />);
+      expect(container.textContent).not.toContain('pos-partial');
     });
     it.each<[string, PosOrder, string]>([
       ['refused', cancel('refused', { code: 'not_cancellable', message: 'Store says no.' }), "The store did not cancel order #115. Check it in the store's admin."],

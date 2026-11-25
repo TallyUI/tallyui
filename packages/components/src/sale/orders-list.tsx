@@ -74,8 +74,8 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   const reference = left?.reference ?? orderReference(order);
   const settledText = settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.`
     : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`
-      : settlement?.state === 'changed' ? `Order #${reference} changed on the store${settlement.storeStatus
-        ? ` (now ${settlement.storeStatus}${settlement.capturedMinor ? `, ${formatMoney({ amount: settlement.capturedMinor, currency: order.currency })} paid` : ''})`
+      : settlement?.state === 'changed' ? `Order #${reference} changed on the store${settlement.capturedMinor
+        ? `: ${formatMoney({ amount: settlement.capturedMinor, currency: order.currency })} is paid there`
         : ''}. Nothing was cancelled from this till. Check it in the store's admin.`
         : undefined;
   const addedText = settlement?.state === 'refused' ? `The store did not cancel order #${reference}. Check it in the store's admin.`
