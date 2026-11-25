@@ -177,7 +177,7 @@ function readOrders(raws: readonly unknown[]): { orders: StoreOrder[]; unreadabl
 
 const isCount = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 
-/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); never throws. */
+/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); an order whose refunds together name more of a line than was ordered gets none; never throws. */
 function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
   const lineIds = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
   const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
@@ -195,6 +195,13 @@ function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrde
       // A refund names each order line once.
       if (kept.length === lines.length && new Set(kept.map((line) => line.orderLineId)).size === kept.length) linesById.set(id, kept);
     }
+  }
+  // The till treats refunds' lines as cumulative, so an order whose refunds over-count a line gets none.
+  for (const [orderId, linesById] of byOrder) {
+    const ordered = lineIds.get(orderId)!;
+    const refunded = new Map<string, number>();
+    for (const line of [...linesById.values()].flat()) refunded.set(line.orderLineId, (refunded.get(line.orderLineId) ?? 0) + line.quantity);
+    if ([...refunded].some(([lineId, quantity]) => quantity > ordered.get(lineId)!)) byOrder.delete(orderId);
   }
   return byOrder;
 }

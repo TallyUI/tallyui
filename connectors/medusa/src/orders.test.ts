@@ -486,6 +486,29 @@ describe('refund lines (#1324)', () => {
     expect(order!.refunds[0]!.lines).toStrictEqual([{ ...fixtureLine, quantity: 3 }]);
   });
 
+  it('an order whose refunds together over-count a line gets no lines (a split refund repeated on two refunds)', async () => {
+    const body = pluginBody();
+    const line = { orderLineId: 'ordli_01M7TS1E009FVGAKAB7AAMY0KK', quantity: 2, netMinor: 840, taxMinor: 160 };
+    body.orders[0]!.refunds[0]!.lines = [line];
+    body.orders[0]!.refunds[1]!.lines = [{ ...line }];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const orders = await getOrders(ctx6, [L[0].id]);
+    expect(orders).toStrictEqual([tillOrder]);
+    for (const refund of orders[0]!.refunds) expect(refund).not.toHaveProperty('lines');
+  });
+
+  it('keeps every refund\'s lines when together they name exactly the ordered quantity', async () => {
+    const body = pluginBody();
+    const two = { orderLineId: 'ordli_01M7TS1E009FVGAKAB7AAMY0KK', quantity: 2, netMinor: 840, taxMinor: 160 };
+    const one = { orderLineId: 'ordli_01M7TS1E009FVGAKAB7AAMY0KK', quantity: 1, netMinor: 420, taxMinor: 80 };
+    body.orders[0]!.refunds[0]!.lines = [two];
+    body.orders[0]!.refunds[1]!.lines = [one];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const [order] = await getOrders(ctx6, [L[0].id]);
+    expect(order!.refunds[0]!.lines).toStrictEqual([two]);
+    expect(order!.refunds[1]!.lines).toStrictEqual([one]);
+  });
+
   it('listOrders through the plugin route attaches no lines below contract 6', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(plugin(refundLinesFixture)).mockResolvedValueOnce(listOf([L[0]]));
     const page = await listOrders(ctx5, { registerId: 'reg-1' });
