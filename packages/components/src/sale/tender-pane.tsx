@@ -42,6 +42,8 @@ export interface TenderPaneProps {
   confirmVoid?: boolean;
   /** Passed to the ledger: runs before Cancel payment voids a leg; the void waits for it, and `false` or a throw keeps the leg. */
   beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'];
+  /** Passed to the ledger: runs after a void `beforeVoid` approved, with whether the leg was voided; `false` means the host reverses its journal entry. */
+  afterVoid?: ComponentProps<typeof TenderLedger>['afterVoid'];
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -63,7 +65,7 @@ const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
     .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 };
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid, afterVoid }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -193,7 +195,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   }
 
   if (cancelling) return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
-    <CancelPaymentView sale={sale} methods={methods} beforeVoid={beforeVoid} onClose={() => setCancelling(false)} />
+    <CancelPaymentView sale={sale} methods={methods} beforeVoid={beforeVoid} afterVoid={afterVoid} onClose={() => setCancelling(false)} />
   </View>;
 
   return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
@@ -230,7 +232,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </>}
     </View> : null}
 
-    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} beforeVoid={beforeVoid} /> : null}
+    {ledger ? <TenderLedger sale={sale} methods={methods} confirmVoid={confirmVoid} beforeVoid={beforeVoid} afterVoid={afterVoid} /> : null}
 
     {/* cardReference holds only for an external leg; the edit keeps that leg's method and its own methodId. */}
     {cardReference ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}

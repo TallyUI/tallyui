@@ -56,7 +56,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
      * "Order note"). Needs `checkout`; when given, it replaces `checkout.note`. */
     noteSheet?: { label?: string };
     /** v2's checkout cart (stilled-cart.tsx): while `sale.stage` is tender, the payments ledger (each leg with its status and Cancel payment, then Total, Paid and Remaining) sits under the totals in place of the foot. `methods` names the legs, as on Tender. Pair it with `<Tender ledger={false} />`. `confirmVoid` asks v2's "Cancel this payment?" before a leg is voided (default `false`). `beforeVoid` runs before Cancel payment voids a leg, as on TenderLedger. */
-    tenderLedger?: { methods?: PaymentMethodDescriptor[]; confirmVoid?: boolean; beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'] };
+    tenderLedger?: { methods?: PaymentMethodDescriptor[]; confirmVoid?: boolean; beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid']; afterVoid?: ComponentProps<typeof TenderLedger>['afterVoid'] };
     /** WCPOS v2's split-by-item bill (stilled-cart.tsx): the cart is read-only, and each line whose quantity is a positive
      * whole number, whose total is not negative and that has units left unpaid shows this payment's `− n of unpaid +`
      * stepper in its quantity cell, with what the picked units add under it. `picked`: this payment's units per line id;
@@ -238,7 +238,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
-      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} afterVoid={tenderLedger.afterVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
         note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}

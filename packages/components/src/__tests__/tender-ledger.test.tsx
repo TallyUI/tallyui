@@ -309,8 +309,8 @@ describe('TenderLedger leg times', () => {
 describe('TenderLedger beforeVoid (#1260)', () => {
   type Hook = (leg: Payment) => boolean | void | Promise<boolean | void>;
   /** The pane's own ledger, through Tender → TenderPane → TenderLedger; one €10 cash leg and one €15 external leg on €50. */
-  function guarded(beforeVoid: Hook, confirmVoid = false) {
-    render(<><SaleHarness settings={settings}>{(sale) => <Tender sale={sale} beforeVoid={beforeVoid} confirmVoid={confirmVoid} />}</SaleHarness><PortalHost /></>);
+  function guarded(beforeVoid: Hook, confirmVoid = false, afterVoid?: (leg: Payment, voided: boolean) => void) {
+    render(<><SaleHarness settings={settings}>{(sale) => <Tender sale={sale} beforeVoid={beforeVoid} confirmVoid={confirmVoid} afterVoid={afterVoid} />}</SaleHarness><PortalHost /></>);
     act(() => sale.add(blue, traits));
     act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 5000));
     act(() => sale.startTender('cash'));
@@ -397,5 +397,63 @@ describe('TenderLedger beforeVoid (#1260)', () => {
     await settle(undefined);
     expect(text(`tender-leg-${leg(0)}-status`)).toBe('Cancelled');
     expect(text('tender-ledger-remaining')).toBe(money(5000));
+  });
+
+  it("B1 one leg's hook runs once across the pane's ledger and Cart's ledger (#1271)", async () => {
+    const { hook, settle } = later();
+    render(<SaleHarness settings={settings}>{(sale) => <><Tender sale={sale} beforeVoid={hook} /><Cart sale={sale} showTotal={false} tenderLedger={{ beforeVoid: hook }} /></>}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 5000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1500 }); });
+    await act(async () => { fireEvent.click(within(screen.getByTestId('tender-pane')).getByTestId(`tender-leg-${leg(0)}-void`)); });
+    await act(async () => { fireEvent.click(within(screen.getByTestId('cart-payments')).getByTestId(`tender-leg-${leg(0)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    await settle(undefined);
+    expect(within(screen.getByTestId('cart-payments')).getByTestId(`tender-leg-${leg(0)}-status`).textContent).toBe('Cancelled');
+    expect(sale.order.paidMinor).toBe(0);
+  });
+
+  it('B2 afterVoid gets the leg and true after an approved void', async () => {
+    const afterVoid = vi.fn<(leg: Payment, voided: boolean) => void>();
+    guarded(vi.fn<Hook>(async () => undefined), false, afterVoid);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(afterVoid).toHaveBeenCalledTimes(1);
+    expect(afterVoid.mock.calls[0]).toEqual([expect.objectContaining({ id: leg(1) }), true]);
+  });
+
+  it('B3 afterVoid gets false when the leg is voided elsewhere while the hook awaits', async () => {
+    const { hook, settle } = later();
+    const afterVoid = vi.fn<(leg: Payment, voided: boolean) => void>();
+    guarded(hook, false, afterVoid);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    act(() => { sale.voidTender(leg(1)); });
+    await settle(undefined);
+    expect(afterVoid).toHaveBeenCalledTimes(1);
+    expect(afterVoid.mock.calls[0][1]).toBe(false);
+    expect(sale.order.paidMinor).toBe(1000);
+  });
+
+  it('B4 afterVoid is not called when the hook refuses or throws', async () => {
+    const afterVoid = vi.fn<(leg: Payment, voided: boolean) => void>();
+    guarded(vi.fn<Hook>(async () => false), false, afterVoid);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(sale.order.paidMinor).toBe(2500);
+    cleanup();
+    guarded(vi.fn<Hook>(() => { throw new Error('journal down'); }), false, afterVoid);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(sale.order.paidMinor).toBe(2500);
+    expect(afterVoid).not.toHaveBeenCalled();
+  });
+
+  it('B5 a refused hook lets the leg go: a second press runs the hook again', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+    guarded(hook);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(sale.order.paidMinor).toBe(2500);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(sale.order.paidMinor).toBe(1000);
   });
 });

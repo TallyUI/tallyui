@@ -11,6 +11,7 @@ import { useT } from '../i18n';
 import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
 import { cancelLine, type TenderLedger } from './tender-ledger';
+import { claimVoid, releaseVoid } from './void-in-flight';
 
 type Leg = Order['payments'][number];
 /** tender-pane.tsx's button. */
@@ -53,9 +54,11 @@ export function cashToReturnMinor(order: Pick<Order, 'payments' | 'changeDueMino
   return leg.amountMinor;
 }
 
-export function CancelPaymentView({ sale, methods, onClose, beforeVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; onClose: () => void;
+export function CancelPaymentView({ sale, methods, onClose, beforeVoid, afterVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; onClose: () => void;
   /** Runs before each leg this view voids, as in TenderLedger. */
-  beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'] }): JSX.Element {
+  beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'];
+  /** Runs after each leg this view voids, as in TenderLedger. */
+  afterVoid?: ComponentProps<typeof TenderLedger>['afterVoid'] }): JSX.Element {
   const formatMoney = useFormatMoney();
   const t = useT();
   const [voiding, setVoiding] = useState(false);
@@ -73,9 +76,13 @@ export function CancelPaymentView({ sale, methods, onClose, beforeVoid }: { sale
     setVoiding(true);
     try {
       for (const leg of latestFirst) {
+        if (!claimVoid(order.id, leg.id)) return onClose(); // #1271: a ledger is journalling this leg; the view closes and leaves the leg to it
         let go = false;
-        try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ }
-        if (!go || !sale.voidTender(leg.id)) return onClose();
+        try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ } finally { releaseVoid(order.id, leg.id); }
+        if (!go) return onClose();
+        const voided = sale.voidTender(leg.id);
+        try { afterVoid?.(leg, voided); } catch { /* the host reports its own error */ }
+        if (!voided) return onClose();
       }
       sale.cancelTender();
     } finally { setVoiding(false); }
