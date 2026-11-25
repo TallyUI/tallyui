@@ -11,7 +11,7 @@ import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings as PricingSettings } from '@tallyui/core';
 import { medusaConnector } from '@tallyui/connector-medusa';
 import type { LogEntry } from '../logging';
-import { catalogueEntries, saleLogger, useSale } from '../sale';
+import { catalogueEntries, REGISTER_CLOSING, saleLogger, useSale } from '../sale';
 import { TaxProvider } from '../tax';
 import { taxProviderProps } from '../store-settings';
 import { orderDraftSchema } from '../order/order-drafts';
@@ -174,7 +174,7 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
       await act(async () => { closure = await now().register.actions.closeSession({ counted: { cash } }); });
       return closure!;
     };
-    return { now, open, close, completed };
+    return { now, open, close, completed, order_drafts };
   }
   /** F1's steps: A, a line, cash 400, cancelTender (the leg stays, DECISIONS.md:4210), close A. */
   async function cashLeftInCart() {
@@ -256,6 +256,75 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
     const closure = await close(2000);
     expect(closure.till_expected.cash).toBe(2000);
     expect(sales(closure, 'cash')).toBe(1000);
+  });
+
+  describe('#1275: a sale cannot move its money while the register is closing', () => {
+    /** Starts a close, runs the sale call while the close is suspended at its first await, then awaits the closure. */
+    async function closeAround(now: () => { register: ReturnType<typeof useRegisterSession> }, saleCall: () => Promise<void>) {
+      let closure: Closed | undefined;
+      await act(async () => {
+        const closing = now().register.actions.closeSession({ counted: { cash: 1400 } });
+        await saleCall();
+        closure = await closing;
+      });
+      return closure!;
+    }
+
+    it('C1: a complete() during the close is refused, and the leg counts on the Z from the cart', async () => {
+      const { now, completed } = await cashLeftInCart();
+      act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 600 })).toEqual(expect.any(String)); });
+      const closure = await closeAround(now, () => now().sale.complete());
+      expect(now().sale.error).toBe(REGISTER_CLOSING);
+      expect(completed).toEqual([]);
+      expect(now().sale.stage.kind).toBe('cart');
+      expect(await db.pos_orders.find().exec()).toEqual([]);
+      // Both legs (400 and 600) were taken in session A and are still in the cart, so the Z counts them through liveSale.
+      expect(closure.till_expected.cash).toBe(2000);
+      expect(sales(closure, 'cash')).toBe(1000);
+    });
+
+    it('C2: once the close has settled, complete() is not refused for it', async () => {
+      const { now } = await cashLeftInCart();
+      act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 600 })).toEqual(expect.any(String)); });
+      await closeAround(now, () => now().sale.complete());
+      expect(now().sale.error).toBe(REGISTER_CLOSING);
+      await act(async () => { await now().sale.complete(); });
+      expect(now().sale.error).not.toBe(REGISTER_CLOSING);
+    });
+
+    it('C3: a park() during the close is refused, writing no draft, and the leg counts once', async () => {
+      const { now, order_drafts } = await cashLeftInCart();
+      const closure = await closeAround(now, async () => { expect(await now().sale.park()).toBe(REGISTER_CLOSING); });
+      expect(await order_drafts.find().exec()).toEqual([]);
+      expect(now().sale.order.payments).toEqual([expect.objectContaining({ method: 'cash', amountMinor: 400 })]);
+      expect(closure.till_expected.cash).toBe(1400);
+      expect(sales(closure, 'cash')).toBe(400);
+    });
+
+    it('C4: a resume() during the close is refused, keeping the draft, and the leg counts once', async () => {
+      const { now, order_drafts } = await cashLeftInCart();
+      const id = now().sale.order.id;
+      await act(async () => { expect(await now().sale.park()).toBeNull(); });
+      const closure = await closeAround(now, async () => { expect(await now().sale.resume(id)).toBe(REGISTER_CLOSING); });
+      expect(await order_drafts.findOne(id).exec()).not.toBeNull();
+      expect(now().sale.order.lineItems).toEqual([]);
+      expect(now().sale.order.payments).toEqual([]);
+      expect(closure.till_expected.cash).toBe(1400);
+      expect(sales(closure, 'cash')).toBe(400);
+    });
+
+    it('C5: a park() in flight refuses the close, and the next close counts the leg once, from the draft', async () => {
+      const { now, close } = await cashLeftInCart();
+      await act(async () => {
+        const parking = now().sale.park();
+        await expect(now().register.actions.closeSession({ counted: { cash: 1400 } })).rejects.toBeInstanceOf(RegisterSaleSavingError);
+        expect(await parking).toBeNull();
+      });
+      expect(await db.closures.find().exec()).toHaveLength(0);
+      const closure = await close(1400);
+      expect(closure.till_expected.cash).toBe(1400);
+      expect(sales(closure, 'cash')).toBe(400);
+    });
   });
 
   it('the same sequence without the confirmed session is still stamped, by the backstop, with a warning', async () => {
