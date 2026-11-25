@@ -65,6 +65,16 @@ describe('Tender change headline', () => {
     noChange();
   });
 
+  it('no part payment hint while a payment in motion covers the balance', () => {
+    start(3125);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 3125, status: 'pending' }); });
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    for (const key of ['Clear', '1', '0', '0', '0']) press(key);
+    expect(text('tender-entry-amount')).toBe(money(1000));
+    expect(text('tender-entry-hint')).toBe('');
+    expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('change still leads when a payment in motion covers only part of the balance', () => {
     start(3125);
     act(() => { sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' }); });
