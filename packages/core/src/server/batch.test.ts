@@ -129,8 +129,12 @@ describe('precheckCommand', () => {
     expect(precheckCommand({ ...update, payload: { ...update.payload, createVersion: 6, note: 'Keep this note' } }, updateServer)).toEqual({
       id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'note requires version 7' },
     })
-    // As order.create v1: below version 5 the body's shape is the plugin's pre-lookup updatePayloadErrors check.
-    expect(precheckCommand({ ...update, payload: { orderId: 'order-1', createVersion: 1 } }, updateServer)).toBeUndefined()
+    // As order.create v1: the create part's shape is refused at every createVersion (#1344), as a backstop to the plugin's check.
+    expect(precheckCommand({ ...update, payload: { orderId: 'order-1', createVersion: 1 } }, updateServer)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'clientOrderId: expected a non-empty string; createdAt: expected a string; '
+        + 'currency: expected a string; pricesIncludeTax: expected a boolean; lines: expected a non-empty array; payments: expected an array; '
+        + 'subtotalMinor: expected a finite number; taxMinor: expected a finite number; totalMinor: expected a finite number' },
+    })
     expect(precheckCommand({ ...update, payload: { ...update.payload, lines: undefined } }, updateServer)).toEqual({
       id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'lines: expected a non-empty array' },
     })
@@ -242,23 +246,74 @@ describe('precheckCommand', () => {
     expect(payloadShapeErrors({ ...v4.payload, discountMinor: 240 })).toStrictEqual(['discountMinor: expected the sum of lines[].discountMinor'])
   })
 
-  it('a malformed v3 is left to the executor, whose shape check gives the v1/v2 message', () => {
+  it('refuses a malformed payload at versions 1 to 4 with the shape check\'s message (#1344)', () => {
     const payload = { clientOrderId: 'order_1', createdAt: command.createdAt, currency: 'EUR', pricesIncludeTax: true,
       lines: 'abc', payments: [], subtotalMinor: 0, taxMinor: 0, totalMinor: 0 }
-    for (const version of [1, 2, 3]) {
-      const fields = version === 2 ? { discountMinor: 1 } : version === 3 ? { display: {}, taxByRate: [] } : {}
+    for (const version of [1, 2, 3, 4]) {
+      const fields = version === 2 ? { discountMinor: 1 } : version >= 3 ? { display: {}, taxByRate: [] } : {}
       const envelope = { ...command, version, payload: { ...payload, ...fields } }
-      expect(precheckCommand(envelope as never, server)).toBeUndefined()
-      expect(payloadShapeErrors(envelope.payload)).toStrictEqual(['lines: expected a non-empty array'])
+      expect(precheckCommand(envelope as never, server)).toEqual({ id: command.id, status: 'rejected', error: {
+        code: 'invalid_payload', message: 'lines: expected a non-empty array',
+      } })
     }
   })
 
+  // Valid payloads per order.create version (#1344): v2 is v1 with its discount, v3 the golden fixture, v4 the golden v4.
+  const v1Payload = { clientOrderId: 'order_1', createdAt: command.createdAt, currency: 'EUR', pricesIncludeTax: false,
+    lines: [{ clientLineId: 'l1', variantId: 'v1', title: 'Tea', quantity: 1, unitPriceMinor: 1000 }],
+    payments: [{ clientPaymentId: 'p1', method: 'cash', amountMinor: 1100, tenderedMinor: 2000, changeMinor: 900 }],
+    subtotalMinor: 1000, taxMinor: 100, totalMinor: 1100, customer: null }
+  const goldenV4 = { ...fixture.payload, lines: fixture.payload.lines.map((line, i) => ({ ...line, discountMinor: [169, 37][i] })), discountMinor: 206 }
+  const validPayloads: [number, Record<string, unknown>][] = [
+    [1, v1Payload],
+    [2, { ...v1Payload, lines: [{ ...v1Payload.lines[0], discountMinor: 100 }], discountMinor: 100, subtotalMinor: 900, taxMinor: 90,
+      totalMinor: 990, payments: [{ ...v1Payload.payments[0], amountMinor: 990, changeMinor: 1010 }] }],
+    [3, fixture.payload],
+    [4, goldenV4],
+  ]
+  const asCreate = (version: number, payload: Record<string, unknown>) => ({ ...command, version, payload })
+  const asUpdate = (version: number, payload: Record<string, unknown>) =>
+    ({ ...command, type: 'order.update', version: 1, payload: { ...payload, orderId: 'order-1', createVersion: version } })
+  const both = validPayloads.flatMap(([version, payload]) => [['order.create', version, payload, asCreate] as const,
+    ['order.update', version, payload, asUpdate] as const])
+  const updateCapable = { ...server, orderUpdate: [1] }
+  const taxOffByOne = (payload: Record<string, unknown>) => {
+    const broken = structuredClone(payload) as typeof fixture.payload
+    broken.taxByRate[0].taxMinor += 1
+    return broken as Record<string, unknown>
+  }
+
   it('does not require discountMinor for version 3', () => {
-    const envelope = { ...command, version: 3 }
-    expect(precheckCommand(envelope as never, server)).toBeUndefined()
-    const errors = payloadShapeErrors(envelope.payload)
-    expect(errors).toContainEqual(expect.stringContaining('clientOrderId: expected'))
-    expect(errors.some(error => error.includes('requires discountMinor'))).toBe(false)
+    const display = { currency: 'EUR', exponent: 2, taxInclusive: false, subtotalMinor: 1000, discountMinor: 0, taxMinor: 100,
+      totalMinor: 1100, orderDiscountMinor: 0, lines: [{ clientLineId: 'l1', amountMinor: 1000, discounts: [] }] }
+    const taxByRate = [{ ratePpm: 100000, netMinor: 1000, taxMinor: 100, grossMinor: 1100 }]
+    expect(precheckCommand(asCreate(3, { ...v1Payload, display, taxByRate }) as never, server)).toBeUndefined()
+  })
+
+  it.each(both)('accepts a valid %s at create version %i', (_type, version, payload, build) => {
+    expect(precheckCommand(build(version, payload) as never, updateCapable)).toBeUndefined()
+  })
+
+  it.each(both)('refuses an %s at create version %i with a shape error, with the shape check\'s messages', (_type, version, payload, build) => {
+    const broken = { ...payload, totalMinor: 'x' }
+    expect(precheckCommand(build(version, broken) as never, updateCapable)).toEqual({ id: command.id, status: 'rejected', error: {
+      code: 'invalid_payload', message: payloadShapeErrors(broken).join('; '),
+    } })
+  })
+
+  it.each([[3, fixture.payload], [4, goldenV4]] as const)('refuses a version %i with a taxByRate figure off by one, with the fiscal messages', (version, payload) => {
+    const broken = taxOffByOne(payload)
+    expect(payloadShapeErrors(broken)).toStrictEqual([])
+    expect(precheckCommand(asCreate(version, broken) as never, server)).toEqual({ id: command.id, status: 'rejected', error: {
+      code: 'invalid_payload', message: fiscalFiguresErrors(broken as never).join('; '),
+    } })
+  })
+
+  it.each([[3, fixture.payload], [4, goldenV4]] as const)('refuses a version %i with a shape and a fiscal error with the shape message only', (version, payload) => {
+    const broken = { ...taxOffByOne(payload), totalMinor: 'x' }
+    expect(precheckCommand(asCreate(version, broken) as never, server)).toEqual({ id: command.id, status: 'rejected', error: {
+      code: 'invalid_payload', message: payloadShapeErrors(broken).join('; '),
+    } })
   })
 
   it.each([
