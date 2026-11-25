@@ -53,7 +53,7 @@ export function CustomerEditor({ customer, create, update, onSaved, onCancel, on
     if (disabled) return;
     const trimmed: CustomerEditValues = { ...values, firstName: values.firstName.trim(), lastName: values.lastName.trim(),
       email: values.email.trim(), phone: values.phone.trim(), company: values.company?.trim() };
-    const error = customerEmailError(trimmed.email);
+    const error = customerEmailError(trimmed.email, t);
     if (error) return setEmailError(error);
     let call: Promise<Customer> | undefined;
     if (!customer) call = create?.(toCustomerInput(trimmed));
