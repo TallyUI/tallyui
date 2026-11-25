@@ -349,6 +349,21 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
       expect(closure.till_expected.cash).toBe(2000);
       expect(sales(closure, 'cash')).toBe(1000);
     });
+
+    it('C9 a resume in flight refuses the close', async () => {
+      const { now, close } = await cashLeftInCart();
+      const id = now().sale.order.id;
+      await act(async () => { expect(await now().sale.park()).toBeNull(); });
+      await act(async () => {
+        const resuming = now().sale.resume(id);
+        await expect(now().register.actions.closeSession({ counted: { cash: 1400 } })).rejects.toBeInstanceOf(RegisterSaleSavingError);
+        expect(await resuming).toBeNull();
+      });
+      expect(await db.closures.find().exec()).toHaveLength(0);
+      const closure = await close(1400);
+      expect(closure.till_expected.cash).toBe(1400);
+      expect(sales(closure, 'cash')).toBe(400);
+    });
   });
 
   it('the same sequence without the confirmed session is still stamped, by the backstop, with a warning', async () => {
