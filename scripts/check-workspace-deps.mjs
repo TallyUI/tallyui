@@ -22,7 +22,7 @@ const DYNAMIC_RE = /import\s*\(\s*['"](@tallyui\/[a-zA-Z0-9_-]+)/;
 // type`/`export type`, or a pure function on this allow-list — never a hook, store, the
 // order builder, a namespace/default import, a value re-export, or a dynamic import().
 const COMPONENTS_POS_ALLOWLIST = new Set([
-  'buildReceiptData', 'searchProducts', 'catalogueEntries', 'findEntryByCode', 'variantPriceLabel', 'needsAttention',
+  'buildReceiptData', 'searchProducts', 'catalogueEntries', 'findEntryByCode', 'variantPriceLabel', 'needsAttention', 'storeOrderLeft',
   // register screens (ADR-032 amendment 1, register-screens-a): the pure movement/amount grammar
   // the register screens validate against before a money action, never a hook or the store.
   'parseMinor', 'validAmount', 'movementFieldError', 'normalizeAmount',

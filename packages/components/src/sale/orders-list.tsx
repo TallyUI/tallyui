@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, storeOrderLeft, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 
@@ -60,9 +60,11 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   // The order's own stuck entry: its clock and latest reason, not the earliest across all stuck orders.
   const stuckEntry = order.syncStatus === 'pending' ? stuck?.orders.find((entry) => entry.commandId === order.commandId) : undefined;
   const needsAdminReason = stuckEntry ? needsAdminReasonOf(stuckEntry.reason) : undefined;
+  const left = storeOrderLeft(order);
+  // #1101: the store created this order, so invalid_payload's "a form the store can't read" would be wrong.
   const sentence = order.syncStatus === 'rejected'
     ? order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? '')
-      ? REOPEN_AGAIN_SENTENCE : refusalSentence(order.error?.code)
+      ? REOPEN_AGAIN_SENTENCE : refusalSentence(left && order.error?.code === 'invalid_payload' ? 'platform_error' : order.error?.code)
     : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
   const extras = extrasNotSent(order);
   return <>
@@ -74,6 +76,12 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     </Text> : null}
     {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
     {sentence ? <Text className="text-destructive">{sentence}</Text> : null}
+    {/* What the store had recorded at the refusal, not the order's state now. */}
+    {left ? <Text testID={`order-left-on-store-${order.id}`} className="text-destructive">
+      {left.recordedMinor === 0
+        ? `Order #${left.reference} was left pending on the online store. Nothing was paid there.`
+        : `Order #${left.reference} was left part paid on the online store: ${formatMoney({ amount: left.recordedMinor, currency: order.currency })} of ${formatMoney({ amount: order.totalMinor, currency: order.currency })}.`}
+    </Text> : null}
     {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
     {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
     {order.countedInClosureOf !== undefined ? <Text className="text-foreground">Recorded after the register closed. Its payment is in that register's closure.</Text> : null}
