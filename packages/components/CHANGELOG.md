@@ -1,5 +1,108 @@
 # @tallyui/components
 
+## 5.0.0
+
+### Minor Changes
+
+- f0fac39: Back opens a v2-style cancel-payment view when money was taken. It lists the cash to return (each cash payment's own amount after its change), what is voided and what is refunded. A payment on a store-covered reopened sale that cannot be voided shows a refund line, and the sale can only be parked.
+
+  A correction to #1214's note: only a cash `addTender` by amount with nothing due is refused with `NOTHING_DUE`. A `setTender` or old-draft cash payment still records the amount handed over until finalize nets it.
+
+- 501e189: A cash payment that settles a sale under its method's rounding records the difference in `Order.cashRoundings`, counted in the total and stored in `pos_orders` 21 (identity migration). A rounded sale needs a store whose connector declares the `cashRounding` capability on `ServerCapabilities`; without it the till does not round, finalize refuses an order with entries, and `precheckCommand` refuses `cashRoundings` as `invalid_payload`.
+- 7ea0d85: Catalogue `tableRow.expand`: an expanded variable product's variant rows get v2's filter bar above them, with one select per option group of two or more values to narrow the rows, and a Collapse chevron that folds the row. The filters clear when the row collapses.
+- 741611c: `afterVoid(leg, voided)` on `TenderLedger`, `TenderPane`, `Tender` and Cart's `tenderLedger`: runs after a void that `beforeVoid` approved, with `voidTender`'s result, so a host reverses a journalled void the till refused. A leg's `beforeVoid` now runs once across every mounted ledger and the cancel-payment view (#1271).
+- d104073: Add the parked needs_admin command outcome while preserving transport retries.
+  Keep a marker on pending refunds and expose RefundNeedsAdminNotice with Check again.
+  Tell cashiers when stuck sales need a manager in the store admin.
+- f0aaa2f: Add cashRoundingMinor to return an order's cash rounding with its final line refund, and cashIncrementMinor to show a notice when a cash refund cannot be paid exactly.
+- fecef2c: SettingsLayout takes navOpen and onNavOpenChange, and a navSlot function receives closeNav so a pick closes the stacked menu.
+- ed0458d: TenderLedger, Cart's tenderLedger, TenderPane and Tender take beforeVoid, a host hook that runs before Cancel payment voids a leg.
+
+### Patch Changes
+
+- e9b7baf: A taken tender leg is kept until voided: `setTender`, `startTender` and Back keep it, `removeTender` refuses it with `PAYMENT_TAKEN`, and `newSale` refuses an unfinished sale holding a captured one. The tender pane voids a till leg the store refuses instead of removing it.
+- 6c7838f: On web, hovering a cart line's Total peeks the row 16 px left on v2's bounce, hinting that the Total opens the strip; hovering out brings it home. Reduced motion, an open strip and a leaving row do not peek.
+- a502b9d: A cash payment taken through `addTender` records its own change, so `Order.paidMinor` and `changeDueMinor` no longer include change after a cash overpay; a cash payment with nothing due is refused.
+- 469e97a: On a store with cash rounding, a cash payment for picked items now rounds its own amount to the cash step and records its own rounding entry, so the change given matches the cash actually taken (for example, items of 3.33 paid with 5.00 take 3.35 and give 1.65 change).
+  A later cash payment for the rest rounds only the rest. A card payment for picked items is never rounded, and picked items that round to nothing in cash are refused, with a message.
+
+  While another payment is in progress, a cash payment for picked items must be a whole number of cash steps (`CASH_WAITS_FOR_PAYMENT`). A sale takes at most 15 rounded cash payments for picked items, so that the order the store receives stays within its 16 rounding entries (`CASH_PICK_LIMIT`, `CASH_PICK_ENTRIES_MAX`). Once the sale has 16 entries, a cash payment that would add another is refused, and the rest is taken by another method (`CASH_SETTLE_LIMIT`).
+
+  New pure helpers: `roundedPickTarget` and `remainderEntriesMinor`.
+
+- fe90c94: The sale rounds once in cash: a cash leg that settles after a void, or after a reopen with new lines, rounds the sale's unrounded remainder.
+  So the customer pays the one rounded total.
+
+  **Breaking signature change for outside callers:** `roundedDue` and `tenderRounding` take the sale's live rounding entries as a new last parameter; a caller that leaves it out rounds a sale that already has live entries a second time. `voidTender` now refuses to void a payment carrying a rounding entry while a later live cash payment carries one (`VOID_LATER_CASH_FIRST`; the pure rule is the new `cashVoidRefusal`).
+
+  In the components, Cancel and void now voids the taken payments latest first, and a void the core would refuse never reaches `beforeVoid`.
+
+- ffe94bd: A store whose only method is rounded cash is told to void its latest rounded cash payment (or park the sale) at the 16-entry settle limit, instead of to use another method.
+- 75678a0: With a payment in progress, a cash leg that is not a whole number of cash steps is refused with `CASH_WAITS_FOR_PAYMENT` (ADR-094), instead of recording an amount no coins can make; the tender pane disables Take with the same message.
+- 8db58a3: The tender pane shows a change amount only when Take is enabled. Before, a payment still in motion for the whole balance left Take disabled, yet a cash entry showed a large green "Change" for the full amount.
+- 0f77b6c: The customer email error is read from the `customers.invalid_email` catalogue key, so apps can translate it.
+- 43520ae: The customer search and save error texts are read from the `customers.error_*` catalogue keys, so apps can translate them.
+- b5c6059: `OpenSaleTabs`: the + cell widens from 48 to 112 pt and the "New" label fades in when the blank cart becomes current, and narrows and fades back out when it stops being current, as in WCPOS v2. Reduced or unknown motion jumps straight to the end state.
+- db82f0d: `@tallyui/components`, `@tallyui/pos` and `@tallyui/storage-sqlite` no longer ship their `*.test-d.ts` type-test files, matching `@tallyui/core` and `@tallyui/primitives`.
+- 585bb79: The sales report and the Z carry a sale's cash rounding (ADR-094) as its own figure, so net, tax and rounding add up to gross. `SalesTotals` gains a required `roundingMinor`, and `netMinor` is now gross less tax less rounding, the pre-tax amount the product rows add up to; `ReportOrder` gains an optional `roundingMinor`, set by `reportOrderFromPosOrder`. `writeClosure` records a session's rounding as `breakdowns.cash_rounding_minor` (only when non-zero; `closures` stays at schema version 0), and `buildClosureDocument` shows it as `closure.cash_rounding` (`name`, `amount`, `amount_display`) with `has_cash_rounding`, labelled by the new `cash_rounding` label key ("Rounding"). The Taxes card and the taxes panel show a Rounding line when the period has one.
+- b865f35: `useSale` returns `tenderHeld(paymentId)`, true when `setTender` keeps that payment. The tender pane offers the in-place terminal reference only for a payment `setTender` would replace, so a captured card payment a resumed draft kept with no `takenAt` no longer gets the input, and typing in it no longer records the card payment a second time.
+- a353d7c: The Tile Size, Tile Fields and Columns headings in the catalogue and cart settings forms now carry `aria-level` 4, so they sit below a host card's title instead of rendering as an h1.
+- 5eb584c: `TabsList` lays its triggers out in a row by default, as on the web; pass `flex-col` to stack them.
+- 6fd93ca: Take is disabled while legs in motion cover the balance, and a stale NOTHING_DUE clears when a leg's status changes.
+- 9c6ad4b: Tender's part payment and "can't give change" hints measure what is still due after payments in progress, as Take does (#1327).
+- bcbb929: Tender no longer shows the "Part payment · … left after this" hint while Take is disabled (a payment in progress already covers the balance).
+- 1fc5e66: A cash part payment that no cash can make is refused. The till offers the nearest payable amounts.
+- 8ab788a: The tender pane no longer shows a rounded cash due on a store whose connector does not declare cashRounding; it shows and takes the exact due.
+- Updated dependencies [3132605]
+- Updated dependencies [f0fac39]
+- Updated dependencies [e9b7baf]
+- Updated dependencies [a502b9d]
+- Updated dependencies [469e97a]
+- Updated dependencies [fe90c94]
+- Updated dependencies [501e189]
+- Updated dependencies [75678a0]
+- Updated dependencies [9cd0f2f]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [c67f2b0]
+- Updated dependencies [6e28dd6]
+- Updated dependencies [cda1585]
+- Updated dependencies [fd62b68]
+- Updated dependencies [c283168]
+- Updated dependencies [db82f0d]
+- Updated dependencies [d4c0002]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [e3884f0]
+- Updated dependencies [f6f5323]
+- Updated dependencies [422a96b]
+- Updated dependencies [1483634]
+- Updated dependencies [1c41466]
+- Updated dependencies [97d9671]
+- Updated dependencies [585bb79]
+- Updated dependencies [aa37c6c]
+- Updated dependencies [b865f35]
+- Updated dependencies [01626c6]
+- Updated dependencies [dbbbc16]
+- Updated dependencies [3b441fd]
+- Updated dependencies [3cd4444]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+- Updated dependencies [6fd93ca]
+- Updated dependencies [1fc5e66]
+- Updated dependencies [9d7ef3a]
+- Updated dependencies [5ac22b5]
+  - @tallyui/pos@5.0.0
+  - @tallyui/core@5.0.0
+  - @tallyui/primitives@5.0.0
+  - @tallyui/theme@5.0.0
+
 ## 4.2.0
 
 ### Minor Changes

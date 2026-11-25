@@ -1,5 +1,110 @@
 # @tallyui/pos
 
+## 5.0.0
+
+### Major Changes
+
+- fe90c94: The sale rounds once in cash: a cash leg that settles after a void, or after a reopen with new lines, rounds the sale's unrounded remainder.
+  So the customer pays the one rounded total.
+
+  **Breaking signature change for outside callers:** `roundedDue` and `tenderRounding` take the sale's live rounding entries as a new last parameter; a caller that leaves it out rounds a sale that already has live entries a second time. `voidTender` now refuses to void a payment carrying a rounding entry while a later live cash payment carries one (`VOID_LATER_CASH_FIRST`; the pure rule is the new `cashVoidRefusal`).
+
+  In the components, Cancel and void now voids the taken payments latest first, and a void the core would refuse never reaches `beforeVoid`.
+
+- 6e28dd6: A payment leg is stamped with the session that took it, and counts only on that session's Z: a part-paid sale parked across a close, or a taken leg left in the cart by `cancelTender`, counts its cash in the session that took it. A pending or authorized leg is stamped when it is captured.
+
+  **Breaking:** `useRegisterSession` now requires two options:
+
+  - `drafts`: the app's `order_drafts` collection, or `null` if it never parks a sale.
+  - `liveSale`: a getter returning `sale.registerView()` (`{ takenLegs, saving }`), or `null` if it has no live sale. The register is created before the sale, so read the sale through a ref:
+
+  ```ts
+  const saleRef = useRef<ReturnType<typeof useSale> | null>(null)
+  const register = useRegisterSession({ …, liveSale: () => saleRef.current?.registerView() ?? { takenLegs: [], saving: false } })
+  const sale = useSale(…)
+  saleRef.current = sale
+  ```
+
+  Why: without them, cash taken in a session but not yet on an order (a parked sale's, or one still in the cart) is missing from that session's Z.
+
+  `useSale` gains `registerView()`, `writeClosure` gains an optional `liveLegs` (callers other than `useRegisterSession` must pass both `drafts` and `liveLegs`), and `takingsByMethod` gains an optional third argument, `extra`, for taken legs no order holds yet.
+
+  `startCounting` and `closeSession` throw `RegisterSaleSavingError` while the getter says `saving`: a completion is in flight or its failed save has not been cleared. Live figures omit its legs while saving, since the stored order may already count them.
+
+  `useSale`'s `onSaleCompleted` is now bounded by `SAVE_TIMEOUT_MS` (60 s). After that the sale shows a failed save with Retry. `onSaleCompleted` must therefore be safe to call again with the same `posOrder` (same `posOrder.id`) while an earlier call is still running.
+
+### Minor Changes
+
+- e9b7baf: A taken tender leg is kept until voided: `setTender`, `startTender` and Back keep it, `removeTender` refuses it with `PAYMENT_TAKEN`, and `newSale` refuses an unfinished sale holding a captured one. The tender pane voids a till leg the store refuses instead of removing it.
+- a502b9d: A cash payment taken through `addTender` records its own change, so `Order.paidMinor` and `changeDueMinor` no longer include change after a cash overpay; a cash payment with nothing due is refused.
+- 501e189: A cash payment that settles a sale under its method's rounding records the difference in `Order.cashRoundings`, counted in the total and stored in `pos_orders` 21 (identity migration). A rounded sale needs a store whose connector declares the `cashRounding` capability on `ServerCapabilities`; without it the till does not round, finalize refuses an order with entries, and `precheckCommand` refuses `cashRoundings` as `invalid_payload`.
+- 9cd0f2f: closureFigures reads a closure's figures with one rule (a missing value is unknown, never 0), and medianMinor is exported.
+- d4c0002: A resumed paid draft keeps its parked tax rates for WooCommerce lines, fees and shipping until no parked leg is still captured or in motion (`OrderBuilderOptions.heldRates`).
+- d104073: Add the parked needs_admin command outcome while preserving transport retries.
+  Keep a marker on pending refunds and expose RefundNeedsAdminNotice with Check again.
+  Tell cashiers when stuck sales need a manager in the store admin.
+- e3884f0: A parked or live sale's cash rounding now counts on the Z of the session that took its leg, and `registerView()` returns `cashRoundings`.
+- f6f5323: A sale's `complete`, `park`, `resume` and `switchSale` refuse with the new `REGISTER_CLOSING` while its register's close is in flight, and `registerView().saving` is also true while a park or resume is in flight, so a close refuses then (#1275).
+- 97d9671: `useStoreRefundsInRange` reads a store's refunds by the day they were made, sorted into counted, unscoped, other-currency and orphan refunds. `SalesTotals` gains `refundBasis` and `grossAfterRefundsMinor`, so a report subtracts one named refund figure.
+- 585bb79: The sales report and the Z carry a sale's cash rounding (ADR-094) as its own figure, so net, tax and rounding add up to gross. `SalesTotals` gains a required `roundingMinor`, and `netMinor` is now gross less tax less rounding, the pre-tax amount the product rows add up to; `ReportOrder` gains an optional `roundingMinor`, set by `reportOrderFromPosOrder`. `writeClosure` records a session's rounding as `breakdowns.cash_rounding_minor` (only when non-zero; `closures` stays at schema version 0), and `buildClosureDocument` shows it as `closure.cash_rounding` (`name`, `amount`, `amount_display`) with `has_cash_rounding`, labelled by the new `cash_rounding` label key ("Rounding"). The Taxes card and the taxes panel show a Rounding line when the period has one.
+- b865f35: `useSale` returns `tenderHeld(paymentId)`, true when `setTender` keeps that payment. The tender pane offers the in-place terminal reference only for a payment `setTender` would replace, so a captured card payment a resumed draft kept with no `takenAt` no longer gets the input, and typing in it no longer records the card payment a second time.
+- 3cd4444: useSale: a removal taken for Undo is now voided by any customer change (setCustomer, setAddresses, setTaxIds) or a re-tax, instead of re-taxing the restored item; restore() returns RESTORE_STALE for it. Park, resume, a new sale and the receipt still void it.
+- 8e15960: A store sale now counts on its paid day. `ListOrdersQuery` gains an optional `modifiedAfter` filter (WooCommerce `modified_after`), and the WooCommerce connector lists it. The new `salesRangeQuery` builds a sales report's read: with `modifiedAfter` it fetches orders changed since the range start and created before its end. `reportOrderFromStoreOrder` places a store order on `paidAt`, or on `placedAt` when the order has none. So a WooCommerce order created in a report's range but paid after it now counts on its paid day, as in WCPOS v2.
+
+  Upgrading: build a report's read with `salesRangeQuery`. A report that still reads a WooCommerce store with `dateRange: { after, before }` now loses every order paid on a later day than it was created, because the created-day read fetches it and `salesFigures` drops it from that day.
+
+### Patch Changes
+
+- 3132605: Back and a repeat startTender keep a pending or authorized payment leg, so a later capture is recorded.
+- f0fac39: Back opens a v2-style cancel-payment view when money was taken. It lists the cash to return (each cash payment's own amount after its change), what is voided and what is refunded. A payment on a store-covered reopened sale that cannot be voided shows a refund line, and the sale can only be parked.
+
+  A correction to #1214's note: only a cash `addTender` by amount with nothing due is refused with `NOTHING_DUE`. A `setTender` or old-draft cash payment still records the amount handed over until finalize nets it.
+
+- 469e97a: On a store with cash rounding, a cash payment for picked items now rounds its own amount to the cash step and records its own rounding entry, so the change given matches the cash actually taken (for example, items of 3.33 paid with 5.00 take 3.35 and give 1.65 change).
+  A later cash payment for the rest rounds only the rest. A card payment for picked items is never rounded, and picked items that round to nothing in cash are refused, with a message.
+
+  While another payment is in progress, a cash payment for picked items must be a whole number of cash steps (`CASH_WAITS_FOR_PAYMENT`). A sale takes at most 15 rounded cash payments for picked items, so that the order the store receives stays within its 16 rounding entries (`CASH_PICK_LIMIT`, `CASH_PICK_ENTRIES_MAX`). Once the sale has 16 entries, a cash payment that would add another is refused, and the rest is taken by another method (`CASH_SETTLE_LIMIT`).
+
+  New pure helpers: `roundedPickTarget` and `remainderEntriesMinor`.
+
+- 75678a0: With a payment in progress, a cash leg that is not a whole number of cash steps is refused with `CASH_WAITS_FOR_PAYMENT` (ADR-094), instead of recording an amount no coins can make; the tender pane disables Take with the same message.
+- c67f2b0: A paid draft with kept coupons stays priced when a WooCommerce tax rate changes between park and resume.
+- cda1585: newSale refuses while a card payment is still in progress, with SALE_CARD_IN_PROGRESS, instead of dropping the leg.
+- fd62b68: Only a cash method rounds its due (roundedDue, tenderRounding, tenderFigures); a non-cash method with a rounding increment keeps the exact due, as the leg it takes does.
+- c283168: `useOrderOutbox`'s `record()` now resolves only once the outbox's pending count includes the order, so a screen that renders on resolve no longer shows one frame without its pending sale.
+- db82f0d: `@tallyui/components`, `@tallyui/pos` and `@tallyui/storage-sqlite` no longer ship their `*.test-d.ts` type-test files, matching `@tallyui/core` and `@tallyui/primitives`.
+- 2ebf613: A till now lowers its perpetual refunds to the store's figure after its newest applied closure, once nothing of its own is unsent, and raises them only from the store's figures at its newest closure number.
+- 422a96b: A refund whose earlier answer was unknown stays pending when a resend is refused or unauthorized. This prevents a new attempt from sending a second refund for it, while resending the same refund still works.
+- 1483634: Two sends of the same refund attempt at once (for example a double tap on Check again) now run one after the other. A lost answer can no longer let a new attempt send that refund a second time.
+- 1c41466: A WooCommerce coupon replayed over a held paid draft's line re-prices at that line's parked tax rates, so the total and the coupon's discount tax do not move under taken money.
+- aa37c6c: A reprinted cash-rounded sale shows its Rounding row.
+- 01626c6: A resumed paid draft keeps its taken legs on Pay and Back instead of dropping them.
+- dbbbc16: openStoreOrder, resume, switchSale and the idle settings reset refuse with SALE_PARTLY_PAID while the live sale holds a captured taken payment, as newSale does.
+- 3b441fd: A resumed draft's captured payment with no takenAt (parked before 4.2) counts as taken: Back, removeTender and newSale keep it, and complete() stores it without inventing a takenAt.
+- 837bb5f: `@tallyui/core/server` now installs in a store without react: `react` becomes an optional peer, and the built server entry imports no react, rxdb or rxjs. Core now exports the till's BigInt refund share, `refundableLines`, `priceRefund` and their types `RefundableOrderLine`, `EarlierRefund`, `RefundableLine`, `PricedRefundLine` and `PricedRefund`, with `roundRatio` and `RoundingMode`, from both its root and `./server`. `@tallyui/pos` re-exports the same functions under the same names. `SUPPORTED_REGISTER_VERSIONS` now lists 1, 2 and 3, the register versions the till builds.
+
+  This is not a major change. No export is removed or renamed, and the `react` peer only loosens. `SUPPORTED_REGISTER_VERSIONS` is documented as the till's capability, and a server passes its own list to `precheckCommand`. A server that passed core's constant as its own list will now accept register versions 2 and 3.
+
+- e5c8503: `StoreOrder.needsPayment` (optional) says the store reports the order still owes money; WooCommerce reads it from `needs_payment`. Reports label a store order's unpaid remainder `unpaid` when it is true, so Taken no longer counts it; when the flag is false or absent the remainder stays `unknown` and counts toward Taken, as before.
+- 6fd93ca: Take is disabled while legs in motion cover the balance, and a stale NOTHING_DUE clears when a leg's status changes.
+- 1fc5e66: A cash part payment that no cash can make is refused. The till offers the nearest payable amounts.
+- 9d7ef3a: The WCPOS receipt template shows a cash-rounded sale's Rounding as a tax-free fee row.
+- 5ac22b5: Keep distinct tax identities at the same rate separate in the Z tax table.
+- Updated dependencies [501e189]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+  - @tallyui/core@5.0.0
+
 ## 4.2.0
 
 ### Minor Changes

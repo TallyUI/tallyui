@@ -1,5 +1,39 @@
 # @tallyui/core
 
+## 5.0.0
+
+### Minor Changes
+
+- 501e189: A cash payment that settles a sale under its method's rounding records the difference in `Order.cashRoundings`, counted in the total and stored in `pos_orders` 21 (identity migration). A rounded sale needs a store whose connector declares the `cashRounding` capability on `ServerCapabilities`; without it the till does not round, finalize refuses an order with entries, and `precheckCommand` refuses `cashRoundings` as `invalid_payload`.
+- bfab53c: Order payloads whose display figures do not add up (ADR-063 I1–I3) are now refused as invalid_payload.
+
+  A store that takes this version refuses such a payload from any till, including one an older till still holds in its outbox. The check runs on version 3 and later payloads that carry `display` and `taxByRate` and pass the shape check; a version 3 or 4 payload that fails the shape check is not checked here. A command the store has already applied still replays as `duplicate`. The oldest `@tallyui/pos` proven to satisfy I1–I3 is 3.20.1: 200 seeded sales built by each of 3.20.1, 4.0.0, 4.1.0 and 4.2.0 pass the new check (both tax modes, line and order discounts, coupons, fees and shipping). 3.10.0 and 3.3.0 could not be run, and the other versions were not run. The run does not build return lines, reopened orders or charges with `amountIncludesTax`, and those versions have no cash rounding. On Woo with prices including tax it leaves out fees and shipping (#1341), and an order discount with a coupon (#1342): a check that predates this change can already refuse those sales.
+
+- 86f3d40: `parseCommandResult` accepts a stock-only refund result: `totalMinor` 0, `byMethod` `{}`, `refunds` `[]` (ADR-080, #1330).
+- 96f8789: `StoreOrderRefund` gains optional `lines` (`StoreOrderRefundLine`): the order lines a store refund paid back (#1324).
+- d104073: Add the parked needs_admin command outcome while preserving transport retries.
+  Keep a marker on pending refunds and expose RefundNeedsAdminNotice with Check again.
+  Tell cashiers when stuck sales need a manager in the store admin.
+- 8e15960: A store sale now counts on its paid day. `ListOrdersQuery` gains an optional `modifiedAfter` filter (WooCommerce `modified_after`), and the WooCommerce connector lists it. The new `salesRangeQuery` builds a sales report's read: with `modifiedAfter` it fetches orders changed since the range start and created before its end. `reportOrderFromStoreOrder` places a store order on `paidAt`, or on `placedAt` when the order has none. So a WooCommerce order created in a report's range but paid after it now counts on its paid day, as in WCPOS v2.
+
+  Upgrading: build a report's read with `salesRangeQuery`. A report that still reads a WooCommerce store with `dateRange: { after, before }` now loses every order paid on a later day than it was created, because the created-day read fetches it and `salesFigures` drops it from that day.
+
+- 837bb5f: `@tallyui/core/server` now installs in a store without react: `react` becomes an optional peer, and the built server entry imports no react, rxdb or rxjs. Core now exports the till's BigInt refund share, `refundableLines`, `priceRefund` and their types `RefundableOrderLine`, `EarlierRefund`, `RefundableLine`, `PricedRefundLine` and `PricedRefund`, with `roundRatio` and `RoundingMode`, from both its root and `./server`. `@tallyui/pos` re-exports the same functions under the same names. `SUPPORTED_REGISTER_VERSIONS` now lists 1, 2 and 3, the register versions the till builds.
+
+  This is not a major change. No export is removed or renamed, and the `react` peer only loosens. `SUPPORTED_REGISTER_VERSIONS` is documented as the till's capability, and a server passes its own list to `precheckCommand`. A server that passed core's constant as its own list will now accept register versions 2 and 3.
+
+- 710b62f: `StoreOrder.cashierId`, `storeId` and `registerId` (all optional) name the cashier, store and register the store records for an order, as `ListOrdersQuery` filters them. WooCommerce reads `_pos_user`, `_pos_store` (a WordPress id; 0 means none) and `_wcpos_register` (written only by WCPOS, so absent on orders TallyUI rings).
+- 04c375d: `StoreOrder.createdVia` (optional) says where the store records the order was created, in the platform's own words; WooCommerce reads it from `created_via`. Absent when the store records none.
+- e5c8503: `StoreOrder.needsPayment` (optional) says the store reports the order still owes money; WooCommerce reads it from `needs_payment`. Reports label a store order's unpaid remainder `unpaid` when it is true, so Taken no longer counts it; when the flag is false or absent the remainder stays `unknown` and counts toward Taken, as before.
+- 1704c9d: `StoreOrder` gains an optional `paidAt`: when the store recorded the order as paid, as an ISO 8601 UTC instant. It is absent while the order is unpaid, or when the store records no paid date. The WooCommerce connector reads it from `date_paid_gmt` and never falls back to the site-local `date_paid`. A value that does not parse leaves no `paidAt`.
+- eda38cf: `@tallyui/core` gains the optional, online, read-only `TallyConnector.listRefunds` member, its `StoreRefund`, `StoreRefundOrphan`, `ListRefundsQuery` and `StoreRefundPage` types, and `StoreRefundsUnsupportedError`, so refunds can be dated by when they were made (ADR-081 decision 7).
+
+  `@tallyui/connector-woocommerce` implements `listRefunds` over WCPOS 2.0's `wcpos/v2/refunds` read, reading each refund's currency from its order and rejecting with `StoreRefundsUnsupportedError` below WCPOS 2.0.0.
+
+### Patch Changes
+
+- 2ebf613: A till now lowers its perpetual refunds to the store's figure after its newest applied closure, once nothing of its own is unsent, and raises them only from the store's figures at its newest closure number.
+
 ## 4.2.0
 
 ## 4.1.0
