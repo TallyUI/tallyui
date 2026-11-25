@@ -1,7 +1,8 @@
 import { ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '@tallyui/core';
 import type { OrderCreateEnvelope, OrderCreateMeta, OrderCreatePayload, OrderCreateTaxId, OrderUpdateEnvelope, OrderUpdatePayload } from '@tallyui/core';
 import { MICROS_PER_MINOR, roundMicrosToMinor, taxMicros } from '../tax/exact';
-import { woocommerceChargeTaxMinor } from '../order/woocommerce-tax';
+import { woocommerceChargeTaxMinor, woocommerceLine } from '../order/woocommerce-tax';
+import type { LineTaxLine } from '../order/types';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
@@ -82,12 +83,22 @@ export const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueS
 /**
  * Version 4 (#286): a line's discount made tax-exclusive. An exclusive line's is unchanged; an inclusive line's
  * gross discount D on its amount A becomes `net(A) − net(A − D)`, exact in millionths, rounded half away from zero.
- * Tax comes from stored taxLines after D, recomputed before a store-priced coupon, and from `taxMicros` before D.
+ * A Woo-rounded line with a coupon or a compound rate takes both nets from `woocommerceLine` at its stored rates (#1342):
+ * its stored taxLines are after the coupon. Otherwise tax comes from stored taxLines after D, recomputed before a
+ * store-priced coupon, and from `taxMicros` before D.
  */
-function netDiscountMinor(line: PosOrderLine, pricesIncludeTax: boolean, woocommerce: boolean): number {
-  if (!(line.taxInclusive ?? pricesIncludeTax) || line.discountMinor === 0) return line.discountMinor;
-  const ratePpm = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
+function netDiscountMinor(line: PosOrderLine, order: Pick<PosOrder, 'pricesIncludeTax' | 'taxRounding' | 'coupons' | 'currency'>): number {
+  if (!(line.taxInclusive ?? order.pricesIncludeTax) || line.discountMinor === 0) return line.discountMinor;
+  const woocommerce = order.taxRounding?.granularity === 'woocommerce', stored: readonly LineTaxLine[] = line.taxLines;
   const afterDiscount = line.unitPriceMinor * line.quantity - line.discountMinor;
+  if (woocommerce && (order.coupons?.length || stored.some((tax) => tax.compound))) {
+    const rates = stored.map((tax, i) => ({ id: i, code: tax.code ?? '', label: '', rate: (tax.ratePpm / 10000).toFixed(4),
+      priority: i, compound: tax.compound ?? false, shipping: true }));
+    // Only netMicros is read: the net before any coupon, which roundAtSubtotal does not change.
+    const net = (minor: number) => BigInt(woocommerceLine(minor, rates, true, order.currency, false).netMicros);
+    return roundMicrosToMinor(net(line.unitPriceMinor * line.quantity) - net(afterDiscount));
+  }
+  const ratePpm = line.taxLines.reduce((sum, tax) => sum + tax.ratePpm, 0);
   // A store-priced coupon leaves stored taxLines after the coupon; the line discount needs tax before it.
   const taxAfter = !woocommerce && line.netMinor < afterDiscount ? taxMicros(afterDiscount, ratePpm, true)
     : line.taxLines.reduce((sum, tax) => sum + BigInt(tax.taxMicros), 0n);
@@ -184,7 +195,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
   const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
   const taxIds = version >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && sentTaxIds.length ? { taxIds: sentTaxIds } : undefined;
-  const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order.pricesIncludeTax, order.taxRounding?.granularity === 'woocommerce') : line.discountMinor);
+  const lineDiscounts = order.lines.map((line) => base >= 4 ? netDiscountMinor(line, order) : line.discountMinor);
   for (const coupon of carried) {
     if (!coupon.lines) throw new Error(`Order ${order.id}: a carried coupon has no line shares`);
     for (const [i, line] of order.lines.entries()) lineDiscounts[i] += coupon.lines.find(({ lineId }) => lineId === line.id)?.discountMinor ?? 0;

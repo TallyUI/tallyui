@@ -53,8 +53,7 @@ it('P1: 200 seeded random built sales pass the server precheck, display identiti
     // No return line: the builder caps a negative line at 0 and finalize refuses it, so F10 covers returns server-side.
     const orderDiscountDraw = random() < 0.3 ? discount(5000) : undefined;
     const coupon = woo && random() < 0.4;
-    // #1342: a Woo inclusive line's net discount can go negative with an order discount and a coupon; re-enable when it is fixed.
-    const orderDiscount = orderDiscountDraw !== undefined && !(woo && pricesIncludeTax && coupon);
+    const orderDiscount = orderDiscountDraw !== undefined;
     if (orderDiscount && orderDiscountDraw) builder.applyOrderDiscount(orderDiscountDraw);
     if (coupon) builder.setCoupons(['ten']);
     // #1341: Woo inclusive charge rows can differ by 1 from the payload; re-enable when it is fixed.

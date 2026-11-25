@@ -270,6 +270,25 @@ describe('createWooCommandTransport', () => {
         message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till.",
       } });
     });
+
+    // #1342: at 300% a stored gross discount of 1 is 0.25 net, so the wire line has no discountMinor; Woo still gets
+    // 9.99 less its 300% tax (9.99 / 4 = 2.4975). With no discount anywhere it is 10.00 / 4 = 2.50, full price.
+    it.each([
+      { stored: 1, wire: undefined, expected: { net: '2.497500', price: '9.99' } },
+      { stored: undefined, wire: undefined, expected: { net: '2.500000', price: '10.00' } },
+      { stored: undefined, wire: 1, expected: undefined },
+    ])('uses the stored discount $stored on an inclusive coupon line sent with $wire', ({ stored, wire, expected }) => {
+      const envelope = structuredClone(couponEnvelope);
+      envelope.payload.pricesIncludeTax = true;
+      envelope.payload.lines = [{ clientLineId: 'inclusive', variantId: '80', unitPriceMinor: 1000, quantity: 1,
+        ...(wire !== undefined ? { discountMinor: wire } : {}) }];
+      const local: WooLocalOrder = { lines: [{ id: 'inclusive', netMicros: '249750000',
+        ...(stored !== undefined ? { discountMinor: stored } : {}), taxLines: [{ rateId: 1, compound: false, ratePpm: 3000000 }] }] };
+      expect(toWooOrderPayload(envelope, local)).toMatchObject(expected ? { payload: { line_items: [{
+        subtotal: expected.net, total: expected.net, meta_data: [{ key: '_woocommerce_pos_data',
+          value: `{"price":"${expected.price}","regular_price":"${expected.price}"}` }] }] } }
+        : { error: { code: 'unsupported_tax_mode', message: "Tax-inclusive prices need the till's WooCommerce tax figures; update the till." } });
+    });
   });
 
   it.each([
