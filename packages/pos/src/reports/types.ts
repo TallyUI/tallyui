@@ -48,7 +48,7 @@ export interface ReportOrder {
   taxes: ReportTax[];
   /** Refunds embedded on the order, undated (a store order's own list). Positive. */
   refunds: Array<{ id: string; amountMinor: number }>;
-  /** Σ the order's cash roundings, signed (ADR-094); absent when none. */
+  /** Σ the order's cash roundings, signed (ADR-094); absent when none. Always absent on a store-sourced order: its rounding is a plain fee, kept inside net (#1282). */
   roundingMinor?: number;
 }
 
