@@ -1,0 +1,19 @@
+{
+  "_note": "Hand-written per the medusapos worker on 2026-11-25 in the agreed contract-6 shape (TallyUI#1324); the captured fixture from the medusapos contract-6 PR replaces it. Answers GET /tally/v1/orders?ids= for orders.fixture.json list.body.orders[0].",
+  "hasMore": false,
+  "total": 1,
+  "orders": [
+    {
+      "id": "order_01M7TS1DZZRM0D7RZ5S5WRD1JS",
+      "refunds": [
+        {
+          "id": "ref_01M7TS2QXJ9G73JM62903BWGMX",
+          "amountMinor": 500,
+          "reason": "FIX540 partial refund",
+          "lines": [{ "orderLineId": "ordli_01M7TS1E009FVGAKAB7AAMY0KK", "quantity": 1, "netMinor": 420, "taxMinor": 80 }]
+        },
+        { "id": "ref_01M7TS4Z49RBMAZDBWNVNZ08Q0", "amountMinor": 100 }
+      ]
+    }
+  ]
+}
