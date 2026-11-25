@@ -5553,7 +5553,7 @@ interface OrderCreatePayload {
 
      | Code | When | `error.data` |
      |---|---|---|
-     | `nothing_to_refund` | No lines, no shipping and no adjustment, or a total of 0 | none |
+     | `nothing_to_refund` | No lines, no shipping and no adjustment, or a total of 0 with no lines. Lines at a total of 0 are a stock-only return, applied with no refund (decision 4, #1330) | none |
      | `quantity_exceeds` | A line asks for more than its refundable quantity, or a line is not on the order | `{ lines: [{ orderLineId, quantity, refundableQuantity }] }` |
      | `amount_mismatch` | The server's total differs from `totalMinor`, or exceeds the order's refundable money | `{ expectedMinor, serverMinor }` |
      | `order_state` | The order's state does not allow a refund (not placed, cancelled, …) | `{ state }` |
