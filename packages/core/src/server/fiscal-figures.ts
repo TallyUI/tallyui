@@ -94,6 +94,19 @@ export function fiscalFiguresErrors(payload: OrderCreatePayload): string[] {
     check(!seen.has(line.clientLineId), `display.lines[${index}].clientLineId`, 'no duplicate clientLineId')
     seen.add(line.clientLineId)
   })
+  if (!errors.length) {
+    // ADR-063 I1–I3 (#1256): display's own figures add up. taxByRate gross is not tied to totalMinor (zero-rated lines and
+    // tax-none charges may be absent from it, and cash roundings are tax-none); display.subtotalMinor is not tied to
+    // payload.subtotalMinor (display is in the display tax mode, and in store mode the payload subtotal is net of coupons).
+    const sum = (rows: ReadonlyArray<{ amountMinor: number }> | undefined) => (rows ?? []).reduce((total, row) => total + BigInt(row.amountMinor), 0n)
+    const roundings = (payload.cashRoundings ?? []).reduce((total, entry) => total + BigInt(entry.minor), 0n)
+    check(BigInt(display.subtotalMinor) - BigInt(display.discountMinor) + sum(display.fees) + sum(display.shipping)
+      + (display.taxInclusive ? 0n : BigInt(display.taxMinor)) + roundings === BigInt(display.totalMinor),
+    'display.totalMinor', 'subtotalMinor − discountMinor + fees + shipping (+ taxMinor when exclusive) + cashRoundings')
+    check(sum(display.lines) === BigInt(display.subtotalMinor), 'display.subtotalMinor', 'the sum of display.lines[].amountMinor')
+    check(BigInt(display.discountMinor) === BigInt(display.orderDiscountMinor) + display.lines.reduce((total, line) => total + sum(line.discounts), 0n)
+      + sum(display.coupons), 'display.discountMinor', 'orderDiscountMinor + the line discount rows + the coupon rows')
+  }
   try {
     check(display.exponent === currencyDecimals(payload.currency), 'display.exponent', 'the currency decimals')
   } catch {

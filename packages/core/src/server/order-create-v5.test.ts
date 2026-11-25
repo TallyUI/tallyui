@@ -138,16 +138,18 @@ describe('order.create v5 (ADR-075)', () => {
     payload.discountMinor = payload.lines[1].discountMinor = 100
     payload.totalMinor = payload.display!.totalMinor = payload.payments[0].amountMinor = 3800
     payload.display!.discountMinor = 100
+    payload.display!.lines[1].discounts = [{ discountId: 'discount_1', amountMinor: 100 }]
     payload.taxByRate![1].netMinor = payload.taxByRate![1].grossMinor = 200
     expect(precheckCommand(envelope(payload), supported)).toBeUndefined()
     payload.discountMinor = 101
     expect(precheckCommand(envelope(payload), supported)?.error?.message).toContain('discountMinor: expected the sum of lines[].discountMinor')
   })
 
-  it('does not require display and adds no subtotal-to-total identity', () => {
+  it('a display whose figures do not add up is refused; a payload without display still passes', () => {
     const payload = structuredClone(fee)
     payload.subtotalMinor = payload.display!.subtotalMinor = 1
-    expect(precheckCommand(envelope(payload), supported)).toBeUndefined()
+    expect(precheckCommand(envelope(payload), supported)?.error?.message)
+      .toContain('display.subtotalMinor: expected the sum of display.lines[].amountMinor')
     delete payload.display
     delete payload.taxByRate
     expect(precheckCommand(envelope(payload), supported)).toBeUndefined()
