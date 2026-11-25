@@ -102,6 +102,16 @@ describe('#1341 Woo inclusive: a charge goes on the wire at its display row', ()
     }
   });
 
+  it('generic rounding sends the stored charge, not its display row', () => {
+    const { order } = sell({ lines: [[1000, 1]], charges: [fee(285), ship(331)], woo: false });
+    // An altered stored order, as no builder makes one; only the gate decides.
+    const clone = structuredClone(order);
+    clone.display!.fees![0].amountMinor = 286;
+    clone.display!.shipping![0].amountMinor = 330;
+    const { payload } = toOrderCreateEnvelope(clone, 'device-1341', 1, { maxVersion: 12 });
+    expect([payload.fees![0].amountMinor, payload.shipping![0].amountMinor]).toEqual([285, 331]);
+  });
+
   it('reopening the stored charge (as reopen.ts re-adds it, at its stored amount) gives the original totals', () => {
     const { order } = sell({ lines: [[1691, 3]], charges: [fee(285)] });
     const again = sell({ lines: [[1691, 3]], charges: [fee(order.fees![0].amountMinor)] }).order;
