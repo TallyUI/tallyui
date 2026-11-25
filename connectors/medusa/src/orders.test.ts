@@ -392,6 +392,18 @@ describe('refund lines (#1324)', () => {
     ]);
   });
 
+  it('lines land only on a refund of the order they were read for', async () => {
+    const other = structuredClone(L[1]) as typeof L[1] & { payment_collections: { payments: { refunds: unknown[] }[] }[] };
+    other.payment_collections[0]!.payments[0]!.refunds = [structuredClone(L[0].payment_collections[1]!.payments[0]!.refunds[0])];
+    const refundId = 'ref_01M7TS2QXJ9G73JM62903BWGMX';
+    const line = { orderLineId: L[1].items[0]!.id, quantity: 1, netMinor: 420, taxMinor: 80 };
+    const body = { orders: [{ id: L[1].id, refunds: [{ id: refundId, amountMinor: 500, lines: [line] }] }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(adminOf(other)).mockResolvedValueOnce(plugin(body));
+    const [first, second] = await getOrders(ctx6, [L[0].id, L[1].id]);
+    expect(second!.refunds).toStrictEqual([{ id: refundId, amountMinor: 500, reason: 'FIX540 partial refund', lines: [line] }]);
+    expect(first!.refunds.find((refund) => refund.id === refundId)).not.toHaveProperty('lines');
+  });
+
   it.each([['contract 5', ctx5], ['no capabilities', context]])('makes no plugin request below contract 6 (%s)', async (_, ctx) => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValue(plugin(refundLinesFixture));
     const orders = await getOrders(ctx, [L[0].id]);

@@ -177,13 +177,15 @@ function readOrders(raws: readonly unknown[]): { orders: StoreOrder[]; unreadabl
 
 const isCount = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 
-/** Each refund's lines from the plugin's `orders[]` rows, kept only when every line is valid for its order (#1324); never throws. */
-function refundLinesById(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, StoreOrderRefundLine[]> {
+/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); never throws. */
+function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
   const lineIds = new Map(orders.map((order) => [order.id, new Set(order.lines.map((line) => line.id))]));
-  const linesById = new Map<string, StoreOrderRefundLine[]>();
+  const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
   for (const raw of rows(raws)) {
     const known = typeof raw.id === 'string' ? lineIds.get(raw.id) : undefined;
-    if (!known) continue;
+    if (!known || typeof raw.id !== 'string') continue;
+    const linesById = byOrder.get(raw.id) ?? new Map<string, StoreOrderRefundLine[]>();
+    byOrder.set(raw.id, linesById);
     for (const { id, lines } of rows(raw.refunds)) {
       if (typeof id !== 'string' || !Array.isArray(lines) || lines.length === 0) continue;
       // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId.
@@ -193,14 +195,17 @@ function refundLinesById(raws: readonly unknown[], orders: readonly StoreOrder[]
       if (kept.length === lines.length) linesById.set(id, kept);
     }
   }
-  return linesById;
+  return byOrder;
 }
 
-/** The orders with `lines` on each refund the map names; every other refund and order is returned as is. */
-function withRefundLines(orders: StoreOrder[], linesById: Map<string, StoreOrderRefundLine[]>): StoreOrder[] {
-  return orders.map((order) => (order.refunds.some((refund) => linesById.has(refund.id))
-    ? { ...order, refunds: order.refunds.map((refund) => { const lines = linesById.get(refund.id); return lines ? { ...refund, lines } : refund; }) }
-    : order));
+/** The orders with `lines` on each of their own refunds the map names; every other refund and order is returned as is. */
+function withRefundLines(orders: StoreOrder[], byOrder: Map<string, Map<string, StoreOrderRefundLine[]>>): StoreOrder[] {
+  return orders.map((order) => {
+    const linesById = byOrder.get(order.id);
+    return linesById && order.refunds.some((refund) => linesById.has(refund.id))
+      ? { ...order, refunds: order.refunds.map((refund) => { const lines = linesById.get(refund.id); return lines ? { ...refund, lines } : refund; }) }
+      : order;
+  });
 }
 
 /**
@@ -222,7 +227,7 @@ async function readRefundLines(context: SyncContext, orders: StoreOrder[]): Prom
       if (context.signal?.aborted) throw error;
     }
   }
-  return raws.length > 0 ? withRefundLines(orders, refundLinesById(raws, orders)) : orders;
+  return raws.length > 0 ? withRefundLines(orders, refundLinesByOrder(raws, orders)) : orders;
 }
 
 // An all-digits search the plugin's route matches against display_id (medusapos orders/list.ts:78-84); the admin API has no number search.
@@ -249,7 +254,7 @@ async function listThroughPlugin(context: SyncContext, params: URLSearchParams):
   const picked = ids.flatMap((id) => byId.get(id) ?? []);
   const { orders: read, unreadable } = readOrders(picked);
   // At contract 6 the route's own hits carry refunds[].lines, so no further request (#1324).
-  const orders = (context.capabilities?.pluginContract ?? 0) >= REFUND_LINES_PLUGIN_CONTRACT ? withRefundLines(read, refundLinesById(hits, read)) : read;
+  const orders = (context.capabilities?.pluginContract ?? 0) >= REFUND_LINES_PLUGIN_CONTRACT ? withRefundLines(read, refundLinesByOrder(hits, read)) : read;
   // An id the admin answer lacks is left out and counted like a row the mapper cannot read.
   const left = unreadable + ids.length - picked.length;
   return { orders, hasMore, ...(left ? { unreadable: left } : {}), ...counted };
