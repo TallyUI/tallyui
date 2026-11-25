@@ -19,7 +19,7 @@ it('accepts a discount-free v3 and a discounted v3', () => {
   expect(fiscalFiguresErrors(payload)).toEqual([])
   const discounted = structuredClone(payload)
   discounted.discountMinor = discounted.lines[0].discountMinor = 100
-  discounted.totalMinor = discounted.display!.totalMinor = discounted.display!.lines[0].amountMinor = 900
+  discounted.totalMinor = discounted.display!.totalMinor = 900
   discounted.taxMinor = discounted.display!.taxMinor = 144
   discounted.subtotalMinor = 756
   discounted.payments[0].amountMinor = 900
@@ -140,4 +140,87 @@ it('allows an empty taxByRate only for zero tax and uses currency-specific decim
     expect(fiscalFiguresErrors(input)).toEqual([])
     expect(fiscalFiguresErrors({ ...input, display: { ...input.display, exponent: 2 } })).toEqual(['display.exponent: expected the currency decimals'])
   }
+})
+
+// #1256, ADR-063 I1–I3: display's own figures add up. One line of `subtotal`, a line row and an order share making the discount.
+const sale = (taxInclusive: boolean, subtotal: number, discount: number, tax: number, total: number, orderDiscount = 0) => {
+  const v3 = structuredClone(payload)
+  v3.pricesIncludeTax = taxInclusive
+  v3.taxMinor = tax
+  v3.totalMinor = total
+  v3.display = {
+    ...v3.display!, taxInclusive, subtotalMinor: subtotal, discountMinor: discount, taxMinor: tax, totalMinor: total, orderDiscountMinor: orderDiscount,
+    lines: [{ clientLineId: 'line_1', amountMinor: subtotal, discounts: discount - orderDiscount ? [{ discountId: 'discount_1', amountMinor: discount - orderDiscount }] : [] }],
+  }
+  v3.taxByRate = [{ ratePpm: 200000, netMinor: total - tax, taxMinor: tax, grossMinor: total }]
+  return v3
+}
+const total = (v3: OrderCreatePayloadV3, minor: number) => {
+  v3.totalMinor = v3.display!.totalMinor = minor
+  return v3
+}
+const I1 = 'display.totalMinor: expected subtotalMinor − discountMinor + fees + shipping (+ taxMinor when exclusive) + cashRoundings'
+const I2 = 'display.subtotalMinor: expected the sum of display.lines[].amountMinor'
+const I3 = 'display.discountMinor: expected orderDiscountMinor + the line discount rows + the coupon rows'
+
+it('F1: refuses the issue\'s exclusive total that is not subtotal plus tax', () => {
+  const v3 = sale(false, 1000, 0, 200, 9900)
+  v3.taxByRate = [{ ratePpm: 200000, netMinor: 1000, taxMinor: 200, grossMinor: 1200 }]
+  expect(fiscalFiguresErrors(v3)).toEqual([I1])
+})
+
+it('F2: accepts an exclusive discounted sale', () => {
+  expect(fiscalFiguresErrors(sale(false, 1000, 100, 180, 1080, 40))).toEqual([])
+})
+
+it('F3: adds the tax only when exclusive', () => {
+  const inclusive = sale(true, 1200, 120, 180, 1080)
+  expect(fiscalFiguresErrors(inclusive)).toEqual([])
+  inclusive.display!.taxInclusive = false
+  expect(fiscalFiguresErrors(inclusive)).toEqual([I1])
+})
+
+it('F4: counts the fee and shipping rows in the total', () => {
+  const v3 = sale(false, 1000, 100, 180, 1130)
+  v3.fees = [{ clientFeeId: 'fee_1', name: 'Fee', amountMinor: 20, taxStatus: 'none', taxMinor: 0 }]
+  v3.shipping = [{ clientShippingId: 'ship_1', name: 'Post', amountMinor: 30, taxStatus: 'none', taxMinor: 0 }]
+  v3.display!.fees = [{ clientFeeId: 'fee_1', amountMinor: 20 }]
+  v3.display!.shipping = [{ clientShippingId: 'ship_1', amountMinor: 30 }]
+  expect(fiscalFiguresErrors(v3)).toEqual([])
+  expect(fiscalFiguresErrors(total(v3, 1129))).toEqual([I1])
+})
+
+it('F5: counts the cash roundings in the total', () => {
+  const rounded = { ...sale(false, 1000, 100, 180, 1078), cashRoundings: [{ paymentId: 'payment_1', minor: -2 }] }
+  expect(fiscalFiguresErrors(rounded)).toEqual([])
+  expect(fiscalFiguresErrors(total(rounded, 1080))).toEqual([I1])
+})
+
+it('F6: refuses line amounts that do not sum to the subtotal', () => {
+  const v3 = sale(false, 1000, 100, 180, 1080)
+  v3.display!.lines[0].amountMinor = 1001
+  expect(fiscalFiguresErrors(v3)).toEqual([I2])
+})
+
+it('F7: refuses a discount above the order share plus the line rows', () => {
+  const v3 = total(sale(false, 1000, 100, 180, 1080, 30), 1079)
+  v3.display!.discountMinor = 101
+  expect(fiscalFiguresErrors(v3)).toEqual([I3])
+})
+
+it('F8: counts the v6 coupon rows in the discount', () => {
+  const v6 = total(sale(false, 1000, 100, 180, 1080), 1030)
+  v6.coupons = [{ code: 'SAVE', couponId: 'coupon_1', discountMinor: 50, discountTaxMinor: 0 }]
+  v6.display!.coupons = [{ code: 'SAVE', amountMinor: 50 }]
+  v6.display!.discountMinor = 150
+  expect(fiscalFiguresErrors(v6)).toEqual([])
+  v6.display!.discountMinor = 100
+  expect(fiscalFiguresErrors(total(v6, 1080))).toEqual([I3])
+})
+
+it('F10: accepts a return line beside a sold line', () => {
+  const v3 = sale(false, 700, 0, 140, 840)
+  v3.lines.push({ clientLineId: 'line_2', variantId: 'variant_2', quantity: 1, unitPriceMinor: -300 })
+  v3.display!.lines = [{ clientLineId: 'line_1', amountMinor: 1000, discounts: [] }, { clientLineId: 'line_2', amountMinor: -300, discounts: [] }]
+  expect(fiscalFiguresErrors(v3)).toEqual([])
 })
