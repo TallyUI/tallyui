@@ -2,6 +2,9 @@ import { MAX_COMMANDS_PER_BATCH } from '../commands'
 import type { AnyCommandEnvelope, BatchTooLargeBody, CommandEnvelope, CommandResult, OrderCreatePayload, RegisterCommandEnvelope } from '../types'
 import { fiscalFiguresErrors } from './fiscal-figures'
 import { payloadBoundErrors, payloadShapeErrors } from './order-payload-shape'
+import { refundPayloadErrors } from './refund-payload-shape'
+import { registerPayloadErrors } from './register-payload-shape'
+import { reopenPayloadErrors } from './reopen-payload-shape'
 import { orderCreatePart, updatePayloadErrors } from './update-payload-shape'
 
 /** An envelope validateBatch accepted: every field's shape is checked, and its version is any positive
@@ -51,6 +54,8 @@ const rejected = (id: string, code: 'unsupported_version' | 'invalid_payload', m
   ({ id, status: 'rejected', error: data === undefined ? { code, message } : { code, message, data } })
 // A server lists at most ten payload errors in one message.
 const firstTen = (errors: readonly string[]) => errors.slice(0, 10).join('; ')
+// The `invalid_payload` result for a shape function's errors, or undefined when there are none.
+const shapeRefusal = (id: string, errors: readonly string[]) => errors.length ? rejected(id, 'invalid_payload', firstTen(errors)) : undefined
 
 /** The `unsupported_version` result for a command whose version list the server may leave out (absent or empty: it takes none). */
 function unsupportedOptional(envelope: { id: string; type: string; version: number },
@@ -71,8 +76,10 @@ function unsupportedOptional(envelope: { id: string; type: string; version: numb
  * claim, in the executor (order.create; register commands follow ADR-068). It pushes any result
  * one of those steps returns and moves on.
  *
- * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids.
- * precheckCommand repeats the shape check at every version, for order.update's create part too, as a backstop (#1344).
+ * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids; for order.refund
+ * refundPayloadErrors, for order.reopen reopenPayloadErrors, for a register command registerPayloadErrors.
+ * precheckCommand repeats the shape check for every command type at every version, after the version answer, as a
+ * backstop (#1344, #1346): for order.update's create part too.
  *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
@@ -89,8 +96,14 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
   }
-  if (envelope.type === 'order.refund') return unsupportedOptional(envelope, 'orderRefund', supported.orderRefund ?? [], 'refunds')
-  if (envelope.type === 'order.reopen') return unsupportedOptional(envelope, 'orderReopen', supported.orderReopen ?? [], 'reopens')
+  if (envelope.type === 'order.refund') {
+    return unsupportedOptional(envelope, 'orderRefund', supported.orderRefund ?? [], 'refunds')
+      ?? shapeRefusal(envelope.id, refundPayloadErrors(envelope.payload))
+  }
+  if (envelope.type === 'order.reopen') {
+    return unsupportedOptional(envelope, 'orderReopen', supported.orderReopen ?? [], 'reopens')
+      ?? shapeRefusal(envelope.id, reopenPayloadErrors(envelope.payload))
+  }
   if (envelope.type === 'order.update') {
     const refusal = unsupportedOptional(envelope, 'orderUpdate', supported.orderUpdate ?? [], 'updates')
     if (refusal) return refusal
@@ -107,7 +120,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
         `register version ${envelope.version} is not supported; this server supports ${supported.register.join(', ')}`,
         { register: Math.max(...supported.register) })
     }
-    return undefined
+    return shapeRefusal(envelope.id, registerPayloadErrors(envelope.type, envelope.payload))
   }
   const command = envelope as CommandEnvelope<OrderCreatePayload>
   if (!supported.orderCreate.includes(command.version)) {
