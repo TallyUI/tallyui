@@ -4410,11 +4410,11 @@ interface OrderCreatePayload {
        - A stored v5 order sent to a server that later drops below 5 is rejected `unsupported_version`, as v2
          discounts are today.
      - `precheckCommand` (`@tallyui/core/server`) refuses v5 fields below version 5.
-     - #1344 (Front desk, 2026-11-25): the shape check and the fiscal-figure checks apply at every order.create version
-       and to order.update's create part, with the same code and messages as v5; "below v5" exempts only the v5-only fields.
-       This replaces the split of commit 9f344166, which left the shape check to the plugin: a plugin that skips
-       `payloadShapeErrors` must not be able to accept a malformed order or wrong fiscal figures. The plugin's own shape
-       check before its replay lookup still runs (ADR-038).
+     - #1344 (Front desk, 2026-11-25): the shape check applies at every order.create version and to order.update's create
+       part, with the same code and messages as v5; the fiscal-figure checks run from v3 where `display` and `taxByRate`
+       are present. This replaces the split of commit 9f344166, which left the shape check to the plugin: a plugin that
+       skips `payloadShapeErrors` must not be able to accept a malformed order or wrong fiscal figures. The plugin's own
+       shape check before its replay lookup still runs (ADR-038).
   4. **`pos_orders` version 8** adds the optional `fees`, `shipping` and the line's `custom`.
      - Migration 8 is the identity.
      - **It is one-way**, like 5 to 7.
