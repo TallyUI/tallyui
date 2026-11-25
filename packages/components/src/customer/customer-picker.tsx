@@ -6,6 +6,8 @@ import { CustomerCard } from './customer-card';
 import { CustomerSelect } from './customer-select';
 import { GuestGlyph } from './customer-dropdown';
 import { CustomerForm, type CustomerFormValues } from './customer-form';
+import type { TFunction } from 'i18next';
+import { useT } from '../i18n';
 
 export interface CustomerPickerProps {
   /** The connector's searchCustomers, bound to its context by the app. */
@@ -34,9 +36,9 @@ const EMAIL_MAX = 254;
 /** A simple shape, not RFC 5322: one `@`, a non-empty local part, a domain with text either side of a dot, no whitespace or NUL. */
 const EMAIL_SHAPE = /^[^\s@\u0000]+@[^\s@\u0000]+\.[^\s@\u0000]+$/u;
 
-/** The cashier's text for an email the store's shape check would refuse, else undefined (CustomerPicker's and CustomerEditor's). */
-export function customerEmailError(email: string): string | undefined {
-  return email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email) ? `Enter a valid email address (up to ${EMAIL_MAX} characters)` : undefined;
+/** The cashier's text, read from the `customers.invalid_email` catalogue key, for an email the store's shape check would refuse, else undefined (CustomerPicker's and CustomerEditor's). */
+export function customerEmailError(email: string, t: TFunction): string | undefined {
+  return email.length > EMAIL_MAX || !EMAIL_SHAPE.test(email) ? t('customers.invalid_email', { max: EMAIL_MAX }) : undefined;
 }
 
 /** The cashier's text for a customer search or create error (CustomerPicker's and CustomerDropdown's). */
@@ -51,6 +53,7 @@ export function customerErrorText(error: unknown): string {
 }
 
 export function CustomerPicker({ search, create, selected, onSelect, onError, online, debounceMs = 250, className, testID = 'customer-picker-search', showAvatar = false, withGuest = false }: CustomerPickerProps) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +92,7 @@ export function CustomerPicker({ search, create, selected, onSelect, onError, on
     const email = values.email.trim();
     if (!online || !create || creating || !email) return;
     // The till sends this email in order.create, whose shape check refuses one over 254 characters: refuse it here instead.
-    const emailError = customerEmailError(email);
+    const emailError = customerEmailError(email, t);
     if (emailError) return setError(emailError);
     setCreating(true);
     setError(null);

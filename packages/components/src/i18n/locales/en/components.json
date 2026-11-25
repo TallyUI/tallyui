@@ -43,6 +43,7 @@
 	"customer_display.refund_due": "Refund due",
 	"customers.add_customer": "Add Customer",
 	"customers.clear_search": "Clear search",
+	"customers.invalid_email": "Enter a valid email address (up to {max} characters)",
 	"customers.no_customers_yet": "No customers yet",
 	"customers.no_customers_yet_description": "Customers you add, and anyone who buys from you, will appear here.",
 	"customers.nothing_matches_search": "No customers match your search",

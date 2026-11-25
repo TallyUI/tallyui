@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError, type Customer, type CustomerInput } from '@tallyui/core';
 import { CustomerPicker } from '../customer/customer-picker';
+import { I18nProvider } from '../i18n';
 
 const alice: Customer = { id: 'alice', name: 'Alice', email: 'alice@test.com' };
 const abby: Customer = { id: 'abby', name: 'Abby', email: 'abby@test.com' };
@@ -278,6 +279,16 @@ describe('CustomerPicker', () => {
     expect(screen.getByRole('alert').textContent).toBe('Enter a valid email address (up to 254 characters)');
     expect(create).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText('email@example.com')).toHaveProperty('value', email);
+  });
+
+  it('the email error reads from the catalogue', async () => {
+    const create = vi.fn(async () => alice);
+    render(<I18nProvider locale="fr" resources={{ fr: { 'customers.invalid_email': 'Adresse e-mail invalide ({max} max)' } }}><CustomerPicker search={vi.fn()} create={create} selected={null} onSelect={vi.fn()} online /></I18nProvider>);
+    click('New customer');
+    fireEvent.change(screen.getByPlaceholderText('email@example.com'), { target: { value: 'alice.test.com' } });
+    await act(async () => click('Save Customer'));
+    expect(screen.getByRole('alert').textContent).toBe('Adresse e-mail invalide (254 max)');
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('still creates with a valid email of 254 characters', async () => {
