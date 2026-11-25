@@ -16,6 +16,7 @@ import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from 
 import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
+import { isRegisterClosing } from '../register/closing';
 import { createLogger } from '../logging';
 import type { CatalogueEntry } from './catalogue';
 import { addEntryToCart, CartError } from './cart';
@@ -31,6 +32,8 @@ export type SaleStage = { kind: 'cart' } | { kind: 'tender'; method: 'cash' | 'e
 export const DISCOUNTS_UNSUPPORTED = 'finalize: discounts are not supported by the server yet (order.create v2)';
 /** Every sale change refuses with this while a completion is pending (see `complete()`). */
 export const SALE_SAVING = 'This sale is being saved. Retry to finish it.';
+/** `complete`, `park` and `resume` refuse with this while a close for the sale's register is in flight (#1275). */
+export const REGISTER_CLOSING = 'The register is closing. Wait for the close to finish, then try again.';
 export const PAYMENT_IN_MOTION = 'Finish or void the payment in progress before completing the sale';
 /**
  * `switchSale()` and `closeSale()` refuse a sale whose legs took money (u19). v2 keeps a partly paid order's legs on
@@ -246,6 +249,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   }
   // The complete() call in flight, and the stage as of the last render or receipt, both read synchronously.
   const inFlight = useRef<Promise<void> | null>(null);
+  // park() and resume() calls in flight, which the register reads as `saving` (#1275).
+  const moving = useRef(0);
   const stageNow = useRef(stage);
   stageNow.current = stage;
   /** True, with SALE_SAVING shown, from complete()'s entry (inFlight) through a pending retry: the sale can't change. */
@@ -1054,8 +1059,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * another is in flight returns that call's promise, and a call on the receipt does nothing. While
      * `cashierRef` or `registerId` is out of bounds (shown as `error`), a call does nothing either,
      * unless it's the Retry of a pending completion, which was built with the options as they were.
+     * Refused with `REGISTER_CLOSING`, changing nothing, while a close for this register is in flight (#1275).
      */
-    complete: () => configError && !pending.current && !inFlight.current ? Promise.resolve() : once(async () => {
+    complete: () => configError && !pending.current && !inFlight.current ? Promise.resolve()
+      : isRegisterClosing(opts.registerId) ? (setError(REGISTER_CLOSING), Promise.resolve()) : once(async () => {
       attempts.current++;
       confirm(null);
       if (pending.current) return deliver(pending.current);
@@ -1139,26 +1146,34 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * S3: the live sale's legs its session counts now and no stored order counts yet, for `useRegisterSession`'s
      * `liveSale`: captured till legs stamped with a session, not reopened and not counted by an after-close sale's closure
      * (`sessionTakenLegs`, the rule a parked draft's legs follow). `[]` on the receipt, whose stored order counts them.
-     * `saving` is true while a completion is in flight or pending, including after a failed save.
+     * `saving` is true while a completion is in flight or pending, including after a failed save, and while a
+     * `park()` or `resume()` is in flight.
      */
     registerView(): { takenLegs: Payment[]; saving: boolean } {
       return {
         takenLegs: stageNow.current.kind === 'receipt' ? [] : sessionTakenLegs(builderNow.current.getSnapshot().payments, countedLeg),
-        saving: inFlight.current !== null || pending.current !== null,
+        saving: inFlight.current !== null || pending.current !== null || moving.current > 0,
       };
     },
-    /** Parks the cart in `drafts`; resolves to a refusal message, or null once parked. */
+    /**
+     * Parks the cart in `drafts`; resolves to a refusal message, or null once parked.
+     * Refused with `REGISTER_CLOSING` while a close for this register is in flight (#1275).
+     */
     async park(): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
-      if (stageNow.current.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
-      const builder = builderNow.current;
-      const snapshot = builder.getSnapshot();
-      if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
-      const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
-      if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
-      resetSale();
-      return null;
+      if (isRegisterClosing(opts.registerId)) return REGISTER_CLOSING;
+      moving.current++;
+      try {
+        if (!opts.drafts) throw new Error('useSale: park() needs the drafts option');
+        if (stageNow.current.kind !== 'cart') return 'Finish or cancel the payment before parking the sale';
+        const builder = builderNow.current;
+        const snapshot = builder.getSnapshot();
+        if (!snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length) return 'There is nothing to park';
+        const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
+        if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
+        resetSale();
+        return null;
+      } finally { moving.current--; }
     },
     /** Whether the live sale or a parked draft holds this store order; unreadable drafts do not count. */
     async holdsStoreOrder(orderId: string): Promise<boolean> {
@@ -1187,100 +1202,112 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       resetSale(null, builder, restoredTax);
       return null;
     },
-    /** Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed; refused with SALE_PARTLY_PAID while the live sale holds a taken payment. */
+    /**
+     * Resumes a draft into an empty cart; resolves to a refusal message, or null once resumed; refused with SALE_PARTLY_PAID while the live sale holds a taken payment.
+     * Refused with `REGISTER_CLOSING` while a close for this register is in flight (#1275).
+     */
     async resume(draftId: string, options?: { keepParkedPrices?: boolean }): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
-      const live = builderNow.current;
-      const liveSnapshot = live.getSnapshot();
-      if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
-      if (holdsTakenPayment()) return SALE_PARTLY_PAID;
-      const doc = await opts.drafts.findOne(draftId).exec();
-      if (!doc) return 'That parked sale is no longer there';
-      const saved: Order = JSON.parse(doc.toJSON().data);
-      if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
-      // Taxed for the customer the draft restores (a refused one isn't).
-      const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
-      // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
-      // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
-      const carriedDraft = !!saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried);
-      const keep = !carriedDraft && !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
-      const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
-        keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
-      let n = 0;
-      // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
-      // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
-      if (opts.currentPrice && !options?.keepParkedPrices && !carriedDraft && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
-        for (const line of builder.getSnapshot().lineItems) {
-          if (!line.variantId) continue;
-          const price = opts.currentPrice(line.variantId);
-          if (price !== undefined && Number.isInteger(price) && price >= 0 && price !== line.unitPriceMinor) {
-            builder.setUnitPrice(line.id, price);
-            n++;
-          }
-        }
-      }
-      const kept = new Map<string, unknown>(), messages: string[] = [];
-      const codes = !carriedDraft && saved.coupons?.length ? codesFor() : null;
-      if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
-      if (!carriedDraft && saved.coupons?.length) {
-        const supported = codes !== null;
-        if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
-        if (keep) for (const { code } of saved.coupons) kept.set(code, KEPT);
-        else for (const { code } of saved.coupons) {
-          let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
-          if (supported) {
-            const result = await codes.find(code, discountState(builder.getSnapshot(), kept));
-            if ('refusal' in result) reason = result.refusal;
-            else {
-              reason = codes.check(code, result.found, discountState(builder.getSnapshot(), kept));
-              if (reason === null) try { codes.apply(builder, discountState(builder.getSnapshot(), new Map([...kept, [code, result.found]]))); kept.set(code, result.found); }
-              catch (error) { if (error instanceof Error) reason = error.message; else throw error; }
+      if (isRegisterClosing(opts.registerId)) return REGISTER_CLOSING;
+      moving.current++;
+      try {
+        if (!opts.drafts) throw new Error('useSale: resume() needs the drafts option');
+        const live = builderNow.current;
+        const liveSnapshot = live.getSnapshot();
+        if (stageNow.current.kind !== 'cart' || liveSnapshot.lineItems.length || liveSnapshot.fees?.length || liveSnapshot.shipping?.length) return 'Park or clear the current sale first';
+        if (holdsTakenPayment()) return SALE_PARTLY_PAID;
+        const doc = await opts.drafts.findOne(draftId).exec();
+        if (!doc) return 'That parked sale is no longer there';
+        const saved: Order = JSON.parse(doc.toJSON().data);
+        if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
+        // Taxed for the customer the draft restores (a refused one isn't).
+        const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
+        // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
+        // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
+        const carriedDraft = !!saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried);
+        const keep = !carriedDraft && !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
+        const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
+          keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
+        let n = 0;
+        // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
+        // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
+        if (opts.currentPrice && !options?.keepParkedPrices && !carriedDraft && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
+          for (const line of builder.getSnapshot().lineItems) {
+            if (!line.variantId) continue;
+            const price = opts.currentPrice(line.variantId);
+            if (price !== undefined && Number.isInteger(price) && price >= 0 && price !== line.unitPriceMinor) {
+              builder.setUnitPrice(line.id, price);
+              n++;
             }
           }
-          if (reason !== null) messages.push(`Coupon ${code} was removed: ${reason}.`);
         }
-      }
-      await doc.remove();
-      if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
-        await writeOrderDraft(opts.drafts, saved);
-        return 'The sale changed while it was being resumed; resume it again';
-      }
-      resetSale(null, builder, restoredTax);
-      if (builderNow.current === builder) {
-        applied.current = kept;
-        resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
-        // A pre-4.2 leg voided before the park carries no takenAt and holds no money the till still has: it is dropped (desk, 23 Nov).
-        resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
-        if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
-        appliedWith.current = kept.size ? codes : null;
-        generation.current++;
-      }
-      if (messages.length) setError(messages.join(' '));
-      return null;
+        const kept = new Map<string, unknown>(), messages: string[] = [];
+        const codes = !carriedDraft && saved.coupons?.length ? codesFor() : null;
+        if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
+        if (!carriedDraft && saved.coupons?.length) {
+          const supported = codes !== null;
+          if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
+          if (keep) for (const { code } of saved.coupons) kept.set(code, KEPT);
+          else for (const { code } of saved.coupons) {
+            let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
+            if (supported) {
+              const result = await codes.find(code, discountState(builder.getSnapshot(), kept));
+              if ('refusal' in result) reason = result.refusal;
+              else {
+                reason = codes.check(code, result.found, discountState(builder.getSnapshot(), kept));
+                if (reason === null) try { codes.apply(builder, discountState(builder.getSnapshot(), new Map([...kept, [code, result.found]]))); kept.set(code, result.found); }
+                catch (error) { if (error instanceof Error) reason = error.message; else throw error; }
+              }
+            }
+            if (reason !== null) messages.push(`Coupon ${code} was removed: ${reason}.`);
+          }
+        }
+        await doc.remove();
+        if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
+          await writeOrderDraft(opts.drafts, saved);
+          return 'The sale changed while it was being resumed; resume it again';
+        }
+        resetSale(null, builder, restoredTax);
+        if (builderNow.current === builder) {
+          applied.current = kept;
+          resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
+          // A pre-4.2 leg voided before the park carries no takenAt and holds no money the till still has: it is dropped (desk, 23 Nov).
+          resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
+          if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
+          appliedWith.current = kept.size ? codes : null;
+          generation.current++;
+        }
+        if (messages.length) setError(messages.join(' '));
+        return null;
+      } finally { moving.current--; }
     },
     /**
      * Opens the parked draft `draftId`, or an empty sale for null (New), as a tab switch (u19, v2 cart/tabs.tsx):
      * parks the current sale first when it has lines, fees or shipping (a receipt is done and is not parked).
      * Refused, changing nothing, while saving, for a partly paid sale or an empty sale holding a taken payment (SALE_PARTLY_PAID), a payment in motion or
      * the tender stage. Resolves to a refusal (park's, or `resume`'s for the chosen draft), or null.
+     * Refused with `REGISTER_CLOSING` while a close for this register is in flight (#1275).
      */
     async switchSale(draftId: string | null): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (!opts.drafts) throw new Error('useSale: switchSale() needs the drafts option');
-      const builder = builderNow.current;
-      const snapshot = builder.getSnapshot();
-      if (draftId === snapshot.id) return null;
-      if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
-      if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
-      if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
-      if (stageNow.current.kind !== 'receipt' && !snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length && holdsTakenPayment()) return SALE_PARTLY_PAID;
-      if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
-        const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
-        if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
-      }
-      resetSale();
-      return draftId === null ? null : result.resume(draftId);
+      if (isRegisterClosing(opts.registerId)) return REGISTER_CLOSING;
+      moving.current++;
+      try {
+        if (!opts.drafts) throw new Error('useSale: switchSale() needs the drafts option');
+        const builder = builderNow.current;
+        const snapshot = builder.getSnapshot();
+        if (draftId === snapshot.id) return null;
+        if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
+        if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
+        if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
+        if (stageNow.current.kind !== 'receipt' && !snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length && holdsTakenPayment()) return SALE_PARTLY_PAID;
+        if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
+          const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
+          if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
+        }
+        resetSale();
+        return draftId === null ? null : await result.resume(draftId);
+      } finally { moving.current--; }
     },
     /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage.
      * A reopened sale's locked store legs do not stop it closing; the store order stays reopened, as in v2. */

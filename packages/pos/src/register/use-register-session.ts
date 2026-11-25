@@ -25,6 +25,7 @@ import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
 import { readFresh, watchFresh } from '../rxdb';
+import { closingByRegister, notifyClosing, subscribeClosing } from './closing';
 import { deriveDrawerTerms, deriveExpected, liveLedgerRows, parkedLedgerRows, paymentLedgerRows, type LedgerRow } from './expected';
 import { recordRegisterFact, registerFactsLogger, type Actor } from './facts';
 import { closeNeedsApproval, closureVariance } from './register-count.helpers';
@@ -79,14 +80,6 @@ export class RegisterApprovalRequiredError extends Error {
 
 // Module-wide, so two hook instances for one register can't both open (keyed by `registerId`).
 const openingByRegister = new Map<string, Promise<unknown>>();
-// The close in flight per register, which a second close joins; its listeners re-render `closing`.
-const closingByRegister = new Map<string, ReturnType<typeof store.writeClosure>>();
-const closingListeners = new Set<() => void>();
-const notifyClosing = () => closingListeners.forEach((listener) => listener());
-const subscribeClosing = (listener: () => void) => {
-  closingListeners.add(listener);
-  return () => { closingListeners.delete(listener); };
-};
 // Closures whose `session-closed` fact is logged, so a double-tapped close logs it once.
 const closedFacts = new Set<string>();
 

@@ -135,9 +135,13 @@ reports no session rather than throwing.
   const sale = useSale(…)
   saleRef.current = sale
   ```
-  While `saving` is true (a completion is in flight or its failed save has not been cleared),
-  `startCounting` and `closeSession` throw `RegisterSaleSavingError`. Live figures omit its legs then,
-  since the stored order may already count them. Wait for the save, or retry it if it failed, then close.
+  While `saving` is true (a completion is in flight or its failed save has not been cleared, or a
+  park or resume is in flight), `startCounting` and `closeSession` throw `RegisterSaleSavingError`.
+  Live figures omit its legs then, since the stored order may already count them. Wait for the save,
+  or retry it if it failed, then close.
+  While a close is in flight, the sale's `complete`, `park`, `resume` and `switchSale` refuse with `REGISTER_CLOSING`
+  (#1275): the close reads the orders, the parked drafts and the live cart separately, and a sale moving
+  its legs between them would drop them from the Z or count them twice.
 - `tenderInProgress` — true while a sale is at tender. While true,
   `startCounting` and `closeSession` refuse before any write, so a till
   can't close under a payment in progress.
