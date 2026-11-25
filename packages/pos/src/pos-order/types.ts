@@ -164,4 +164,26 @@ export interface PosOrder {
   reopenedAt?: string;
   /** The commandId whose refusal the cashier marked handled (tally-woo 03, ADR-092 6f); the logic comes in a later PR. */
   attentionHandledFor?: string;
+  /** How the till settled the order the store created before it refused this sale (#1101); see `PosOrderStoreSettlement`. */
+  storeSettlement?: PosOrderStoreSettlement;
 }
+
+/**
+ * The till's settlement of a refused sale's store order (#1101, `storeOrderLeft`). `attemptId` names the attempt and is
+ * kept while `state` is `sending`, so a repeat after a lost answer is the same attempt. `at` is the instant of the last
+ * write. `storeStatus` is the store's status word (done, changed), `capturedMinor` what the store shows captured
+ * (changed), `code` and `message` the store's refusal (refused), for the sync log, never shown to the cashier.
+ * `payments` and `closeId` are for kind `pay`, `legs` for kind `reverse` (later slices).
+ */
+export type PosOrderStoreSettlement = {
+  kind: 'cancel' | 'pay' | 'reverse';
+  state: 'sending' | 'done' | 'changed' | 'refused' | 'gone';
+  attemptId: string;
+  at: string;
+  storeStatus?: string;
+  capturedMinor?: number;
+  code?: string; message?: string;
+  payments?: { id: string; method: string; amountMinor: number; tenderedMinor?: number; done?: boolean }[];
+  closeId?: string;
+  legs?: { paymentId: string; commandId: string; done?: boolean }[];
+};

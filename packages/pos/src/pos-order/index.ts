@@ -1,4 +1,4 @@
-export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder } from './types';
+export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, PosOrderStoreSettlement } from './types';
 export { uuidv7 } from './uuidv7';
 export { AFTER_CLOSE_PAYMENTS_CHANGED, finalizeOrder } from './finalize';
 export type { FinalizeOptions } from './finalize';
@@ -8,6 +8,7 @@ export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from 
 export { getDeviceId } from './device-id';
 export { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 export { storeOrderLeft } from './store-order-left';
+export { canCancelOnStore, settledOnStore } from './store-settlement';
 export { markAttentionHandled } from './attention-handled';
 export { moneyDivergence, type MoneyDivergence } from './money-divergence';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './reopen';

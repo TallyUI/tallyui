@@ -140,6 +140,53 @@ describe('OrderSyncNotices order left on the store (#1101)', () => {
     render(<OrderSyncNotices order={left('invalid_payload', { orderId: '115', recorded: 1 }, { syncStatus })} />);
     expect(screen.queryByTestId('order-left-on-store-x')).toBeNull();
   });
+
+  describe('the cancel on the store (#1101 slice 1b)', () => {
+    const cancel = (state: NonNullable<PosOrder['storeSettlement']>['state'], extra: Partial<NonNullable<PosOrder['storeSettlement']>> = {}) =>
+      left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'cancel', state, attemptId: 'a', at: '2026-11-25T10:00:00.000Z', ...extra } });
+    it.each<[string, PosOrder, string]>([
+      ['done', cancel('done', { storeStatus: 'cancelled' }), 'Order #115 was cancelled on the store.'],
+      ['gone', cancel('gone'), 'Order #115 was removed on the store.'],
+      ['gone, without a store order (the till reference)', order('abcdefgh12345678', { syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'x' },
+        storeSettlement: { kind: 'cancel', state: 'gone', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } }), 'Order #12345678 was removed on the store.'],
+    ])('20: %s says so in place of the left line and the refusal sentence', (_name, sale, line) => {
+      const { container } = render(<OrderSyncNotices order={sale} />);
+      expect(screen.getByTestId(`order-settlement-${sale.id}`).textContent).toBe(line);
+      expect(screen.queryByTestId(`order-left-on-store-${sale.id}`)).toBeNull();
+      expect(container.textContent).toBe(line);
+    });
+    it.each<[string, PosOrder, string]>([
+      ['changed, status and amount', cancel('changed', { storeStatus: 'pos-partial', capturedMinor: 500 }),
+        "Order #115 changed on the store (now pos-partial, $5.00 paid). Nothing was cancelled from this till. Check it in the store's admin."],
+      ['changed, capturedMinor 0', cancel('changed', { storeStatus: 'processing', capturedMinor: 0 }),
+        "Order #115 changed on the store (now processing). Nothing was cancelled from this till. Check it in the store's admin."],
+      ['changed, capturedMinor absent', cancel('changed', { storeStatus: 'processing' }),
+        "Order #115 changed on the store (now processing). Nothing was cancelled from this till. Check it in the store's admin."],
+      ['changed, storeStatus absent', cancel('changed', { capturedMinor: 500 }),
+        "Order #115 changed on the store. Nothing was cancelled from this till. Check it in the store's admin."],
+    ])('20: %s replaces the left line and keeps the sentence', (_name, sale, line) => {
+      const { container } = render(<OrderSyncNotices order={sale} />);
+      expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
+      expect(screen.queryByTestId('order-left-on-store-x')).toBeNull();
+      expect(container.textContent).toBe(`${PLATFORM_ERROR}${line}`);
+    });
+    it.each<[string, PosOrder, string]>([
+      ['refused', cancel('refused', { code: 'not_cancellable', message: 'Store says no.' }), "The store did not cancel order #115. Check it in the store's admin."],
+      ['sending', cancel('sending'), 'Cancelling order #115 on the store is not finished.'],
+    ])('20: %s adds its line after the left line, never the code or message', (_name, sale, line) => {
+      const { container } = render(<OrderSyncNotices order={sale} />);
+      expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
+      expect(container.textContent).toBe(`${PLATFORM_ERROR}${NOTHING_PAID}${line}`);
+      expect(container.textContent).not.toContain('not_cancellable');
+      expect(container.textContent).not.toContain('Store says no');
+    });
+    it('20: a settlement of another kind adds nothing', () => {
+      const sale = left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'pay', state: 'done', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } });
+      const { container } = render(<OrderSyncNotices order={sale} />);
+      expect(screen.queryByTestId('order-settlement-x')).toBeNull();
+      expect(container.textContent).toBe(`${PLATFORM_ERROR}${NOTHING_PAID}`);
+    });
+  });
 });
 
 describe('OrderSyncNotices notes', () => {

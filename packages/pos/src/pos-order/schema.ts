@@ -40,6 +40,8 @@ import type { PosOrder } from './types';
  * Version 19 adds a store-priced coupon's `carried` flag and its lines' `amountMinor` (a coupon the store refused at send, carried at the amount charged), and the order's `countedInClosureOf`, and changes nothing else. Its migration is the identity. It is one-way like version 18.
  * Version 20 adds a payment's optional `takenAt`, the instant the till recorded the leg; identity migration, one-way like version 19.
  * Version 21 adds the order's optional `cashRoundings` (ADR-094); identity migration, one-way like version 20.
+ * Version 22 adds the order's optional `storeSettlement`, the till's settlement of a refused sale's store order (#1101);
+ * identity migration, one-way like version 21.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -49,7 +51,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 21, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 22, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -60,6 +62,19 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     updatedAt: { type: 'string' },
     reopenedAt: { type: 'string', maxLength: 40 },
     attentionHandledFor: { type: 'string', maxLength: 36 },
+    storeSettlement: { type: 'object', additionalProperties: false, properties: {
+      kind: { type: 'string', enum: ['cancel', 'pay', 'reverse'] },
+      state: { type: 'string', enum: ['sending', 'done', 'changed', 'refused', 'gone'] },
+      attemptId: { type: 'string', maxLength: 36 }, at: { type: 'string', maxLength: 40 },
+      storeStatus: { type: 'string' }, capturedMinor: { type: 'integer' }, code: { type: 'string' }, message: { type: 'string' },
+      payments: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        id: { type: 'string', maxLength: 36 }, method: { type: 'string' }, amountMinor: { type: 'integer' },
+        tenderedMinor: { type: 'integer' }, done: { type: 'boolean' } }, required: ['id', 'method', 'amountMinor'] } },
+      closeId: { type: 'string', maxLength: 36 },
+      legs: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+        paymentId: { type: 'string', maxLength: 36 }, commandId: { type: 'string', maxLength: 36 }, done: { type: 'boolean' } },
+      required: ['paymentId', 'commandId'] } },
+    }, required: ['kind', 'state', 'attemptId', 'at'] },
     currency: { type: 'string' },
     pricesIncludeTax: { type: 'boolean' },
     subtotalMinor: { type: 'integer' }, discountMinor: { type: 'integer' },
@@ -223,5 +238,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity, 22: identity } };
 }
