@@ -153,6 +153,17 @@ describe('the cancel-payment view runs beforeVoid (#1260)', () => {
     expect(status(second.id)).toBe('voided');
     expect(status(first.id)).toBe('captured');
   });
+  it('V9 a refused hook lets the leg go: confirming again runs the hook again', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValueOnce(false).mockResolvedValue(undefined);
+    const [first, second] = await guarded(hook);
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(hook).toHaveBeenCalledWith(second);
+    await act(async () => { back(); });
+    await act(async () => { fireEvent.click(screen.getByTestId('tender-cancel-confirm')); });
+    expect(hook).toHaveBeenCalledTimes(3);
+    expect([status(first.id), status(second.id)]).toEqual(['voided', 'voided']);
+    expect(sale.stage.kind).toBe('cart');
+  });
 });
 
 describe('the cancel-payment view (row 514)', () => {

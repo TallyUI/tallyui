@@ -445,4 +445,15 @@ describe('TenderLedger beforeVoid (#1260)', () => {
     expect(sale.order.paidMinor).toBe(2500);
     expect(afterVoid).not.toHaveBeenCalled();
   });
+
+  it('B5 a refused hook lets the leg go: a second press runs the hook again', async () => {
+    const hook = vi.fn<Hook>().mockResolvedValueOnce(false).mockResolvedValueOnce(undefined);
+    guarded(hook);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(sale.order.paidMinor).toBe(2500);
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${leg(1)}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(sale.order.paidMinor).toBe(1000);
+  });
 });
