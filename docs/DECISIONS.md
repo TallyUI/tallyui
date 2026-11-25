@@ -5539,8 +5539,12 @@ interface OrderCreatePayload {
        quantity times `proratedUnitPriceWithTax`.
   4. **The result.** An `applied` result carries `refund`, not `serverRefs`:
      `refund: { totalMinor, byMethod, refunds: [{ id, paymentId, totalMinor, state }] }`.
-     - `refunds` lists the platform refunds created, at least one; their totals sum to `totalMinor`. A store may
+     - `refunds` lists the platform refunds created, at least one when money moves; their totals sum to `totalMinor`. A store may
        split one refund across several payments.
+     - **Amended 2026-11-25 (#1330): a stock-only return.** A refund that returns stock but no money (a free line,
+       or a line an earlier refund already paid back) is applied with `totalMinor` 0, `byMethod` `{}` and
+       `refunds` `[]`. `parseCommandResult` accepts an empty `refunds` only then; any non-zero total, or any
+       `byMethod` key, still needs at least one refund. A store never reports a refund id that names no real refund.
      - `byMethod` maps each register tender the money left by (`cash`, or the sale's payment method) to its amount.
        Its values sum to `totalMinor`. It is what register figures use, so the store, not the till, attributes a
        refund to a tender: `cash` for a cash destination, else the original payment's method.
@@ -5549,7 +5553,7 @@ interface OrderCreatePayload {
 
      | Code | When | `error.data` |
      |---|---|---|
-     | `nothing_to_refund` | No lines, no shipping and no adjustment, or a total of 0 | none |
+     | `nothing_to_refund` | No lines, no shipping and no adjustment, or a total of 0 with no lines. Lines at a total of 0 are a stock-only return, applied with no refund (decision 4, #1330) | none |
      | `quantity_exceeds` | A line asks for more than its refundable quantity, or a line is not on the order | `{ lines: [{ orderLineId, quantity, refundableQuantity }] }` |
      | `amount_mismatch` | The server's total differs from `totalMinor`, or exceeds the order's refundable money | `{ expectedMinor, serverMinor }` |
      | `order_state` | The order's state does not allow a refund (not placed, cancelled, …) | `{ state }` |

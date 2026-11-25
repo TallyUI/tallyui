@@ -54,7 +54,9 @@ export function parseCommandResult(value: unknown): CommandResult {
       return [key, amount as number]
     }))
     if (Object.values(byMethod).reduce((sum, amount) => sum + amount, 0) !== refund.totalMinor) throw new CommandResultError('Invalid refund.byMethod')
-    if (!Array.isArray(refund.refunds) || refund.refunds.length === 0) throw new CommandResultError('Invalid refund.refunds')
+    if (!Array.isArray(refund.refunds)) throw new CommandResultError('Invalid refund.refunds')
+    // ADR-080, #1330: a stock-only return moves no money and creates no platform refund, so refunds is empty exactly then.
+    if (refund.refunds.length === 0 && (refund.totalMinor !== 0 || Object.keys(byMethod).length > 0)) throw new CommandResultError('Invalid refund.refunds')
     const refunds = refund.refunds.map((value: unknown, index) => {
       const field = `refund.refunds[${index}]`
       if (!object(value)) throw new CommandResultError(`Invalid ${field}`)

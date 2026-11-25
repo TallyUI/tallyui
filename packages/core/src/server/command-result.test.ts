@@ -113,6 +113,11 @@ it('accepts a zero refund total and zero amounts', () => {
   expect(parseCommandResult(value)).toStrictEqual(value)
 })
 
+it('accepts a stock-only refund: total 0, no method, no refunds (ADR-080, #1330)', () => {
+  const value = { id: 'c', status: 'applied', refund: { totalMinor: 0, byMethod: {}, refunds: [] } }
+  expect(parseCommandResult(value)).toStrictEqual(value)
+})
+
 it.each([
   ['refund', null], ['refund', []], ['refund', new Date()],
   ['refund.totalMinor', { ...refund, totalMinor: 1.5 }],
@@ -129,7 +134,8 @@ it.each([
   ['refund.byMethod.cash', { ...refund, byMethod: { cash: '1200' } }],
   ['refund.byMethod', { ...refund, byMethod: { cash: 1201 } }],
   ['refund.refunds', { ...refund, refunds: [] }],
-  ['refund.refunds', { totalMinor: 0, byMethod: {}, refunds: [] }],
+  ['refund.refunds', { totalMinor: 0, byMethod: { cash: 0 }, refunds: [] }],
+  ['refund.refunds', { totalMinor: 118, byMethod: { cash: 118 }, refunds: [] }],
   ['refund.refunds', { ...refund, refunds: {} }],
   ['refund.refunds[0]', { ...refund, refunds: [null] }],
   ['refund.refunds[0]', { ...refund, refunds: [[]] }],

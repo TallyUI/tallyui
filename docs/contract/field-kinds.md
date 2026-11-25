@@ -897,9 +897,11 @@ the rest are the refusal codes of ADR-080 decision 5
   own total and refuses a difference, or a total above the order's
   refundable money, as `amount_mismatch` with `data: { expectedMinor,
   serverMinor }` (`docs/DECISIONS.md:5387`, `:5414`; `commands.ts:51`).
-  No lines, no shipping and no adjustment, or a total of 0, is
-  `nothing_to_refund` (`docs/DECISIONS.md:5412`). The shape check
-  accepts a `totalMinor` of 0; the server refuses it with this code.
+  No lines, no shipping and no adjustment, or a total of 0 with no
+  lines, is `nothing_to_refund` (`docs/DECISIONS.md:5556`). The shape
+  check accepts a `totalMinor` of 0. Lines at a total of 0 are a
+  stock-only return, which the server applies with no refund (see the
+  result below; #1330).
 - **`destination`.** `original_method` or `cash`
   (`refund-payload-shape.ts:54`). It decides the tender the store
   attributes the refund to in the result's `byMethod`: `cash` for a cash
@@ -919,7 +921,10 @@ the rest are the refusal codes of ADR-080 decision 5
 
 An `applied` result carries `refund: { totalMinor, byMethod, refunds:
 [{ id, paymentId, totalMinor, state }] }`, not `serverRefs`
-(`commands.ts:40–44`, `docs/DECISIONS.md:5400–5407`).
+(`commands.ts:40–44`, `docs/DECISIONS.md:5400–5407`). `refunds` is
+empty only for a stock-only return: `totalMinor` 0 and `byMethod` `{}`;
+any money needs at least one refund (`parseCommandResult`,
+`docs/DECISIONS.md:5540–5548`, #1330).
 
 ### Amounts
 
