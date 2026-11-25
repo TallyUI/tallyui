@@ -5,6 +5,8 @@ import type { PosOrder } from './types';
  * Marks the order `orderId` handled for its current `commandId`, so `needsAttention` leaves it out until a requeue
  * mints a new one (ADR-092 6f, tally-woo 03). Resolves to true when the order is stamped (or already was, for this
  * commandId); false, with nothing changed, when the id is unknown or the order is pending (still the outbox's to settle).
+ * The stamp does not hide a refused sale whose order the store created (`storeOrderLeft`, #1101): it is still written
+ * and the call still resolves to true, but `needsAttention` keeps that sale.
  */
 export async function markAttentionHandled(orders: RxCollection<PosOrder>, orderId: string, now?: () => Date): Promise<boolean> {
   const doc = await orders.findOne(orderId).exec();

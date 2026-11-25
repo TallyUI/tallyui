@@ -97,6 +97,8 @@ describe('a refusal that names a store order (#1101)', () => {
     const { pos_orders: after } = await again.addCollections({ pos_orders: posOrderCollection() });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const reopened = createOrderOutbox({ collection: after, transport: { send }, deviceId: 'device-1', random: () => 0.5 });
+    // Stopped before the requeue, as R1 is, so no background flush can refuse the row again while this test reads it.
+    reopened.stop();
     try {
       const read = async () => (await after.findOne(input.id).exec())!.toJSON() as PosOrder;
       expect((await read()).syncStatus).toBe('rejected');
@@ -104,6 +106,7 @@ describe('a refusal that names a store order (#1101)', () => {
       expect(await reopened.requeue([input.id])).toBe(1);
       expect(await read()).toMatchObject({ syncStatus: 'pending' });
       expect((await read()).error).toBeUndefined();
+      expect(send).toHaveBeenCalledTimes(1);
     } finally {
       reopened.stop(); vi.useRealTimers(); await again.remove();
     }

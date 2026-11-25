@@ -19,7 +19,7 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 // `undefined` entry lets that call through). A `payments` call whose payment.id was already recorded is a replay: 200 with
 // the revision stored for that id, whatever revision it carries, and the revision does not advance (Ledger.php:585-595,
 // Command_Log.php:93-124). `lose` counts answers per path that the store acts on and the client never receives.
-function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boolean | undefined, total = '3.000000',
+function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boolean | undefined, total = '3.000000', number = '115',
   queue = {} as Record<string, Array<Response | undefined>>, lose = {} as Record<string, number> } = {}) {
   let revision = 1;
   const calls: Array<{ path: string; body?: ReturnType<typeof JSON.parse> }> = [];
@@ -28,7 +28,7 @@ function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boo
     const queued = queue[path]?.shift();
     if (queued) return queued;
     if (path === 'site') return json(200, { wcpos_version: version });
-    if (path === 'push/orders') return json(201, { document: { id: 115, number: '115', total }, currentRevision: `r${revision}` });
+    if (path === 'push/orders') return json(201, { document: { id: 115, number, total }, currentRevision: `r${revision}` });
     if (typeof body?.revision !== 'string' || !body.revision) return json(428, { code: 'wcpos_revision_required' });
     if (path.endsWith('/close') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.command_id)) return json(400, { code: 'rest_invalid_param' });
     const replayed = path.endsWith('/payments') ? recorded.find(({ id }) => id === body.payment?.id) : undefined;
@@ -222,6 +222,15 @@ describe('WCPOS 2.0 payment ledger: amendment 2', () => {
     expect(calls.map(({ path }) => path)).toEqual(['push/orders', 'orders/115/payments', 'push/orders', 'orders/115/payments']);
     expect(recorded).toEqual([{ id: uuid(5), revision: 'r2' }]);
     expect(revision()).toBe('r2');
+  });
+  it("A2-11: both refusals made after the order exists carry the store's order number, not its id (#1101)", async () => {
+    const forbidden = { 'orders/115/payments': [json(403, { code: 'rest_forbidden', message: 'Forbidden.' })] };
+    for (const options of [{ total: '3.010000' }, { queue: forbidden }]) {
+      const { transport } = store({ ledgerPayments: true, number: '1001', ...options });
+      const { error } = (await transport.send([order()]) as { results: Array<{ error: { message: string; data: object } }> }).results[0];
+      expect(error.data).toMatchObject({ orderId: '115', displayId: '1001' });
+      expect(error.message).toContain('#1001');
+    }
   });
 });
 
