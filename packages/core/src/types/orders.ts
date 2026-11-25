@@ -50,8 +50,15 @@ export interface StoreOrderPayment {
   amountMinor: number;
 }
 
+/** One order line a store refund paid back (#1324). Integers; `netMinor + taxMinor` is the line's gross refund. Shipping and adjustments are never lines. */
+export interface StoreOrderRefundLine { /** A `StoreOrderLine.id` of the same order. */ orderLineId: string; /** > 0. */ quantity: number; netMinor: number; taxMinor: number }
+
 /** A refund the store already recorded against the order. */
-export interface StoreOrderRefund { id: string; /** Positive. */ amountMinor: number; reason?: string }
+export interface StoreOrderRefund {
+  id: string; /** Positive. */ amountMinor: number; reason?: string;
+  /** The lines this refund paid back, when the store records them; absent when it cannot say (#1324). A line is on the store refund that paid it back and never repeated on another: a till refund split over tenders is one store refund. When an order's refunds together name more of a line than was ordered, none of them carry lines. */
+  lines?: StoreOrderRefundLine[];
+}
 
 /** An order as the store holds it, read online (ADR-081); never stored by the till. */
 export interface StoreOrder {

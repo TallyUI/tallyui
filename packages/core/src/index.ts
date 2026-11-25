@@ -54,7 +54,7 @@ export type {
 } from './types/payment-methods';
 export type { ReceiptTemplate, ReceiptTemplateKind } from './types/receipt-templates';
 export type {
-  StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, ListOrdersQuery, StoreOrderPage, OrderFilterField,
+  StoreOrder, StoreOrderLine, StoreOrderCharge, StoreOrderPayment, StoreOrderRefund, StoreOrderRefundLine, ListOrdersQuery, StoreOrderPage, OrderFilterField,
   StoreRefund, StoreRefundOrphan, ListRefundsQuery, StoreRefundPage,
 } from './types/orders';
 export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, StoreRefundsUnsupportedError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';

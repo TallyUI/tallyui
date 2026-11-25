@@ -1,6 +1,6 @@
 import {
   assertOrderFiltersSupported, ConnectorUnauthorizedError, CustomerServiceError,
-  type OrderFilterField, type ServerCapabilities, type StoreOrder, type StoreOrderLine, type StoreOrderPage, type SyncContext,
+  type OrderFilterField, type ServerCapabilities, type StoreOrder, type StoreOrderLine, type StoreOrderPage, type StoreOrderRefundLine, type SyncContext,
   type TallyConnector,
 } from '@tallyui/core';
 import { medusaMinor, medusaNetMinor, medusaSumMinor } from './money';
@@ -129,6 +129,10 @@ export const MEDUSA_DISPLAY_NUMBER_MAX_DIGITS = 6;
 export const MEDUSA_ORDERS_PLUGIN_CONTRACT = 3;
 /** The MedusaPOS plugin contract at which GET /tally/v1/orders takes allChannels=true (medusapos/app#516); a contract-3 plugin answers the key with a 400. */
 export const MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT = 4;
+/** The MedusaPOS plugin contract whose GET /tally/v1/orders takes `ids=` and returns `refunds[].lines` (#1324). */
+const REFUND_LINES_PLUGIN_CONTRACT = 6;
+/** The plugin's cap on `ids=` per request, its ORDERS_MAX_PER_PAGE (#1324). */
+const REFUND_LINES_IDS_MAX = 100;
 
 // The plugin sends its contract as /tally/v1/info's top-level `pluginContract`; a contract-2 plugin has no orders route.
 const hasOrdersRoute = (capabilities?: ServerCapabilities) => (capabilities?.pluginContract ?? 0) >= MEDUSA_ORDERS_PLUGIN_CONTRACT;
@@ -171,6 +175,69 @@ function readOrders(raws: readonly unknown[]): { orders: StoreOrder[]; unreadabl
   return { orders, unreadable };
 }
 
+const isCount = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
+
+/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); an order whose refunds together name more of a line than was ordered gets none; never throws. */
+function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
+  const lineIds = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
+  const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
+  for (const raw of rows(raws)) {
+    const known = typeof raw.id === 'string' ? lineIds.get(raw.id) : undefined;
+    if (!known || typeof raw.id !== 'string') continue;
+    const linesById = byOrder.get(raw.id) ?? new Map<string, StoreOrderRefundLine[]>();
+    byOrder.set(raw.id, linesById);
+    for (const { id, lines } of rows(raw.refunds)) {
+      if (typeof id !== 'string' || !Array.isArray(lines) || lines.length === 0) continue;
+      // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId; a quantity above the ordered one is malformed.
+      const kept = rows(lines).flatMap(({ orderLineId, quantity, netMinor, taxMinor }) => (
+        typeof orderLineId === 'string' && known.has(orderLineId) && isCount(quantity, 1) && quantity <= known.get(orderLineId)! && isCount(netMinor, 0) && isCount(taxMinor, 0)
+          ? [{ orderLineId, quantity, netMinor, taxMinor }] : []));
+      // A refund names each order line once.
+      if (kept.length === lines.length && new Set(kept.map((line) => line.orderLineId)).size === kept.length) linesById.set(id, kept);
+    }
+  }
+  // The till treats refunds' lines as cumulative, so an order whose refunds over-count a line gets none.
+  for (const [orderId, linesById] of byOrder) {
+    const ordered = lineIds.get(orderId)!;
+    const refunded = new Map<string, number>();
+    for (const line of [...linesById.values()].flat()) refunded.set(line.orderLineId, (refunded.get(line.orderLineId) ?? 0) + line.quantity);
+    if ([...refunded].some(([lineId, quantity]) => quantity > ordered.get(lineId)!)) byOrder.delete(orderId);
+  }
+  return byOrder;
+}
+
+/** The orders with `lines` on each of their own refunds the map names; every other refund and order is returned as is. */
+function withRefundLines(orders: StoreOrder[], byOrder: Map<string, Map<string, StoreOrderRefundLine[]>>): StoreOrder[] {
+  return orders.map((order) => {
+    const linesById = byOrder.get(order.id);
+    return linesById && order.refunds.some((refund) => linesById.has(refund.id))
+      ? { ...order, refunds: order.refunds.map((refund) => { const lines = linesById.get(refund.id); return lines ? { ...refund, lines } : refund; }) }
+      : order;
+  });
+}
+
+/**
+ * At contract 6, the refunded lines from the plugin's orders route, asked for the orders with refunds in chunks of
+ * REFUND_LINES_IDS_MAX, one request at a time. A failed chunk leaves its refunds without lines, unless the read was cancelled.
+ */
+async function readRefundLines(context: SyncContext, orders: StoreOrder[]): Promise<StoreOrder[]> {
+  if ((context.capabilities?.pluginContract ?? 0) < REFUND_LINES_PLUGIN_CONTRACT) return orders;
+  const ids = orders.filter((order) => order.refunds.length > 0).map((order) => order.id);
+  const raws: unknown[] = [];
+  for (let start = 0; start < ids.length; start += REFUND_LINES_IDS_MAX) {
+    const chunk = ids.slice(start, start + REFUND_LINES_IDS_MAX);
+    // Contract 6 is past MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT; without allChannels the route reads only the till's sales channel.
+    const params = new URLSearchParams({ page: '1', perPage: String(chunk.length), ids: chunk.join(','), allChannels: 'true' });
+    try {
+      const body = await ordersRequest(context, '/tally/v1/orders', params);
+      if (Array.isArray(body?.orders)) raws.push(...(body.orders as unknown[]));
+    } catch (error) {
+      if (context.signal?.aborted) throw error;
+    }
+  }
+  return raws.length > 0 ? withRefundLines(orders, refundLinesByOrder(raws, orders)) : orders;
+}
+
 // An all-digits search the plugin's route matches against display_id (medusapos orders/list.ts:78-84); the admin API has no number search.
 const DISPLAY_NUMBER = new RegExp(`^\\d{1,${MEDUSA_DISPLAY_NUMBER_MAX_DIGITS}}$`);
 
@@ -193,7 +260,9 @@ async function listThroughPlugin(context: SyncContext, params: URLSearchParams):
   // `id[]` answers in the server's own order, not the order asked (dev store, 2026-11-20), so the rows go back in the plugin's order.
   const byId = new Map(rows(body.orders).map((row) => [row.id, row]));
   const picked = ids.flatMap((id) => byId.get(id) ?? []);
-  const { orders, unreadable } = readOrders(picked);
+  const { orders: read, unreadable } = readOrders(picked);
+  // At contract 6 the route's own hits carry refunds[].lines, so no further request (#1324).
+  const orders = (context.capabilities?.pluginContract ?? 0) >= REFUND_LINES_PLUGIN_CONTRACT ? withRefundLines(read, refundLinesByOrder(hits, read)) : read;
   // An id the admin answer lacks is left out and counted like a row the mapper cannot read.
   const left = unreadable + ids.length - picked.length;
   return { orders, hasMore, ...(left ? { unreadable: left } : {}), ...counted };
@@ -243,7 +312,7 @@ export function createMedusaOrders(): Required<Pick<TallyConnector, 'listOrders'
       const { count } = body;
       const counted = typeof count === 'number' && Number.isInteger(count) && count >= 0;
       const hasMore = counted ? offset + body.orders.length < count : body.orders.length === perPage;
-      return { orders, hasMore, ...(unreadable ? { unreadable } : {}), ...(counted ? { total: count } : {}) };
+      return { orders: await readRefundLines(context, orders), hasMore, ...(unreadable ? { unreadable } : {}), ...(counted ? { total: count } : {}) };
     },
 
     /** One request per id, in the order asked; an id the store does not have (404) is left out. */
@@ -253,7 +322,7 @@ export function createMedusaOrders(): Required<Pick<TallyConnector, 'listOrders'
         const body = await ordersRequest(context, `/admin/orders/${encodeURIComponent(id)}`, new URLSearchParams({ fields: ORDER_FIELDS }), 'null');
         if (body) orders.push(toMedusaStoreOrder(body.order));
       }
-      return orders;
+      return readRefundLines(context, orders);
     },
   };
 }
