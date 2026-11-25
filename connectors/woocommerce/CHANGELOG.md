@@ -1,5 +1,41 @@
 # @tallyui/connector-woocommerce
 
+## 5.0.0
+
+### Minor Changes
+
+- 8e15960: A store sale now counts on its paid day. `ListOrdersQuery` gains an optional `modifiedAfter` filter (WooCommerce `modified_after`), and the WooCommerce connector lists it. The new `salesRangeQuery` builds a sales report's read: with `modifiedAfter` it fetches orders changed since the range start and created before its end. `reportOrderFromStoreOrder` places a store order on `paidAt`, or on `placedAt` when the order has none. So a WooCommerce order created in a report's range but paid after it now counts on its paid day, as in WCPOS v2.
+
+  Upgrading: build a report's read with `salesRangeQuery`. A report that still reads a WooCommerce store with `dateRange: { after, before }` now loses every order paid on a later day than it was created, because the created-day read fetches it and `salesFigures` drops it from that day.
+
+- 710b62f: `StoreOrder.cashierId`, `storeId` and `registerId` (all optional) name the cashier, store and register the store records for an order, as `ListOrdersQuery` filters them. WooCommerce reads `_pos_user`, `_pos_store` (a WordPress id; 0 means none) and `_wcpos_register` (written only by WCPOS, so absent on orders TallyUI rings).
+- 04c375d: `StoreOrder.createdVia` (optional) says where the store records the order was created, in the platform's own words; WooCommerce reads it from `created_via`. Absent when the store records none.
+- e5c8503: `StoreOrder.needsPayment` (optional) says the store reports the order still owes money; WooCommerce reads it from `needs_payment`. Reports label a store order's unpaid remainder `unpaid` when it is true, so Taken no longer counts it; when the flag is false or absent the remainder stays `unknown` and counts toward Taken, as before.
+- 1704c9d: `StoreOrder` gains an optional `paidAt`: when the store recorded the order as paid, as an ISO 8601 UTC instant. It is absent while the order is unpaid, or when the store records no paid date. The WooCommerce connector reads it from `date_paid_gmt` and never falls back to the site-local `date_paid`. A value that does not parse leaves no `paidAt`.
+- eda38cf: `@tallyui/core` gains the optional, online, read-only `TallyConnector.listRefunds` member, its `StoreRefund`, `StoreRefundOrphan`, `ListRefundsQuery` and `StoreRefundPage` types, and `StoreRefundsUnsupportedError`, so refunds can be dated by when they were made (ADR-081 decision 7).
+
+  `@tallyui/connector-woocommerce` implements `listRefunds` over WCPOS 2.0's `wcpos/v2/refunds` read, reading each refund's currency from its order and rejecting with `StoreRefundsUnsupportedError` below WCPOS 2.0.0.
+
+- 0226b90: The WooCommerce connector carries cash rounding (ADR-094): each `cashRoundings` entry is sent as a tax-none `Rounding` fee line with its signed amount. Only the fork's `order_create_v5` stores declare `cashRounding`; stock stores do not, because nothing has been proven there. The app must pass `acceptsCashRounding` to the command transport from `ServerCapabilities.cashRounding`, as it passes `acceptsCoupons` from `coupons`. Without that option, or on a WCPOS 2.0 store, a rounded sale is refused at push with `cash_rounding_unsupported` and no request is made.
+
+### Patch Changes
+
+- 9fcdb7b: A fork store that reports WooCommerce POS 2.0 or later no longer declares cash rounding, so the till no longer rounds a sale that the store would refuse. A fork store whose version cannot be read no longer declares it either.
+- Updated dependencies [501e189]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+  - @tallyui/core@5.0.0
+
 ## 4.2.0
 
 ### Patch Changes

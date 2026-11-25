@@ -1,5 +1,25 @@
 # @tallyui/storage-sqlite
 
+## 5.0.0
+
+### Patch Changes
+
+- db82f0d: `@tallyui/components`, `@tallyui/pos` and `@tallyui/storage-sqlite` no longer ship their `*.test-d.ts` type-test files, matching `@tallyui/core` and `@tallyui/primitives`.
+- Updated dependencies [501e189]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+  - @tallyui/core@5.0.0
+
 ## 4.2.0
 
 ### Patch Changes
