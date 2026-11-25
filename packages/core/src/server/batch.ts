@@ -71,8 +71,8 @@ function unsupportedOptional(envelope: { id: string; type: string; version: numb
  * claim, in the executor (order.create; register commands follow ADR-068). It pushes any result
  * one of those steps returns and moves on.
  *
- * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids, and below
- * createVersion 5 precheckCommand does not repeat it.
+ * For order.update the shape check is updatePayloadErrors (ADR-090): it adds the update's store ids.
+ * precheckCommand repeats the shape check at every version, for order.update's create part too, as a backstop (#1344).
  *
  * The replay lookup goes before precheckCommand so an already-applied command always replays
  * as `duplicate`, even once a later @tallyui/core tightens what precheckCommand accepts.
@@ -183,8 +183,8 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     return rejected(command.id, 'invalid_payload', firstTen(bounds))
   }
   const shape = payloadShapeErrors(payload)
-  const errors = command.version >= 5 && shape.length ? shape
-    : v3 && display !== undefined && taxByRate !== undefined && shape.length === 0 ? fiscalFiguresErrors(payload) : []
+  const errors = shape.length ? shape
+    : v3 && display !== undefined && taxByRate !== undefined ? fiscalFiguresErrors(payload) : []
   if (errors.length) {
     return rejected(command.id, 'invalid_payload', firstTen(errors))
   }
