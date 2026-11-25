@@ -123,8 +123,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const lastRounded = order.payments.filter(countsTowardPaid).filter((leg) => leg.method === 'cash' && (order.cashRoundings ?? []).some((e) => e.paymentId === leg.id)).at(-1);
   const entryChange = zeroDue ? 0 : partPick ? changeMinor(figures.entryMinor, figures.appliedMinor, givesChange)
     : changeMinor(figures.entryMinor, Math.min(figures.appliedMinor, Math.max(0, balance - inMotionMinor(order.payments)) + figures.roundingMinor), givesChange);
-  const left = balance + figures.roundingMinor - figures.appliedMinor;
-  const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
+  // What Take can still pay: pos caps a leg at the balance less the legs in motion (use-sale.ts addTender).
+  const dueNow = Math.max(0, balance - inMotionMinor(order.payments));
+  const left = dueNow + figures.roundingMinor - figures.appliedMinor;
+  const noChange = !partPick && method !== null && !givesChange && dueNow > 0 && figures.entryMinor > dueNow;
   const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
   const changeLeads = !cannotTake && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
@@ -157,10 +159,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
-    : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
+    : noChange ? t('pos_checkout.no_change_for_method', { amount: money(dueNow), method: method?.title })
     : zeroDue ? ''
     : entryChange > 0 ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entryChange) }))
-      : !cannotTake && figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
+      : !cannotTake && figures.appliedMinor < dueNow && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their void.
   const refused = tillLegsTheStoreRefuses(order);
   const refusedLegs = order.payments.filter((leg) => refused.includes(leg.id));
