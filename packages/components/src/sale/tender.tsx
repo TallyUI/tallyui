@@ -6,19 +6,20 @@ import { TenderPane, type TenderPaneProps } from './tender-pane';
 
 type Sale = ReturnType<typeof useSale>;
 
-function HostedPane({ sale, method, methods, ledger, back, confirmVoid, beforeVoid, tender }: TenderProps & { method: string }) {
+function HostedPane({ sale, method, methods, ledger, back, confirmVoid, beforeVoid, afterVoid, tender }: TenderProps & { method: string }) {
   const [state, dispatch] = useReducer(tenderReducer, { methodId: openingMethodId(method, methods), balanceMinor: sale.order.balanceDueMinor, payments: sale.order.payments }, initTenderState);
-  return <TenderPane sale={sale} state={tender ? tender.state : state} dispatch={tender ? tender.dispatch : dispatch} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} beforeVoid={beforeVoid} />;
+  return <TenderPane sale={sale} state={tender ? tender.state : state} dispatch={tender ? tender.dispatch : dispatch} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} beforeVoid={beforeVoid} afterVoid={afterVoid} />;
 }
 
 type TenderProps = { sale: Sale; methods?: PaymentMethodDescriptor[]; /** Passed to TenderPane: `false` leaves the ledger to Cart's `tenderLedger`. Default `true`. */ ledger?: boolean; /** Passed to TenderPane: `false` hides Back (v2's phone checkout). Default `true`. */ back?: boolean;
   /** Passed to TenderPane's ledger: v2's "Cancel this payment?" before a leg is voided. Default `false`. */ confirmVoid?: boolean;
   /** Passed to TenderPane's ledger and its cancel-payment view: runs before either voids a leg; the void waits for it. */ beforeVoid?: TenderPaneProps['beforeVoid'];
+  /** Passed to TenderPane's ledger and its cancel-payment view: runs after either voids a leg `beforeVoid` approved, with whether it was voided. */ afterVoid?: TenderPaneProps['afterVoid'];
   /** One reducer shared with Cart's `picker` (useTender). Without it, Tender keeps its own reducer, as before. */ tender?: ReturnType<typeof useTender> };
 
 /** The tender pane with its own reducer, opened on the method `startTender` chose. Renders nothing outside the tender stage. */
-export function Tender({ sale, methods, ledger, back, confirmVoid, beforeVoid, tender }: TenderProps): JSX.Element | null {
-  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} beforeVoid={beforeVoid} tender={tender} /> : null;
+export function Tender({ sale, methods, ledger, back, confirmVoid, beforeVoid, afterVoid, tender }: TenderProps): JSX.Element | null {
+  return sale.stage.kind === 'tender' ? <HostedPane sale={sale} method={sale.stage.method} methods={methods} ledger={ledger} back={back} confirmVoid={confirmVoid} beforeVoid={beforeVoid} afterVoid={afterVoid} tender={tender} /> : null;
 }
 
 /** @deprecated Use Tender: the pane now handles split payments. */

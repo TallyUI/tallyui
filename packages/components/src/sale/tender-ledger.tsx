@@ -14,6 +14,7 @@ import { ConfirmDialog } from '../ui/confirm-dialog';
 import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
 import { shortTime } from './since-text';
+import { claimVoid, releaseVoid } from './void-in-flight';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
@@ -35,19 +36,21 @@ export function cancelLine(t: ReturnType<typeof useT>, money: (minor: number) =>
     : t('pos_checkout.void_on_method', { amount: money(leg.amountMinor), title: descriptor?.title ?? leg.methodId ?? leg.method });
 }
 
-export function TenderLedger({ sale, methods, closing = false, confirmVoid = false, beforeVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
+export function TenderLedger({ sale, methods, closing = false, confirmVoid = false, beforeVoid, afterVoid }: { sale: ReturnType<typeof useSale>; methods?: PaymentMethodDescriptor[]; closing?: boolean;
   /** v2's "Cancel this payment?" before a leg is voided (use-tender-flow.ts cancelOne). Default false: Cancel payment voids at once. */
   confirmVoid?: boolean;
   /**
    * Runs before Cancel payment voids the leg (a host journalling each void first, as v2's awaited cancelOnePayment); the
    * void waits for it. Returning `false` or throwing keeps the leg (the host reports its own error). Absent, the void is immediate.
    */
-  beforeVoid?: (leg: Payment) => boolean | void | Promise<boolean | void> }): JSX.Element | null {
+  beforeVoid?: (leg: Payment) => boolean | void | Promise<boolean | void>;
+  /** Runs after a void that beforeVoid approved, with voidTender's result: false means the leg was kept (voided, locked or finished elsewhere meanwhile), so the host reverses what beforeVoid journalled. Not called without beforeVoid, nor when beforeVoid refuses. */
+  afterVoid?: (leg: Payment, voided: boolean) => void }): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const t = useT();
   /** The id of the leg the one question is about (confirmVoid). */
   const [asking, setAsking] = useState<string | null>(null);
-  /** The ids of the legs whose beforeVoid is in flight: their Cancel payment is disabled, so a double press journals once. */
+  /** The ids of the legs whose beforeVoid is in flight here: drives their disabled Cancel payment. The guard is the shared set in void-in-flight.ts. */
   const [voiding, setVoiding] = useState<ReadonlySet<string>>(new Set());
   const { order, stage } = sale;
   if (stage.kind !== 'tender') return null;
@@ -69,11 +72,14 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
   const cancel = async (leg: Payment) => {
     if (cashVoidRefusal(order, leg.id)) { sale.voidTender(leg.id); return; } // ADR-094 item 6: the core refuses and sets the error; beforeVoid never journals a refused void
     if (!beforeVoid) { sale.voidTender(leg.id); return; }
+    if (!claimVoid(order.id, leg.id)) return; // #1271: another view, or this ledger before a remount, is journalling this leg
     setVoiding((ids) => new Set(ids).add(leg.id));
     let go = false;
-    try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ }
+    try { go = (await beforeVoid(leg)) !== false; } catch { /* the leg stays; the host reports its own error */ } finally { releaseVoid(order.id, leg.id); }
     setVoiding((ids) => { const next = new Set(ids); next.delete(leg.id); return next; });
-    if (go) sale.voidTender(leg.id);
+    if (!go) return;
+    const voided = sale.voidTender(leg.id);
+    try { afterVoid?.(leg, voided); } catch { /* the host reports its own error */ }
   };
 
   const legs = <View testID="tender-ledger" className="gap-1">

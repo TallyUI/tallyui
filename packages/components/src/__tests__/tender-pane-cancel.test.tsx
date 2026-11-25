@@ -42,8 +42,8 @@ const back = () => click('Back');
 
 describe('the cancel-payment view runs beforeVoid (#1260)', () => {
   type Hook = (leg: Payment) => boolean | void | Promise<boolean | void>;
-  async function guarded(hook: Hook, methods?: Parameters<typeof Tender>[0]['methods']) {
-    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} methods={methods} beforeVoid={hook} />}</SaleHarness>);
+  async function guarded(hook: Hook, methods?: Parameters<typeof Tender>[0]['methods'], afterVoid?: (leg: Payment, voided: boolean) => void) {
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} methods={methods} beforeVoid={hook} afterVoid={afterVoid} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
     act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
     act(() => sale.startTender('cash'));
@@ -121,6 +121,37 @@ describe('the cancel-payment view runs beforeVoid (#1260)', () => {
     await settle(false);
     expect([status(first.id), status(second.id)]).toEqual(['captured', 'captured']);
     expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+  });
+  it('V7 afterVoid runs per leg, and false closes the view', async () => {
+    const { hook, settle } = later();
+    const afterVoid = vi.fn<(leg: Payment, voided: boolean) => void>();
+    const [first, second] = await guarded(hook, undefined, afterVoid);
+    expect(hook).toHaveBeenCalledTimes(1);
+    act(() => { sale.voidTender(second.id); });
+    await settle(undefined);
+    expect(afterVoid).toHaveBeenCalledTimes(1);
+    expect(afterVoid.mock.calls[0]).toEqual([expect.objectContaining({ id: second.id }), false]);
+    expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+    expect(status(first.id)).toBe('captured');
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+  it('V8 the view does not run the hook for a leg a ledger is journalling', async () => {
+    const { hook, settle } = later();
+    render(<SaleHarness settings={settings}>{(sale) => <Tender sale={sale} beforeVoid={hook} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    act(() => sale.setUnitPrice(sale.order.lineItems[0].id, 2000));
+    act(() => sale.startTender('cash'));
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 500 }); sale.addTender({ method: 'external', amountMinor: 700 }); });
+    const [first, second] = sale.order.payments;
+    await act(async () => { fireEvent.click(screen.getByTestId(`tender-leg-${second.id}-void`)); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    await act(async () => { back(); });
+    await act(async () => { fireEvent.click(screen.getByTestId('tender-cancel-confirm')); });
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('tender-cancel-view')).toBeNull();
+    await settle(undefined);
+    expect(status(second.id)).toBe('voided');
+    expect(status(first.id)).toBe('captured');
   });
 });
 
