@@ -185,6 +185,22 @@ describe('useSale payment takenAt', () => {
     } finally { cleanup(); await db.remove(); }
   });
 
+  it("V1 #1281: registerView().cashRoundings is the taken legs' rounding entries, [] at receipt", async () => {
+    const db = await createRxDatabase<{ register_sessions: RegisterSessionCollection }>({
+      name: `liveroundings${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    try {
+      await db.addCollections({ register_sessions: registerSessionCreator() });
+      const { result } = renderSale({ capabilities: { orderCreate: 12, cashRounding: true }, session: { id: 'session-a', sessions: db.register_sessions } });
+      let cash: string | null = null;
+      act(() => { cash = result.current.addTender({ method: 'cash', amountMinor: 2000, rounding: { incrementMinor: 100, mode: 'down' } }); });
+      expect(result.current.registerView().takenLegs.map((leg) => leg.id)).toEqual([cash]);
+      expect(result.current.registerView().cashRoundings).toEqual([{ paymentId: cash, minor: -50 }]);
+      await act(async () => { await result.current.complete(); });
+      expect(result.current.stage.kind).toBe('receipt');
+      expect(result.current.registerView().cashRoundings).toEqual([]);
+    } finally { cleanup(); await db.remove(); }
+  });
+
   it("S3: complete() stamps the stored order's legs with the tender's session", async () => {
     const db = await createRxDatabase<{ register_sessions: RegisterSessionCollection }>({
       name: `completesession${uuidv7().replaceAll('-', '')}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });

@@ -6,7 +6,7 @@ import { tillPayments } from '../pos-order/till-payments';
 import { capturedMinor, countsTowardPaid, isInMotion } from '../tender/payment-legs';
 import { couponPricingBasis, createOrderBuilder, isLiveLeg, type OrderBuilder } from './order-builder';
 import { isTakenAt } from './taken-at';
-import type { Order, Payment } from './types';
+import type { CashRounding, Order, Payment } from './types';
 
 /** Apps create their drafts collection with this schema. */
 export const orderDraftSchema: RxJsonSchema<{
@@ -65,6 +65,18 @@ export function parkedTakenLegs(data: unknown): Payment[] {
   try {
     const payments = savedDraft(data).payments;
     return Array.isArray(payments) ? sessionTakenLegs(payments) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** #1281: a parked draft's cash rounding entries on its taken legs (`parkedTakenLegs`), counted with those legs. Unreadable data has none. */
+export function parkedCashRoundings(data: unknown): CashRounding[] {
+  try {
+    const entries: unknown = savedDraft(data).cashRoundings;
+    if (!Array.isArray(entries)) return [];
+    const taken = new Set(parkedTakenLegs(data).map((leg) => leg.id));
+    return entries.filter((entry): entry is CashRounding => typeof entry?.paymentId === 'string' && Number.isFinite(entry?.minor) && taken.has(entry.paymentId));
   } catch {
     return [];
   }

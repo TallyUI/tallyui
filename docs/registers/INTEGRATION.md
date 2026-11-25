@@ -125,9 +125,11 @@ reports no session rather than throwing.
 - `drafts` (required) — the sale's `order_drafts` collection, or `null` if
   the app never parks a sale. A parked sale's taken legs count on the Z of
   the session that took them.
-- `liveSale` (required) — a getter returning `{ takenLegs, saving }`
+- `liveSale` (required) — a getter returning `{ takenLegs, saving, cashRoundings }`
   (`sale.registerView()`), or `null` if the app has no live sale. A leg still
   in the cart (after `cancelTender`, say) then counts on its session's Z.
+  `cashRoundings` is optional: the live sale's rounding entries for those
+  legs, counted on the Z with them.
   The register is created before the sale, so read the sale through a ref:
   ```ts
   const saleRef = useRef<ReturnType<typeof useSale> | null>(null)

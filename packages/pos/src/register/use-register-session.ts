@@ -20,7 +20,7 @@ import type { RxCollection } from 'rxdb';
 import type { RegisterSessionAlreadyOpenData, ServerCapabilities } from '@tallyui/core';
 import { CLOSURE_HOLDING_REJECTIONS } from '../outbox/register-outbox';
 import { safeErrorString } from '../outbox/safe-error';
-import type { Payment } from '../order/types';
+import type { CashRounding, Payment } from '../order/types';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import type { PosRefund, PosRefundCollection } from '../refund/pos-refund';
@@ -115,7 +115,7 @@ export interface UseRegisterSessionOptions {
    * saleRef.current = sale
    * ```
    */
-  liveSale: (() => { takenLegs: readonly Payment[]; saving: boolean }) | null;
+  liveSale: (() => { takenLegs: readonly Payment[]; saving: boolean; cashRoundings?: readonly CashRounding[] }) | null;
   /** The register document's host, for the closure number and perpetual totals (`writeClosure`); `null` while it opens. */
   register: RegisterHost | null;
   /** The app's neutral store key (see `bindRegister`). */
@@ -381,7 +381,12 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     return session;
   };
   const parkedFresh = async () => { const { drafts } = live(); return drafts ? readFresh(drafts, { selector: {} }) : []; };
-  const liveLegs = () => { const sale = live().liveSale?.(); return sale?.saving ? [] : sale?.takenLegs ?? []; };
+  // One read of the live sale: its taken legs and their rounding entries (#1281), both empty while it saves.
+  const liveTaken = () => {
+    const sale = live().liveSale?.();
+    return sale?.saving ? { liveLegs: [], liveRoundings: [] } : { liveLegs: sale?.takenLegs ?? [], liveRoundings: sale?.cashRoundings ?? [] };
+  };
+  const liveLegs = () => liveTaken().liveLegs;
   // As `writeClosure` derives the Z's expected figures, from the same rows, past the query cache.
   const freshExpected = async (row: RegisterSession) => {
     const { movements, orders, refunds } = live();
@@ -562,7 +567,7 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
           counted: cash, otherTenders, timezone, softwareVersion: options.softwareVersion,
           movements: await readFresh(movements, { selector: { session_id: closed.id } }),
           orders: await readFresh(orders, { selector: { sessionId: closed.id } }),
-          drafts: await parkedFresh(), liveLegs: liveLegs(),
+          drafts: await parkedFresh(), ...liveTaken(),
           refunds: refunds ? await readFresh(refunds, { selector: { sessionId: closed.id } }) : undefined,
           resolveCashierName: labels?.resolveCashierName,
           labels: {

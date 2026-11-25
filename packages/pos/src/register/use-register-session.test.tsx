@@ -78,7 +78,7 @@ import {
   type ClosureCollection,
   type RegisterSessionCollection,
 } from './session-store';
-import { RegisterApprovalRequiredError, RegisterCloseIncompleteError, RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
+import { RegisterApprovalRequiredError, RegisterCloseIncompleteError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterTenderInProgressError, useRegisterSession, type UseRegisterSessionOptions } from './use-register-session';
 
 let db: RxDatabase<{
   register_sessions: RegisterSessionCollection; cash_movements: CashMovementCollection; closures: ClosureCollection;
@@ -917,6 +917,30 @@ it('passes the store opening day across the session writer boundary', async () =
     id = (await result.current.actions.openSession({ expectedFloatMinor: null, countedFloatMinor: 10000 })).id;
   });
   expect((await db.register_sessions.findOne(id).exec())?.business_day).toBe('2026-09-16');
+});
+
+describe('the live sale on the Z (#1281)', () => {
+  const live = (sessionId: string, saving: boolean) => () => ({
+    takenLegs: [{ id: 'leg', method: 'cash' as const, amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0, status: 'captured' as const, sessionId }],
+    saving, cashRoundings: [{ paymentId: 'leg', minor: -2 }],
+  });
+
+  it('H1: closeSession counts the live sale\'s rounding with its leg', async () => {
+    const session = await seed();
+    const result = await settled({ liveSale: live(session.id, false) });
+    let closure: Awaited<ReturnType<typeof result.current.actions.closeSession>> | undefined;
+    await act(async () => { closure = await result.current.actions.closeSession({ counted: { cash: 11000 } }); });
+    expect(closure?.breakdowns.cash_rounding_minor).toBe(-2);
+    expect(closure?.period_sales_total_minor).toBe(1000);
+  });
+
+  it('H2: a live sale still saving refuses the close', async () => {
+    const session = await seed();
+    const result = await settled({ liveSale: live(session.id, true) });
+    await act(async () => {
+      await expect(result.current.actions.closeSession({ counted: { cash: 11000 } })).rejects.toBeInstanceOf(RegisterSaleSavingError);
+    });
+  });
 });
 
 describe('the session', () => {

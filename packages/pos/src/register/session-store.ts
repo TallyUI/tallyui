@@ -18,7 +18,8 @@ import { replacedOrderIds } from '../pos-order/reopened';
 import { tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
-import type { Payment } from '../order/types';
+import { parkedCashRoundings, parkedTakenLegs } from '../order/order-drafts';
+import type { CashRounding, Payment } from '../order/types';
 import { deriveExpected, liveLedgerRows, parkedLedgerRows, paymentLedgerRows, refundAmounts } from './expected';
 import { recordRegisterFact } from './facts';
 import { MAX_REASON_LENGTH } from './movement-input';
@@ -485,6 +486,7 @@ export async function writeClosure({
   orders,
   drafts,
   liveLegs,
+  liveRoundings,
   refunds,
   tillExpected,
   labels,
@@ -511,6 +513,8 @@ export async function writeClosure({
   drafts?: readonly { data?: unknown }[];
   /** The live sale's taken legs (`useSale`'s `registerView().takenLegs`, S3): those taken in this session count here. See `drafts`. */
   liveLegs?: readonly Payment[];
+  /** The live sale's cash rounding entries (`registerView().cashRoundings`, #1281): one on a `liveLegs` leg taken in this session counts here. */
+  liveRoundings?: readonly CashRounding[];
   /** `pos_refunds` rows; only this session's applied ones are counted (ADR-080 amendment 1). */
   refunds?: readonly PosRefund[];
   tillExpected?: Record<string, number>;
@@ -586,14 +590,19 @@ export async function writeClosure({
   }
   const unsynced = bound.filter((order) => order.syncStatus === 'pending');
   // ADR-094: a bound order's rounding counts as its leg's money does (S3): a till leg, in the session that took it.
-  // A parked or live sale's legs are in the takings, but their rounding is not counted here (lane backlog).
+  // A parked or live sale's entries count by the same rule, against that sale's own taken legs (#1281).
   const cashRoundingMinor = sum(bound.flatMap((order) => {
     const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
     return (order.cashRoundings ?? []).filter((entry) => {
       const leg = legs.get(entry.paymentId);
       return leg !== undefined && (leg.sessionId ?? order.sessionId) === session.id;
     }).map((entry) => entry.minor);
-  }));
+  })) + sum([
+    ...(drafts ?? []).map((row) => ({ legs: parkedTakenLegs(row.data), entries: parkedCashRoundings(row.data) })),
+    { legs: liveLegs ?? [], entries: liveRoundings ?? [] },
+  ].flatMap(({ legs, entries }) => entries
+    .filter((entry) => legs.some((leg) => leg.id === entry.paymentId && leg.sessionId === session.id))
+    .map((entry) => entry.minor)));
   const draft: Closure = {
     id: session.id,
     session_id: session.id,
