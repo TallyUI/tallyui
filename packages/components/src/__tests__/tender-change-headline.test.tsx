@@ -84,14 +84,23 @@ describe('Tender change headline', () => {
     expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
   });
 
-  it('a no-change method above what is still due names that due, beside a payment in motion', () => {
+  it('a no-change method above what is still due names that due and Take still takes it, beside a payment in motion', () => {
     start(3125);
     act(() => { sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' }); });
     fireEvent.click(screen.getByTestId('tender-method-external'));
     for (const key of ['Clear', '3', '0', '0', '0']) press(key);
     expect(text('tender-entry-hint')).toContain(money(2125));
     expect(text('tender-entry-hint')).toMatch(/can't give change/);
-    expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('the untouched pre-fill beside a payment in motion names the due and leaves Take enabled', () => {
+    start(3125);
+    act(() => { sale.addTender({ method: 'external', amountMinor: 1000, status: 'pending' }); });
+    fireEvent.click(screen.getByTestId('tender-method-external'));
+    expect(text('tender-entry-hint')).toContain(money(2125));
+    expect(text('tender-entry-hint')).toMatch(/can't give change/);
+    expect(screen.getByTestId('tender-take').getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('an entry of exactly what is still due shows no part payment hint', () => {

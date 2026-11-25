@@ -126,7 +126,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // What Take can still pay: pos caps a leg at the balance less the legs in motion (use-sale.ts addTender).
   const dueNow = Math.max(0, balance - inMotionMinor(order.payments));
   const left = dueNow + figures.roundingMinor - figures.appliedMinor;
-  const noChange = !partPick && method !== null && !givesChange && dueNow > 0 && figures.entryMinor > dueNow;
+  const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
+  // Take records only dueNow here (pos caps the leg), so the hint names it without blocking.
+  const capped = !partPick && method !== null && !givesChange && dueNow > 0 && figures.entryMinor > dueNow;
   const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
   const changeLeads = !cannotTake && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
@@ -159,7 +161,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')
     : pickRefused ? t('pos_checkout.pick_amount_due', { amount: money(figures.roundedDueMinor) })
-    : noChange ? t('pos_checkout.no_change_for_method', { amount: money(dueNow), method: method?.title })
+    : capped || (noChange && dueNow === balance) ? t('pos_checkout.no_change_for_method', { amount: money(dueNow), method: method?.title })
     : zeroDue ? ''
     : entryChange > 0 ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entryChange) }))
       : !cannotTake && figures.appliedMinor < dueNow && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
@@ -224,7 +226,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
         {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
-        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : 'text-muted-foreground')}>{hint}</Text>
+        <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || capped || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}
 
