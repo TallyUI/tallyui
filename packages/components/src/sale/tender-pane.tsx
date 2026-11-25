@@ -160,7 +160,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : noChange ? t('pos_checkout.no_change_for_method', { amount: money(balance), method: method?.title })
     : zeroDue ? ''
     : entryChange > 0 ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entryChange) }))
-      : figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
+      : !cannotTake && figures.appliedMinor < balance && figures.entryMinor > 0 ? t('pos_checkout.part_payment_left', { left: money(left) }) : '';
   // ADR-090 gate 36c: once the store's legs cover the total, finalize refuses every till leg; name them and offer their void.
   const refused = tillLegsTheStoreRefuses(order);
   const refusedLegs = order.payments.filter((leg) => refused.includes(leg.id));
