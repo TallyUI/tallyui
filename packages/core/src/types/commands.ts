@@ -46,6 +46,7 @@ export type OrderRefundEnvelope<P = OrderRefundPayload> =
 export interface OrderRefundResult {
   totalMinor: number;
   byMethod: Record<string, number>;
+  /** The platform refunds created, summing to totalMinor. Empty only for a stock-only return: totalMinor 0 and byMethod {} (ADR-080, #1330). */
   refunds: Array<{ id: string; paymentId: string; totalMinor: number; state: string }>;
 }
 /** Per-command refund refusals (ADR-080 decision 5). */
