@@ -86,6 +86,62 @@ describe('OrderSyncNotices refusals', () => {
   });
 });
 
+describe('OrderSyncNotices order left on the store (#1101)', () => {
+  const INSUFFICIENT_STOCK = "The online store refused this sale: it doesn't have enough stock of one of the items.";
+  const INVALID_PAYLOAD = "The online store refused this sale: this till sent it in a form the store can't read. Ask the store owner to look at the till's sync log.";
+  const NOTHING_PAID = 'Order #115 was left pending on the online store. Nothing was paid there.';
+  const usd = (amounts: number[]) => ({ currency: 'USD', totalMinor: 1000,
+    payments: amounts.map((amountMinor, i) => ({ id: `payment-${i}`, method: 'cash' as const, amountMinor })) });
+  const left = (code: string, data: Record<string, unknown> | undefined, extra: Partial<PosOrder> = {}) => order('x', { ...usd([1000]),
+    syncStatus: 'rejected', error: { code, message: 'WooCommerce order #115 was created but not paid: Platform says no.', ...(data ? { data } : {}) }, ...extra });
+
+  it.each<[string, PosOrder, string, string]>([
+    ['invalid_payload, recorded absent, 1 payment', left('invalid_payload', { orderId: '115', storeCode: 'wcpos_command_conflict' }), PLATFORM_ERROR, NOTHING_PAID],
+    ['insufficient_stock, recorded absent', left('insufficient_stock', { orderId: '115', storeCode: 'wcpos_insufficient_stock' }), INSUFFICIENT_STOCK, NOTHING_PAID],
+    ['recorded 1 of 500 + 500', left('invalid_payload', { orderId: '115', recorded: 1 }, usd([500, 500])), PLATFORM_ERROR,
+      'Order #115 was left part paid on the online store: $5.00 of $10.00.'],
+    ['recorded 1 of 300 + 700', left('invalid_payload', { orderId: '115', recorded: 1 }, usd([300, 700])), PLATFORM_ERROR,
+      'Order #115 was left part paid on the online store: $3.00 of $10.00.'],
+    ['recorded 2 of 2', left('invalid_payload', { orderId: '115', recorded: 2 }, usd([500, 500])), PLATFORM_ERROR,
+      'Order #115 was left part paid on the online store: $10.00 of $10.00.'],
+    ['recorded 3 of 2', left('invalid_payload', { orderId: '115', recorded: 3 }, usd([500, 500])), PLATFORM_ERROR,
+      'Order #115 was left part paid on the online store: $10.00 of $10.00.'],
+    ['a free sale', left('invalid_payload', { orderId: '115' }, usd([])), PLATFORM_ERROR, NOTHING_PAID],
+    ['displayId 1001', left('invalid_payload', { orderId: '115', displayId: '1001' }), PLATFORM_ERROR,
+      'Order #1001 was left pending on the online store. Nothing was paid there.'],
+    ['recorded 0', left('invalid_payload', { orderId: '115', recorded: 0 }, usd([500, 500])), PLATFORM_ERROR, NOTHING_PAID],
+    ['recorded -1', left('invalid_payload', { orderId: '115', recorded: -1 }, usd([500, 500])), PLATFORM_ERROR, NOTHING_PAID],
+    ['recorded 1.5', left('invalid_payload', { orderId: '115', recorded: 1.5 }, usd([500, 500])), PLATFORM_ERROR, NOTHING_PAID],
+    ["recorded '1'", left('invalid_payload', { orderId: '115', recorded: '1' }, usd([500, 500])), PLATFORM_ERROR, NOTHING_PAID],
+    ['recorded NaN', left('invalid_payload', { orderId: '115', recorded: Number.NaN }, usd([500, 500])), PLATFORM_ERROR, NOTHING_PAID],
+  ])('names the store order after the refusal sentence: %s', (_name, sale, sentence, line) => {
+    const { container } = render(<OrderSyncNotices order={sale} />);
+    const shown = screen.getByTestId('order-left-on-store-x');
+    expect(shown.textContent).toBe(line);
+    expect(container.textContent).toBe(`${sentence}${line}`);
+    expect(container.textContent).not.toContain('Platform says no');
+    expect(container.textContent).not.toContain('invalid_payload');
+  });
+
+  it.each<[string, PosOrder, string]>([
+    ["orderId ''", left('invalid_payload', { orderId: '' }), INVALID_PAYLOAD],
+    ['orderId 115 (a number)', left('invalid_payload', { orderId: 115 }), INVALID_PAYLOAD],
+    ['orderId absent', left('invalid_payload', { storeCode: 'total_mismatch' }), INVALID_PAYLOAD],
+    ['data absent', left('invalid_payload', undefined), INVALID_PAYLOAD],
+    ['error absent', order('x', { syncStatus: 'rejected' }), PLATFORM_ERROR],
+    ['a reopened order (storeOrderId set)', left('insufficient_stock', { orderId: '115' }, { storeOrderId: '115' }), INSUFFICIENT_STOCK],
+  ])('adds no line for %s, and keeps the sentence', (_name, sale, sentence) => {
+    const { container } = render(<OrderSyncNotices order={sale} />);
+    expect(screen.queryByTestId('order-left-on-store-x')).toBeNull();
+    expect(container.textContent).toBe(sentence);
+  });
+
+  it.each(['pending', 'applied'] as const)('adds no line for a %s order with stale data', (syncStatus) => {
+    render(<OrderSyncNotices order={left('invalid_payload', { orderId: '115', recorded: 1 }, { syncStatus })} />);
+    expect(screen.queryByTestId('order-left-on-store-x')).toBeNull();
+  });
+});
+
 describe('OrderSyncNotices notes', () => {
   it('shows since when a pending order is stuck, and nothing once it is applied', () => {
     const since = new Date(2026, 8, 29, 14, 2).getTime();

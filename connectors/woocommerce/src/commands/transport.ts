@@ -339,7 +339,7 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
             if (ledger && totalMinor !== envelope.payload.totalMinor) {
               const tillMinor = envelope.payload.totalMinor, digits = wooDigits(envelope.payload);
               results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: `WooCommerce order #${displayId} totals ${wooMajor(totalMinor, digits)} but the till charged ${wooMajor(tillMinor, digits)}; no payment was recorded on it.`,
-                data: { orderId, storeCode: 'total_mismatch', tillMinor, serverMinor: totalMinor } } });
+                data: { orderId, displayId, storeCode: 'total_mismatch', tillMinor, serverMinor: totalMinor } } });
               continue;
             }
             let failed: Answer | undefined;
@@ -384,7 +384,7 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
               results.push({ id: envelope.id, status: 'rejected', error: {
                 code: failed.status === 400 && code === 'wcpos_insufficient_stock' ? 'insufficient_stock' : 'invalid_payload',
                 message: `WooCommerce order #${displayId} was ${recorded === 0 ? 'created but not paid' : `created and part paid (${recorded} of ${mapped.money!.length} payments recorded)`}: ${failed.body?.message ?? code ?? `status_${failed.status}`}`,
-                data: { orderId, storeCode: code ?? `status_${failed.status}`, ...(recorded ? { recorded } : {}) } } });
+                data: { orderId, displayId, storeCode: code ?? `status_${failed.status}`, ...(recorded ? { recorded } : {}) } } });
               continue;
             }
           }

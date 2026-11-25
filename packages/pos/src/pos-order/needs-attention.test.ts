@@ -123,4 +123,23 @@ describe('attention handled (ADR-092 6f)', () => {
     expect(needsAttention([stamped, older])).toEqual([older]);
     expect(needsAttention([older, stamped, newer])).toEqual([newer, older]);
   });
+
+  // #1101: a refused sale whose order the store created (storeOrderLeft) is not hidden by the stamp.
+  const left = (data: Record<string, unknown>): PosOrder => {
+    const order = sale();
+    return { ...order, syncStatus: 'rejected', attentionHandledFor: order.commandId, error: { code: 'invalid_payload', message: 'm', data } };
+  };
+  it('N3 keeps a stamped refusal whose order the store created', () => {
+    const order = left({ orderId: '115', displayId: '1001', recorded: 1 });
+    expect(needsAttention([order])).toEqual([order]);
+  });
+  it('N4 still hides a stamped refusal without data.orderId, and a stamped applied order with a warning', () => {
+    const applied: PosOrder = { ...left({ orderId: '115' }), syncStatus: 'applied', warnings: [{ code: 'insufficient_stock', variantId: 'blue', quantity: 1 }] };
+    expect(needsAttention([left({ storeCode: 'wcpos_command_conflict' }), applied])).toEqual([]);
+  });
+  it('N5 hides a stamped refusal with a store order once its finalized successor is in the list', () => {
+    const order: PosOrder = { ...left({ orderId: '115' }), reopenedAt: '2026-01-01T12:00:00Z', createdAt: '2026-01-01T00:00:00Z' };
+    const successor: PosOrder = { ...sale(), saleId: order.id, syncStatus: 'applied', createdAt: '2026-01-02T00:00:00Z' };
+    expect(needsAttention([order, successor])).toEqual([]);
+  });
 });

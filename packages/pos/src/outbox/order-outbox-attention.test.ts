@@ -76,3 +76,36 @@ describe('attention handled through the outbox (ADR-092 6f)', () => {
     expect((await attention()).map(({ id }) => id)).toEqual([input.id]);
   });
 });
+
+describe('a refusal that names a store order (#1101)', () => {
+  it('R2 keeps error.data through a re-opened database, and a requeue clears error', async () => {
+    const data = { orderId: '115', displayId: '1001', storeCode: 'wcpos_amount_exceeds_balance', recorded: 1 };
+    const name = `leftonstore${uuidv7().replaceAll('-', '')}`;
+    const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
+    const first = await createRxDatabase({ name, storage, multiInstance: false });
+    const { pos_orders: before } = await first.addCollections({ pos_orders: posOrderCollection() });
+    const input = order(2); await before.insert(input);
+    const send = vi.fn<CommandTransport<OrderCreateEnvelope | OrderUpdateEnvelope>['send']>().mockImplementation(async (batch) => ({ kind: 'results',
+      results: batch.map((command) => ({ id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'Too much.', data } })) }));
+    const outbox = createOrderOutbox({ collection: before, transport: { send }, deviceId: 'device-1', random: () => 0.5 });
+    await outbox.flush(); outbox.stop();
+    // Under fake timers the close, and the remove below, ran past the 5 s test limit.
+    vi.useRealTimers();
+    await first.close();
+
+    const again = await createRxDatabase({ name, storage, multiInstance: false });
+    const { pos_orders: after } = await again.addCollections({ pos_orders: posOrderCollection() });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const reopened = createOrderOutbox({ collection: after, transport: { send }, deviceId: 'device-1', random: () => 0.5 });
+    try {
+      const read = async () => (await after.findOne(input.id).exec())!.toJSON() as PosOrder;
+      expect((await read()).syncStatus).toBe('rejected');
+      expect((await read()).error?.data).toEqual(data);
+      expect(await reopened.requeue([input.id])).toBe(1);
+      expect(await read()).toMatchObject({ syncStatus: 'pending' });
+      expect((await read()).error).toBeUndefined();
+    } finally {
+      reopened.stop(); vi.useRealTimers(); await again.remove();
+    }
+  });
+});

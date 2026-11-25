@@ -1,5 +1,6 @@
 import { knownWarnings } from '@tallyui/core';
 import { replacedOrderIds } from './reopened';
+import { storeOrderLeft } from './store-order-left';
 import type { PosOrder } from './types';
 
 /** The `error.code` the outbox puts on a pending reopened sale whose `order.update` it cannot build (ADR-090 W4b). The row stays pending: unsent. */
@@ -15,7 +16,8 @@ export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet
  * A refused order is left out once its finalized successor is in `orders`.
  * Pending updates marked `UPDATE_UNSENDABLE` are shown until a person acts.
  * An order a cashier marked handled (`markAttentionHandled`) is left out while its `commandId` is the one it was marked
- * for; a requeue mints a new `commandId`, so a fresh refusal shows again (ADR-092 6f).
+ * for; a requeue mints a new `commandId`, so a fresh refusal shows again (ADR-092 6f). The mark does not hide a refused
+ * sale whose order the store created (`storeOrderLeft`, #1101).
  */
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
@@ -24,6 +26,7 @@ export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: 
     || (order.localWarnings?.length ?? 0) > 0
     || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown')) || order.lateSessionId !== undefined
     || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true))
-    .filter((order) => !replaced.has(order.id) && !(order.attentionHandledFor !== undefined && order.attentionHandledFor === order.commandId))
+    .filter((order) => !replaced.has(order.id) && !(order.attentionHandledFor !== undefined && order.attentionHandledFor === order.commandId
+      && storeOrderLeft(order) === undefined))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

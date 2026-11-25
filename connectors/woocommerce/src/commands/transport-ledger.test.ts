@@ -126,7 +126,7 @@ describe('WCPOS 2.0 payment ledger', () => {
     const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [
       json(422, { code: 'wcpos_command_conflict', message: 'Conflict.' }), json(400, { code: 'wcpos_insufficient_stock', message: 'Out.' })] } });
     expect(await transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload',
-      message: 'WooCommerce order #115 was created but not paid: Conflict.', data: { orderId: '115', storeCode: 'wcpos_command_conflict' } } }] });
+      message: 'WooCommerce order #115 was created but not paid: Conflict.', data: { orderId: '115', displayId: '115', storeCode: 'wcpos_command_conflict' } } }] });
     expect(await transport.send([order()])).toMatchObject({ results: [{ status: 'rejected', error: { code: 'insufficient_stock' } }] });
   });
   it('push 426 wcpos_update_required is refused, another 426 is retried', async () => {
@@ -158,7 +158,7 @@ describe('WCPOS 2.0 payment ledger', () => {
 describe('WCPOS 2.0 payment ledger: amendment 2', () => {
   const mismatch = (serverMinor: number, total: string) => ({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: {
     code: 'invalid_payload', message: `WooCommerce order #115 totals ${total} but the till charged 3.00; no payment was recorded on it.`,
-    data: { orderId: '115', storeCode: 'total_mismatch', tillMinor: 300, serverMinor } } }] });
+    data: { orderId: '115', displayId: '115', storeCode: 'total_mismatch', tillMinor: 300, serverMinor } } }] });
   it('A2-1: a ledger push whose store total is higher is rejected before any money', async () => {
     const { calls, transport } = store({ ledgerPayments: true, total: '3.010000' });
     expect(await transport.send([order()])).toEqual(mismatch(301, '3.01'));
@@ -178,7 +178,7 @@ describe('WCPOS 2.0 payment ledger: amendment 2', () => {
   it('A2-4: a first record answered 403 rest_forbidden is rejected as created but not paid', async () => {
     const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [json(403, { code: 'rest_forbidden', message: 'Forbidden.' })] } });
     expect(await transport.send([order()])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload',
-      message: 'WooCommerce order #115 was created but not paid: Forbidden.', data: { orderId: '115', storeCode: 'rest_forbidden' } } }] });
+      message: 'WooCommerce order #115 was created but not paid: Forbidden.', data: { orderId: '115', displayId: '115', storeCode: 'rest_forbidden' } } }] });
   });
   it('A2-5: a record answered with an unknown 4xx is retried by its code', async () => {
     const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [json(404, { code: 'woocommerce_rest_cannot_view' })] } });
@@ -189,7 +189,7 @@ describe('WCPOS 2.0 payment ledger: amendment 2', () => {
       json(409, { code: 'wcpos_amount_exceeds_balance', message: 'Too much.' })] } });
     expect(await transport.send([order(split)])).toEqual({ kind: 'results', results: [{ id: uuid(1), status: 'rejected', error: { code: 'invalid_payload',
       message: 'WooCommerce order #115 was created and part paid (1 of 2 payments recorded): Too much.',
-      data: { orderId: '115', storeCode: 'wcpos_amount_exceeds_balance', recorded: 1 } } }] });
+      data: { orderId: '115', displayId: '115', storeCode: 'wcpos_amount_exceeds_balance', recorded: 1 } } }] });
   });
   it('A2-7: a record answered 404 rest_no_route clears the /site decision and retries', async () => {
     const { calls, transport } = store({ queue: { 'orders/115/payments': [json(404, { code: 'rest_no_route' })] } });
