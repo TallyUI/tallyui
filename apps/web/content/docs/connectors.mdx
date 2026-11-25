@@ -111,6 +111,7 @@ All four connectors ship with pull-only product replication adapters. Each adapt
 | `listOrders(context, query?)` | no | Reads store orders online, newest first and one page per call, rejecting unsupported filter fields with `UnsupportedOrderFilterError`. |
 | `orderFilters` | no | Declares the filter fields `listOrders` honours; when absent or empty, `listOrders` refuses every filter field. |
 | `getOrders(context, ids)` | no | Reads orders online by store ID in the requested order, omitting IDs the store does not have. |
+| `settleRefusedOrder.cancel(context, request)` | no | Cancels online, never through the outbox, an order the store created before it refused the sale, only when the store's current record shows nothing paid; resolves `done`, `changed`, `refused`, `gone` or `retry` (send the same `attemptId` again). |
 | `listRefunds(context, query?)` | no | Reads the store's refunds online, newest first and one page per call, dated by when each was made; refunds whose order the store did not return come back as orphans with no amount, and a store that cannot serve them rejects with `StoreRefundsUnsupportedError`. |
 | `listRegisters(context)` | no | Reads the store's register directory online, rejecting credential failures with `ConnectorUnauthorizedError` and other failures with connector-specific errors. |
 | `cashier(context)` | no | Reads the signed-in cashier and neutral POS permissions mapped from platform roles or capabilities, returning `null` if there is no cashier; when absent, the till allows everything. |
