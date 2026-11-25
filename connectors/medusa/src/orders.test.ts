@@ -467,6 +467,7 @@ describe('refund lines (#1324)', () => {
 
   it.each<Record<string, unknown>>([
     { quantity: 0 }, { quantity: 1.5 }, { netMinor: -1 }, { taxMinor: '80' }, { orderLineId: '' }, { orderLineId: 'ordli_not_on_this_order' },
+    { quantity: 4 }, { orderLineId: 'ordli_01M7TS1E00M859JB5BNYS49J32' },
   ])('drops a refund\'s lines when any line is malformed (%j)', async (patch) => {
     const body = pluginBody();
     const refund = body.orders[0]!.refunds[0]!;
@@ -475,6 +476,21 @@ describe('refund lines (#1324)', () => {
     const orders = await getOrders(ctx6, [L[0].id]);
     expect(orders).toStrictEqual([tillOrder]);
     for (const kept of orders[0]!.refunds) expect(kept).not.toHaveProperty('lines');
+  });
+
+  it('keeps a line whose quantity equals the ordered quantity', async () => {
+    const body = pluginBody();
+    body.orders[0]!.refunds[0]!.lines = [{ ...fixtureLine, quantity: 3 }];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const [order] = await getOrders(ctx6, [L[0].id]);
+    expect(order!.refunds[0]!.lines).toStrictEqual([{ ...fixtureLine, quantity: 3 }]);
+  });
+
+  it('listOrders through the plugin route attaches no lines below contract 6', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(plugin(refundLinesFixture)).mockResolvedValueOnce(listOf([L[0]]));
+    const page = await listOrders(ctx5, { registerId: 'reg-1' });
+    expect(spy).toHaveBeenCalledTimes(2);
+    for (const refund of page.orders[0]!.refunds) expect(refund).not.toHaveProperty('lines');
   });
 
   it('listOrders through the plugin route reads lines from its own hits at contract 6', async () => {

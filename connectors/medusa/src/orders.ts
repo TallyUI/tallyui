@@ -179,7 +179,7 @@ const isCount = (value: unknown, min: number): value is number => Number.isSafeI
 
 /** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); never throws. */
 function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
-  const lineIds = new Map(orders.map((order) => [order.id, new Set(order.lines.map((line) => line.id))]));
+  const lineIds = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
   const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
   for (const raw of rows(raws)) {
     const known = typeof raw.id === 'string' ? lineIds.get(raw.id) : undefined;
@@ -188,11 +188,12 @@ function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrde
     byOrder.set(raw.id, linesById);
     for (const { id, lines } of rows(raw.refunds)) {
       if (typeof id !== 'string' || !Array.isArray(lines) || lines.length === 0) continue;
-      // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId.
+      // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId; a quantity above the ordered one is malformed.
       const kept = rows(lines).flatMap(({ orderLineId, quantity, netMinor, taxMinor }) => (
-        typeof orderLineId === 'string' && known.has(orderLineId) && isCount(quantity, 1) && isCount(netMinor, 0) && isCount(taxMinor, 0)
+        typeof orderLineId === 'string' && known.has(orderLineId) && isCount(quantity, 1) && quantity <= known.get(orderLineId)! && isCount(netMinor, 0) && isCount(taxMinor, 0)
           ? [{ orderLineId, quantity, netMinor, taxMinor }] : []));
-      if (kept.length === lines.length) linesById.set(id, kept);
+      // A refund names each order line once.
+      if (kept.length === lines.length && new Set(kept.map((line) => line.orderLineId)).size === kept.length) linesById.set(id, kept);
     }
   }
   return byOrder;
