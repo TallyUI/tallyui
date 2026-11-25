@@ -13,6 +13,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import { orderDraftSchema, restoreOrderDraft } from '../order/order-drafts';
+import type { Payment } from '../order/types';
 import { toOrderCreateEnvelope } from '../pos-order/command';
 import { finalizeOrder } from '../pos-order/finalize';
 import { reopenRefusedOrder } from '../pos-order/reopen';
@@ -791,5 +792,88 @@ describe('cash rounding on the Z (ADR-094)', () => {
     const closure = await closureOfOneSale(true, 'another-session');
     expect(closure.period_sales_total_minor).toBe(0);
     expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+  });
+
+  // #1281: a parked or live sale's rounding counts as its leg's money does (S3), on the Z of the session that took the leg.
+  const leg = (sessionId: string, id = 'leg', extra: Record<string, unknown> = {}) =>
+    ({ id, method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0, status: 'captured', sessionId, ...extra }) as unknown as Payment;
+  const draftOf = (payments: unknown[], cashRoundings: unknown) => ({ data: JSON.stringify({ payments, cashRoundings }) });
+  const roundedOrder = (sessionId: string, legSessionId = sessionId): PosOrder => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100_000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1002, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0 }, { minor: -2 });
+    const finalized = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
+    return { ...finalized, sessionId, payments: finalized.payments.map((payment) => ({ ...payment, sessionId: legSessionId })) };
+  };
+  async function closeWith(extra: (sessionId: string) => Partial<Parameters<typeof writeClosure>[0]>, takenMinor = 0) {
+    await ensureRegister(db.register_sessions, 'web');
+    const doc = await openSession(db.register_sessions, input);
+    const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 10000 + takenMinor } });
+    return writeClosure({
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000 + takenMinor,
+      otherTenders: {}, movements: [], orders: [], softwareVersion: '1.0.0', ...extra(doc.id),
+    });
+  }
+
+  it('W1 #1281: a parked draft\'s rounded leg taken in this session counts its rounding here', async () => {
+    const closure = await closeWith((id) => ({ drafts: [draftOf([leg(id)], [{ paymentId: 'leg', minor: -2 }])] }), 1000);
+    expect(closure.breakdowns.cash_rounding_minor).toBe(-2);
+    expect(closure.period_sales_total_minor).toBe(1000);
+  });
+
+  it('W2 #1281: a parked draft\'s rounded leg taken in another session counts nothing here', async () => {
+    const closure = await closeWith(() => ({ drafts: [draftOf([leg('another-session')], [{ paymentId: 'leg', minor: -2 }])] }));
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
+
+  it('W3 #1281: the live sale\'s rounded leg taken in this session counts its rounding here', async () => {
+    const closure = await closeWith((id) => ({ liveLegs: [leg(id)], liveRoundings: [{ paymentId: 'leg', minor: -2 }] }), 1000);
+    expect(closure.breakdowns.cash_rounding_minor).toBe(-2);
+    expect(closure.period_sales_total_minor).toBe(1000);
+  });
+
+  it('W4 #1281: the live sale\'s rounded leg taken in another session counts nothing here', async () => {
+    const closure = await closeWith(() => ({ liveLegs: [leg('another-session')], liveRoundings: [{ paymentId: 'leg', minor: -2 }] }));
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
+
+  it('W5 #1281: a live +3 and a bound order\'s -2 in this session sum to 1', async () => {
+    const closure = await closeWith((id) => ({
+      orders: [roundedOrder(id)], liveLegs: [leg(id, 'live')], liveRoundings: [{ paymentId: 'live', minor: 3 }],
+    }), 2000);
+    expect(closure.breakdowns.cash_rounding_minor).toBe(1);
+    expect(closure.period_sales_total_minor).toBe(2000);
+  });
+
+  it('W6 #1281: a parked entry naming a leg that is not taken (voided, or no such leg) counts nothing', async () => {
+    const closure = await closeWith((id) => ({
+      drafts: [draftOf([leg(id), leg(id, 'void', { status: 'voided' })], [{ paymentId: 'void', minor: -2 }, { paymentId: 'ghost', minor: 3 }])],
+    }), 1000);
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(closure.period_sales_total_minor).toBe(1000);
+  });
+
+  it('W7 #1281: an unreadable draft counts nothing and does not throw', async () => {
+    const closure = await closeWith(() => ({ drafts: [{ data: '{' }] }));
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
+
+  it('W8 #1281: live roundings without live legs count nothing', async () => {
+    const closure = await closeWith(() => ({ liveRoundings: [{ paymentId: 'leg', minor: -2 }] }));
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
+
+  it('W9 #1281: a parked rounding counted on A\'s Z is not counted again when the sale finalizes in B', async () => {
+    let a = '';
+    const zA = await closeWith((id) => { a = id; return { drafts: [draftOf([leg(id)], [{ paymentId: 'leg', minor: -2 }])] }; }, 1000);
+    expect(zA.breakdowns.cash_rounding_minor).toBe(-2);
+    const zB = await closeWith((id) => ({ orders: [roundedOrder(id, a)] }));
+    expect(zB.session_id).not.toBe(a);
+    expect(zB.breakdowns).not.toHaveProperty('cash_rounding_minor');
+    expect(zB.period_sales_total_minor).toBe(0);
   });
 });

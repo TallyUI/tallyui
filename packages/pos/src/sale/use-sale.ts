@@ -8,7 +8,7 @@ import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInpu
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import { isLiveLeg } from '../order/order-builder';
 import { sessionTakenLegs } from '../order/order-drafts';
-import type { Payment } from '../order/types';
+import type { CashRounding, Payment } from '../order/types';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
@@ -1146,13 +1146,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * S3: the live sale's legs its session counts now and no stored order counts yet, for `useRegisterSession`'s
      * `liveSale`: captured till legs stamped with a session, not reopened and not counted by an after-close sale's closure
      * (`sessionTakenLegs`, the rule a parked draft's legs follow). `[]` on the receipt, whose stored order counts them.
+     * `cashRoundings` are the sale's cash rounding entries on those legs, copied, counted on the Z with them (#1281).
      * `saving` is true while a completion is in flight or pending, including after a failed save, and while a
      * `park()` or `resume()` is in flight.
      */
-    registerView(): { takenLegs: Payment[]; saving: boolean } {
+    registerView(): { takenLegs: Payment[]; saving: boolean; cashRoundings: CashRounding[] } {
+      const snapshot = builderNow.current.getSnapshot();
+      const takenLegs = stageNow.current.kind === 'receipt' ? [] : sessionTakenLegs(snapshot.payments, countedLeg);
+      const taken = new Set(takenLegs.map((leg) => leg.id));
       return {
-        takenLegs: stageNow.current.kind === 'receipt' ? [] : sessionTakenLegs(builderNow.current.getSnapshot().payments, countedLeg),
+        takenLegs,
         saving: inFlight.current !== null || pending.current !== null || moving.current > 0,
+        cashRoundings: (snapshot.cashRoundings ?? []).filter((entry) => taken.has(entry.paymentId)).map((entry) => ({ ...entry })),
       };
     },
     /**
