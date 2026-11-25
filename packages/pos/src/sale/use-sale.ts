@@ -1286,23 +1286,28 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
      * parks the current sale first when it has lines, fees or shipping (a receipt is done and is not parked).
      * Refused, changing nothing, while saving, for a partly paid sale or an empty sale holding a taken payment (SALE_PARTLY_PAID), a payment in motion or
      * the tender stage. Resolves to a refusal (park's, or `resume`'s for the chosen draft), or null.
+     * Refused with `REGISTER_CLOSING` while a close for this register is in flight (#1275).
      */
     async switchSale(draftId: string | null): Promise<string | null> {
       if (locked()) return SALE_SAVING;
-      if (!opts.drafts) throw new Error('useSale: switchSale() needs the drafts option');
-      const builder = builderNow.current;
-      const snapshot = builder.getSnapshot();
-      if (draftId === snapshot.id) return null;
-      if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
-      if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
-      if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
-      if (stageNow.current.kind !== 'receipt' && !snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length && holdsTakenPayment()) return SALE_PARTLY_PAID;
-      if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
-        const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
-        if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
-      }
-      resetSale();
-      return draftId === null ? null : result.resume(draftId);
+      if (isRegisterClosing(opts.registerId)) return REGISTER_CLOSING;
+      moving.current++;
+      try {
+        if (!opts.drafts) throw new Error('useSale: switchSale() needs the drafts option');
+        const builder = builderNow.current;
+        const snapshot = builder.getSnapshot();
+        if (draftId === snapshot.id) return null;
+        if (capturedMinor(snapshot.payments.filter((payment) => !payment.locked)) > 0 && snapshot.balanceDueMinor > 0) return SALE_PARTLY_PAID;
+        if (snapshot.payments.some(isInMotion)) return PAYMENT_IN_MOTION;
+        if (stageNow.current.kind === 'tender') return SALE_IN_TENDER;
+        if (stageNow.current.kind !== 'receipt' && !snapshot.lineItems.length && !snapshot.fees?.length && !snapshot.shipping?.length && holdsTakenPayment()) return SALE_PARTLY_PAID;
+        if (stageNow.current.kind !== 'receipt' && (snapshot.lineItems.length || snapshot.fees?.length || snapshot.shipping?.length)) {
+          const refused = await writeParked(opts.drafts, snapshot); if (refused) return refused;
+          if (builderNow.current !== builder || builder.getSnapshot() !== snapshot) return 'The sale changed while it was being parked; park it again';
+        }
+        resetSale();
+        return draftId === null ? null : await result.resume(draftId);
+      } finally { moving.current--; }
     },
     /** Discards the current sale (nothing is parked) and starts an empty one; refused while saving, once a leg of an unfinished sale took or holds money, or in the tender stage.
      * A reopened sale's locked store legs do not stop it closing; the store order stays reopened, as in v2. */

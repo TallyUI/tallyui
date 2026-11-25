@@ -325,6 +325,30 @@ describe('the tender pins its session, through the real hooks (#172 race)', () =
       expect(closure.till_expected.cash).toBe(1400);
       expect(sales(closure, 'cash')).toBe(400);
     });
+
+    it('C7: a switchSale() during the close is refused, writing no draft, and the legs count once', async () => {
+      const { now, order_drafts } = await cashLeftInCart();
+      act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 600 })).toEqual(expect.any(String)); });
+      const closure = await closeAround(now, async () => { expect(await now().sale.switchSale(null)).toBe(REGISTER_CLOSING); });
+      expect(await order_drafts.find().exec()).toEqual([]);
+      expect(now().sale.order.payments).toHaveLength(2);
+      expect(closure.till_expected.cash).toBe(2000);
+      expect(sales(closure, 'cash')).toBe(1000);
+    });
+
+    it('C8: a switchSale() in flight refuses the close, and the next close counts the legs once, from the draft', async () => {
+      const { now, close } = await cashLeftInCart();
+      act(() => { expect(now().sale.addTender({ method: 'cash', amountMinor: 600 })).toEqual(expect.any(String)); });
+      await act(async () => {
+        const switching = now().sale.switchSale(null);
+        await expect(now().register.actions.closeSession({ counted: { cash: 2000 } })).rejects.toBeInstanceOf(RegisterSaleSavingError);
+        expect(await switching).toBeNull();
+      });
+      expect(await db.closures.find().exec()).toHaveLength(0);
+      const closure = await close(2000);
+      expect(closure.till_expected.cash).toBe(2000);
+      expect(sales(closure, 'cash')).toBe(1000);
+    });
   });
 
   it('the same sequence without the confirmed session is still stamped, by the backstop, with a warning', async () => {

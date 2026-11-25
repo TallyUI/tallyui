@@ -139,7 +139,7 @@ reports no session rather than throwing.
   park or resume is in flight), `startCounting` and `closeSession` throw `RegisterSaleSavingError`.
   Live figures omit its legs then, since the stored order may already count them. Wait for the save,
   or retry it if it failed, then close.
-  While a close is in flight, the sale's `complete`, `park` and `resume` refuse with `REGISTER_CLOSING`
+  While a close is in flight, the sale's `complete`, `park`, `resume` and `switchSale` refuse with `REGISTER_CLOSING`
   (#1275): the close reads the orders, the parked drafts and the live cart separately, and a sale moving
   its legs between them would drop them from the Z or count them twice.
 - `tenderInProgress` — true while a sale is at tender. While true,
