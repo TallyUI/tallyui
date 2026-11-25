@@ -527,6 +527,24 @@ describe('createWooCommandTransport', () => {
     });
   });
 
+  it('prices an inclusive charge from its stored net when its wire amount is its display row (#1341)', () => {
+    const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '18181800' }], shipping: [{ id: 'delivery', netMicros: '454545500' }] };
+    const sent = (fee: number, shipping: number) => {
+      const envelope = order();
+      envelope.version = 5;
+      envelope.payload.pricesIncludeTax = true;
+      envelope.payload.lines[0].taxInclusive = false;
+      envelope.payload.fees = [{ clientFeeId: 'bag', name: 'Bag', amountMinor: fee, taxStatus: 'taxable', taxMinor: 2 }];
+      envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: shipping, taxStatus: 'taxable', taxMinor: 45 }];
+      const result = toWooOrderPayload(envelope, local);
+      if ('error' in result) throw new Error(result.error.message);
+      return result.payload;
+    };
+    // A row one off the stored 20 and 500 changes nothing: both totals are the stored nets at six decimals.
+    expect(sent(21, 499)).toMatchObject({ fee_lines: [{ total: '0.181818' }], shipping_lines: [{ total: '4.545455' }] });
+    expect(JSON.stringify(sent(21, 499))).toBe(JSON.stringify(sent(20, 500)));
+  });
+
   it.each(['fees', 'shipping'] as const)('refuses inclusive %s with missing or invalid stored nets without a request', async (kind) => {
     const envelope = order();
     envelope.version = 5;
@@ -559,8 +577,10 @@ describe('createWooCommandTransport', () => {
       envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 909, taxStatus: 'taxable', taxMinor: 91 }];
       return envelope;
     }
-    const totals = (local?: WooLocalOrder) => {
-      const result = toWooOrderPayload(charged(), local);
+    const totals = (local?: WooLocalOrder, wire?: [number, number]) => {
+      const envelope = charged();
+      if (wire) [envelope.payload.fees![0].amountMinor, envelope.payload.shipping![0].amountMinor] = wire;
+      const result = toWooOrderPayload(envelope, local);
       if ('error' in result) throw new Error(result.error.message);
       const payload = result.payload as { fee_lines: { total: string }[]; shipping_lines: { total: string }[] };
       return { fee: payload.fee_lines[0].total, shipping: payload.shipping_lines[0].total, bytes: JSON.stringify(payload) };
@@ -572,6 +592,22 @@ describe('createWooCommandTransport', () => {
       const sent = totals(local);
       expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
       expect(sent.bytes).toBe(totals().bytes);
+    });
+
+    it('#1341: a wire amount at its display row is priced from the stored amountMinor, byte for byte', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', amountMinor: 955, netMicros: '955000000' }],
+        shipping: [{ id: 'delivery', amountMinor: 909, netMicros: '909000000' }] };
+      const sent = totals(local, [956, 908]);
+      expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
+      expect(sent.bytes).toBe(totals(local, [955, 909]).bytes);
+      // No stored netMicros: the stored amountMinor still prices it.
+      expect(totals({ lines: [], fees: [{ id: 'bag', amountMinor: 955 }], shipping: [{ id: 'delivery', amountMinor: 909 }] }, [956, 908]))
+        .toMatchObject({ fee: '9.55', shipping: '9.09' });
+    });
+
+    it('#1341: a stored entry without amountMinor prices from the wire amount, as before', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }], shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+      expect(totals(local, [956, 908])).toMatchObject({ fee: '9.550000', shipping: '9.090000' });
     });
 
     it.each([

@@ -59,8 +59,10 @@ export function wooMinorFromDecimal(text: string, currency: string): number | un
 export interface WooLocalOrder {
   lines: ReadonlyArray<{ id: string; netMicros?: string; /** The line's discount in its own tax mode (gross when inclusive), as stored. */ discountMinor?: number;
     taxLines?: ReadonlyArray<{ rateId?: number; compound?: boolean; ratePpm: number }> }>;
-  fees?: ReadonlyArray<{ id: string; netMicros?: string }>;
-  shipping?: ReadonlyArray<{ id: string; netMicros?: string }>;
+  fees?: ReadonlyArray<{ id: string; netMicros?: string;
+    /** The stored charge (ADR-075): the wire amountMinor may be its display row (#1341). */ amountMinor?: number }>;
+  shipping?: ReadonlyArray<{ id: string; netMicros?: string;
+    /** The stored charge (ADR-075): the wire amountMinor may be its display row (#1341). */ amountMinor?: number }>;
 }
 
 // Match woocommerceLine's pre-coupon net calculation exactly (ADR-076).
@@ -199,15 +201,16 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   }
   const fee_lines = [], shipping_lines = [];
   for (const fee of p.fees ?? []) {
-    const total = chargeTotal(fee.amountMinor, local?.fees?.find((stored) => stored.id === fee.clientFeeId)?.netMicros, fee.clientFeeId);
+    const stored = local?.fees?.find((entry) => entry.id === fee.clientFeeId);
+    const total = chargeTotal(stored?.amountMinor ?? fee.amountMinor, stored?.netMicros, fee.clientFeeId);
     if (typeof total !== 'string') return total;
     fee_lines.push({ name: fee.name, total, tax_status: fee.taxStatus, tax_class: fee.taxClass ?? '' });
   }
   // ADR-094: a tax-none rounding's total is its signed amount in every tax mode (22 Nov fork proofs), so it never goes through chargeTotal.
   for (const entry of p.cashRoundings ?? []) fee_lines.push({ name: 'Rounding', total: major(entry.minor), tax_status: 'none', tax_class: '' });
   for (const shipping of p.shipping ?? []) {
-    const total = chargeTotal(shipping.amountMinor,
-      local?.shipping?.find((stored) => stored.id === shipping.clientShippingId)?.netMicros, shipping.clientShippingId);
+    const stored = local?.shipping?.find((entry) => entry.id === shipping.clientShippingId);
+    const total = chargeTotal(stored?.amountMinor ?? shipping.amountMinor, stored?.netMicros, shipping.clientShippingId);
     if (typeof total !== 'string') return total;
     // WCPOS (1.10.20 and 2.0.4 Orders.php) clears a shipping line's taxes when this meta says `none`.
     shipping_lines.push({ method_id: shipping.methodId ?? 'pos', method_title: shipping.name, total,

@@ -4399,6 +4399,9 @@ interface OrderCreatePayload {
      - `display` gains the fee and shipping rows.
      - Field kinds (ADR-070 Decision 3): `amountMinor`, `taxStatus` and `custom` are **instructions** (honoured or
        refused); `taxMinor`, `name` and `methodId` are informational.
+       *Amended 2026-11-25 (#1341, Front desk):* in `woocommerce` rounding a charge's wire `amountMinor` is its
+       display row, while the stored `amountMinor` stays the instruction; many one-minor-unit charges can drive the
+       last row below 0, which the server check refuses.
      - `contentVersion` is 5 only when an order has a fee, shipping or a custom line. Any other order keeps
        today's version and its negotiation, so every existing store keeps selling through the upgrade window.
      - **Negotiated, as versions 2–4 are.** The till learns the store's versions from `/tally/v1/info`
@@ -4554,6 +4557,8 @@ interface OrderCreatePayload {
        taxes 0.05 + 0.05, and line/order/display total 1.01. Any difference between the display rows plus tax
        (in the order's mode) and the order total, positive or negative, goes to the last shipping row, else the
        last fee row, else the last product row. This residue rule applies only to the `woocommerce` strategy.
+       *Amended 2026-11-25 (#1341):* a charge row goes on the wire as its `amountMinor` (ADR-075); a residue that
+       drives the last charge row below 0, as many one-minor-unit charges can, is refused by the server check.
      - Decimals come from `/stores`'s `price_num_decimals`.
      - A variation's `tax_class` of `parent` (or none) inherits the product's class.
      - `tax_status: shipping` on a product taxes it as none; on shipping it is taxable.
