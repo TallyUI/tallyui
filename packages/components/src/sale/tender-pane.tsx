@@ -148,7 +148,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
-  const unstamped = order.payments.filter((leg) => leg.takenAt === undefined && !heldTillLeg(order, leg));
+  const unstamped = order.payments.filter((leg) => leg.takenAt === undefined && !sale.tenderHeld(leg.id));
   const [prefill] = unstamped;
   // startTender('external')'s one unstamped card leg for the rest, beside any kept taken or voided legs: its reference is edited in place.
   const cardReference = unstamped.length === 1 && prefill.method === 'external' && legStatus(prefill) === 'captured' && balance === 0;

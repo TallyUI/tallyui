@@ -1093,3 +1093,63 @@ describe('useSale: the reset guards and Back follow row 517\'s taken rule (rows 
     expect(result.current.error).toBe(SALE_PARTLY_PAID);
   });
 });
+
+describe('useSale: tenderHeld names the payments setTender keeps (row 516, #1209 N3)', () => {
+  let db: RxDatabase;
+  beforeEach(async () => {
+    db = await createRxDatabase({ name: `saletenderheld${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema }, pos_orders: posOrderCollection() });
+  });
+  afterEach(async () => { cleanup(); await db.remove(); });
+
+  /** A Shirt draft holding `payment` with no takenAt, resumed. */
+  async function resumedWith(payment: Parameters<ReturnType<typeof createOrderBuilder>['addPayment']>[0]) {
+    const builder = createOrderBuilder({ currency: 'GBP', taxContext: createTaxContext({ ...taxProps, rounding: perOrder }) });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1000, currency: 'GBP' } });
+    builder.addPayment(payment);
+    const draftId = await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <TaxProvider {...taxProps} rounding={perOrder}>{children}</TaxProvider>;
+    }
+    const hook = renderHook(() => useSale({ currency: 'GBP' }, {
+      registerId: 'register-1', cashierRef: 'cashier@store.test', capabilities: { orderCreate: 6 }, drafts: db.pos_drafts,
+    }), { wrapper: Wrapper });
+    await act(async () => { expect(await hook.result.current.resume(draftId)).toBeNull(); });
+    await settle();
+    expect(hook.result.current.order.payments[0]).not.toHaveProperty('takenAt');
+    return hook;
+  }
+  /** Every payment's tenderHeld, then setTender(null): the ids it leaves are exactly the ones tenderHeld named. */
+  function agrees(result: Sale) {
+    const held = result.current.order.payments.filter((p) => result.current.tenderHeld(p.id)).map((p) => p.id);
+    act(() => { result.current.setTender(null); });
+    expect(result.current.order.payments.map((p) => p.id)).toEqual(held);
+    return held;
+  }
+
+  it('T7 true for a resumed captured leg with no takenAt; false for startTender\'s leg and an unknown id', async () => {
+    const { result } = await resumedWith({ id: 'old-card', method: 'external', amountMinor: 500 });
+    act(() => { result.current.startTender('external'); });
+    const fresh = result.current.order.payments.find((p) => p.id !== 'old-card')!.id;
+    expect(result.current.tenderHeld('old-card')).toBe(true);
+    expect(result.current.tenderHeld(fresh)).toBe(false);
+    expect(result.current.tenderHeld('no-such-leg')).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(agrees(result)).toEqual(['old-card']);
+  });
+
+  it('T7 true for a leg addTender recorded, a pending leg and a reopened leg', async () => {
+    const pending = await resumedWith({ id: 'pending-card', method: 'external', amountMinor: 500, status: 'pending' });
+    expect(pending.result.current.tenderHeld('pending-card')).toBe(true);
+    expect(agrees(pending.result)).toEqual(['pending-card']);
+    cleanup();
+    const reopened = await resumedWith({ id: 'reopened-card', method: 'external', amountMinor: 500, reopened: true });
+    let added!: string | null;
+    act(() => { added = reopened.result.current.addTender({ method: 'cash', amountMinor: 200 }); });
+    expect(added).toEqual(expect.any(String));
+    expect(reopened.result.current.tenderHeld('reopened-card')).toBe(true);
+    expect(reopened.result.current.tenderHeld(added!)).toBe(true);
+    expect(agrees(reopened.result)).toEqual(['reopened-card', added]);
+  });
+});

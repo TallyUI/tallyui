@@ -75,3 +75,91 @@ describe('TenderPane held legs: Cancel payment (ADR-090 gate 36c; ADR-072 d3, am
     expect(sale.order.payments.map((payment) => payment.id)).toContain(reopened);
   });
 });
+
+describe('TenderPane held legs: a resumed draft\'s unstamped leg (row 516, #1209 N3)', () => {
+  type Leg = Parameters<ReturnType<typeof createOrderBuilder>['addPayment']>[0];
+  let held!: ReturnType<typeof useSale>;
+  function Held({ drafts }: { drafts: RxCollection }) {
+    held = useSale(settings, { registerId: 'register-1', cashierRef: 'cashier', drafts });
+    return <Tender sale={held} />;
+  }
+  async function open() {
+    db = await createRxDatabase({ name: `heldresume${Math.random().toString(36).slice(2)}`,
+      storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
+    await db.addCollections({ pos_drafts: { schema: orderDraftSchema } });
+    render(<TaxProvider {...taxProviderProps(settings)}><Held drafts={db.pos_drafts} /></TaxProvider>);
+  }
+  /** A draft with one line of 5000 and `legs`, none with a takenAt, resumed. */
+  async function resumed(...legs: Leg[]) {
+    await open();
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+    builder.addLine({ productId: 'coffee', name: 'Coffee', unitPrice: { amount: 5000, currency: 'EUR' } });
+    for (const leg of legs) builder.addPayment(leg);
+    await writeOrderDraft(db!.pos_drafts, builder.getSnapshot());
+    await act(async () => { expect(await held.resume(builder.getSnapshot().id)).toBeNull(); });
+    expect(held.order.payments.every((p) => p.takenAt === undefined)).toBe(true);
+  }
+  const type = (text: string) => fireEvent.change(reference()!, { target: { value: text } });
+
+  it('T1 a captured card leg for the total takes no reference', async () => {
+    await resumed({ id: 'leg-1', method: 'external', amountMinor: 5000, reference: 'T-1' });
+    act(() => held.startTender('external'));
+    expect(held.order.payments).toMatchObject([{ id: 'leg-1', method: 'external', amountMinor: 5000, reference: 'T-1' }]);
+    expect(reference()).toBeNull();
+  });
+
+  it('T2 the till\'s own setTender leg, parked and resumed, takes no reference', async () => {
+    await open();
+    act(() => held.add(blue, traits));
+    act(() => held.setUnitPrice(held.order.lineItems[0].id, 5000));
+    act(() => held.setTender({ method: 'external', amountMinor: held.order.totalMinor }));
+    const id = held.order.id;
+    await act(async () => { expect(await held.park()).toBeNull(); });
+    await act(async () => { expect(await held.resume(id)).toBeNull(); });
+    expect(held.order.payments).toHaveLength(1);
+    expect(held.order.payments[0].takenAt).toBeUndefined();
+    act(() => held.startTender('external'));
+    expect(held.order.payments).toMatchObject([{ method: 'external', amountMinor: 5000 }]);
+    expect(reference()).toBeNull();
+  });
+
+  it('T3 the second card leg for the rest takes the reference, and typing keeps the resumed leg', async () => {
+    await resumed({ id: 'leg-1', method: 'external', amountMinor: 2000, reference: 'T-1' });
+    act(() => held.startTender('external'));
+    expect(held.order.payments).toMatchObject([{ id: 'leg-1', amountMinor: 2000 }, { method: 'external', amountMinor: 3000 }]);
+    expect(held.order.balanceDueMinor).toBe(0);
+    expect(reference()).toBeTruthy();
+    expect((reference() as HTMLInputElement).value).toBe('');
+    type('T-9');
+    expect(held.order.payments).toHaveLength(2);
+    expect(held.order.payments[0]).toMatchObject({ id: 'leg-1', method: 'external', amountMinor: 2000, reference: 'T-1' });
+    expect(held.order.payments[1]).toMatchObject({ method: 'external', amountMinor: 3000, reference: 'T-9' });
+  });
+
+  it('T4 once the resumed leg is voided, the new card leg takes the reference', async () => {
+    await resumed({ id: 'leg-1', method: 'external', amountMinor: 5000, reference: 'T-1' });
+    act(() => { expect(held.voidTender('leg-1')).toBe(true); });
+    act(() => held.startTender('external'));
+    expect(reference()).toBeTruthy();
+    type('T-9');
+    expect(held.order.payments.find((p) => p.id === 'leg-1')).toMatchObject({ status: 'voided' });
+    const live = held.order.payments.filter((p) => p.id !== 'leg-1');
+    expect(live).toMatchObject([{ method: 'external', amountMinor: 5000, reference: 'T-9' }]);
+    expect(live[0].status ?? 'captured').toBe('captured');
+  });
+
+  it('T5 a pending resumed leg leaves no in-place reference input', async () => {
+    await resumed({ id: 'leg-1', method: 'external', amountMinor: 2000, status: 'pending' });
+    act(() => held.startTender('external'));
+    // 2000 is still due while the leg is pending, so the entry shows its own reference field for the next take.
+    const entry = screen.getByTestId('tender-entry');
+    expect(screen.queryAllByRole('textbox', { name: 'Terminal reference' }).filter((input) => !entry.contains(input))).toEqual([]);
+  });
+
+  it('T6 a card leg parked beside a cash leg takes no reference', async () => {
+    await resumed({ id: 'cash-1', method: 'cash', amountMinor: 1000 }, { id: 'leg-1', method: 'external', amountMinor: 4000 });
+    act(() => held.startTender('external'));
+    expect(held.order.payments).toMatchObject([{ id: 'cash-1' }, { id: 'leg-1' }]);
+    expect(reference()).toBeNull();
+  });
+});

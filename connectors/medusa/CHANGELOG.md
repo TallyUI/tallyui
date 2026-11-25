@@ -1,5 +1,30 @@
 # @tallyui/connector-medusa
 
+## 5.0.0
+
+### Minor Changes
+
+- dd1ca32: connector-medusa: customer display signalling client (`medusaDisplaySignalling`) for the medusapos plugin's `/tally/v1` display routes (ADR-085).
+- 96f8789: Reads per-refund lines from the MedusaPOS plugin at contract 6; a failed plugin read leaves refunds without lines (#1324).
+
+### Patch Changes
+
+- d264c18: connector-medusa: a header value `Headers` refuses (ctx auth, device key, display token) is now refused as `network` without sending and without the value in any error, and a body JSON cannot serialise is refused as `too_large`, which the pos retry does not re-send.
+- Updated dependencies [501e189]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+  - @tallyui/core@5.0.0
+
 ## 4.2.0
 
 ### Patch Changes

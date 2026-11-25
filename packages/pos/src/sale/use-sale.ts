@@ -1035,6 +1035,11 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       droppedReferences.current.delete(paymentId);
       clearStaleError();
     },
+    /** True when setTender keeps this payment; false for one it replaces and for an id not among the payments. Changes nothing. */
+    tenderHeld(paymentId: string): boolean {
+      const payment = builderNow.current.getSnapshot().payments.find((p) => p.id === paymentId);
+      return !!payment && heldLeg(payment);
+    },
     cancelTender() {
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED);
       if (locked()) return;

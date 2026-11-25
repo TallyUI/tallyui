@@ -1,5 +1,25 @@
 # @tallyui/connector-vendure
 
+## 5.0.0
+
+### Patch Changes
+
+- 1910512: `@tallyui/connector-vendure` `listOrders` now refuses every filter field (`status`, `customerId`, `dateRange` and the rest) with `UnsupportedOrderFilterError`, as the `ListOrdersQuery` contract says, instead of dropping it and returning the whole store. Paging and `search` are unchanged.
+- Updated dependencies [501e189]
+- Updated dependencies [bfab53c]
+- Updated dependencies [86f3d40]
+- Updated dependencies [96f8789]
+- Updated dependencies [d104073]
+- Updated dependencies [2ebf613]
+- Updated dependencies [8e15960]
+- Updated dependencies [837bb5f]
+- Updated dependencies [710b62f]
+- Updated dependencies [04c375d]
+- Updated dependencies [e5c8503]
+- Updated dependencies [1704c9d]
+- Updated dependencies [eda38cf]
+  - @tallyui/core@5.0.0
+
 ## 4.2.0
 
 ### Patch Changes
