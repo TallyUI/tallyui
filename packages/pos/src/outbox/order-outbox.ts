@@ -3,7 +3,7 @@ import { deepEqual, type RxCollection, type RxDocumentData } from 'rxdb';
 import { BehaviorSubject, type Observable, type Subscription } from 'rxjs';
 import { outboxLogger } from './logger';
 import type { LogSyncRecord, SyncRecordOutcome } from '../logging';
-import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, uuidv7, replacedOrderIds, type PosOrder, type PosOrderServerFailures } from '../pos-order';
+import { toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, uuidv7, replacedOrderIds, settledOnStore, storeOrderLeft, type PosOrder, type PosOrderServerFailures } from '../pos-order';
 import { freezeSentForm } from '../pos-order/finalize';
 import { countFresh, readFresh } from '../rxdb';
 import { createBackendNotFound, type BackendNotFound } from './backend-not-found';
@@ -26,8 +26,10 @@ export function isRequeueable(code: string | undefined): boolean {
  * Whether `requeue()` will send this order again. A rejected order: its code is requeueable, except that a reopened
  * sale (`storeOrderId`) refused with `reopen_required` or `revision_conflict` needs a fresh reopen, not a resend
  * (ADR-090 gate 5). A pending order the outbox could not build as an update (`UPDATE_UNSENDABLE`): yes, it is tried again.
+ * An order with a `storeSettlement` (#1101): never; the till is settling its store order instead.
  */
-export function isRequeueableOrder(order: Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error'>): boolean {
+export function isRequeueableOrder(order: Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error' | 'storeSettlement'>): boolean {
+  if (order.storeSettlement !== undefined) return false;
   return order.syncStatus === 'pending' ? order.error?.code === UPDATE_UNSENDABLE
     : order.syncStatus === 'rejected' && isRequeueable(order.error?.code)
       && !(order.storeOrderId !== undefined && ['reopen_required', 'revision_conflict'].includes(order.error?.code ?? ''));
@@ -78,7 +80,8 @@ export interface OrderOutbox {
    * Orders isRequeueableOrder refuses are left alone. Resolves to the number requeued. */
   requeue(orderIds?: string[]): Promise<number>;
   /** Removes the rejected order `orderId` from the collection, after any running flush ends. Resolves to true when
-   * removed; false, with nothing changed, when the id is unknown or the order is not rejected. */
+   * removed; false, with nothing changed, when the id is unknown, the order is not rejected, or the store created its
+   * order before refusing it (`storeOrderLeft`, #1101). */
   discard(orderId: string): Promise<boolean>;
   /** Watches for pending orders and sends them. */
   start(): void;
@@ -216,7 +219,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
     const refused = await readFresh(collection, { selector: { syncStatus: 'rejected' } });
     const successors = refused.length ? await readFresh(collection, { selector: { saleId: { $in: refused.map((order) => order.id) } } }) : [];
     const replaced = replacedOrderIds([...refused, ...successors]);
-    const rejected = refused.filter((order) => !replaced.has(order.id)).length;
+    // A refused sale whose store order is settled on the store (#1101) no longer counts.
+    const rejected = refused.filter((order) => !replaced.has(order.id) && !settledOnStore(order)).length;
     state$.next({ ...state$.value, ...patch, pending, rejected, stuck: stuckState() });
   }
 
@@ -584,7 +588,9 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
           delete data.sentVersion;
           delete data.downgradedFrom;
           // The server ledger stored the rejection under the old id; replaying it returns that rejection.
-          // For the codes requeue() accepts, the server created no order, so a fresh id cannot duplicate one.
+          // The create push keys on the order's id (the transport's recordId is clientOrderId), which a requeue leaves
+          // unchanged; so the resend of a row whose order the store created (storeOrderLeft, #1101) carries that order's
+          // clientOrderId again.
           data.commandId = uuidv7();
           data.updatedAt = new Date(now()).toISOString();
           return data;
@@ -605,7 +611,8 @@ export function createOrderOutbox(options: OrderOutboxOptions): OrderOutbox {
       // requeue that won the race leaves its pending order in place.
       await (await collection.findOne(orderId).exec())?.incrementalModify((data) => {
         // The modifier runs again on a write conflict, so it decides on each run.
-        commandId = data.syncStatus === 'rejected' ? data.commandId : undefined;
+        // A refused sale whose order the store created (storeOrderLeft, #1101) stays: the till settles that order instead.
+        commandId = data.syncStatus === 'rejected' && storeOrderLeft(data) === undefined ? data.commandId : undefined;
         if (commandId === undefined) return data;
         data._deleted = true;
         return data;

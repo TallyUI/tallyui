@@ -293,6 +293,27 @@ export interface ConnectorTraits {
   customer?: CustomerTraits;
 }
 
+/** The answer to one `settleRefusedOrder` call. */
+export type SettleOutcome =
+  /** The order is cancelled. */
+  | { kind: 'done'; status: string }
+  /** It is not a waiting unpaid order any more; nothing was cancelled. `capturedMinor` is what the store holds as captured. */
+  | { kind: 'changed'; status: string; capturedMinor: number }
+  /** The store or this check said no. */
+  | { kind: 'refused'; code: string; message: string }
+  /** The store no longer has it. */
+  | { kind: 'gone' }
+  /** No definite answer: try again later with the same `attemptId`. */
+  | { kind: 'retry'; reason: string };
+
+/** Which order to settle: the store's id, the till's own order uuid, and the id of this attempt. */
+export interface SettleCancelRequest { storeOrderId: string; clientOrderId: string; attemptId: string }
+
+/** Settlement of an order the store created before it refused the sale. */
+export interface RefusedOrderSettlement {
+  cancel?: (context: SyncContext, request: SettleCancelRequest) => Promise<SettleOutcome>;
+}
+
 /**
  * The main connector interface.
  * Each backend (WooCommerce, Medusa, Vendure, etc.) implements this.
@@ -424,6 +445,13 @@ export interface TallyConnector {
    * read-only; rejects as `listOrders`. `undefined` when the connector has no order history.
    */
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
+  /**
+   * Settles an order the store created before it refused the sale: online only, never through the outbox. `cancel`
+   * cancels it only when the store's own current record shows nothing paid. `attemptId` identifies one attempt and is
+   * sent again unchanged until a definite answer; `retry` means no definite answer. Rejects with
+   * `ConnectorUnauthorizedError` for credentials. `undefined` when the connector can't settle refused orders.
+   */
+  settleRefusedOrder?: RefusedOrderSettlement;
   /**
    * The store's refunds, newest first, one page per call, dated by when each was made (ADR-081 decision 7): online only,
    * read-only. Rejects as `listOrders` does; a `dateRange` end that is not a UTC instant ending in Z is a TypeError

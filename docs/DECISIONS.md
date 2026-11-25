@@ -6970,7 +6970,8 @@ interface OrderCreatePayload {
        leaves an order out while its `commandId` equals the stamp. A requeued order gets a new `commandId`, so a
        fresh refusal brings it back. A pending order refuses the stamp. `pos_orders` is till-local, so the write
        breaks no replication rule. Amended 2026-11-25 (#1101): the stamp does not hide a refused sale whose order the
-       store created (`storeOrderLeft`).
+       store created (`storeOrderLeft`). Amended again 2026-11-25 (#1101): a refused sale settled on the store
+       (`storeSettlement` done or gone) leaves `needsAttention`.
   7. **Storage:** `pos_orders` goes to schema version 18. It adds `customer.taxIds`, `meta`, a line's edited `sku`
      and `attentionHandledFor`, and lets `sentVersion` and `downgradedFrom` be 12. The migration is the identity,
      through `addPosOrderCollection`. `ORDER_CREATE_MAX_VERSION` becomes 12.

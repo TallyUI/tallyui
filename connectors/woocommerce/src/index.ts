@@ -16,6 +16,7 @@ import { wooListRegisters } from './registers';
 import { wooClosures } from './closures';
 import { wooPaymentMethods } from './payment-methods';
 import { wooReceiptTemplates } from './receipt-templates';
+import { wooSettleRefusedOrder } from './commands/settle';
 import { version } from '../package.json';
 
 /** One part of X-WCPOS-Client as WCPOS keeps it: lowercase [a-z0-9._-], at most 32 characters. */
@@ -89,6 +90,8 @@ const wooConnectorParts = {
   listRegisters: wooListRegisters,
   closures: wooClosures,
   receiptTemplates: wooReceiptTemplates,
+  // WCPOS wcpos/v2/push/orders: cancels an order the store refused, only when its own record shows nothing paid.
+  settleRefusedOrder: wooSettleRefusedOrder,
 
   auth: {
     type: 'WCPOS token',

@@ -143,3 +143,22 @@ describe('attention handled (ADR-092 6f)', () => {
     expect(needsAttention([order, successor])).toEqual([]);
   });
 });
+
+describe('a refused sale settled on the store (#1101)', () => {
+  const left = (storeSettlement?: PosOrder['storeSettlement'], extra: Partial<PosOrder> = {}): PosOrder => ({
+    ...sale(), syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'x', data: { orderId: '115' } }, storeSettlement, ...extra,
+  });
+  const settled = (state: NonNullable<PosOrder['storeSettlement']>['state']) => ({ kind: 'cancel' as const, state, attemptId: 'a', at: '2026-11-25T10:00:00.000Z' });
+
+  it.each(['done', 'gone'] as const)('leaves out a row whose cancel is %s', (state) => {
+    expect(needsAttention([left(settled(state))])).toEqual([]);
+  });
+  it.each(['sending', 'changed', 'refused'] as const)('keeps a row whose cancel is %s', (state) => {
+    const order = left(settled(state));
+    expect(needsAttention([order])).toEqual([order]);
+  });
+  it('17: keeps a done row that has local warnings', () => {
+    const order = left(settled('done'), { localWarnings: [{ code: 'customer_omitted', field: 'email' }] });
+    expect(needsAttention([order])).toEqual([order]);
+  });
+});

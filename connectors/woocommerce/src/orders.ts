@@ -55,7 +55,7 @@ const wpId = (value: string | undefined) => (value && /^\d+$/.test(value) && val
 const PAYMENT_KINDS: Record<string, PaymentMethodKind> = { pos_cash: 'cash', pos_card: 'external' };
 
 /** The `_wcpos_payments` ledger: absent, readable (schema 1 with a payments array), or present but unreadable. */
-function paymentLedger(metaData: unknown): { present: boolean; payments: unknown[] | null } {
+export function paymentLedger(metaData: unknown): { present: boolean; payments: unknown[] | null } {
   const entry = rows(metaData).find((meta) => meta.key === '_wcpos_payments');
   if (!entry) return { present: false, payments: null };
   const value = entry.value;

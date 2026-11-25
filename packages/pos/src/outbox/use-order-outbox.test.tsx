@@ -359,6 +359,51 @@ describe('useOrderOutbox options', () => {
     expect(outbox.state.rejected).toBe(0);
   });
 
+  describe('cancelOnStore (#1101)', () => {
+    const leftBehind = { code: 'invalid_payload', message: 'created, not paid', data: { orderId: '115' } };
+    const refusing = (order: PosOrder) => vi.fn<CommandTransport<OrderCreateEnvelope>['send']>()
+      .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected', error: leftBehind }] });
+    async function refusedOnStore(options: Partial<UseOrderOutboxOptions>) {
+      const order = sale();
+      const base = { deviceId: 'register-1', open: openStore, transport: fakeTransport(refusing(order)), ...options };
+      const view = renderOptions({ ...base, storeKey: null });
+      expect(await outbox.cancelOnStore(order.id)).toEqual({ kind: 'not_offered' });
+      view.rerender({ ...base, storeKey: session.baseUrl });
+      await waitFor(() => expect(outbox.orders).not.toBeNull());
+      await act(async () => { await outbox.record(order); });
+      await waitFor(() => expect(outbox.state.rejected).toBe(1));
+      return order;
+    }
+
+    it('cancels with the cancel bound for the open store, then drops the row from state.rejected; not_offered before the store is ready', async () => {
+      const keys: string[] = [];
+      const settlement = { seen: [] as unknown[], async cancel(request: unknown) { this.seen.push(request); return { kind: 'done' as const, status: 'cancelled' }; } };
+      const order = await refusedOnStore({ storeSettlement: (key) => { keys.push(key); return settlement; } });
+      let outcome: unknown;
+      await act(async () => { outcome = await outbox.cancelOnStore(order.id); });
+      expect(outcome).toEqual({ kind: 'done', status: 'cancelled' });
+      expect(keys).toEqual([session.baseUrl]);
+      expect(settlement.seen).toEqual([{ storeOrderId: '115', clientOrderId: order.id, attemptId: expect.any(String) }]);
+      expect(outbox.state.rejected).toBe(0);
+      expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('done');
+    });
+
+    it.each([['no storeSettlement option', {}], ['a settlement without cancel', { storeSettlement: () => ({}) }],
+      ['an undefined settlement', { storeSettlement: () => undefined }]])('is not offered with %s', async (_name, options) => {
+      const order = await refusedOnStore(options);
+      expect(await outbox.cancelOnStore(order.id)).toEqual({ kind: 'not_offered' });
+      expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement).toBeUndefined();
+    });
+
+    it('rejects with the cancel error, still recounting the state, and the row stays sending', async () => {
+      const crash = new Error('crash');
+      const order = await refusedOnStore({ storeSettlement: () => ({ cancel: async () => { throw crash; } }) });
+      await act(async () => { await expect(outbox.cancelOnStore(order.id)).rejects.toBe(crash); });
+      expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('sending');
+      expect(outbox.state.rejected).toBe(1);
+    });
+  });
+
   it('reopens when the device id changes and sends under the new one', async () => {
     const send = vi.fn<CommandTransport['send']>(appliedResults);
     const options = { storeKey: session.baseUrl, open: openStore, transport: fakeTransport(send) };

@@ -1,6 +1,7 @@
 import { knownWarnings } from '@tallyui/core';
 import { replacedOrderIds } from './reopened';
 import { storeOrderLeft } from './store-order-left';
+import { settledOnStore } from './store-settlement';
 import type { PosOrder } from './types';
 
 /** The `error.code` the outbox puts on a pending reopened sale whose `order.update` it cannot build (ADR-090 W4b). The row stays pending: unsent. */
@@ -17,11 +18,12 @@ export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet
  * Pending updates marked `UPDATE_UNSENDABLE` are shown until a person acts.
  * An order a cashier marked handled (`markAttentionHandled`) is left out while its `commandId` is the one it was marked
  * for; a requeue mints a new `commandId`, so a fresh refusal shows again (ADR-092 6f). The mark does not hide a refused
- * sale whose order the store created (`storeOrderLeft`, #1101).
+ * sale whose order the store created (`storeOrderLeft`, #1101). A refused sale whose store order is settled on the store
+ * (`settledOnStore`: cancelled or gone, #1101) is not shown for its refusal; any other reason above still shows it.
  */
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
-  return orders.filter((order) => order.syncStatus === 'rejected'
+  return orders.filter((order) => (order.syncStatus === 'rejected' && !settledOnStore(order))
     || (order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE)
     || (order.localWarnings?.length ?? 0) > 0
     || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown')) || order.lateSessionId !== undefined

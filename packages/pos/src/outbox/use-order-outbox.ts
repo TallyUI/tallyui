@@ -1,10 +1,11 @@
-import type { OrderCreateEnvelope, OrderUpdateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope, SettleCancelRequest, SettleOutcome } from '@tallyui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { watchFresh } from '../rxdb';
 import { createOrderOutbox, refreshOutboxState } from './order-outbox';
+import { cancelOnStore as cancelStoreOrder } from './store-settlement';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
@@ -28,6 +29,9 @@ export interface UseOrderOutboxOptions {
   onBusy?(busy: boolean): void;
   /** Called when `open` rejects, even if the key has changed since (medusapos: reports storage worker failures). */
   onOpenError?(error: unknown): void;
+  /** The settlement of a refused sale's store order (#1101) for `storeKey`: the connector's `cancel`, bound to that store.
+   * Read on each call, for the open store. */
+  storeSettlement?(storeKey: string): { cancel?(request: SettleCancelRequest): Promise<SettleOutcome> } | undefined;
 }
 
 export interface UseOrderOutboxResult {
@@ -56,6 +60,12 @@ export interface UseOrderOutboxResult {
   requeue(orderIds?: string[]): Promise<number>;
   /** Removes one rejected order (see `OrderOutbox.discard`); resolves to false before the current store is ready. */
   discard(orderId: string): Promise<boolean>;
+  /**
+   * Cancels on the store the order a refused sale left behind (`cancelOnStore`, #1101), with the `cancel` of
+   * `storeSettlement` for the open store, then recounts the outbox state, whether the cancel resolved or rejected.
+   * Resolves to `not_offered` before the current store is ready, or when there is no `storeSettlement` or no `cancel`.
+   */
+  cancelOnStore(orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }>;
   /**
    * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
    * (closing the store) while this is above 0, because a close that lands under a write stuck in
@@ -134,6 +144,19 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
     async discard(orderId) {
       const opened = current.current;
       return opened && opened.storeKey === storeKey ? opened.outbox.discard(orderId) : false;
+    },
+    async cancelOnStore(orderId) {
+      const opened = current.current;
+      if (!opened || opened.storeKey !== storeKey) return { kind: 'not_offered' };
+      const settlement = latest.current.storeSettlement?.(opened.storeKey);
+      const cancel = settlement?.cancel?.bind(settlement);
+      if (!cancel) return { kind: 'not_offered' };
+      try {
+        return await cancelStoreOrder({ orders: opened.orders, cancel }, orderId);
+      } finally {
+        // A settled row leaves state.rejected: publish it before resolving.
+        try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
+      }
     },
     savesInFlight: savesInFlightCount,
     stuckCommandIds,

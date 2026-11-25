@@ -65,6 +65,12 @@ a repeat call after a lost answer uses new ids and gives `invalid` (email exists
 `emailReceipt` uses `POST wcpos/v2/orders/<id>/email`, optionally saving the email to billing.
 It is not idempotent: each call sends a mail, so don't auto-retry. The cashier needs `access_woocommerce_pos`.
 
+`settleRefusedOrder.cancel` sends a read push to `POST wcpos/v2/push/orders` (`baseRevision: 'none'`, empty payload),
+whose 409 answer carries the order as the store has it. Only when that record shows no money (every `_wcpos_payments` row
+`failed` or `voided`, no paid date) and status `pending` or `pos-open` does it push `status: 'cancelled'` with that answer's
+revision; it resends once after a conflict. It refuses (`order_mismatch`, `ledger_unreadable`) when the record is another
+order's or its ledger can't be read: the store itself would cancel a part-paid order.
+
 ## Errors
 
 - `ConnectorUnauthorizedError`, from `@tallyui/core` and re-exported here: the store refused the request (401: the token is missing, expired or revoked; 403: signed in but not allowed), or `WooMissingTokenError` (a subclass) was thrown for a missing token. `error.status` is `401` (`code: 'unauthorized'`, sign in again) or `403` (`code: 'forbidden'`, signed in but not allowed: the pull retries on the store schedule; don't sign out).

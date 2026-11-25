@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useFormatMoney, knownWarnings } from '@tallyui/core';
-import { extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, storeOrderLeft, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
+import { canCancelOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, storeOrderLeft, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 
 /** One order from the store's own history (ADR-052 amendment 1), mapped by the app from its platform. */
 export type OrderHistoryRow = {
@@ -67,6 +68,19 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
       ? REOPEN_AGAIN_SENTENCE : refusalSentence(left && order.error?.code === 'invalid_payload' ? 'platform_error' : order.error?.code)
     : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
   const extras = extrasNotSent(order);
+  // #1101: where the till's cancel of the order the refused sale left on the store stands. Done, gone and changed say it
+  // in place of the "left" line; refused and sending add to it. The store's code and message never show (#269).
+  const settlement = order.syncStatus === 'rejected' && order.storeSettlement?.kind === 'cancel' ? order.storeSettlement : undefined;
+  const reference = left?.reference ?? orderReference(order);
+  const settledText = settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.`
+    : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`
+      : settlement?.state === 'changed' ? `Order #${reference} changed on the store${settlement.capturedMinor
+        ? `: ${formatMoney({ amount: settlement.capturedMinor, currency: order.currency })} is paid there`
+        : ''}. Nothing was cancelled from this till. Check it in the store's admin.`
+        : undefined;
+  const addedText = settlement?.state === 'refused' ? `The store did not cancel order #${reference}. Check it in the store's admin.`
+    : settlement?.state === 'sending' ? `Cancelling order #${reference} on the store is not finished.` : undefined;
+  const settled = settlement?.state === 'done' || settlement?.state === 'gone';
   return <>
     {stuckEntry ? <Text className="text-destructive">
       {/* A parked sale needs a manager; other retries keep the hour as the status line has it (numeric, #245), with no reason code. */}
@@ -75,13 +89,15 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
         : `Hasn't reached the online store since ${sinceText(stuckEntry)}.`}
     </Text> : null}
     {/* The code's sentence alone: the cashier sees no error code and never the store's message. */}
-    {sentence ? <Text className="text-destructive">{sentence}</Text> : null}
+    {sentence && !settled ? <Text className="text-destructive">{sentence}</Text> : null}
+    {settledText ? <Text testID={`order-settlement-${order.id}`} className={settled ? 'text-foreground' : 'text-destructive'}>{settledText}</Text> : null}
     {/* What the store had recorded at the refusal, not the order's state now. */}
-    {left ? <Text testID={`order-left-on-store-${order.id}`} className="text-destructive">
+    {left && !settledText ? <Text testID={`order-left-on-store-${order.id}`} className="text-destructive">
       {left.recordedMinor === 0
         ? `Order #${left.reference} was left pending on the online store. Nothing was paid there.`
         : `Order #${left.reference} was left part paid on the online store: ${formatMoney({ amount: left.recordedMinor, currency: order.currency })} of ${formatMoney({ amount: order.totalMinor, currency: order.currency })}.`}
     </Text> : null}
+    {addedText ? <Text testID={`order-settlement-${order.id}`} className="text-destructive">{addedText}</Text> : null}
     {/* A late sale (ADR-032) needs no Retry of its own; a rejected one still gets its Retry below. */}
     {order.lateSessionId !== undefined ? <Text className="text-foreground">Taken after the register closed. It is not in that register's closure.</Text> : null}
     {order.countedInClosureOf !== undefined ? <Text className="text-foreground">Recorded after the register closed. Its payment is in that register's closure.</Text> : null}
@@ -124,14 +140,19 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * `onReopen` adds Reopen to a Needs attention row the store refused with a reopenable code (`REOPENABLE_CODES`), not yet
  * reopened and with no store order: the app wires `reopenRefusedOrder`. When it refuses `coupon_carry_inexact` with a
  * `toCollectMinor`, the row offers "Reopen without the coupon", which calls it again with `{ withoutCoupons: true }`.
- * `onResume` adds Resume to a reopened row; the app resumes the parked sale, whose draft id is the order's id. */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume }: {
+ * `onResume` adds Resume to a reopened row; the app resumes the parked sale, whose draft id is the order's id.
+ * `onCancelOnStore` adds "Cancel order on store" to a Needs attention row whose refused sale left an unpaid order on the
+ * store (`canCancelOnStore`, #1101), asked in a confirm dialog first: the app wires `useOrderOutbox`'s `cancelOnStore`.
+ * A cancel still `sending` is finished with no dialog. With it, such a row offers no Retry, except an `insufficient_stock`
+ * refusal's, which reads "Try the payment again". */
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
   onReopen?: (order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>;
   onResume?: (order: PosOrder) => void;
+  onCancelOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
 }) {
   const formatMoney = useFormatMoney();
   const hintId = useId();
@@ -159,6 +180,28 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
         : { failed: typeof reason === 'string' ? reason : null });
     } finally {
       reopening.current.delete(order.id);
+    }
+  }
+  /** Each row's Cancel order on store (#1101): in flight, or the last press got no answer from the store. */
+  const cancelling = useRef(new Set<string>());
+  const [cancels, setCancels] = useState(new Map<string, 'busy' | 'failed'>());
+  const [askingCancel, setAskingCancel] = useState<PosOrder | null>(null);
+  const setCancel = (id: string, state?: 'busy' | 'failed') => setCancels((current) => {
+    const next = new Map(current);
+    if (state) next.set(id, state); else next.delete(id);
+    return next;
+  });
+  async function cancelOnStore(order: PosOrder) {
+    if (!onCancelOnStore || cancelling.current.has(order.id)) return;
+    cancelling.current.add(order.id);
+    setCancel(order.id, 'busy');
+    try {
+      const outcome = await onCancelOnStore(order);
+      setCancel(order.id, outcome.kind === 'retry' ? 'failed' : undefined);
+    } catch {
+      setCancel(order.id, 'failed');
+    } finally {
+      cancelling.current.delete(order.id);
     }
   }
   const [expanded, setExpanded] = useState(new Set<string>());
@@ -202,6 +245,13 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const reopenable = attention && !!onReopen && order.syncStatus === 'rejected' && REOPENABLE_CODES.includes(order.error?.code ?? '')
             && order.storeOrderId === undefined && order.reopenedAt === undefined;
           const reopenState = reopens.get(order.id);
+          const cancellable = attention && !!onCancelOnStore && canCancelOnStore(order);
+          const cancelState = cancels.get(order.id);
+          const finishing = order.storeSettlement?.kind === 'cancel' && order.storeSettlement.state === 'sending';
+          // #1101: with the cancel wired, an unpaid order left on the store is cancelled rather than resent, except a stock refusal.
+          const left = storeOrderLeft(order);
+          const retryLabel = onCancelOnStore && left?.recordedMinor === 0
+            ? order.error?.code === 'insufficient_stock' ? 'Try the payment again' : undefined : 'Retry';
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
             {/* RN-web drops accessibilityHint; aria-describedby carries it on web. */}
@@ -232,7 +282,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             </View> : null}
             <OrderSyncNotices order={order} stuck={stuck}>
             {/* Retry is offered only for an order the outbox resends (isRequeueableOrder). */}
-            {section.title === 'Needs attention' && isRequeueableOrder(order)
+            {section.title === 'Needs attention' && isRequeueableOrder(order) && retryLabel
               ? <Pressable accessibilityRole="button" disabled={retryingIds.has(order.id)} onPress={async () => {
                 if (retrying.current.has(order.id)) return;
                 retrying.current.add(order.id);
@@ -242,8 +292,19 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                   setRetryingIds(new Set(retrying.current));
                 }
               }} className="rounded-md bg-primary px-4 py-2">
-                <Text className="text-center font-semibold text-primary-foreground">Retry</Text>
+                <Text className="text-center font-semibold text-primary-foreground">{retryLabel}</Text>
               </Pressable> : null}
+            {cancellable ? <Pressable accessibilityRole="button" testID={`order-${order.id}-cancel-on-store`} disabled={cancelState === 'busy'}
+              onPress={() => {
+                if (cancelling.current.has(order.id)) return;
+                if (finishing) void cancelOnStore(order); else setAskingCancel(order);
+              }} className="rounded-md border border-border px-4 py-2">
+              <Text className="text-center font-semibold text-foreground">
+                {cancelState === 'busy' ? 'Cancelling on store…' : finishing ? 'Finish cancelling on store' : 'Cancel order on store'}
+              </Text>
+            </Pressable> : null}
+            {cancellable && cancelState === 'failed' ? <Text testID={`order-${order.id}-cancel-on-store-error`} className="text-muted-foreground">
+              Could not reach the store. Try again.</Text> : null}
             {/* Reopen needs a reopenable code, which Retry never resends (NOT_REQUEUEABLE), so the two never show together. */}
             {attention && order.reopenedAt !== undefined ? <>
               <Text testID={`order-${order.id}-reopened`} className="text-muted-foreground">Reopened as a parked sale.</Text>
@@ -273,6 +334,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
         })}
       </View>
     ))}
+    {askingCancel ? ((reference) => <ConfirmDialog testID={`order-${askingCancel.id}-cancel-on-store-dialog`} tone="destructive" open
+      onOpenChange={(open) => { if (!open) setAskingCancel(null); }} title={`Cancel order #${reference} on the store?`}
+      description={`Order #${reference} is waiting on the online store with nothing paid. This cancels it there. The payments taken on this till stay as they are.`}
+      cancelLabel="Keep order" confirmLabel="Cancel order on store"
+      onConfirm={() => { setAskingCancel(null); void cancelOnStore(askingCancel); }} />)(storeOrderLeft(askingCancel)?.reference ?? orderReference(askingCancel)) : null}
     {footer}
   </ScrollView>;
 }
