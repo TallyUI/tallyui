@@ -184,7 +184,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   }
   const shape = payloadShapeErrors(payload)
   const errors = shape.length ? shape
-    : v3 && display !== undefined && taxByRate !== undefined && shape.length === 0 ? fiscalFiguresErrors(payload) : []
+    : v3 && display !== undefined && taxByRate !== undefined ? fiscalFiguresErrors(payload) : []
   if (errors.length) {
     return rejected(command.id, 'invalid_payload', firstTen(errors))
   }
