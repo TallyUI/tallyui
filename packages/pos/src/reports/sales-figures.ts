@@ -15,7 +15,11 @@ export interface Margin {
 export interface SalesTotals {
   grossMinor: number; netMinor: number; taxMinor: number; discountMinor: number;
   refundsMinor: number; embeddedRefundsMinor: number;
-  /** Σ cash roundings in gross; gross = net + tax + rounding (front desk, 22 Nov, Q3). */
+  /**
+   * Σ cash roundings in gross; gross = net + tax + rounding (front desk, 22 Nov, Q3).
+   * Only orders built by `reportOrderFromPosOrder` carry one. A store-sourced order (`reportOrderFromStoreOrder`) carries no rounding figure:
+   * Woo stores its rounding as a plain fee line, so that order's rounding stays inside net (#1282, a documented limit).
+   */
   roundingMinor: number;
   orderCount: number; averageMinor: number; items: number;
   /** v2 ordersSummary: the middle order total, the mean of the two middles for an even count (rounded half up to the minor unit); 0 with no orders. */
