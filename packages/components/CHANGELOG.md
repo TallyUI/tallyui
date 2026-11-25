@@ -42,6 +42,8 @@
 - 8db58a3: The tender pane shows a change amount only when Take is enabled. Before, a payment still in motion for the whole balance left Take disabled, yet a cash entry showed a large green "Change" for the full amount.
 - 0f77b6c: The customer email error is read from the `customers.invalid_email` catalogue key, so apps can translate it.
 - 43520ae: The customer search and save error texts are read from the `customers.error_*` catalogue keys, so apps can translate them.
+- 322fc9a: The packed types now load the `className` augmentation for react-native (`ViewProps`, `TextProps` and others), so an app that installs from npm no longer gets TS2322 on `<HStack className>`.
+  An app that declares its own `className?: string` is unaffected. An app that declares `ViewProps.dataSet`, or one of the same props with a different type, must match ours.
 - b5c6059: `OpenSaleTabs`: the + cell widens from 48 to 112 pt and the "New" label fades in when the blank cart becomes current, and narrows and fades back out when it stops being current, as in WCPOS v2. Reduced or unknown motion jumps straight to the end state.
 - db82f0d: `@tallyui/components`, `@tallyui/pos` and `@tallyui/storage-sqlite` no longer ship their `*.test-d.ts` type-test files, matching `@tallyui/core` and `@tallyui/primitives`.
 - 585bb79: The sales report and the Z carry a sale's cash rounding (ADR-094) as its own figure, so net, tax and rounding add up to gross. `SalesTotals` gains a required `roundingMinor`, and `netMinor` is now gross less tax less rounding, the pre-tax amount the product rows add up to; `ReportOrder` gains an optional `roundingMinor`, set by `reportOrderFromPosOrder`. `writeClosure` records a session's rounding as `breakdowns.cash_rounding_minor` (only when non-zero; `closures` stays at schema version 0), and `buildClosureDocument` shows it as `closure.cash_rounding` (`name`, `amount`, `amount_display`) with `has_cash_rounding`, labelled by the new `cash_rounding` label key ("Rounding"). The Taxes card and the taxes panel show a Rounding line when the period has one.
@@ -65,6 +67,7 @@
 - Updated dependencies [bfab53c]
 - Updated dependencies [86f3d40]
 - Updated dependencies [96f8789]
+- Updated dependencies [322fc9a]
 - Updated dependencies [c67f2b0]
 - Updated dependencies [6e28dd6]
 - Updated dependencies [cda1585]

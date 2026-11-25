@@ -2,6 +2,11 @@
 
 ## 5.0.0
 
+### Patch Changes
+
+- 322fc9a: The packed types now load the `className` augmentation for react-native (`ViewProps`, `TextProps` and others), so an app that installs from npm no longer gets TS2322 on `<HStack className>`.
+  An app that declares its own `className?: string` is unaffected. An app that declares `ViewProps.dataSet`, or one of the same props with a different type, must match ours.
+
 ## 4.2.0
 
 ## 4.1.0

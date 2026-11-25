@@ -118,6 +118,53 @@ for (const spec of ${JSON.stringify(specifiers)}) {
       failures.push(`Install/import smoke test (${packages.map(pkg => pkg.name).join(', ')}): ${error.message}`);
     }
 
+    // The packed .d.ts must load each package's className augmentation for react-native; one program per package.
+    try {
+      const modules = path.join(project, 'node_modules');
+      fs.mkdirSync(path.join(modules, '@types'), { recursive: true });
+      for (const dep of ['react-native', 'react-native-svg', '@types/react']) {
+        const source = path.join(root, 'packages', 'components', 'node_modules', dep);
+        if (!fs.existsSync(source)) throw new Error(`${source} is missing; run pnpm install`);
+        if (!fs.existsSync(path.join(modules, dep))) fs.symlinkSync(source, path.join(modules, dep), 'dir');
+      }
+      const programs = {
+        primitives: `import '@tallyui/primitives';
+import { Text, View } from 'react-native';
+export const ok = <View className="p-2"><Text className="text-sm">ok</Text></View>;
+// @ts-expect-error className is a string
+export const bad = <View className={1} />;
+`,
+        components: `import { HStack, Text } from '@tallyui/components';
+import { TextInput, View } from 'react-native';
+export const ok = <HStack className="gap-2"><Text className="text-sm">ok</Text></HStack>;
+export const data = <View dataSet={{ print: 'hide' }} />;
+export const input = <TextInput placeholderTextColorClassName="accent-muted" />;
+// @ts-expect-error className is a string
+export const bad = <HStack className={1} />;
+`,
+      };
+      for (const [name, source] of Object.entries(programs)) {
+        fs.writeFileSync(path.join(project, `types-${name}.tsx`), source);
+        fs.writeFileSync(path.join(project, `tsconfig.${name}.json`), JSON.stringify({
+          compilerOptions: {
+            noEmit: true, strict: true, skipLibCheck: true, jsx: 'react-jsx', module: 'esnext',
+            moduleResolution: 'bundler', target: 'es2022', types: [],
+          },
+          files: [`types-${name}.tsx`],
+        }));
+        try {
+          execFileSync(process.execPath, [path.join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', `tsconfig.${name}.json`], {
+            cwd: project, encoding: 'utf8', stdio: 'pipe',
+          });
+          console.log(`ok packed types (${name})`);
+        } catch (error) {
+          failures.push(`Packed types (${name}): ${error.message}\n${error.stdout ?? ''}`);
+        }
+      }
+    } catch (error) {
+      failures.push(`Packed types: ${error.message}`);
+    }
+
     // A store plugin installs core alone, with no react, rxdb or rxjs: ./server must load there (arch 1a).
     const serverOnly = path.join(tmp, 'server-only');
     fs.mkdirSync(serverOnly);
