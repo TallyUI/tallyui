@@ -1,6 +1,6 @@
 // @vitest-environment node
 // #1341: on a Woo-rounded sale each charge's wire amountMinor is its display row (ADR-075/076), so the server's
-// row = payload check passes; the stored charge and the WooCommerce body (priced from netMicros) do not move.
+// row = payload check passes; the stored charge and the WooCommerce body (priced from the stored charge) do not move.
 import { describe, expect, it } from 'vitest';
 import { precheckCommand } from '@tallyui/core/server';
 import { toWooOrderPayload } from '@tallyui/connector-woocommerce';
@@ -12,7 +12,7 @@ const supported = { orderCreate: Array.from({ length: 12 }, (_, i) => i + 1), re
 const couponContext = { couponIds: new Map([['ten', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
   configs: new Map([['ten', { discount_type: 'percent' as const, amount: '10', limit_usage_to_x_items: null, product_ids: [],
     excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]) };
-type Charge = { kind: 'fee' | 'shipping'; amountMinor: number; taxStatus?: 'none'; amountIncludesTax?: false; percent?: number };
+type Charge = { kind: 'fee' | 'shipping'; amountMinor: number; taxStatus?: 'none'; amountIncludesTax?: boolean; percent?: number };
 interface Sale { lines: [number, number][]; charges: Charge[]; coupon?: true; roundAtSubtotal?: boolean; inclusive?: boolean; woo?: boolean }
 
 function sell({ lines, charges, coupon, roundAtSubtotal = false, inclusive = true, woo = true }: Sale) {
@@ -47,7 +47,7 @@ function pairs({ order, envelope }: ReturnType<typeof sell>) {
 const fee = (amountMinor: number, extra: Partial<Charge> = {}): Charge => ({ kind: 'fee', amountMinor, ...extra });
 const ship = (amountMinor: number, extra: Partial<Charge> = {}): Charge => ({ kind: 'shipping', amountMinor, ...extra });
 
-describe('#1341 Woo inclusive: a charge goes on the wire at its display row', () => {
+describe('#1341 Woo-rounded: a charge goes on the wire at its display row', () => {
   // 20% VAT, inclusive, Woo per-line rounding; an inclusive tax rounds half down. Each total is Woo's: the line net in
   // cents, fees at their raw 6-dp net, shipping net in cents, plus the rounded taxes; the last charge row takes the residue.
   it.each([
@@ -76,15 +76,39 @@ describe('#1341 Woo inclusive: a charge goes on the wire at its display row', ()
     expect(body(sold.envelope, sold.order)).toBe(body(sold.before, sold.order));
   });
 
+  // Exclusive store, each charge entered tax-inclusive (stored at its net, ADR-075); found by a seeded search. Where the
+  // moved charge's stored amount is its whole-cent net, a wire row one off it would switch the body to the 6-dp net.
+  const incl = { amountIncludesTax: true };
+  it.each([
+    { name: 'tax-none fee takes +1, stored = net', sale: { lines: [[2021, 3]], charges: [fee(136, incl), fee(4, incl), fee(1195, { ...incl, taxStatus: 'none' })] },
+      rows: [[113, 113], [3, 3], [1196, 1196]], stored: [113, 3, 1195], nets: ['113333300', '3333300', '1195000000'], total: 8612 },
+    { name: '0 shipping takes +1, stored = net', sale: { lines: [[543, 2], [207, 2]], charges: [ship(0), fee(1006, incl), fee(1007, incl)] },
+      rows: [[838, 838], [839, 839], [1, 1]], stored: [838, 839, 0], nets: ['838333300', '839166700', '0'], total: 3814 },
+    { name: 'last fee takes −1, stored ≠ net', sale: { lines: [[1144, 3], [2053, 1]], charges: [fee(2, incl), fee(177, incl)] },
+      rows: [[2, 2], [147, 147]], stored: [2, 148], nets: ['1666700', '147500000'], total: 6761 },
+  ] as { name: string; sale: Sale; rows: number[][]; stored: number[]; nets: string[]; total: number }[])(
+    'Woo exclusive, a charge entered tax-inclusive: the wire is the row, the body does not move ($name)', ({ sale, rows, stored, nets, total }) => {
+      const sold = sell({ ...sale, inclusive: false });
+      const charges = [...sold.order.fees ?? [], ...sold.order.shipping ?? []];
+      expect(pairs(sold)).toEqual(rows);
+      expect([charges.map(({ amountMinor }) => amountMinor), charges.map(({ netMicros }) => netMicros)]).toEqual([stored, nets]);
+      expect(sold.order.totalMinor).toBe(total);
+      expect(precheckCommand(sold.envelope, supported)).toBeUndefined();
+      expect(body(sold.envelope, sold.order)).toBe(body(sold.before, sold.order));
+    });
+
   const shapes: [string, Charge[]][] = [['fee', [fee(285)]], ['shipping', [ship(331)]], ['fee + shipping', [fee(439), ship(1236)]],
     ['two shipping', [ship(155), ship(397)]], ['none fee beside a taxed one', [fee(120, { taxStatus: 'none' }), fee(285)]],
     ['a 0 charge', [fee(0), ship(331)]], ['an exclusive-entered charge', [fee(285, { amountIncludesTax: false }), ship(331)]],
     ['a percent fee', [fee(0, { percent: 7 }), ship(97)]], ['three 1p fees', [fee(1), fee(1), fee(1)]]];
+  // Entered tax-inclusive: on an exclusive store a row can move off the stored net (the search cases above).
+  const inclusiveEntered: [string, Charge[]][] = [['inclusive-entered fees, a tax-none last', [fee(136, incl), fee(4, incl), fee(1195, { ...incl, taxStatus: 'none' })]],
+    ['inclusive-entered fees, a 0 shipping', [ship(0), fee(1006, incl), fee(1007, incl)]]];
   const lineSets: [number, number][][] = [[[1691, 3]], [[2182, 1], [2343, 1]], [[1000, 1]], [[2699, 3], [893, 1]]];
-  it.each(shapes)('matrix: %s × coupon × roundAtSubtotal × lines, create and update', (_name, charges) => {
-    for (const lines of lineSets) for (const coupon of [undefined, true] as const) for (const roundAtSubtotal of [false, true]) {
-      const sold = sell({ lines, charges, coupon, roundAtSubtotal });
-      const label = JSON.stringify({ lines, coupon, roundAtSubtotal });
+  it.each([...shapes, ...inclusiveEntered])('matrix: %s × inclusive × coupon × roundAtSubtotal × lines, create and update', (_name, charges) => {
+    for (const lines of lineSets) for (const coupon of [undefined, true] as const) for (const roundAtSubtotal of [false, true]) for (const inclusive of [true, false]) {
+      const sold = sell({ lines, charges, coupon, roundAtSubtotal, inclusive });
+      const label = JSON.stringify({ lines, coupon, roundAtSubtotal, inclusive });
       for (const [wire, row] of pairs(sold)) expect(wire, label).toBe(row);
       expect(precheckCommand(sold.envelope, supported), label).toBeUndefined();
       expect(body(sold.envelope, sold.order), label).toBe(body(sold.before, sold.order));
@@ -95,7 +119,7 @@ describe('#1341 Woo inclusive: a charge goes on the wire at its display row', ()
     }
   });
 
-  it.each([[true, false], [false, true], [false, false]])('inclusive %s, woo %s: wire bytes as before #1341', (inclusive, woo) => {
+  it.each([[true, false, ''], [false, true, ', no charge entered in the other mode'], [false, false, '']])('inclusive %s, woo %s: wire bytes as before #1341%s', (inclusive, woo) => {
     for (const [, charges] of shapes) for (const lines of lineSets) for (const coupon of woo ? [undefined, true] as const : [undefined]) {
       const sold = sell({ lines, charges, inclusive, woo, coupon });
       expect(JSON.stringify(sold.envelope), JSON.stringify({ charges, lines, coupon })).toBe(JSON.stringify(sold.before));

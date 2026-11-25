@@ -577,8 +577,10 @@ describe('createWooCommandTransport', () => {
       envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 909, taxStatus: 'taxable', taxMinor: 91 }];
       return envelope;
     }
-    const totals = (local?: WooLocalOrder) => {
-      const result = toWooOrderPayload(charged(), local);
+    const totals = (local?: WooLocalOrder, wire?: [number, number]) => {
+      const envelope = charged();
+      if (wire) [envelope.payload.fees![0].amountMinor, envelope.payload.shipping![0].amountMinor] = wire;
+      const result = toWooOrderPayload(envelope, local);
       if ('error' in result) throw new Error(result.error.message);
       const payload = result.payload as { fee_lines: { total: string }[]; shipping_lines: { total: string }[] };
       return { fee: payload.fee_lines[0].total, shipping: payload.shipping_lines[0].total, bytes: JSON.stringify(payload) };
@@ -590,6 +592,22 @@ describe('createWooCommandTransport', () => {
       const sent = totals(local);
       expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
       expect(sent.bytes).toBe(totals().bytes);
+    });
+
+    it('#1341: a wire amount at its display row is priced from the stored amountMinor, byte for byte', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', amountMinor: 955, netMicros: '955000000' }],
+        shipping: [{ id: 'delivery', amountMinor: 909, netMicros: '909000000' }] };
+      const sent = totals(local, [956, 908]);
+      expect(sent).toMatchObject({ fee: '9.55', shipping: '9.09' });
+      expect(sent.bytes).toBe(totals(local, [955, 909]).bytes);
+      // No stored netMicros: the stored amountMinor still prices it.
+      expect(totals({ lines: [], fees: [{ id: 'bag', amountMinor: 955 }], shipping: [{ id: 'delivery', amountMinor: 909 }] }, [956, 908]))
+        .toMatchObject({ fee: '9.55', shipping: '9.09' });
+    });
+
+    it('#1341: a stored entry without amountMinor prices from the wire amount, as before', () => {
+      const local: WooLocalOrder = { lines: [], fees: [{ id: 'bag', netMicros: '955000000' }], shipping: [{ id: 'delivery', netMicros: '909000000' }] };
+      expect(totals(local, [956, 908])).toMatchObject({ fee: '9.550000', shipping: '9.090000' });
     });
 
     it.each([

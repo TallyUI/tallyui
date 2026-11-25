@@ -140,7 +140,8 @@ function wireChargeMinor(order: PosOrder, charge: { id: string; amountMinor: num
 
 /**
  * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
- * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
+ * an order is byte-identical, except that a Woo-rounded order with charge display rows sends each charge at its row
+ * (`wireChargeMinor`, #1341) and everything else as stored:
  * `finalizeOrder` freezes the sent form (names and labels cut, an unsendable customer email or id left out).
  * ADR-065's figures make version 3; otherwise a discounted order is version 2 (ADR-062), else version 1, byte-identical.
  * A version-3 order goes as version 4 (#286) only when `maxVersion` is at least 4 and its `sentVersion` doesn't cap it.
