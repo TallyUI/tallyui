@@ -213,4 +213,29 @@ describe('wooSettleRefusedOrder.cancel', () => {
     await expect(cancel()).resolves.toStrictEqual({ kind: 'retry', reason: 'bad_body' });
     expect(calls).toHaveLength(1);
   });
+
+  // JSON drops an undefined value, so `undefined` here sends the record without that key.
+  it.each([['absent', undefined], ['null', null], ['an object', {}]])('24: a read with meta_data %s is retry bad_body, no cancel', async (_name, meta_data) => {
+    const { calls, cancel } = store([conflict(order({ meta_data })), cancelled()]);
+    await expect(cancel()).resolves.toStrictEqual({ kind: 'retry', reason: 'bad_body' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('25: two _wcpos_payments entries (a failed row, then a captured row) are refused as unreadable, no cancel', async () => {
+    const { calls, cancel } = store([conflict(order({}, [ledger([payment('failed')]), ledger([payment('captured')])])), cancelled()]);
+    await expect(cancel()).resolves.toMatchObject({ kind: 'refused', code: 'ledger_unreadable' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each(['date_paid', 'date_paid_gmt'])('26: a pending order with no ledger and no %s key is changed, no cancel', async (key) => {
+    const { calls, cancel } = store([conflict(order({ [key]: undefined })), cancelled()]);
+    await expect(cancel()).resolves.toStrictEqual({ kind: 'changed', status: 'pending', capturedMinor: 0 });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('27: a cancel conflict whose current has no meta_data is retry bad_body, no second cancel', async () => {
+    const { calls, cancel } = store([conflict(order()), conflict(order({ meta_data: undefined }), rev(2)), cancelled()]);
+    await expect(cancel()).resolves.toStrictEqual({ kind: 'retry', reason: 'bad_body' });
+    expect(calls).toHaveLength(2);
+  });
 });

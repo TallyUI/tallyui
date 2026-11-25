@@ -7,7 +7,8 @@ type Assessment = SettleOutcome | { kind: 'cancellable'; revision: string };
 
 const isRow = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown) => (typeof value === 'string' && value.length > 0 ? value : undefined);
-const blank = (value: unknown) => value === null || value === undefined || value === '';
+/** Only an explicit null or empty date is unpaid; an absent key is an incomplete record, and the check fails closed. */
+const blank = (value: unknown) => value === null || value === '';
 const retry = (reason: string): SettleOutcome => ({ kind: 'retry', reason });
 const refused = (code: string, message: string): SettleOutcome => ({ kind: 'refused', code, message });
 const unreadable = () => refused('ledger_unreadable', "The store's payment record for this order could not be read.");
@@ -22,10 +23,14 @@ const isConflict = (answer: Answer) => answer.status === 409 && isRow(answer.bod
 function assess(body: Row, storeOrderId: string): Assessment {
   const current = body.current;
   const revision = text(body.currentRevision);
-  if (!isRow(current) || !revision || !text(current.status) || !text(current.currency)) return retry('bad_body');
+  if (!isRow(current) || !revision || !text(current.status) || !text(current.currency) || !Array.isArray(current.meta_data)) {
+    return retry('bad_body');
+  }
   const status = current.status as string;
   const currency = current.currency as string;
   if (String(current.id) !== storeOrderId) return refused('order_mismatch', 'The store answered with a different order.');
+  // paymentLedger reads the first entry only; a second one could hold money the first does not show.
+  if (current.meta_data.filter((meta) => isRow(meta) && meta.key === '_wcpos_payments').length > 1) return unreadable();
   const ledger = paymentLedger(current.meta_data);
   if (ledger.present && ledger.payments === null) return unreadable();
   const payments = ledger.payments ?? [];
