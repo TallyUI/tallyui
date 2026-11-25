@@ -5,6 +5,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, View, type NativeScr
 import { CustomerServiceError, type Customer } from '@tallyui/core';
 import { Popover } from '@tallyui/primitives';
 import { cn } from '@tallyui/theme';
+import { useT } from '../i18n';
 import { Avatar, avatarInitials, Input, UserIcon } from '../ui';
 import { MapPinIcon } from '../ui/icon/map-pin-icon';
 import { customerErrorText } from './customer-picker';
@@ -56,6 +57,9 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
   const canBrowse = browse !== undefined;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
   const chip = useRef<View>(null);
   const name = selected?.name ?? 'Guest';
   // The shown rows' paging: their generation (any newer first page makes older pages stale), query, last page loaded
@@ -80,7 +84,7 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
         p.done = results.length < PAGE_SIZE;
       } catch (error) {
         if (stale()) return;
-        setError(customerErrorText(error));
+        setError(customerErrorText(error, tRef.current));
         if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
       }
     }, blank ? 0 : debounceMs);
@@ -106,7 +110,7 @@ export function CustomerDropdown({ search, browse, selected, onSelect, onError, 
       if (!fresh.length) p.done = true;
     } catch (error) {
       if (paging.current.gen !== p.gen) return;
-      setError(customerErrorText(error));
+      setError(customerErrorText(error, tRef.current));
       if (!(error instanceof CustomerServiceError)) onErrorRef.current?.(error);
     } finally { p.busy = false; }
   };

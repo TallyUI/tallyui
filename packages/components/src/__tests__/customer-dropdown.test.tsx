@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError, type Customer } from '@tallyui/core';
 import { PortalHost } from '@tallyui/primitives';
+import { I18nProvider } from '../i18n';
 import { CustomerDropdown, type CustomerDropdownProps } from '../customer/customer-dropdown';
 
 const alice: Customer = { id: 'alice', name: 'Alice Martin', email: 'alice@test.com' };
@@ -211,6 +212,16 @@ describe('CustomerDropdown', () => {
       expect(names()).toEqual(['Guest']);
       unmount();
     }
+  });
+
+  it('the error text reads from the catalogue', async () => {
+    const response = deferred<Customer[]>();
+    render(<I18nProvider locale="fr" resources={{ fr: { 'customers.error_network': 'Boutique injoignable' } }}>{ui(props({ search: () => response.promise }))}</I18nProvider>);
+    fireEvent.click(chip());
+    typeQuery('a');
+    await advance();
+    await act(async () => response.reject(new CustomerServiceError('network', 'offline')));
+    expect(screen.getByRole('alert').textContent).toBe('Boutique injoignable');
   });
 
   it('keyboard: ArrowDown from the field focuses Guest, Escape closes and refocuses the chip', () => {

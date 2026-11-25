@@ -69,7 +69,7 @@ export function CustomerEditor({ customer, create, update, onSaved, onCancel, on
       const result = await call;
       if (mounted.current) onSaved(result);
     } catch (failure) {
-      if (mounted.current) setSaveError(customerErrorText(failure));
+      if (mounted.current) setSaveError(customerErrorText(failure, t));
     } finally {
       if (mounted.current) setSaving(false);
     }
