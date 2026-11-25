@@ -4415,6 +4415,9 @@ interface OrderCreatePayload {
        are present. This replaces the split of commit 9f344166, which left the shape check to the plugin: a plugin that
        skips `payloadShapeErrors` must not be able to accept a malformed order or wrong fiscal figures. The plugin's own
        shape check before its replay lookup still runs (ADR-038).
+     - #1346: the backstop extends to order.refund, order.reopen and the register commands (`refundPayloadErrors`,
+       `reopenPayloadErrors`, `registerPayloadErrors`), after the version answer, with the same code and messages.
+       Plugins still run the shape check before any lookup.
   4. **`pos_orders` version 8** adds the optional `fees`, `shipping` and the line's `custom`.
      - Migration 8 is the identity.
      - **It is one-way**, like 5 to 7.

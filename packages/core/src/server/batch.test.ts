@@ -146,9 +146,79 @@ describe('precheckCommand', () => {
 
   // A server's own lists (#297); core's SUPPORTED_* constants are the till's capability.
   const server = { orderCreate: [1, 2, 3, 4], register: [1] }
+  // Valid payloads per refund, reopen and register command type (#1346); register ones as in register-fixtures.test.ts.
+  const sessionId = 'session-1'
+  const validRefund = { clientRefundId: 'refund-1', orderId: 'order-1', registerId: 'register-1', sessionId,
+    lines: [{ orderLineId: 'line-1', quantity: 1, restock: true }], shippingMinor: 0, adjustmentMinor: 0, totalMinor: 100,
+    destination: 'original_method', reason: 'Returned item', createdAt: '2026-01-01T08:00:00.000Z' }
+  const validReopen = { orderId: 'order-1', cashierRef: 'cashier-1', registerId: 'register-1', createdAt: '2026-01-01T08:00:00.000Z' }
+  const validRegister: Record<string, Record<string, unknown>> = {
+    'register.session.open': { sessionId, registerId: 'register-1', openedAt: '2026-09-11T08:00:00.000Z', countedFloatMinor: 9950 },
+    'register.session.transition': { sessionId, status: 'counting', at: '2026-09-11T16:45:00.000Z' },
+    'register.movement.record': { movementId: 'movement-1', sessionId, type: 'paid_out', amountMinor: 1250,
+      reason: 'Milk for the coffee machine', createdAt: '2026-09-11T10:15:00.000Z' },
+    'register.movement.void': { movementId: 'movement-2', sessionId, voids: 'movement-1', createdAt: '2026-09-11T10:20:00.000Z' },
+    'register.closure.submit': { closureId: 'closure-1', sessionId, registerId: 'register-1', number: 42,
+      openedAt: '2026-09-11T08:00:00.000Z', closedAt: '2026-09-11T17:00:00.000Z', tillExpected: { cash: 18000 }, counted: { cash: 17800 },
+      periodSalesTotalMinor: 25000, periodRefundsTotalMinor: 5000, perpetualSalesTotalMinor: 525000, perpetualRefundsTotalMinor: 25000,
+      unsyncedCount: 0, unsyncedTotalMinor: 0, softwareVersion: 'preview', orderIds: [], movementIds: [] },
+  }
+  // [type, required field dropped, valid payload, the shape function's message for it]
+  const otherCommands: [string, string, Record<string, unknown>, string][] = [
+    ['order.refund', 'reason', validRefund, 'reason: expected a non-empty string after trim of at most 500 characters'],
+    ['order.reopen', 'orderId', validReopen, 'orderId: expected a non-empty string of at most 64 characters'],
+    ['register.session.open', 'registerId', validRegister['register.session.open'], 'registerId: expected a non-empty string'],
+    ['register.session.transition', 'at', validRegister['register.session.transition'], 'at: expected a non-empty string'],
+    ['register.movement.record', 'reason', validRegister['register.movement.record'],
+      'reason: expected a non-empty string after trim of at most 500 characters'],
+    ['register.movement.void', 'voids', validRegister['register.movement.void'], 'voids: expected a non-empty string'],
+    ['register.closure.submit', 'closureId', validRegister['register.closure.submit'], 'closureId: expected a non-empty string'],
+  ]
+  const allVersions = { ...server, orderRefund: [1], orderReopen: [1] }
+  const without = (payload: Record<string, unknown>, field: string) => Object.fromEntries(Object.entries(payload).filter(([key]) => key !== field))
+
+  it.each(otherCommands)('accepts a valid %s at a supported version (#1346)', (type, _field, payload) => {
+    expect(precheckCommand({ ...command, type, payload } as never, allVersions)).toBeUndefined()
+  })
+
+  it.each(otherCommands)('refuses a %s missing %s with the shape check\'s message (#1346)', (type, field, payload, message) => {
+    expect(precheckCommand({ ...command, type, payload: without(payload, field) } as never, allVersions)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message },
+    })
+  })
+
+  it.each(otherCommands)('answers an unsupported %s missing %s with unsupported_version first (#1346)', (type, field, payload) => {
+    const result = precheckCommand({ ...command, type, version: 3, payload: without(payload, field) } as never, allVersions)
+    expect(result?.error?.code).toBe('unsupported_version')
+  })
+
+  it.each(otherCommands)('still refuses a %s missing %s at a supported version 2 (#1346)', (type, field, payload, message) => {
+    const twos = { ...server, register: [1, 2], orderRefund: [1, 2], orderReopen: [1, 2] }
+    expect(precheckCommand({ ...command, type, version: 2, payload } as never, twos)).toBeUndefined()
+    expect(precheckCommand({ ...command, type, version: 2, payload: without(payload, field) } as never, twos)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message },
+    })
+  })
+
+  it('refuses a refund with more than 10 errors naming the first 10, joined with "; " (#1346)', () => {
+    const payload = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`extra${i}`, true]))
+    expect(precheckCommand({ ...command, type: 'order.refund', payload } as never, allVersions)).toEqual({
+      id: command.id, status: 'rejected', error: { code: 'invalid_payload', message: 'extra0: unknown field for order.refund version 1; '
+        + 'extra1: unknown field for order.refund version 1; extra2: unknown field for order.refund version 1; '
+        + 'extra3: unknown field for order.refund version 1; extra4: unknown field for order.refund version 1; '
+        + 'extra5: unknown field for order.refund version 1; extra6: unknown field for order.refund version 1; '
+        + 'extra7: unknown field for order.refund version 1; extra8: unknown field for order.refund version 1; '
+        + 'extra9: unknown field for order.refund version 1' },
+    })
+  })
+
+  it('accepts a register payload with an extra unknown key (#1346)', () => {
+    const payload = { ...validRegister['register.session.open'], futureField: true }
+    expect(precheckCommand({ ...command, type: 'register.session.open', payload } as never, allVersions)).toBeUndefined()
+  })
 
   it('leaves a supported order.reopen to the plugin payload check (ADR-090)', () => {
-    expect(precheckCommand({ ...command, type: 'order.reopen' }, { ...server, orderReopen: [1] })).toBeUndefined()
+    expect(precheckCommand({ ...command, type: 'order.reopen', payload: validReopen }, { ...server, orderReopen: [1] })).toBeUndefined()
   })
 
   it('refuses an unsupported order.reopen version with the server capability', () => {
@@ -176,7 +246,7 @@ describe('precheckCommand', () => {
   })
 
   it('leaves a supported order.refund to the plugin payload check (ADR-080)', () => {
-    expect(precheckCommand({ ...command, type: 'order.refund' }, { ...server, orderRefund: [1] })).toBeUndefined()
+    expect(precheckCommand({ ...command, type: 'order.refund', payload: validRefund }, { ...server, orderRefund: [1] })).toBeUndefined()
   })
 
   it('refuses an unsupported order.refund version with the server capability', () => {
@@ -213,7 +283,7 @@ describe('precheckCommand', () => {
   })
 
   it('checks register versions against the server\'s own list', () => {
-    const open = { ...command, id: 'register-1', type: 'register.session.open', version: 2, payload: { sessionId: 'session' } }
+    const open = { ...command, id: 'register-1', type: 'register.session.open', version: 2, payload: validRegister['register.session.open'] }
     expect(precheckCommand(open as never, { orderCreate: [1], register: [1, 2] })).toBeUndefined()
     expect(precheckCommand({ ...open, version: 1 } as never, { orderCreate: [1], register: [2] })).toMatchObject({
       error: { code: 'unsupported_version', message: 'register version 1 is not supported; this server supports 2', data: { register: 2 } },
@@ -348,7 +418,7 @@ describe('precheckCommand', () => {
     } })
   })
 
-  const register = { ...command, id: 'register-1', type: 'register.session.open', payload: { sessionId: 'session' } }
+  const register = { ...command, id: 'register-1', type: 'register.session.open', payload: validRegister['register.session.open'] }
 
   it('rejects a register command with an unsupported version', () => {
     expect(precheckCommand({ ...register, version: 2 } as never, server)).toEqual({ id: 'register-1', status: 'rejected', error: {
