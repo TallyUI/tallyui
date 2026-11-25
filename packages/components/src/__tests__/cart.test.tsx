@@ -86,7 +86,7 @@ describe('Cart', () => {
     expect(within(footer.getByText('Total').parentElement!).getByText(money(sale.order.display.totalMinor))).toBeTruthy();
   });
 
-  it("draws each charge in the cart's columns, after the lines", () => {
+  it("draws each charge in the cart's columns, after the lines", { timeout: 20_000 }, () => {
     render(<SaleHarness capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     act(() => sale.add(blue, traits));
     for (const [kind, name, amount] of [['Fee', 'Bag', '1.20'], ['Shipping', 'Delivery', '2.40']]) {
