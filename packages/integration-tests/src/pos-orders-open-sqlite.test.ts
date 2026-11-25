@@ -18,6 +18,7 @@ import { finalizeOrder } from '@tallyui/pos/pos-order/finalize';
 import { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from '@tallyui/pos/pos-order/open';
 import { toOrderCreateEnvelope, toOrderUpdateEnvelope } from '@tallyui/pos/pos-order/command';
 import { posOrderCollection } from '@tallyui/pos/pos-order/schema';
+import { storeOrderLeft } from '@tallyui/pos/pos-order/store-order-left';
 import { openMigratedCollection } from '@tallyui/pos/rxdb/open-migrated-collection';
 import type { PosOrder } from '@tallyui/pos/pos-order/types';
 import { uuidv7 } from '@tallyui/pos/pos-order/uuidv7';
@@ -604,7 +605,7 @@ function v17Sales(): PosOrder[] {
 function v21Sales(): PosOrder[] {
   const [cash, applied] = v17Sales();
   return [{ ...cash, cashRoundings: [{ paymentId: cash.payments[0].id, minor: 2 }] },
-    { ...v12Sale('bare', 13), syncStatus: 'rejected', storeOrderId: '4711', payments: [], error: { code: 'woo_refused', message: 'No' } }, applied]
+    { ...v12Sale('bare', 13), syncStatus: 'rejected', payments: [], error: { code: 'woo_refused', message: 'No', data: { orderId: '4711', displayId: '4711', recorded: 0 } } }, applied]
     .map((order) => JSON.parse(JSON.stringify(order)) as PosOrder);
 }
 
@@ -626,6 +627,7 @@ function v21Sales(): PosOrder[] {
     for (const order of sales) expect((await orders.findOne(order.id).exec())!.toJSON(), `open ${run}`).toStrictEqual(order);
     expect((await db.getLocal<{ closure: number }>('till'))?.toJSON().data).toStrictEqual({ closure: 7 });
   });
+  expect(storeOrderLeft(refused)).toStrictEqual({ orderId: '4711', reference: '4711', recordedMinor: 0 });
   const attemptId = uuidv7(), at = '2026-11-26T10:15:00.000Z';
   const settlements: NonNullable<PosOrder['storeSettlement']>[] = [{ kind: 'cancel', state: 'sending', attemptId, at },
     { kind: 'cancel', state: 'changed', attemptId, at, storeStatus: 'pos-partial', capturedMinor: 500 },
