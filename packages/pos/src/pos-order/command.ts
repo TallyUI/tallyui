@@ -131,6 +131,13 @@ function wireNote(note: string | undefined): string | undefined {
   return newline === -1 ? undefined : note.slice(newline + 1) || undefined;
 }
 
+/** #1341 (ADR-075/076): in Woo rounding a charge goes on the wire at its display row, found by id (the server checks the
+ *  two are equal); with no such row it goes at its stored amount. Any other rounding sends the stored amount. */
+function wireChargeMinor(order: PosOrder, charge: { id: string; amountMinor: number }, rows?: readonly { id: string; amountMinor: number }[]): number {
+  if (order.taxRounding?.granularity !== 'woocommerce') return charge.amountMinor;
+  return rows?.find(({ id }) => id === charge.id)?.amountMinor ?? charge.amountMinor;
+}
+
 /**
  * Builds the ADR-038 order.create envelope for a PosOrder. It sends the stored order unchanged, so every resend of
  * an order is byte-identical, and an order stored by an older till goes out exactly as that till sent it:
@@ -226,7 +233,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
         ...(base === 6 && line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
       })),
       ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
-        clientFeeId: fee.id, name: fee.name, amountMinor: fee.amountMinor, taxStatus: fee.taxStatus,
+        clientFeeId: fee.id, name: fee.name, amountMinor: wireChargeMinor(order, fee, order.display?.fees), taxStatus: fee.taxStatus,
         ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
         // #1131: WooCommerce totals a fee line's tax per rate, as its own order totals do.
         taxMinor: order.taxRounding?.granularity === 'woocommerce'
@@ -235,7 +242,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       })) } : {}),
       ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
         clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
-        amountMinor: charge.amountMinor, taxStatus: charge.taxStatus,
+        amountMinor: wireChargeMinor(order, charge, order.display?.shipping), taxStatus: charge.taxStatus,
         ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}),
         // #1120: WooCommerce totals a shipping line's tax per rate, as its own order totals do.
         taxMinor: order.taxRounding?.granularity === 'woocommerce'
