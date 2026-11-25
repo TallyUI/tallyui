@@ -37,7 +37,8 @@ With `lineEditor="popover"`, pass `lineCommit="close"` for WCPOS v2's quantity a
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `sale` | `ReturnType<typeof useSale>` | required | The sale from [useSale](/docs/pos) |
-| `taxLabel` | `(ratePpm: number) => string` | ``(ratePpm: number) => `Tax ${ratePpm / 10000}%` `` | Formats each tax row's label from its rate in parts per million |
+| `taxLabel` | `(ratePpm: number, rate: { code?: string; ratePpm: number }) => string` | ``(ratePpm: number) => `Tax ${ratePpm / 10000}%` `` | Formats each tax row's label from its rate in parts per million; `rate` carries the row's own tax `code` (absent when it has none), so two rates with the same percentage can be named apart |
+| `taxDisplay` | `'itemized' \| 'single'` | `'itemized'` | `itemized` draws one row per rate under `taxLabel`; `single` draws one Total Tax row with the order's total tax, only when that is not 0 |
 | `taxClasses` | `ReadonlyArray<{ id: string; label: string }>` | --- | Tax class choices passed to the charge form |
 | `canEditPrice` | `boolean` | `false` | Shows a Price action on each line; pass the till's price-edit permission |
 | `onPriceChange` | `(change: { lineId: string; fromMinor: number; toMinor: number; reason?: string }) => void` | --- | Called after a price is applied for the app's audit log; the reason is kept only in this callback |

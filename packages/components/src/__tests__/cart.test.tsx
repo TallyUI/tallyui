@@ -484,6 +484,88 @@ describe('Cart', () => {
     expect(screen.getByText('Tax 25%')).toBeTruthy();
   });
 
+  describe('taxDisplay and the rate passed to taxLabel', () => {
+    const twoRates = { ...pricing, taxRatesPpm: { default: 250000, reduced: 100000 }, taxRateCodes: { default: 'STD', reduced: 'RED' } };
+    // Two shirts at 12.50 taxed 25% (6.25) and a 20.00 line at 10% (2.00): 8.25 in all, so no rate's figure is the total.
+    const addTwoRates = () => {
+      act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+      act(() => { expect(sale.addCustomLine({ name: 'Alteration', priceMinor: 2000, taxClass: 'reduced' })).toMatchObject({ id: expect.any(String) }); });
+    };
+    const taxRows = () => screen.getAllByTestId(/^cart-total-tax-/);
+
+    it('T1: absent, two rates: one row per rate, in order, and no Total Tax', () => {
+      render(<SaleHarness settings={twoRates}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+      addTwoRates();
+      expect(sale.order.display.taxMinor).toBe(825);
+      expect(taxRows()).toHaveLength(2);
+      expect(within(taxRows()[0]).getByText('Tax 25%')).toBeTruthy();
+      expect(within(taxRows()[0]).getByText(money(625))).toBeTruthy();
+      expect(within(taxRows()[1]).getByText('Tax 10%')).toBeTruthy();
+      expect(within(taxRows()[1]).getByText(money(200))).toBeTruthy();
+      expect(screen.queryByText('Total Tax')).toBeNull();
+    });
+
+    it("T2: 'itemized', two rates: the same rows as absent", () => {
+      render(<SaleHarness settings={twoRates}>{(sale) => <Cart sale={sale} taxDisplay="itemized" />}</SaleHarness>);
+      addTwoRates();
+      expect(taxRows()).toHaveLength(2);
+      expect(within(taxRows()[0]).getByText('Tax 25%')).toBeTruthy();
+      expect(within(taxRows()[1]).getByText('Tax 10%')).toBeTruthy();
+      expect(screen.queryByText('Total Tax')).toBeNull();
+    });
+
+    it.each([[false, 625, 'Excluding tax'], [true, 500, 'Including tax']])("T3/T4: 'single', one rate (inclusive: %s): one Total Tax row with the order's tax", (inclusive, expected, tag) => {
+      render(<SaleHarness settings={{ ...pricing, pricesIncludeTax: inclusive }}>{(sale) => <Cart sale={sale} taxDisplay="single" />}</SaleHarness>);
+      act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+      expect(sale.order.display.taxMinor).toBe(expected);
+      expect(taxRows()).toHaveLength(1);
+      const taxRow = within(taxRows()[0]);
+      expect(taxRow.getByText('Total Tax')).toBeTruthy();
+      expect(taxRow.getByText(tag)).toBeTruthy();
+      expect(taxRow.getByText(money(expected))).toBeTruthy();
+      expect(screen.queryByText('Tax 25%')).toBeNull();
+    });
+
+    it("T5: 'single', two rates: one row with the order's tax and no rate label", () => {
+      render(<SaleHarness settings={twoRates}>{(sale) => <Cart sale={sale} taxDisplay="single" />}</SaleHarness>);
+      addTwoRates();
+      expect(sale.order.display.taxMinor).toBe(825);
+      expect(taxRows()).toHaveLength(1);
+      expect(within(taxRows()[0]).getByText('Total Tax')).toBeTruthy();
+      expect(within(taxRows()[0]).getByText(money(825))).toBeTruthy();
+      expect(screen.queryByText('Tax 25%')).toBeNull();
+      expect(screen.queryByText('Tax 10%')).toBeNull();
+    });
+
+    it("T6: 'single', a 0% rate only: no tax row", () => {
+      render(<SaleHarness settings={{ ...pricing, taxRatesPpm: { default: 0 } }}>{(sale) => <Cart sale={sale} taxDisplay="single" />}</SaleHarness>);
+      act(() => sale.add(blue, traits));
+      expect(sale.order.display.taxMinor).toBe(0);
+      expect(screen.queryAllByTestId(/^cart-total-tax-/)).toHaveLength(0);
+      expect(screen.queryByText('Total Tax')).toBeNull();
+    });
+
+    it("T7: 'single', lines plus a taxed fee: one row with the order's tax", () => {
+      render(<SaleHarness settings={pricing} capabilities={{ orderCreate: 5 }}>{(sale) => <Cart sale={sale} taxDisplay="single" />}</SaleHarness>);
+      act(() => { sale.add(blue, traits); sale.add(blue, traits); });
+      act(() => { expect(sale.addFee({ name: 'Bag', amountMinor: 400, taxStatus: 'taxable' })).toMatchObject({ id: expect.any(String) }); });
+      // 25% of 25.00 and of 4.00.
+      expect(sale.order.display.taxMinor).toBe(725);
+      expect(taxRows()).toHaveLength(1);
+      expect(within(taxRows()[0]).getByText(money(725))).toBeTruthy();
+    });
+
+    it('T8: a two-argument taxLabel gets the row\'s code and rate, and its text draws', () => {
+      const taxLabel = vi.fn((ratePpm: number, rate: { code?: string; ratePpm: number }) => `${rate.code ?? 'none'} ${ratePpm / 10000}%`);
+      render(<SaleHarness settings={twoRates}>{(sale) => <Cart sale={sale} taxLabel={taxLabel} />}</SaleHarness>);
+      addTwoRates();
+      expect(taxLabel).toHaveBeenCalledWith(250000, { code: 'STD', ratePpm: 250000 });
+      expect(taxLabel).toHaveBeenCalledWith(100000, { code: 'RED', ratePpm: 100000 });
+      expect(within(taxRows()[0]).getByText('STD 25%')).toBeTruthy();
+      expect(within(taxRows()[1]).getByText('RED 10%')).toBeTruthy();
+    });
+  });
+
   it('renders the order-discount section in afterItems only when the cart has lines', () => {
     render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
     expect(screen.queryByRole('button', { name: 'Order discount' })).toBeNull();

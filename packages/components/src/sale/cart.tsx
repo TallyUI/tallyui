@@ -20,10 +20,14 @@ import { useT } from '../i18n';
 import { saleErrorText } from './sale-error-text';
 
 /** `taxLabel` names each tax row; VAT isn't universal, so a platform passes its own (medusapos passes `VAT ${rate}%`). */
-export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, orderDiscountChips = true, checkout, noteSheet, tenderLedger, picker, lineEditor = 'inline',
+export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10000}%`, taxDisplay = 'itemized', canEditPrice = false, onPriceChange, quickDiscounts, taxClasses, afterSubtotal, showTotal = true, couponDiscountMinor, orderActions = true, orderDiscountChips = true, checkout, noteSheet, tenderLedger, picker, lineEditor = 'inline',
   lineCommit = 'apply', columns, chargeTaxSwitch = true,
   emptyIcon = <ShoppingCartIcon size={48} />, emptyText = 'Tap a product to start a sale' }:
-  { sale: ReturnType<typeof useSale>; taxLabel?: (ratePpm: number) => string;
+  { sale: ReturnType<typeof useSale>;
+    /** Names each tax row from its rate. The second argument carries the row's own tax `code` (when it has one) and `ratePpm`, so two rates with the same percentage can be told apart. */
+    taxLabel?: (ratePpm: number, rate: { code?: string; ratePpm: number }) => string;
+    /** `itemized` (default): one row per rate, under `taxLabel`. `single`: one "Total Tax" row with the order's total tax, drawn only when that is not 0. */
+    taxDisplay?: 'itemized' | 'single';
     taxClasses?: ReadonlyArray<{ id: string; label: string }>;
     /** Shows a Price action on each line. Pass the till's own permission; the control isn't shown without it. */
     canEditPrice?: boolean;
@@ -94,7 +98,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
   const { totals, fees, shipping } = buildReceiptData(order, { storeName: '' });
-  const taxRows = totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm), amount: money(line.amountMinor) }));
+  const taxRows = taxDisplay === 'single'
+    ? totals.taxMinor !== 0 ? [{ label: 'Total Tax', amount: money(totals.taxMinor) }] : []
+    : totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm, { code: line.code, ratePpm: line.ratePpm }), amount: money(line.amountMinor) }));
   // Each line before its discounts, with its own discounts' amounts. The order discounts are one figure: a single
   // order discount's chip carries it; several keep their own labels, as no single one has a display amount.
   const display = (lineId: string) => order.display.lines.find((line) => line.lineId === lineId)!;
