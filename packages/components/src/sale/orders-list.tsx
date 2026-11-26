@@ -38,6 +38,7 @@ const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code
 /** Pay the rest on store's dialog (#1101 slice 3): the front desk's wording until slice 4 handles money given back. */
 const GIVE_BACK = "If the money was given back, do not record it; a manager must check the order in the store's admin.";
 const GIVE_BACK_INSTEAD = 'If the money was given back, use Give back and cancel instead.';
+const GIVE = 'Give back any of this you have not already given back.';
 const legLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card');
 const legWording = (method: string, amount: string | undefined) => `${legLabel(method)} ${amount}: ${method === 'cash' ? 'hand it back from the drawer' : 'give it back on the card terminal'}`;
 const methodLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card terminal');
@@ -84,7 +85,6 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   const paidThere = settlement?.capturedMinor ? `: ${money(settlement.capturedMinor)} is paid there` : '';
   // A pay's R: what the store had recorded at the refusal, plus each leg this till has recorded since.
   const recorded = money((left?.recordedMinor ?? 0) + sum(settlement?.payments?.filter((payment) => payment.done) ?? []));
-  const cashTaken = sum(order.payments.filter((payment) => payment.method === 'cash'));
   // What this till has recorded on the stored pay, on this press or an earlier one: true in every state.
   const doneMinor = sum(settlement?.payments?.filter((payment) => payment.done) ?? []);
   const nothing = doneMinor > 0 ? `${money(doneMinor)} was recorded from this till.` : 'Nothing was recorded from this till.';
@@ -94,8 +94,8 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
         : settlement.state !== 'changed' ? undefined
           : settlement.storeStatus === 'completed' ? `Order #${reference} is already paid on the store. ${nothing}`
             : `Order #${reference} changed on the store${paidThere}. ${nothing} Check it in the store's admin.`
-    : settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.${cashTaken
-      ? ` If you gave back the ${money(cashTaken)} cash taken on this till, record it as a pay-out.` : ''}`
+    : settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.${order.payments.length || kind === 'reverse'
+      ? ` The till took: ${order.payments.map((leg) => legWording(leg.method, money(leg.amountMinor))).join('; ')}. ${GIVE}` : ''}`
       : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`
         : settlement?.state === 'changed' ? `Order #${reference} changed on the store${paidThere}. Nothing was cancelled from this till. Check it in the store's admin.`
           : undefined;
@@ -105,25 +105,20 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     : `The store did not cancel order #${reference}. Check it in the store's admin.`
     : settlement?.state === 'sending' ? pay ? `Recording the rest of order #${reference} on the store is not finished.`
       : `Cancelling order #${reference} on the store is not finished.` : undefined;
-  if (settlement?.kind === 'reverse' && settlement.legs) {
+  if (settlement?.kind === 'reverse' && settlement.state !== 'done' && settlement.legs) {
     const legs = settlement.legs.flatMap((leg) => {
       const payment = order.payments.find(({ id }) => id === leg.paymentId);
       return payment ? [{ ...payment, done: leg.done }] : [];
     });
-    const list = (payments: typeof legs) => payments.map((leg) => settlement.state === 'done'
-      ? legWording(leg.method, money(leg.amountMinor)) : `${legLabel(leg.method)} ${money(leg.amountMinor)}`).join('; ');
-    const taken = list(legs.filter((leg) => leg.done)), still = list(legs.filter((leg) => !leg.done));
+    const taken = legs.filter((leg) => leg.done).map((leg) => legWording(leg.method, money(leg.amountMinor))).join('; ');
+    const still = legs.filter((leg) => !leg.done).map((leg) => `${legLabel(leg.method)} ${money(leg.amountMinor)}`).join('; ');
     const hasDone = settlement.legs.some((leg) => leg.done);
     const subject = `Order #${reference}`;
     settledText = undefined;
     addedText = undefined;
-    if (settlement.state === 'done') {
-      const legs = order.payments.map((payment) => ({ ...payment, done: settlement.legs?.find((leg) => leg.paymentId === payment.id)?.done }));
-      const cash = sum(legs.filter((leg) => leg.method === 'cash'));
-      settledText = `${subject} was cancelled on the store.${legs.length ? ` Give back to the customer: ${list(legs)}.` : ''}${cash ? ` Record the ${money(cash)} cash you give back as a pay-out.` : ''}`;
-    } else if (settlement.state === 'gone') settledText = `${subject} is not on the store any more.${taken ? ` Taken off it before that: ${taken}.` : ''} Check it in the store's admin.`;
-    else if (settlement.state === 'sending') addedText = `Cancelling order #${reference} on the store is not finished.${taken ? ` Taken off it so far: ${taken}.` : ''}${still ? ` Not confirmed taken off yet: ${still}.` : ''} Give no money back until this till shows the order cancelled.`;
-    else if (hasDone) addedText = `${subject} was not cancelled on the store.${taken ? ` Taken off it: ${taken}.` : ''}${still ? ` Still paid there: ${still}.` : ''} A manager must check it in the store's admin before any money is given back.`;
+    if (settlement.state === 'gone') settledText = `${subject} is not on the store any more.${taken ? ` The store had taken off: ${taken}. ${GIVE}` : ''} Check it in the store's admin.`;
+    else if (settlement.state === 'sending') addedText = `Cancelling order #${reference} on the store is not finished.${taken ? ` The store has taken off: ${taken}. ${GIVE}` : ''}${still ? ` Not confirmed taken off yet: ${still}. Keep that until this till shows the order cancelled.` : ''}`;
+    else if (hasDone) addedText = `${subject} was not cancelled on the store.${taken ? ` The store has taken off: ${taken}. ${GIVE}` : ''}${still ? ` Still paid there: ${still}. Keep that; a manager must check it in the store's admin.` : ''}`;
     else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}. Check it in the store's admin.`;
     else settledText = `${subject} changed on the store${paidThere}. Nothing was taken off it or cancelled from this till. Check it in the store's admin.`;
   }

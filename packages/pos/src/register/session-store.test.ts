@@ -758,21 +758,37 @@ describe('openSession without storeKey is deprecated (#1068)', () => {
 
 describe('cash rounding on the Z (ADR-094)', () => {
   // One sale of 10.02 including 10% tax (net 9.11, tax 0.91), taken as 10.00 in cash with its -2 entry, or as 10.02 unrounded.
-  async function closureOfOneSale(rounded: boolean, legSessionId?: string) {
+  async function closureOfOneSale(rounded: boolean, legSessionId?: string, reversed = false) {
     await ensureRegister(db.register_sessions, 'web');
     const doc = await openSession(db.register_sessions, input);
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100_000 } });
-    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1002, currency: 'EUR' } });
-    const taken = rounded ? 1000 : 1002;
+    const amount = reversed && !rounded ? 1000 : 1002;
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount, currency: 'EUR' } });
+    const taken = rounded ? 1000 : amount;
     builder.addPayment({ method: 'cash', amountMinor: taken, tenderedMinor: taken, changeMinor: 0 }, rounded ? { minor: -2 } : undefined);
     const finalized = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
     const order: PosOrder = { ...finalized, sessionId: doc.id, ...(legSessionId ? { payments: finalized.payments.map((payment) => ({ ...payment, sessionId: legSessionId })) } : {}) };
-    const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 10000 + taken } });
+    if (reversed) order.storeSettlement = { kind: 'reverse', state: 'done', at: order.updatedAt, attemptId: 'attempt',
+      legs: [{ paymentId: order.payments[0].id, commandId: 'void', done: true }] };
+    const counted = reversed ? 10000 : 10000 + taken;
+    const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: counted } });
     return writeClosure({
-      closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000 + taken,
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted,
       otherTenders: {}, movements: [], orders: [order], softwareVersion: '1.0.0',
     });
   }
+
+  it('E10: a reversed sale no longer contributes cash rounding', async () => {
+    const closure = await closureOfOneSale(true, undefined, true);
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+  });
+
+  it('E11: a reversed sale leaves only the float and contributes no sales', async () => {
+    const closure = await closureOfOneSale(false, undefined, true);
+    expect(closure.till_expected.cash).toBe(10000);
+    expect(closure.breakdowns.payment_methods).toEqual({});
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
 
   it('writeClosure records the session\'s cash rounding total, and tax gross plus rounding equals taxed takings', async () => {
     const closure = await closureOfOneSale(true);

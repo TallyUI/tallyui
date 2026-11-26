@@ -45,7 +45,7 @@ describe('wooSettleRefusedOrder.reverse', () => {
   const cashRow = payment('captured', { id: cash.paymentId, amount: '10.00' });
   const cardRow = payment('captured', { id: card.paymentId, method_id: 'pos_card' });
   const read = (rows: Row[] = [cashRow], over: Row = {}, revision = rev(1)) => conflict(order({ status: 'pos-partial', ...over }, [ledger(rows)]), revision);
-  const open = () => read([{ ...cashRow, status: 'voided' }], { status: 'pos-open' }, rev(4));
+  const open = (...rows: Row[]) => read([cashRow, ...rows].map((row) => ({ ...row, status: 'voided' })), { status: 'pos-open' }, rev(4));
   const ok = (revision = rev(2)) => json(200, { revision });
   const done = { kind: 'done', status: 'cancelled' };
   const readPush = push(readId, 'none', {}), cancelPush = push(attemptId, rev(4), { status: 'cancelled' });
@@ -58,18 +58,18 @@ describe('wooSettleRefusedOrder.reverse', () => {
     expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush, cancelPush]);
   });
   it('row 2: void both legs in request order with chained revisions', async () => {
-    const shop = store([read([cardRow, cashRow]), ok(), ok(rev(3)), open(), cancelled()]);
+    const shop = store([read([cardRow, cashRow]), ok(), ok(rev(3)), open(cardRow), cancelled()]);
     expect(await shop.reverse([cash, card])).toEqual({ outcome: done, voided: [cash.paymentId, card.paymentId] });
     expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, cancelPush]);
   });
-  it('row 3: a refused second void stops before the cancel read', async () => {
-    const shop = store([read([cashRow, cardRow]), ok(), json(409, { code: 'wcpos_invalid_transition' })]);
+  it('row 3: a refused second void reads back without cancelling', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(409, { code: 'wcpos_invalid_transition' }), read([{ ...cashRow, status: 'voided' }, cardRow])]);
     expect(await shop.reverse([cash, card])).toMatchObject({ outcome: { kind: 'refused', code: 'wcpos_invalid_transition' }, voided: [cash.paymentId] });
-    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2))]);
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
   });
   it('row 4: repeat a lost cancel read without another void', async () => {
     const shop = store([read(), ok(), new Error('offline'), open(), open(), cancelled()]);
-    expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'retry' }, voided: [cash.paymentId] });
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'retry', reason: 'network' }, voided: [] });
     expect(await shop.reverse([cash])).toEqual({ outcome: done, voided: [cash.paymentId] });
     expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush, readPush, readPush, cancelPush]);
   });
@@ -81,9 +81,9 @@ describe('wooSettleRefusedOrder.reverse', () => {
   it('row 6: resend a stale void once with its command id', async () => {
     const stale = () => json(409, { code: 'wcpos_revision_stale', data: { currentRevision: rev(3) } });
     for (const twice of [false, true]) {
-      const shop = store([read(), stale(), ...(twice ? [stale()] : [ok(), open(), cancelled()])]);
+      const shop = store([read(), stale(), ...(twice ? [stale(), read()] : [ok(), open(), cancelled()])]);
       expect(await shop.reverse([cash])).toEqual(twice ? { outcome: { kind: 'retry', reason: 'conflict' }, voided: [] } : { outcome: done, voided: [cash.paymentId] });
-      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(cash, rev(3)), ...(twice ? [] : [readPush, cancelPush])]);
+      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(cash, rev(3)), readPush, ...(twice ? [] : [cancelPush])]);
     }
   });
   it('row 7: refuse to void provider money under either id', async () => {
@@ -125,10 +125,11 @@ describe('wooSettleRefusedOrder.reverse', () => {
   });
   it('row 13: retry a locked or unavailable second void without repeating the first', async () => {
     for (const unavailable of [json(503, {}), json(409, { code: 'wcpos_payment_locked' })]) {
-      const shop = store([read([cashRow, cardRow]), ok(), unavailable, read([{ ...cashRow, status: 'voided' }, cardRow]), ok(), open(), cancelled()]);
+      const partial = () => read([{ ...cashRow, status: 'voided' }, cardRow]);
+      const shop = store([read([cashRow, cardRow]), ok(), unavailable, partial(), partial(), ok(), open(cardRow), cancelled()]);
       expect(await shop.reverse([cash, card])).toMatchObject({ outcome: { kind: 'retry' }, voided: [cash.paymentId] });
       expect(await shop.reverse([cash, card])).toEqual({ outcome: done, voided: [cash.paymentId, card.paymentId] });
-      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, voidPost(card, rev(1)), readPush, cancelPush]);
+      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, readPush, voidPost(card, rev(1)), readPush, cancelPush]);
     }
   });
   it.each([
@@ -141,9 +142,24 @@ describe('wooSettleRefusedOrder.reverse', () => {
     expect(shop.calls).toEqual([readPush]);
   });
   it('row 15: a void 2xx without a revision is retried and sends no cancel', async () => {
-    const shop = store([read(), json(200, {})]);
+    const shop = store([read(), json(200, {}), read()]);
     expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'retry' }, voided: [] });
-    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1))]);
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+  it('a 2xx void is not confirmed when the read back still shows the row captured', async () => {
+    const shop = store([read(), ok(), read()]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status: 'pos-partial', capturedMinor: 1000 }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+  it('a void stopped mid-way confirms only what the read back shows voided', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(503, {}), read([{ ...cashRow, status: 'voided' }, cardRow])]);
+    expect(await shop.reverse([cash, card])).toEqual({ outcome: { kind: 'retry', reason: 'status_503' }, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
+  });
+  it('a read back that fails confirms nothing', async () => {
+    const shop = store([read(), ok(), new Error('offline')]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'retry', reason: 'network' }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
   });
 });
 

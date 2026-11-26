@@ -15,7 +15,7 @@ import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
-import { tillPayments } from '../pos-order/till-payments';
+import { countedTillPayments, tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
 import { parkedCashRoundings, parkedTakenLegs } from '../order/order-drafts';
@@ -592,7 +592,7 @@ export async function writeClosure({
   // ADR-094: a bound order's rounding counts as its leg's money does (S3): a till leg, in the session that took it.
   // A parked or live sale's entries count by the same rule, against that sale's own taken legs (#1281).
   const cashRoundingMinor = sum(bound.flatMap((order) => {
-    const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
+    const legs = new Map(countedTillPayments(order).map((payment) => [payment.id, payment]));
     return (order.cashRoundings ?? []).filter((entry) => {
       const leg = legs.get(entry.paymentId);
       return leg !== undefined && (leg.sessionId ?? order.sessionId) === session.id;

@@ -179,9 +179,13 @@ function otherAnswer(answer: Answer, push: 'read' | 'cancel'): SettleOutcome {
  * that record shows nothing paid is a cancel pushed, with exactly the revision that answer carried. The store itself does
  * not refuse a cancel of a part-paid order, so this check fails closed.
  */
-async function cancelOrder(context: SyncContext, { storeOrderId, clientOrderId, attemptId }: SettleCancelRequest): Promise<SettleOutcome> {
-  const { push, read: readOrder } = settleCalls(context, clientOrderId);
-  const read = await readOrder(attemptId);
+async function cancelOrder(context: SyncContext, request: SettleCancelRequest): Promise<SettleOutcome> {
+  const { read } = settleCalls(context, request.clientOrderId);
+  return cancelFrom(context, request, await read(request.attemptId));
+}
+
+async function cancelFrom(context: SyncContext, { storeOrderId, clientOrderId, attemptId }: SettleCancelRequest, read: Answer): Promise<SettleOutcome> {
+  const { push } = settleCalls(context, clientOrderId);
   if (!isConflict(read)) return otherAnswer(read, 'read');
   let verdict = assess(read.body as Row, storeOrderId);
   for (let sent = 0; verdict.kind === 'cancellable'; sent += 1) {
@@ -209,21 +213,24 @@ export const wooSettleRefusedOrder: RefusedOrderSettlement = {
     const confirmed = new Set(verdict.voided);
     const result = (outcome: SettleOutcome) => ({ outcome, voided: request.legs.map(({ paymentId }) => paymentId).filter((id) => confirmed.has(id)) });
     let revision = verdict.revision;
-    for (const leg of verdict.toVoid) {
+    let stopped: SettleOutcome | undefined;
+    voids: for (const leg of verdict.toVoid) {
       const path = `orders/${request.storeOrderId}/payments/${leg.paymentId}/void`;
       const body = { command_id: leg.commandId, reason: 'given back at the till' };
       let reply = await call(path, { method: 'POST', body: { ...body, revision } });
       for (let resent = 0; reply.status === 409 && isRow(reply.body) && reply.body.code === 'wcpos_revision_stale'; resent += 1) {
         const stale = isRow(reply.body.data) ? text(reply.body.data.currentRevision) : undefined;
-        if (resent === 1 || !stale) return result(retry('conflict'));
+        if (resent === 1 || !stale) { stopped = retry('conflict'); break voids; }
         reply = await call(path, { method: 'POST', body: { ...body, revision: stale } });
       }
       const next = reply.status >= 200 && reply.status < 300 && isRow(reply.body) ? text(reply.body.revision) : undefined;
-      if (!next) return result(recordAnswer(reply));
-      confirmed.add(leg.paymentId);
+      if (!next) { stopped = recordAnswer(reply); break; }
       revision = next;
     }
-    return result(await cancelOrder(context, request));
+    const back = await read(request.attemptId);
+    if (!isConflict(back)) return result(stopped ?? otherAnswer(back, 'read'));
+    for (const id of assessReverse(back.body as Row, request).voided) confirmed.add(id);
+    return result(stopped ?? await cancelFrom(context, request, back));
   },
   // No close is sent: the record that covers the balance completes a paid order. A 2xx alone is never done; a re-read decides.
   pay: async (context, request) => {
