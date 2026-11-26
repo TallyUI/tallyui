@@ -1,7 +1,8 @@
 # v2 parity checklist: screen by screen against demo.wcpos.com
 
 - **Date:** 2026-11-17 (refresh of the 2026-11-10 round); Tally Woo column
-  re-scored from code 2026-11-23 · **Owner:** the
+  re-scored from code 2026-11-23; shared-library claims checked against main
+  2026-11-26 · **Owner:** the
   TallyUI shared-libraries worker
 - **Reference:** WCPOS 2.0.0 at `https://demo.wcpos.com/pos`; its source is
   `packages/core/src/screens/main` in the WCPOS monorepo.
@@ -132,17 +133,20 @@ Shared rows first: one fix reaches both apps.
 4. **Tender** ([Tender](#tender); visual; `@tallyui/components`). v2 replaces
    the products column with the tender pane and turns the cart into a
    payments ledger. The apps tender inside the cart column, and Complete sale
-   is a separate step. PLAN unit 16 is merged; v2's layout is `new`.
+   is a separate step. PLAN unit 16 is merged, and v2's layout is in
+   `@tallyui/components` for the apps to adopt (see [Tender](#tender)).
 5. **Split payment** ([Split payment](#split-payment); feature;
    `@tallyui/components`). It is missing in both apps; vendurepos's demo card
    still advertises it. PLAN units 14 and 16 are merged; it needs adoption.
 6. **Receipt** ([Receipt and print](#receipt-and-print); feature;
-   `@tallyui/components`). There is no template, printer, email or PDF.
+   `@tallyui/components`). Neither app offers a template, printer, email or
+   PDF, though `ReceiptSheet` has them (see [Receipt and print](#receipt-and-print)).
    PLAN unit 28 is partly done; 29 is merged.
 7. **Coupon** ([Coupon](#coupon); feature; each app). Shared coupons
    (#712–#792) are merged, but neither demo offers a coupon code.
-8. **Offline** ([Offline](#offline); feature; `@tallyui/components`). Nothing
-   says the till is offline. PLAN unit 34 (34b, 34c).
+8. **Offline** ([Offline](#offline); feature; `@tallyui/components`). Neither
+   app says the till is offline, though the toast and the Offline pill exist
+   (see [Offline](#offline)). PLAN unit 34 (34a, 34b, 34c).
 9. **Sheet and modal open and close**
    ([Motion: sheet and modal open and close](#motion-sheet-and-modal-open-and-close);
    motion; `@tallyui/components`).
@@ -160,12 +164,13 @@ Rows only one app has:
 
 13. **Keypad over the till**
     ([Motion: price keypad over the till](#motion-price-keypad-over-the-till);
-    vendurepos). A white backdrop blanks the products and the cart behind the
-    keypad, at both 1280x800 and 1280x720.
+    vendurepos). A white backdrop blanked the products and the cart behind the
+    keypad, at both 1280x800 and 1280x720. Fixed in `@tallyui/primitives`
+    (f1748d1b, #867); vendurepos takes the new version.
 14. **medusapos orders, order detail and refund** ([Orders list](#orders-list),
     [Order detail](#order-detail), [Refund](#refund); medusapos). The app has
-    a "Recent" card list only: no detail and no refund. It needs the Medusa
-    `listOrders` connector unit.
+    a "Recent" card list only: no detail and no refund. The Medusa
+    `listOrders` connector unit is merged (9dc9ce38, #540); the app adopts it.
 15. **vendurepos cart note** ([Cart note](#cart-note); vendurepos). The app
     should adopt the cart note row (#820).
 16. **vendurepos cashier sheet**
@@ -489,10 +494,14 @@ a count and a "+" for a new one.
 
 **Closes it:** PLAN units 14, 15, 16 and 17 are merged: legs, rounding, the
 keypad and chips, and the driver. Unit 18 (terminal leg view) is not
-started. v2's layout is `new`:
-- the pane over the products column;
-- the cart as the ledger;
-- the sale completes when paid.
+started. v2's layout is in `@tallyui/components`, for the apps to adopt:
+- the pane over the products column: `POSLayout`'s `renderCheckout`
+  (`packages/components/src/layout/pos-layout.tsx:42`);
+- the cart as the ledger: `TenderLedger`'s `closing` mode
+  (`packages/components/src/sale/tender-ledger.tsx:39`).
+
+Still open: the sale completing when paid (`TenderPane` keeps a Complete sale
+step), and unit 18.
 
 ## Split payment
 
@@ -531,7 +540,10 @@ Download PDF and Print.
 **Closes it:**
 - PLAN unit 28 is partly done (#609: no refund, Z or report defaults); 29 and
   38 are merged, but neither app offers a template or a printer;
-- the Medusa `emailReceipt` connector unit.
+- `ReceiptSheet` (`packages/components/src/sale/receipt-sheet.tsx`) has the
+  template and printer rows, the preview, email and Download PDF, and
+  ESC/POS printing is in `packages/pos/src/print/escpos`: the apps adopt them;
+- the Medusa `emailReceipt` connector unit (not started).
 
 ## Orders list
 
@@ -550,7 +562,8 @@ history.
 | ![v2](screens/v2/orders.jpg) | ![medusapos](screens/medusapos/orders.jpg) | ![vendurepos](screens/vendurepos/orders.jpg) |
 
 **Closes it:**
-- medusapos: the Medusa `listOrders` connector unit (not started);
+- medusapos: adopt the Medusa `listOrders` connector unit, merged in
+  9dc9ce38 (#540, ADR-081; `connectors/medusa/src/orders.ts:313`);
 - vendurepos: done (#595).
 
 ## Order detail
@@ -772,24 +785,31 @@ pill; search and sales carry on.
 |---|---|---|
 | ![v2](screens/v2/offline.jpg) | ![medusapos](screens/medusapos/offline.jpg) | ![vendurepos](screens/vendurepos/offline.jpg) |
 
-**Closes it:** PLAN unit 34 (34a is partly done, #636; 34b and 34c are not
-started). Unit 23 (outbox health) is merged.
+**Closes it:** the shared pieces exist for the apps to adopt:
+- the "Device went offline" toast (`packages/components/src/shell/connectivity-toast.tsx`);
+- the RegisterBar's Offline pill (`packages/components/src/register/register-bar.helpers.ts:64`).
+
+PLAN unit 34 is still open: 34a is partly done (#636; no connector reports a
+lost response to the tracker), and 34b and 34c are not started. Unit 23
+(outbox health) is merged.
 
 ---
 
 ## Motion
 
 v2 animates with Reanimated: springs, layout entering and exiting, and
-skeletons. TallyUI's `packages/components/src` has none of these: no
-`entering`/`exiting`, no `withSpring`/`withTiming`, no Skeleton. It has only
-CSS classes:
-- `transition-colors` (button, icon-button, nav-item, table, toggle);
-- `transition-opacity` (toast);
-- `transition-all` (tabs, accordion, collapsible, progress);
-- `animate-spin` (loader).
+skeletons. TallyUI's `packages/components/src` animates with React Native's
+`Animated` instead (no Reanimated):
+- shared timings and springs in `lib/motion.ts`, and sheet and dialog motion
+  in `ui/dialog/motion.ts`;
+- cart rows in `cart/cart-row-motion.tsx` and `cart/cart-line-strip.tsx`;
+- the column crossfade in `layout/pos-layout.tsx`, and the tile badge in
+  `product/in-cart-badge.tsx`;
+- a `Skeleton` (`ui/skeleton`), used in `product/product-table.tsx`.
 
-All five rows are `@tallyui/components` work. Any motion added honours the
-platform's reduce-motion setting, as v2's does.
+The rows below name the shared work still open; the rest is adoption in each
+app. Any motion added honours the platform's reduce-motion setting, as v2's
+does.
 
 Each clip is shown v2 | medusapos | vendurepos.
 
@@ -830,8 +850,8 @@ sheet slides from the right, and Escape closes it.
 | App | Status | Kind | Fix in | What differs |
 |---|---|---|---|---|
 | Tally Woo | not reachable | motion | | No table row states this animation's presence or absence in code (code read 23 Nov, no covering row). |
-| medusapos | gap | motion | `@tallyui/components` | Add Fee is a centred modal; the modal and the register sheet appear and go with no slide. |
-| vendurepos | gap | motion | `@tallyui/components` | The register sheet appears with no slide; Add charge expands inline. |
+| medusapos | gap | motion | medusapos | Add Fee is a centred modal; the modal and the register sheet appear and go with no slide. The shared sheet and dialog slide is in `@tallyui/components` (`ui/dialog/motion.ts`). |
+| vendurepos | gap | motion | vendurepos | The register sheet appears with no slide; Add charge expands inline. The shared slide is the same. |
 
 | v2 | medusapos | vendurepos |
 |---|---|---|
@@ -876,6 +896,6 @@ the products stay visible behind it.
 | 1280x800 | ![v2](screens/v2/motion/keypad.gif) | ![medusapos](screens/medusapos/motion/keypad.gif) | ![vendurepos](screens/vendurepos/motion/keypad.gif) |
 | 1280x720 | ![v2](screens/v2/motion/keypad-720.gif) | ![medusapos](screens/medusapos/motion/keypad-720.gif) | ![vendurepos](screens/vendurepos/motion/keypad-720.gif) |
 
-**Closes it:** check why vendurepos's popover renders a page-wide white
-layer. The likely suspects are the modal scrim token (#779) or the popover
-dismiss layer (#829). Neither is confirmed: it is `new`.
+**Closes it:** fixed in f1748d1b (#867): the page-wide white layer was the
+primitives' web positioning of floating content. vendurepos takes the
+`@tallyui/primitives` version that carries it.
