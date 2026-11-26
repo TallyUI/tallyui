@@ -99,7 +99,7 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
     expect(withSentForm(snapshot, order).fees!.map((f) => f.amountMinor)).toEqual([5, 4]);
   });
 
-  it('P3 (g\'): a generic fee entered with tax is stored as the plain exclusive fee (vendurepos gap 2.10)', () => {
+  it('P3 (g\'): a generic fee entered with tax is stored as the plain exclusive fee plus the cashier\'s entry (#1391) (vendurepos gap 2.10)', () => {
     const finalizeFee = (fee: { name: string; amountMinor: number; amountIncludesTax?: boolean }) => {
       const builder = make();
       builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 100, currency: 'EUR' } }); // finalize needs a line
@@ -110,7 +110,7 @@ describe('order.create v5 through builder and finalize (ADR-075)', () => {
     const { id: _a, ...fee } = finalizeFee({ name: 'Fee', amountMinor: 1200, amountIncludesTax: true }).fees![0];
     const { id: _b, ...plain } = finalizeFee({ name: 'Fee', amountMinor: 1000 }).fees![0];
     expect(fee).toMatchObject({ amountMinor: 1000, netMinor: 1000, taxMicros: '200000000' });
-    expect(fee).toStrictEqual(plain);
+    expect(fee).toStrictEqual({ ...plain, entered: { amountMinor: 1200, amountIncludesTax: true } });
   });
 
   it('keeps the per_order finalized form without netMicros', () => {

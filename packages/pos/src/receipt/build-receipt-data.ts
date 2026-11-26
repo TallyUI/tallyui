@@ -1,7 +1,7 @@
 import type { Discount, Order, SentOrder } from '../order/types';
 import { lockedRefundDueMinor } from '../pos-order/refund-due';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
-import { taxedLinesFor } from '../tax/taxed-lines';
+import { storedCharges, taxedLinesFor } from '../tax/taxed-lines';
 import { carriedRows } from './carried-rows';
 import type { ReceiptConfig, ReceiptData } from './types';
 import { RECEIPT_SCHEMA_VERSION } from './types';
@@ -15,7 +15,7 @@ export function receiptRounding(order: Pick<Order, 'cashRoundings'>): Pick<Recei
 export function buildReceiptData(order: SentOrder, config: ReceiptConfig): ReceiptData {
   // Drops the shared helper's `netMinor` (the Z report's own use): the receipt's tax summary
   // never showed it, and an exact-shape test elsewhere in this package pins that.
-  const taxedLines = taxedLinesFor(order.lineItems, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+  const taxedLines = taxedLinesFor(order.lineItems, storedCharges([...(order.fees ?? []), ...(order.shipping ?? [])]), order.pricesIncludeTax, order.taxRounding);
   const taxLines = taxLinesByRate(taxedLines, order.taxMinor, config.taxLabels, order.taxRounding).map(
     ({ label, code, ratePpm, amountMinor }) => ({ label, code, ratePpm, amountMinor }),
   );
