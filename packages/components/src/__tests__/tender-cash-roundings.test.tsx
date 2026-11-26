@@ -1504,3 +1504,75 @@ it('C17 (carry): at 16 entries a write-off onto a last cash leg with no entry is
   expect(sale.order.cashRoundings).toHaveLength(16);
   expect(sale.order.balanceDueMinor).toBe(0);
 });
+
+/** C18's shape: pick line 0 of `prices`, see the promoted prefill and its "Rounded from" the balance, Take; one cash leg with the settle's entry. */
+async function promotedPick(prices: number[], rule: NonNullable<PaymentRounding>, amountMinor: number, entryMinor: number) {
+  const [a] = startLines(prices, rounding(rule));
+  const goods = prices.reduce((sum, minor) => sum + minor, 0);
+  pickLine(a);
+  expect(text('tender-entry-amount')).toBe(money(amountMinor));
+  expect(screen.getByText(roundedFromCopy(goods))).toBeTruthy(); // the balance, not the pick's goods
+  expect(screen.queryByText(roundedFromCopy(prices[0]))).toBeNull();
+  expect(disabled('tender-take')).toBe(false);
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  const [leg] = sale.order.payments;
+  expect(leg).toMatchObject({ method: 'cash', amountMinor, units: { [a]: 1 } });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: entryMinor }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(amountMinor);
+  balances(posOrder, goods);
+}
+
+it('C18 (carry): a promoted pick whose amount differs from the balance records amount less balance: 3.33 of 3.34 settles at 3.35 (+1)', async () => {
+  await promotedPick([333, 1], five, 335, 1); // 3.33 rounds to 3.35; the 3.34 balance rounds to 3.35 too
+});
+
+it('C18b (carry): the same in down 0.05: 3.31 of 3.33 settles at 3.30 (-3)', async () => {
+  await promotedPick([331, 2], down5, 330, -3); // 3.31 rounds down to 3.30; the 3.33 balance rounds down to 3.30 too
+});
+
+/** 15 lines of 3.33 and two unheld lines `x`, `y`; a card leg, 15 carried picks (entries sum 0), a cash settle of 5.00 at a 5.02 remainder (-2): 16 entries; the card is then voided. */
+function sixteenEntriesTwoLines(cardMinor: number, x: number, y: number) {
+  const ids = startLines([...Array.from({ length: 15 }, () => 333), x, y]);
+  let cardId = '';
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: cardMinor })!; });
+  for (const id of ids.slice(0, 15)) cashPick(id, 500);
+  expect(liveEntries(false)).toBe(0);
+  expect(sale.order.balanceDueMinor).toBe(502);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.cashRoundings!.at(-1)!.minor).toBe(-2);
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(cardMinor);
+  press('tender-method-cash');
+  return ids.slice(15);
+}
+
+it('C19 (carry): at 16 entries a promoted pick that would add an entry is refused with CASH_SETTLE_LIMIT, and the pane says take the rest by another method', () => {
+  const [x] = sixteenEntriesTwoLines(502, 501, 503);
+  // 5.01 less the -2 is 5.03, which rounds to 5.05; the 5.02 balance less -2 is 5.04, which rounds to 5.05: promoted, a +3 entry.
+  pickLine(x);
+  expect(text('tender-entry-amount')).toBe(money(505));
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 501, tenderedMinor: 505, units: { [x]: 1 }, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(502);
+});
+
+it('C19b (carry): at 16 entries a promoted pick whose amount equals the balance adds no entry, so it is taken', () => {
+  const [x] = sixteenEntriesTwoLines(500, 499, 503);
+  // 4.99 less the -2 is 5.01, which rounds to 5.00; the 5.00 balance less -2 is 5.02, which rounds to 5.00: promoted, no entry.
+  pickLine(x);
+  expect(text('tender-entry-amount')).toBe(money(500));
+  expect(disabled('tender-take')).toBe(false);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 499, tenderedMinor: 500, units: { [x]: 1 }, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.error).toBeNull();
+  expect(lastLeg()).toMatchObject({ method: 'cash', amountMinor: 500, units: { [x]: 1 } });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
