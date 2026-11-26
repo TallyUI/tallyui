@@ -8,22 +8,22 @@ const enabled = { ...server, chargeTaxMode: true }
 const gate = 'amountIncludesTax requires the chargeTaxMode capability, which this server does not declare'
 const refusal = (message: string) => ({ id: fixture.id, status: 'rejected', error: { code: 'invalid_payload', message } })
 
-function create(pricesIncludeTax = false, amountIncludesTax: boolean | 'yes' = true, field: 'fees' | 'shipping' = 'fees', wrongRow = false) {
+function create(pricesIncludeTax = false, amountIncludesTax: boolean | 'yes' = true, field: 'fees' | 'shipping' = 'fees', wrongRow = false, taxMinor = 200, residue = 0) {
   const { payload } = fixture, { display } = payload
-  const netMinor = amountIncludesTax === false ? 800 : 802, taxMinor = 200, grossMinor = netMinor + taxMinor
+  const netMinor = amountIncludesTax === false ? 800 : 1002 - taxMinor, grossMinor = netMinor + taxMinor
   const amountMinor = amountIncludesTax === false ? netMinor : grossMinor
   const id = field === 'fees' ? 'clientFeeId' : 'clientShippingId'
-  const totals = { totalMinor: payload.totalMinor + grossMinor, taxMinor: payload.taxMinor + taxMinor }
+  const totals = { totalMinor: payload.totalMinor + grossMinor + residue, taxMinor: payload.taxMinor + taxMinor }
   return { ...fixture, type: 'order.create' as const, version: 5, payload: { ...payload, ...totals, pricesIncludeTax,
     lines: payload.lines.map((line, index) => ({ ...line, taxInclusive: index === 0, discountMinor: [169, 37][index] })), discountMinor: 206,
     [field]: [{ [id]: 'charge', name: 'Charge', taxStatus: 'taxable', amountMinor, amountIncludesTax, taxMinor }],
-    taxByRate: [...payload.taxByRate, { ratePpm: 250000, netMinor, taxMinor, grossMinor }],
-    payments: payload.payments.map(payment => ({ ...payment, amountMinor: totals.totalMinor, tenderedMinor: payment.tenderedMinor + grossMinor })),
+    taxByRate: [...payload.taxByRate, { ratePpm: taxMinor === 0 ? 0 : 250000, netMinor, taxMinor, grossMinor }],
+    payments: payload.payments.map(payment => ({ ...payment, amountMinor: totals.totalMinor, tenderedMinor: payment.tenderedMinor + grossMinor + residue })),
     display: { ...display, ...totals, taxInclusive: pricesIncludeTax,
       ...(!pricesIncludeTax && { subtotalMinor: 3000, discountMinor: 206, orderDiscountMinor: 106,
         lines: display.lines.map((line, index) => ({ ...line, amountMinor: [2000, 1000][index],
           discounts: line.discounts.map(discount => ({ ...discount, amountMinor: 100 })) })) }),
-      [field]: [{ [id]: 'charge', amountMinor: wrongRow ? amountMinor : pricesIncludeTax ? grossMinor : netMinor }] } } }
+      [field]: [{ [id]: 'charge', amountMinor: wrongRow ? amountMinor : (pricesIncludeTax ? grossMinor : netMinor) + residue }] } } }
 }
 
 it('C1 accepts a gross fee displayed net', () => {
@@ -56,4 +56,14 @@ it('C8 gates the fee mode on the create part of an update', () => {
     payload: { ...command.payload, orderId: 'order-1', createVersion: command.version } }
   expect(precheckCommand(update, server)).toEqual(refusal(gate))
   expect(precheckCommand(update, enabled)).toBeUndefined()
+})
+it('C9 accepts one cent of residue on a gross fee displayed net', () => {
+  expect(precheckCommand(create(false, true, 'fees', false, 200, -1), enabled)).toBeUndefined()
+})
+it.each([
+  ['C10 refuses two cents of residue on a converted taxed fee', 200, -2],
+  ['C11 refuses one cent of residue on a converted untaxed fee', 0, -1],
+] as const)('%s', (_, taxMinor, residue) => {
+  expect(precheckCommand(create(false, true, 'fees', false, taxMinor, residue), enabled)).toEqual(refusal(
+    'display.fees[0].amountMinor: expected the payload.fees amountMinor converted to the display tax mode'))
 })
