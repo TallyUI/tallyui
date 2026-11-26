@@ -1,5 +1,12 @@
 # @tallyui/connector-vendure
 
+## 5.2.0
+
+### Patch Changes
+
+- Updated dependencies [fd25afd]
+  - @tallyui/core@5.2.0
+
 ## 5.1.0
 
 ### Patch Changes
