@@ -10,7 +10,8 @@
 import { legMethodId } from '@tallyui/core';
 import { parkedTakenLegs } from '../order/order-drafts';
 import type { Payment } from '../order/types';
-import { tillPayments } from '../pos-order/till-payments';
+import { countedTillPayments } from '../pos-order/till-payments';
+import type { PosOrderStoreSettlement } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 
 export type RefundRow = Pick<PosRefund, 'id' | 'sessionId' | 'status' | 'result'>;
@@ -39,10 +40,10 @@ export type LedgerRow = {
  * A locked store payment (storePaymentId set) is the store's earlier money, not this till's, and is left out (ADR-090 gate 11).
  * A payment stamped with the session that took it counts there, else in its order's (S3).
  */
-export function paymentLedgerRows<P extends { method: string; amountMinor: number; storePaymentId?: string; sessionId?: string }>(
-  orders: readonly { sessionId?: string; payments: readonly P[] }[],
+export function paymentLedgerRows<P extends { id?: string; method: string; amountMinor: number; storePaymentId?: string; sessionId?: string }>(
+  orders: readonly { sessionId?: string; payments: readonly P[]; storeSettlement?: TillOrder['storeSettlement'] }[],
 ): LedgerRow[] {
-  return orders.flatMap((order) => tillPayments(order.payments).map((payment) => ({
+  return orders.flatMap((order) => countedTillPayments(order).map((payment) => ({
     session_id: payment.sessionId ?? order.sessionId, kind: payment.method === 'cash' ? 'cash' : 'other', method_id: payment.method,
     status: 'captured', amountMinor: payment.amountMinor,
   })));
@@ -174,11 +175,11 @@ export function deriveDrawerTerms(input: Parameters<typeof deriveExpected>[0]): 
   };
 }
 
-type TillLeg = { method: string; methodId?: string; amountMinor: number; storePaymentId?: string; sessionId?: string };
-type TillOrder = { sessionId?: string; payments: readonly TillLeg[] };
+type TillLeg = { id?: string; method: string; methodId?: string; amountMinor: number; storePaymentId?: string; sessionId?: string };
+type TillOrder = { sessionId?: string; payments: readonly TillLeg[]; storeSettlement?: Pick<PosOrderStoreSettlement, 'kind' | 'state' | 'legs'> };
 
 /**
- * Takings per payment method for one session, for the closure sheet: this till's captured payments (`tillPayments`) in
+ * Takings per payment method for one session, for the closure sheet: this till's captured payments (`countedTillPayments`) in
  * `sessionId`: a payment's own session, else its order's (S3), keyed by `legMethodId`'s kind plus id (`external:stripe`), with the number of
  * payments behind each. Local only, never synced: register rows and payloads keep `method_id: payment.method` (#256, ADR-070
  * decision 1). A leg with no methodId keys exactly as deriveDrawerTerms does (`cash` or its method); the figures sum to
@@ -192,7 +193,7 @@ export function takingsByMethod(
 ): Record<string, DrawerTerm> {
   const takings: Record<string, DrawerTerm> = Object.create(null);
   for (const order of [...orders, { payments: extra }] as readonly TillOrder[]) {
-    for (const payment of tillPayments(order.payments)) {
+    for (const payment of countedTillPayments(order)) {
       if ((payment.sessionId ?? order.sessionId) !== sessionId) continue;
       const term = (takings[legMethodId(payment)] ??= { amountMinor: 0, count: 0 });
       term.amountMinor += payment.amountMinor;

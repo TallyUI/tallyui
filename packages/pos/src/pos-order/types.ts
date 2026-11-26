@@ -173,7 +173,7 @@ export interface PosOrder {
  * kept while `state` is `sending`, so a repeat after a lost answer is the same attempt. `at` is the instant of the last
  * write. `storeStatus` is the store's status word (done, changed), `capturedMinor` what the store shows captured
  * (changed), `code` and `message` the store's refusal (refused), for the sync log, never shown to the cashier.
- * `payments` and `closeId` are for kind `pay`, `legs` for kind `reverse` (later slices).
+ * `payments` and `closeId` are for kind `pay`. A `reverse` keeps its store payment and void command ids in `legs`, with `done` on confirmed voids.
  */
 export type PosOrderStoreSettlement = {
   kind: 'cancel' | 'pay' | 'reverse';

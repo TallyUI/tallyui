@@ -9,7 +9,8 @@ import { callbackSink, type LogEntry } from '../logging';
 import { needsAttention, posOrderCollection, uuidv7, type PosOrder, type PosOrderStoreSettlement } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox } from './order-outbox';
 import { outboxLogger } from './logger';
-import { cancelOnStore, payRestOnStore } from './store-settlement';
+import { cancelOnStore, payRestOnStore, reverseOnStore } from './store-settlement';
+import type { SettleReverseRequest, SettleReverseResult } from '@tallyui/core';
 import type { CommandTransport, OutboxState } from './types';
 
 const name = `storesettle${uuidv7().replaceAll('-', '')}`;
@@ -351,6 +352,109 @@ describe('payRestOnStore', () => {
     });
     await payRestOnStore({ orders, pay }, order.id);
     expect((await stored(order.id)).storeSettlement).toEqual(other);
+  });
+});
+
+describe('reverseOnStore', () => {
+  const insert = async (recorded: number, storeSettlement?: PosOrderStoreSettlement) => {
+    const order = refused({ payments: [{ id: uuidv7(), method: 'cash', amountMinor: 1000 }, { id: uuidv7(), method: 'external', amountMinor: 500 }],
+      ...(storeSettlement ? { storeSettlement } : {}) }, { orderId: '115', recorded });
+    await orders.insert(order);
+    return order;
+  };
+  type Reverse = (request: SettleReverseRequest) => Promise<SettleReverseResult>;
+  const done = { kind: 'done' as const, status: 'cancelled' };
+  const retry = { kind: 'retry' as const, reason: 'network' };
+  it('row 3: persist the refused step with only the cash voided', async () => {
+    const order = await insert(2);
+    const outcome = { kind: 'refused' as const, code: 'wcpos_invalid_transition', message: 'No.' };
+    const reverse: Reverse = async (request) => {
+      expect(request).toEqual({ storeOrderId: '115', clientOrderId: order.id, attemptId: expect.any(String),
+        legs: order.payments.map(({ id, amountMinor }) => ({ paymentId: id, commandId: expect.any(String), amountMinor })) });
+      const sending = (await stored(order.id)).storeSettlement;
+      expect(sending).toMatchObject({ kind: 'reverse', state: 'sending', attemptId: request.attemptId });
+      expect(sending?.legs).toEqual(request.legs.map(({ paymentId, commandId }) => ({ paymentId, commandId })));
+      return { outcome, voided: [order.payments[0].id] };
+    };
+    expect(await reverseOnStore({ orders, reverse }, order.id)).toEqual(outcome);
+    const after = await stored(order.id);
+    expect(after.storeSettlement).toMatchObject({ state: 'refused', code: outcome.code, message: outcome.message });
+    expect(after.storeSettlement?.legs?.map(({ done }) => done)).toEqual([true, undefined]);
+    expect(untouched(after)).toEqual(untouched(order));
+  });
+  it.each([[4, 1], [13, 2]])('row %i: a sending repeat keeps its attempt, command ids and confirmed leg', async (_row, count) => {
+    const order = await insert(count);
+    const reverse = vi.fn<Reverse>().mockResolvedValueOnce({ outcome: retry, voided: [order.payments[0].id] }).mockImplementationOnce(async (request) => {
+      expect((await stored(order.id)).storeSettlement?.legs?.[0].done).toBe(true);
+      return { outcome: done, voided: request.legs.map(({ paymentId }) => paymentId) };
+    });
+    expect(await reverseOnStore({ orders, reverse }, order.id)).toEqual(retry);
+    const pending = (await stored(order.id)).storeSettlement;
+    expect(pending?.state).toBe('sending');
+    expect(pending?.legs?.map(({ done }) => done)).toEqual(count === 2 ? [true, undefined] : [true]);
+    expect(await reverseOnStore({ orders, reverse }, order.id)).toEqual(done);
+    expect(reverse.mock.calls[1]).toEqual(reverse.mock.calls[0]);
+    expect((await stored(order.id)).storeSettlement).toMatchObject({ state: 'done', storeStatus: 'cancelled' });
+  });
+  it('row 8: a changed cancel still marks the voided leg done', async () => {
+    const order = await insert(1);
+    const outcome = { kind: 'changed' as const, status: 'pos-partial', capturedMinor: 500 };
+    await reverseOnStore({ orders, reverse: async () => ({ outcome, voided: [order.payments[0].id] }) }, order.id);
+    expect((await stored(order.id)).storeSettlement).toMatchObject({ state: 'changed', storeStatus: outcome.status, capturedMinor: 500, legs: [{ done: true }] });
+  });
+  it("the request carries each leg's till amount", async () => {
+    const order = await insert(2);
+    const legs = [...order.payments].reverse().map(({ id }) => ({ paymentId: id, commandId: uuidv7() }));
+    await (await orders.findOne(order.id).exec())!.incrementalPatch({ storeSettlement: { ...settlement('sending', 'reverse'), legs } });
+    const reverse = vi.fn<Reverse>().mockResolvedValue({ outcome: retry, voided: [] });
+    await reverseOnStore({ orders, reverse }, order.id);
+    expect(reverse.mock.calls[0][0].legs).toEqual([{ ...legs[0], amountMinor: 500 }, { ...legs[1], amountMinor: 1000 }]);
+  });
+  it('sends nothing when a sending leg no longer has a till payment', async () => {
+    const order = await insert(2, { ...settlement('sending', 'reverse'), legs: [{ paymentId: uuidv7(), commandId: uuidv7() }] });
+    const reverse = vi.fn<Reverse>();
+    expect(await reverseOnStore({ orders, reverse }, order.id)).toEqual({ kind: 'not_offered' });
+    expect(reverse).not.toHaveBeenCalled();
+    expect(await stored(order.id)).toEqual(order);
+  });
+  it('a stale answer from an older attempt is not written', async () => {
+    const order = await insert(2);
+    const replacement = settlement('sending', 'reverse');
+    const reverse: Reverse = async ({ legs }) => {
+      await (await orders.findOne(order.id).exec())!.incrementalPatch({ storeSettlement: replacement });
+      return { outcome: done, voided: legs.map(({ paymentId }) => paymentId) };
+    };
+    await reverseOnStore({ orders, reverse }, order.id);
+    expect((await stored(order.id)).storeSettlement).toEqual(replacement);
+  });
+  it('row 9: gone with money stays in attention', async () => {
+    const order = await insert(1);
+    await reverseOnStore({ orders, reverse: async () => ({ outcome: { kind: 'gone' }, voided: [] }) }, order.id);
+    const after = await stored(order.id);
+    expect(after.storeSettlement?.state).toBe('gone');
+    expect(needsAttention([after])).toEqual([after]);
+  });
+  it('row 12: a rejected void leaves sending and rejects with the same error', async () => {
+    const order = await insert(1), error = new Error('unauthorized');
+    await expect(reverseOnStore({ orders, reverse: async () => { throw error; } }, order.id)).rejects.toBe(error);
+    expect((await stored(order.id)).storeSettlement?.state).toBe('sending');
+  });
+  it('row 14: an ineligible row never calls reverse', async () => {
+    const order = await insert(0), reverse = vi.fn<Reverse>();
+    expect(await reverseOnStore({ orders, reverse }, order.id)).toEqual({ kind: 'not_offered' });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+  it('row 15: after refusal keep only confirmed command ids under a new attempt', async () => {
+    const order = await insert(2);
+    const reverse = vi.fn<Reverse>().mockResolvedValueOnce({ outcome: { kind: 'refused', code: 'no', message: 'No.' }, voided: [order.payments[0].id] })
+      .mockResolvedValueOnce({ outcome: retry, voided: [] });
+    await reverseOnStore({ orders, reverse }, order.id);
+    await reverseOnStore({ orders, reverse }, order.id);
+    const [[first], [second]] = reverse.mock.calls;
+    expect(second.attemptId).not.toBe(first.attemptId);
+    expect(second.legs[0]).toEqual(first.legs[0]);
+    expect(second.legs[1].commandId).not.toBe(first.legs[1].commandId);
+    expect((await stored(order.id)).storeSettlement?.legs?.[0].done).toBe(true);
   });
 });
 

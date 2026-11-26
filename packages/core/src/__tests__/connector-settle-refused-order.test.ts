@@ -1,8 +1,17 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type { RefusedOrderSettlement, SettleCancelRequest, SettleOutcome, SettlePayment, SettlePayRequest, SettlePayResult, SyncContext, TallyConnector } from '../types/connector';
 import type { PaymentMethodKind } from '../types/commands';
+import type { SettleReverseLeg, SettleReverseRequest, SettleReverseResult } from '../index';
 
 describe('TallyConnector settleRefusedOrder types', () => {
+  it('names the reverse legs, request and result; reverse is optional', () => {
+    type Reverse = (context: SyncContext, request: SettleReverseRequest) => Promise<SettleReverseResult>;
+    expectTypeOf<RefusedOrderSettlement['reverse']>().toEqualTypeOf<Reverse | undefined>();
+    expectTypeOf<SettleReverseRequest>().toExtend<SettleCancelRequest>();
+    expectTypeOf<SettleReverseRequest['legs']>().toEqualTypeOf<readonly SettleReverseLeg[]>();
+    expectTypeOf<SettleReverseLeg>().toEqualTypeOf<{ paymentId: string; commandId: string; amountMinor: number }>();
+    expectTypeOf<SettleReverseResult>().toEqualTypeOf<{ outcome: SettleOutcome; voided: readonly string[] }>();
+  });
   it('accepts a connector without settleRefusedOrder', () => {
     expectTypeOf<Omit<TallyConnector, 'settleRefusedOrder'>>().toExtend<TallyConnector>();
   });

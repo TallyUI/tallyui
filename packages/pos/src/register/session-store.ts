@@ -15,7 +15,7 @@ import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
-import { tillPayments } from '../pos-order/till-payments';
+import { countedTillPayments, settledAwayOnStore, tillPayments } from '../pos-order/till-payments';
 import type { PosRefund } from '../refund/pos-refund';
 import { readFresh } from '../rxdb';
 import { parkedCashRoundings, parkedTakenLegs } from '../order/order-drafts';
@@ -573,7 +573,8 @@ export async function writeClosure({
   const taxRateKey = (code: string | undefined, ratePpm: number) => `${ratePpm}:${(code ?? '').replace(/[%.[\]\\]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`;
   const taxRates = new Map<string, { ratePpm: number; code?: string; net_minor: number; tax_minor: number }>();
   const roundings = new Set<string>();
-  for (const order of bound) {
+  const transactions = bound.filter((order) => !settledAwayOnStore(order));
+  for (const order of transactions) {
     // Grouped by the rule applied: a `custom` sale used the default figures, so it joins the default's group.
     const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
@@ -592,7 +593,7 @@ export async function writeClosure({
   // ADR-094: a bound order's rounding counts as its leg's money does (S3): a till leg, in the session that took it.
   // A parked or live sale's entries count by the same rule, against that sale's own taken legs (#1281).
   const cashRoundingMinor = sum(bound.flatMap((order) => {
-    const legs = new Map(tillPayments(order.payments).map((payment) => [payment.id, payment]));
+    const legs = new Map(countedTillPayments(order).map((payment) => [payment.id, payment]));
     return (order.cashRoundings ?? []).filter((entry) => {
       const leg = legs.get(entry.paymentId);
       return leg !== undefined && (leg.sessionId ?? order.sessionId) === session.id;
@@ -654,7 +655,7 @@ export async function writeClosure({
       movements: entries.map(({ id, type, amountMinor, reason, voids, voided_by, created_at_gmt, created_by }) => ({
         id, type, amountMinor, reason, voids: voids ?? null, created_at_gmt, created_by: created_by ?? null, voided_by: voided_by ?? null,
       })),
-      transaction_count: bound.length,
+      transaction_count: transactions.length,
       refund_count: countedRefunds.length,
       ...(refunds !== undefined ? {
         refund_ids: countedRefunds.map((refund) => refund.id),

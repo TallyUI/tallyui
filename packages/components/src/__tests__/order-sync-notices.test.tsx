@@ -5,7 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { Text } from 'react-native';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatMoney } from '@tallyui/core';
-import { UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
+import { TILL_SESSION_CLOSED, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
 import { OrderSyncNotices } from '../sale/orders-list';
 
 afterEach(() => cleanup());
@@ -30,6 +30,85 @@ const META_NOT_SENT = "The order's custom fields couldn't be sent to the store."
 const edited = (id: string, name = 'Blue shirt') => ({ id, productId: 'shirt', variantId: id, name, sku: `${id}-NEW`, catalogueSku: id,
   quantity: 1, unitPriceMinor: 600, discountMinor: 0, netMinor: 600, taxLines: [] });
 const extras = { customer: { taxIds: [{ type: 'eu_vat', value: 'DE123456789' }] }, meta: [{ key: 'gift', value: 'yes' }], lines: [edited('l1')] };
+
+describe('reverse notices', () => {
+  const cash = { id: 'cash', method: 'cash' as const, amountMinor: 1000 }, card = { id: 'card', method: 'external' as const, amountMinor: 500 };
+  const cashText = `Cash ${eur(1000)}: hand it back from the drawer`, cardText = `Card ${eur(500)}: give it back on the card terminal`;
+  const give = 'Give back any of this you have not already given back.';
+  type State = NonNullable<PosOrder['storeSettlement']>['state'];
+  function sale(state: State, payments: PosOrder['payments'], done: string[], kind: 'reverse' | 'cancel' = 'reverse') {
+    return order('reverse', { syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'secret', data: { orderId: '115', recorded: payments.length } },
+      payments, storeSettlement: { kind, state, at: '2026-11-25T10:00:00.000Z', attemptId: 'attempt',
+        legs: payments.map(({ id }) => ({ paymentId: id, commandId: `cmd-${id}`, done: done.includes(id) })) } });
+  }
+  function notice(state: State, payments: PosOrder['payments'], done: string[]) {
+    render(<OrderSyncNotices order={sale(state, payments, done)} />);
+    return screen.getByTestId('order-settlement-reverse').textContent;
+  }
+  it.each(['reverse', 'cancel'] as const)('S1: closed-session %s shows only the manager notice', (kind) => {
+    const refused = sale('refused', [cash, card], ['cash'], kind);
+    render(<OrderSyncNotices order={{ ...refused, storeSettlement: { ...refused.storeSettlement!, code: TILL_SESSION_CLOSED } }} />);
+    expect(screen.getByText("Taken in a session that has closed: a manager must settle this sale in the store's admin.")).toBeTruthy();
+    expect(screen.queryAllByText(/give back|did not cancel|taken off/i)).toHaveLength(0);
+  });
+  it('row 3: partial refusal names what was taken off and still paid', () => {
+    const text = notice('refused', [cash, card], ['cash']);
+    expect(text).toBe(`Order #115 was not cancelled on the store. The store has taken off: ${cashText}. ${give} Still paid there: Card ${eur(500)}. Keep that; a manager must check it in the store's admin.`);
+    expect(text).not.toContain(cardText);
+    expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
+  });
+  it('refused with no leg done says only that it was not cancelled', () => {
+    expect(notice('refused', [cash, card], [])).toBe("The store did not cancel order #115. Check it in the store's admin.");
+  });
+  it('row 8: a changed cancel names the confirmed void', () => {
+    const text = notice('changed', [cash], ['cash']);
+    expect(text).toBe(`Order #115 was not cancelled on the store. The store has taken off: ${cashText}. ${give}`);
+    expect(text).not.toContain('Still paid there');
+    expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
+  });
+  it('sending with a done cash leg tells the cashier to give it back and keep the rest', () => {
+    const text = notice('sending', [cash, card], ['cash']);
+    expect(text).toBe(`Cancelling order #115 on the store is not finished. The store has taken off: ${cashText}. ${give} Not confirmed taken off yet: Card ${eur(500)}. Keep that until this till shows the order cancelled.`);
+    expect(text).not.toContain(cardText);
+  });
+  it('a sending reverse with nothing confirmed names every leg as not confirmed', () => {
+    const text = notice('sending', [cash, card], []);
+    expect(text).toBe(`Cancelling order #115 on the store is not finished. Not confirmed taken off yet: Cash ${eur(1000)}; Card ${eur(500)}. Keep that until this till shows the order cancelled.`);
+  });
+  it('a gone reverse after a void names what was taken off', () => {
+    const text = notice('gone', [cash, card], ['cash']);
+    expect(text).toBe(`Order #115 is not on the store any more. The store had taken off: ${cashText}. ${give} Check it in the store's admin.`);
+    expect(text).not.toContain(cardText);
+  });
+  it('row 17: cancelled notice lists every leg and where to give it back', () => {
+    expect(notice('done', [cash, card], ['cash', 'card'])).toBe(`Order #115 was cancelled on the store. The till took: ${cashText}; ${cardText}. ${give}`);
+    cleanup();
+    expect(notice('done', [card], ['card'])).toBe(`Order #115 was cancelled on the store. The till took: ${cardText}. ${give}`);
+  });
+  it('done names unrecorded legs too', () => {
+    render(<OrderSyncNotices order={order('reverse', { syncStatus: 'rejected', subtotalMinor: 1800, totalMinor: 1800,
+      error: { code: 'invalid_payload', message: 'secret', data: { orderId: '115', recorded: 2 } },
+      payments: [cash, card, { id: 'rest', method: 'cash', amountMinor: 300 }],
+      storeSettlement: { kind: 'reverse', state: 'done', at: '2026-11-25T10:00:00.000Z', attemptId: 'attempt',
+        legs: [cash, card].map(({ id }) => ({ paymentId: id, commandId: `cmd-${id}`, done: true })) } })} />);
+    expect(screen.getByTestId('order-settlement-reverse').textContent).toBe(`Order #115 was cancelled on the store. The till took: ${cashText}; ${cardText}; Cash ${eur(300)}: hand it back from the drawer. ${give}`);
+  });
+  it('a notice reads the same when shown again', () => {
+    const refused = sale('refused', [cash, card], ['cash']);
+    const first = render(<OrderSyncNotices order={refused} />);
+    const text = first.getByTestId('order-settlement-reverse').textContent;
+    first.unmount();
+    render(<OrderSyncNotices order={refused} />);
+    expect(screen.getByTestId('order-settlement-reverse').textContent).toBe(text);
+  });
+  it.each(['reverse', 'cancel'] as const)('%s notices never suggest a pay-out or refund', (kind) => {
+    for (const state of ['done', 'sending', 'changed', 'refused', 'gone'] as const) {
+      const view = render(<OrderSyncNotices order={sale(state, [cash, card], ['cash'], kind)} />);
+      expect(view.container.textContent).not.toMatch(/pay-out|refund/i);
+      view.unmount();
+    }
+  });
+});
 
 describe('OrderSyncNotices parked sales', () => {
   it.each([
@@ -146,9 +225,9 @@ describe('OrderSyncNotices order left on the store (#1101)', () => {
       left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'cancel', state, attemptId: 'a', at: '2026-11-25T10:00:00.000Z', ...extra } });
     it.each<[string, PosOrder, string]>([
       ['done, row 17: names the cash taken on this till', cancel('done', { storeStatus: 'cancelled' }),
-        'Order #115 was cancelled on the store. If you gave back the $10.00 cash taken on this till, record it as a pay-out.'],
-      ['done, row 17: a card-only order keeps the sentence alone', { ...cancel('done', { storeStatus: 'cancelled' }),
-        payments: [{ id: 'card', method: 'external', amountMinor: 1000 }] }, 'Order #115 was cancelled on the store.'],
+        'Order #115 was cancelled on the store. The till took: Cash $10.00: hand it back from the drawer. Give back any of this you have not already given back.'],
+      ['done, row 17: a card-only order names the terminal', { ...cancel('done', { storeStatus: 'cancelled' }),
+        payments: [{ id: 'card', method: 'external', amountMinor: 1000 }] }, 'Order #115 was cancelled on the store. The till took: Card $10.00: give it back on the card terminal. Give back any of this you have not already given back.'],
       ['gone', cancel('gone'), 'Order #115 was removed on the store.'],
       ['gone, without a store order (the till reference)', order('abcdefgh12345678', { syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'x' },
         storeSettlement: { kind: 'cancel', state: 'gone', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } }), 'Order #12345678 was removed on the store.'],

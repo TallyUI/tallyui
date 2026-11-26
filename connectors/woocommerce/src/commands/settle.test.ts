@@ -33,10 +33,140 @@ function store(replies: Array<Response | Error>, storeOrderId = '16') {
     return reply;
   });
   const context: SyncContext = { connectorId: 'woocommerce', baseUrl, headers: { Authorization: 'Bearer t' }, fetch };
-  return { calls, cancel: () => wooSettleRefusedOrder.cancel!(context, { storeOrderId, clientOrderId, attemptId }) };
+  return { calls, cancel: () => wooSettleRefusedOrder.cancel!(context, { storeOrderId, clientOrderId, attemptId }),
+    reverse: (legs: { paymentId: string; commandId: string; amountMinor: number }[]) => wooSettleRefusedOrder.reverse!(context, { storeOrderId, clientOrderId, attemptId, legs }) };
 }
 const push = (mutationId: string, baseRevision: string, payload: Row) => ({ url: `${baseUrl}/push/orders`, method: 'POST',
   body: { mutationId, operation: 'update', collection: 'orders', recordId: clientOrderId, baseRevision, payload } });
+
+describe('wooSettleRefusedOrder.reverse', () => {
+  const cash = { paymentId: '019abcde-0000-7000-8000-0000000000aa', commandId: '019abcde-0000-7000-8000-0000000000a1', amountMinor: 1000 };
+  const card = { paymentId: '019abcde-0000-7000-8000-0000000000bb', commandId: '019abcde-0000-7000-8000-0000000000b2', amountMinor: 500 };
+  const cashRow = payment('captured', { id: cash.paymentId, amount: '10.00' });
+  const cardRow = payment('captured', { id: card.paymentId, method_id: 'pos_card' });
+  const read = (rows: Row[] = [cashRow], over: Row = {}, revision = rev(1)) => conflict(order({ status: 'pos-partial', ...over }, [ledger(rows)]), revision);
+  const open = (...rows: Row[]) => read([cashRow, ...rows].map((row) => ({ ...row, status: 'voided' })), { status: 'pos-open' }, rev(4));
+  const ok = (revision = rev(2)) => json(200, { revision });
+  const done = { kind: 'done', status: 'cancelled' };
+  const readPush = push(readId, 'none', {}), cancelPush = push(attemptId, rev(4), { status: 'cancelled' });
+  const voidPost = (leg: typeof cash, revision: string) => ({ url: `${baseUrl}/orders/16/payments/${leg.paymentId}/void`, method: 'POST',
+    body: { command_id: leg.commandId, revision, reason: 'given back at the till' } });
+
+  it('row 1: void cash then cancel with the fresh read revision', async () => {
+    const shop = store([read(), ok(), open(), cancelled()]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: done, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush, cancelPush]);
+  });
+  it('row 2: void both legs in request order with chained revisions', async () => {
+    const shop = store([read([cardRow, cashRow]), ok(), ok(rev(3)), open(cardRow), cancelled()]);
+    expect(await shop.reverse([cash, card])).toEqual({ outcome: done, voided: [cash.paymentId, card.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, cancelPush]);
+  });
+  it('row 3: a refused second void reads back without cancelling', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(409, { code: 'wcpos_invalid_transition' }), read([{ ...cashRow, status: 'voided' }, cardRow])]);
+    expect(await shop.reverse([cash, card])).toMatchObject({ outcome: { kind: 'refused', code: 'wcpos_invalid_transition' }, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
+  });
+  it('row 4: repeat a lost cancel read without another void', async () => {
+    const shop = store([read(), ok(), new Error('offline'), open(), open(), cancelled()]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'retry', reason: 'network' }, voided: [] });
+    expect(await shop.reverse([cash])).toEqual({ outcome: done, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush, readPush, readPush, cancelPush]);
+  });
+  it('row 5: a completed order is not touched', async () => {
+    const shop = store([read([cashRow], { status: 'completed', date_paid: '2026-11-25' })]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status: 'completed', capturedMinor: 1000 }, voided: [] });
+    expect(shop.calls).toEqual([readPush]);
+  });
+  it('row 6: resend a stale void once with its command id', async () => {
+    const stale = () => json(409, { code: 'wcpos_revision_stale', data: { currentRevision: rev(3) } });
+    for (const twice of [false, true]) {
+      const shop = store([read(), stale(), ...(twice ? [stale(), read()] : [ok(), open(), cancelled()])]);
+      expect(await shop.reverse([cash])).toEqual(twice ? { outcome: { kind: 'retry', reason: 'conflict' }, voided: [] } : { outcome: done, voided: [cash.paymentId] });
+      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(cash, rev(3)), readPush, ...(twice ? [] : [cancelPush])]);
+    }
+  });
+  it('row 7: refuse to void provider money under either id', async () => {
+    for (const rows of [[{ ...cashRow, method_id: 'stripe' }], [cashRow, { ...cardRow, method_id: 'stripe' }]]) {
+      const shop = store([read(rows)]);
+      expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'changed' }, voided: [] });
+      expect(shop.calls).toEqual([readPush]);
+    }
+  });
+  it('row 8: a new capture before cancel stops the run', async () => {
+    const shop = store([read(), ok(), read([{ ...cashRow, status: 'voided' }, cardRow])]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status: 'pos-partial', capturedMinor: 500 }, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+  it('row 9: a resolver 404 is gone', async () => {
+    const shop = store([notFound()]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'gone' }, voided: [] });
+    expect(shop.calls).toEqual([readPush]);
+  });
+  it('row 10: missing, failed or ambiguous rows and other authorizations stop the run', async () => {
+    for (const rows of [[], [{ ...cashRow, status: 'failed' }], [cashRow, cashRow], [cashRow, { ...cardRow, status: 'authorized' }]]) {
+      const shop = store([read(rows)]);
+      expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'changed' }, voided: [] });
+      expect(shop.calls).toEqual([readPush]);
+    }
+  });
+  it('row 11: cancelled replay requires all legs voided', async () => {
+    for (const status of ['captured', 'voided']) {
+      const shop = store([read([{ ...cashRow, status }], { status: 'cancelled' })]);
+      expect(await shop.reverse([cash])).toEqual(status === 'voided' ? { outcome: done, voided: [cash.paymentId] }
+        : { outcome: { kind: 'changed', status: 'cancelled', capturedMinor: 1000 }, voided: [] });
+      expect(shop.calls).toEqual([readPush]);
+    }
+  });
+  it('row 12: unauthorized void throws', async () => {
+    const shop = store([read(), json(401, {})]);
+    await expect(shop.reverse([cash])).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1))]);
+  });
+  it('row 13: retry a locked or unavailable second void without repeating the first', async () => {
+    for (const unavailable of [json(503, {}), json(409, { code: 'wcpos_payment_locked' })]) {
+      const partial = () => read([{ ...cashRow, status: 'voided' }, cardRow]);
+      const shop = store([read([cashRow, cardRow]), ok(), unavailable, partial(), partial(), ok(), open(cardRow), cancelled()]);
+      expect(await shop.reverse([cash, card])).toMatchObject({ outcome: { kind: 'retry' }, voided: [cash.paymentId] });
+      expect(await shop.reverse([cash, card])).toEqual({ outcome: done, voided: [cash.paymentId, card.paymentId] });
+      expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, readPush, voidPost(card, rev(1)), readPush, cancelPush]);
+    }
+  });
+  it.each([
+    [{ ...cashRow, amount: '9.00' }, 'pos-partial', 900],
+    [{ ...cashRow, status: 'voided', amount: '9.00' }, 'cancelled', 0],
+    [{ ...cashRow, status: 'voided', currency: 'EUR' }, 'cancelled', 0],
+  ] as const)('row 14: a store row whose amount or currency differs from the till leg is not voided', async (row, status, capturedMinor) => {
+    const shop = store([read([row], { status })]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status, capturedMinor }, voided: [] });
+    expect(shop.calls).toEqual([readPush]);
+  });
+  it('row 15: a void 2xx without a revision is retried and sends no cancel', async () => {
+    const shop = store([read(), json(200, {}), read()]);
+    expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'retry' }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+  it('a 2xx void is not confirmed when the read back still shows the row captured', async () => {
+    const shop = store([read(), ok(), read()]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status: 'pos-partial', capturedMinor: 1000 }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+  it('a void stopped mid-way confirms only what the read back shows voided', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(503, {}), read([{ ...cashRow, status: 'voided' }, cardRow])]);
+    expect(await shop.reverse([cash, card])).toEqual({ outcome: { kind: 'retry', reason: 'status_503' }, voided: [cash.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
+  });
+  it('V1: a lost void answer confirms both voids on read-back without cancelling', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(503, {}), open(cardRow)]);
+    expect(await shop.reverse([cash, card])).toEqual({ outcome: { kind: 'retry', reason: 'status_503' }, voided: [cash.paymentId, card.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
+  });
+  it('a read back that fails confirms nothing', async () => {
+    const shop = store([read(), ok(), new Error('offline')]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'retry', reason: 'network' }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), readPush]);
+  });
+});
 
 describe('wooSettleRefusedOrder.cancel', () => {
   it('1: reads with an empty payload, then cancels a pending unpaid order with the revision the read returned', async () => {
