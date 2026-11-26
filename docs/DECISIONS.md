@@ -7139,7 +7139,9 @@ interface OrderCreatePayload {
      - **Per-entry basis: considered and rejected** (Front desk, 2026-11-26; #1368, #1364). Each entry would have
        carried the amounts it rounded, as an order.create v13 field and a `pos_orders` v23 field. Two reasons
        rule it out. First, the aggregate bound (item 6) is the check, and a basis would prove only the till's
-       arithmetic. Second, it cannot explain entries stored before the carry rule. `units` on the wire was
-       dropped for the same reasons. A server judges an entry by the running sum against R, not entry by entry.
+       arithmetic. Second, it cannot explain entries stored before the carry rule. `units` on the wire (#1364) is
+       not sent either: with the aggregate bound as the check, it adds nothing a server can check. A connector
+       checks a closed sale's sum of live entries against R(mode) (item 6), not each entry against a basis; the
+       stored-reopen exception above still applies.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.
