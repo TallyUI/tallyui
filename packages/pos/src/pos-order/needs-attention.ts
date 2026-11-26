@@ -38,12 +38,11 @@ function roundingBridgeTolerance(order: PosOrder, discountsAreTaxedRows: boolean
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[]; discountsAreTaxedRows?: boolean } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
   return orders.filter((order) => {
-    const tolerance = roundingBridgeTolerance(order, options.discountsAreTaxedRows === true);
     return (order.syncStatus === 'rejected' && !settledOnStore(order))
       || (order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE)
       || (order.localWarnings?.length ?? 0) > 0
       || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown'
-        && !(warning.code === 'total_mismatch' && warning.bridgeMinor !== undefined && Math.abs(warning.bridgeMinor) <= tolerance)))
+        && !(warning.code === 'total_mismatch' && warning.bridgeMinor !== undefined && Math.abs(warning.bridgeMinor) <= roundingBridgeTolerance(order, options.discountsAreTaxedRows === true))))
       || order.lateSessionId !== undefined
       || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true);
   })

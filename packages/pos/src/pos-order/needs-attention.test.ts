@@ -1,6 +1,7 @@
 // Ported from medusapos/app `563b03c4` `lib/order-store.test.ts` (ADR-052, TV7), word for word.
 import { describe, expect, it } from 'vitest';
 import { createOrderBuilder } from '../order';
+import { netDiscountMinor } from './command';
 import { finalizeOrder } from './finalize';
 import { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 import type { PosOrder } from './types';
@@ -188,6 +189,16 @@ describe('ADR-048 tolerance with discounts as taxed rows', () => {
     const order: PosOrder = { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 4 } }), syncStatus: 'applied', warnings: [mismatch(2)] };
     expect(order.lines.map((line) => line.discountMinor)).toEqual([1, 1]);
     expect(needsAttention([order], { discountsAreTaxedRows: true })).toEqual([order]);
+  });
+
+  it('V15 a pending order is not priced for rounding tolerance', () => {
+    const baseLine = base.lines[0];
+    const line = { ...baseLine, discountMinor: 1, netMinor: baseLine.unitPriceMinor * baseLine.quantity,
+      taxLines: [{ ...baseLine.taxLines[0], taxMicros: 'not-a-number' }] };
+    const order: PosOrder = { ...base, syncStatus: 'pending', pricesIncludeTax: true, lines: [line] };
+    delete (order as Partial<PosOrder>).taxRounding;
+    expect(() => netDiscountMinor(line, order)).toThrow(SyntaxError);
+    expect(needsAttention([order], { discountsAreTaxedRows: true })).toEqual([]);
   });
 });
 

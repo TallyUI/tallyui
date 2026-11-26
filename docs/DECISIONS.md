@@ -1966,17 +1966,25 @@ interface OrderCreatePayload {
 
     **Discounts as taxed rows (Front desk, 2026-11-26, vendurepos probe):** on
     Vendure each discounted line becomes its own taxed `TALLY-DISCOUNT`
-    surcharge. The till rounds each rate's tax once, an error of at most ½.
-    Vendure's default strategy rounds once per taxed row (each line, each
-    discount surcharge, each fee and each shipping row), at most ½ each. So
-    |store − till| ≤ ⌈rows / 2⌉, and the probe reached that bound at 1 to 6
-    discounted lines. A connector that declares `discountsAreTaxedRows` (the
-    vendurepos app's) therefore counts T = ⌈(lines + fees + shipping +
+    surcharge. Vendure's default strategy rounds once per taxed row (each
+    line and each discount surcharge), at most ½ each, while the till rounds
+    each rate's tax once. With n taxed rows at one rate the row errors sum to
+    at most n / 2, so when the store and the till break halves the same way
+    |store − till| ≤ ⌊n / 2⌋ for that rate, and over the whole order
+    ⌊a / 2⌋ + ⌊b / 2⌋ ≤ ⌊(a + b) / 2⌋ keeps it within ⌈rows / 2⌉. The probe
+    reached that bound at 1 to 6 discounted lines, on tax-exclusive lines of
+    quantity 1 with one rate each. Tax-inclusive channels, quantity above 1,
+    and fee and shipping rows were not probed, and a row taxed at two rates
+    is outside this bound. A connector that declares `discountsAreTaxedRows`
+    (the vendurepos app's) therefore counts T = ⌈(lines + fees + shipping +
     discounted lines) / 2⌉. A discounted line is one the `order.create`
     payload sends with `discountMinor` > 0, counted from the stored order as
     a version 4+ payload nets it. The vendurepos plugin counts the same rows
     from the payload (vendurepos/app#532). Without the flag, T is the count
-    above, unchanged.
+    above, unchanged. The flag is static: on a Vendure channel set to the
+    order-level strategy, where the honest difference is 0 or 1, the larger
+    T can leave unlisted a bridge the count above would list, and the ruling
+    accepts that.
   - Across spike S1's 12 tax cases (2 strategies × 2 pricing modes, with
     discounts, mixed rates and a negative tie), the largest per-rate
     difference was 1 and the largest bridge was 1.
