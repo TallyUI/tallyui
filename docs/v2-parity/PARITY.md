@@ -129,7 +129,8 @@ Shared rows first: one fix reaches both apps.
 3. **Cart line enter and leave**
    ([Motion: cart line enter and leave](#motion-cart-line-enter-and-leave);
    motion; `@tallyui/components`). v2 lines swipe and fly off when removed.
-   In both apps a line pops in and vanishes.
+   In both apps a line pops in and vanishes. The shared swipe is merged
+   (#1401, #1404) and published in 5.3.0; the apps take that version.
 4. **Tender** ([Tender](#tender); visual; `@tallyui/components`). v2 replaces
    the products column with the tender pane and turns the cart into a
    payments ledger. The apps tender inside the cart column, and Complete sale
@@ -866,7 +867,9 @@ The same clips as above (add, then remove the line).
 **Closes it:** the swipe in `CartLineStrip`, in two slices. Slice one: fee and
 shipping rows drag open onto Edit and Remove, and fling off. Slice two: product
 lines get the same strip with Remove only; Edit joins it with the
-[line record editor](#cart-line-edit-the-whole-line).
+[line record editor](#cart-line-edit-the-whole-line). Both slices are merged
+(#1401, #1404) and published in `@tallyui/components` 5.3.0. A known gap on
+web: a mouse drag that starts on a press target may also click it (#1405).
 
 ### Motion: sheet and modal open and close
 
