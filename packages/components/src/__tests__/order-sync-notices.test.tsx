@@ -57,8 +57,12 @@ describe('reverse notices', () => {
   });
   it('a sending reverse lists what was taken off without an instruction', () => {
     const text = notice('sending', [cash, card], ['cash']);
-    expect(text).toBe(`Cancelling order #115 on the store is not finished. Taken off it so far: Cash ${eur(1000)}.`);
+    expect(text).toBe(`Cancelling order #115 on the store is not finished. Taken off it so far: Cash ${eur(1000)}. Not confirmed taken off yet: Card ${eur(500)}. Give no money back until this till shows the order cancelled.`);
     expect(text).not.toMatch(/hand it back|give it back/);
+  });
+  it('a sending reverse with nothing confirmed names every leg as not confirmed', () => {
+    const text = notice('sending', [cash, card], []);
+    expect(text).toBe(`Cancelling order #115 on the store is not finished. Not confirmed taken off yet: Cash ${eur(1000)}; Card ${eur(500)}. Give no money back until this till shows the order cancelled.`);
   });
   it('a gone reverse after a void names what was taken off', () => {
     const text = notice('gone', [cash, card], ['cash']);
