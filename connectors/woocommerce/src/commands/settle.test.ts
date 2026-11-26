@@ -239,3 +239,175 @@ describe('wooSettleRefusedOrder.cancel', () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+// #1101 slice 3: record the till's unrecorded legs on a part-paid order. The till's first leg (cash 10.00) is on the store
+// under its own id; each leg sent here goes under a new id the request names.
+describe('wooSettleRefusedOrder.pay', () => {
+  const tillId = '019abcde-0000-7000-8000-0000000000aa';
+  const newA = '019abcde-0000-7000-8000-0000000000a1', newB = '019abcde-0000-7000-8000-0000000000b2';
+  const paymentsUrl = `${baseUrl}/orders/16/payments`;
+  type Leg = { id: string; method: 'cash' | 'external'; amountMinor: number; tenderedMinor?: number };
+  const card20: Leg = { id: newA, method: 'external', amountMinor: 2000 };
+  // A ledger row on the store, USD, by id.
+  const row = (id: string, status: string, amount: string, method = 'pos_cash') => payment(status, { id, amount, method_id: method });
+  const till10 = row(tillId, 'captured', '10.00');
+  const partial = (rows: Row[], over: Row = {}) => order({ status: 'pos-partial', total: '30.00', ...over }, [ledger(rows)]);
+  const paid = (rows: Row[]) => order({ status: 'completed', total: '30.00', date_paid: '2026-11-26T10:00:00' }, [ledger(rows)]);
+  const recordedAnswer = (n: number) => json(201, { payment: {}, revision: rev(n) });
+  const stale = (current: unknown) => json(409, { code: 'wcpos_revision_stale', message: 'Stale.', data: { status: 409, currentRevision: current } });
+  function shop(replies: Array<Response | Error>, payments: Leg[] = [card20], currency = 'USD') {
+    const calls: Array<{ url: string; body: ReturnType<typeof JSON.parse> }> = [];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      const reply = replies.shift();
+      if (!reply || reply instanceof Error) throw reply ?? new Error('no reply queued');
+      return reply;
+    });
+    const context: SyncContext = { connectorId: 'woocommerce', baseUrl, headers: { Authorization: 'Bearer t' }, fetch };
+    return { calls, records: () => calls.filter((call) => call.url === paymentsUrl).map((call) => call.body),
+      pay: () => wooSettleRefusedOrder.pay!(context, { storeOrderId: '16', clientOrderId, attemptId, currency, payments }) };
+  }
+  const readCall = { url: `${baseUrl}/push/orders`, body: push(readId, 'none', {}).body };
+
+  it('row 1: reads, records the card 20.00 under the new id with the read revision, re-reads completed: done', async () => {
+    const { calls, pay } = shop([conflict(partial([till10])), recordedAnswer(2),
+      conflict(paid([till10, row(newA, 'captured', '20.00', 'pos_card')]), rev(2))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA] });
+    expect(calls).toStrictEqual([readCall, { url: paymentsUrl, body: { payment: { id: newA, method_id: 'pos_card', amount: '20.00', currency: 'USD' }, revision: rev(1) } }, readCall]);
+  });
+
+  it('row 2: a cash leg sends tendered 50.00 and no change key', async () => {
+    const cash: Leg = { id: newA, method: 'cash', amountMinor: 2000, tenderedMinor: 5000 };
+    const { records, pay } = shop([conflict(partial([till10])), recordedAnswer(2), conflict(paid([till10, row(newA, 'captured', '20.00')]), rev(2))], [cash]);
+    await expect(pay()).resolves.toMatchObject({ outcome: { kind: 'done' }, recorded: [newA] });
+    expect(records()).toStrictEqual([{ payment: { id: newA, method_id: 'pos_cash', amount: '20.00', currency: 'USD', tendered: '50.00' }, revision: rev(1) }]);
+  });
+
+  it('row 3: two legs are recorded in leg order, the second with the first answer\'s revision', async () => {
+    const legs: Leg[] = [{ id: newA, method: 'cash', amountMinor: 500 }, { id: newB, method: 'external', amountMinor: 1500 }];
+    const card10 = row(tillId, 'captured', '10.00', 'pos_card');
+    const { records, pay } = shop([conflict(partial([card10])), recordedAnswer(2), recordedAnswer(3),
+      conflict(paid([card10, row(newA, 'captured', '5.00'), row(newB, 'captured', '15.00', 'pos_card')]), rev(3))], legs);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA, newB] });
+    expect(records().map((body) => [body.payment.id, body.payment.amount, body.revision])).toStrictEqual([[newA, '5.00', rev(1)], [newB, '15.00', rev(2)]]);
+  });
+
+  it('row 4: a stale record is resent once with currentRevision; a second stale answer is retry conflict', async () => {
+    const once = shop([conflict(partial([till10])), stale(rev(5)), recordedAnswer(6), conflict(paid([till10, row(newA, 'captured', '20.00', 'pos_card')]), rev(6))]);
+    await expect(once.pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA] });
+    expect(once.records().map((body) => [body.payment.id, body.revision])).toStrictEqual([[newA, rev(1)], [newA, rev(5)]]);
+    const twice = shop([conflict(partial([till10])), stale(rev(5)), stale(rev(6)), recordedAnswer(7)]);
+    await expect(twice.pay()).resolves.toStrictEqual({ outcome: { kind: 'retry', reason: 'conflict' }, recorded: [] });
+    expect(twice.records()).toHaveLength(2);
+  });
+
+  it('row 5: an order already completed on the store with no row of this till is changed, nothing posted', async () => {
+    const { calls, pay } = shop([conflict(paid([till10, row('019abcde-0000-7000-8000-0000000000cc', 'captured', '20.00')]))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'changed', status: 'completed', capturedMinor: 3000 }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('row 6: 15.00 captured where the till left 10.00 is changed with capturedMinor 1500, nothing posted', async () => {
+    const { calls, pay } = shop([conflict(partial([till10, row('019abcde-0000-7000-8000-0000000000cc', 'captured', '5.00')]))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'changed', status: 'pos-partial', capturedMinor: 1500 }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('row 7: an over-cover 400 is refused with what was recorded so far, and no further leg goes', async () => {
+    const exceeds = () => json(400, { code: 'wcpos_amount_exceeds_balance', message: 'm'.repeat(300) });
+    const legs: Leg[] = [{ id: newA, method: 'cash', amountMinor: 500 }, { id: newB, method: 'external', amountMinor: 1500 }];
+    // 10.00 + 5.00 + 15.00 is the 30.00 total; the first record is refused, so the second is never sent.
+    const first = shop([conflict(partial([till10])), exceeds(), recordedAnswer(3)], legs);
+    await expect(first.pay()).resolves.toStrictEqual({ outcome: { kind: 'refused', code: 'wcpos_amount_exceeds_balance', message: 'm'.repeat(200) }, recorded: [] });
+    expect(first.records()).toHaveLength(1);
+    const second = shop([conflict(partial([till10])), recordedAnswer(2), exceeds(), recordedAnswer(4)], legs);
+    await expect(second.pay()).resolves.toMatchObject({ outcome: { kind: 'refused', code: 'wcpos_amount_exceeds_balance' }, recorded: [newA] });
+    expect(second.calls).toHaveLength(3);
+  });
+
+  it('row 8: a resend of the same attempt skips the id the store holds and records only the next one: done with both', async () => {
+    const legs: Leg[] = [{ id: newA, method: 'cash', amountMinor: 500 }, { id: newB, method: 'external', amountMinor: 1500 }];
+    const card10 = row(tillId, 'captured', '10.00', 'pos_card'), cash5 = row(newA, 'captured', '5.00');
+    const { records, pay } = shop([conflict(partial([card10, cash5]), rev(2)), recordedAnswer(3),
+      conflict(paid([card10, cash5, row(newB, 'captured', '15.00', 'pos_card')]), rev(3))], legs);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA, newB] });
+    expect(records()).toStrictEqual([{ payment: { id: newB, method_id: 'pos_card', amount: '15.00', currency: 'USD' }, revision: rev(2) }]);
+  });
+
+  it.each<[string, () => Response | Error, string]>([
+    ['status 0', () => new TypeError('Failed to fetch'), 'network'],
+    ['503', () => new Response('<html>', { status: 503 }), 'status_503'],
+    ['409 record_locked', () => json(409, { code: 'woo_rxdb_sync_record_locked' }), 'woo_rxdb_sync_record_locked'],
+    ['409 payment_locked', () => json(409, { code: 'wcpos_payment_locked' }), 'wcpos_payment_locked'],
+    ['a 2xx without a revision', () => json(201, { payment: {} }), 'bad_body'],
+    ['an unknown 4xx code', () => json(404, { code: 'rest_no_route' }), 'rest_no_route'],
+  ])('row 9: %s on the record is retry, nothing recorded', async (_name, reply, reason) => {
+    const { records, pay } = shop([conflict(partial([till10])), reply(), recordedAnswer(9)]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'retry', reason }, recorded: [] });
+    expect(records()).toHaveLength(1);
+  });
+
+  it('row 9: 401 on the record rejects with ConnectorUnauthorizedError', async () => {
+    const { pay } = shop([conflict(partial([till10])), json(401, {})]);
+    await expect(pay()).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
+  });
+
+  it('row 10: the uuid resolver\'s 404 on the read is gone, nothing posted', async () => {
+    const { calls, pay } = shop([notFound()]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'gone' }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('row 11: a cancelled order is changed, nothing posted', async () => {
+    const { calls, pay } = shop([conflict(partial([till10], { status: 'cancelled' }))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'changed', status: 'cancelled', capturedMinor: 1000 }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('row 13: a record 2xx whose re-read is still pos-partial is retry not_completed, never done, with the id recorded', async () => {
+    const { calls, pay } = shop([conflict(partial([till10])), recordedAnswer(2), conflict(partial([till10, row(newA, 'captured', '20.00', 'pos_card')]), rev(2))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'retry', reason: 'not_completed' }, recorded: [newA] });
+    expect(calls).toHaveLength(3);
+  });
+
+  it('row 13: a re-read the store answers 503 is retry, with the id recorded', async () => {
+    const { pay } = shop([conflict(partial([till10])), recordedAnswer(2), new Response('', { status: 503 })]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'retry', reason: 'status_503' }, recorded: [newA] });
+  });
+
+  it('row 14: a failed row under this till\'s id (an earlier over-cover) is refused payment_refused, nothing posted', async () => {
+    const { calls, pay } = shop([conflict(partial([till10, row(newA, 'failed', '20.00', 'pos_card')]))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'refused', code: 'payment_refused', message: 'The store refused a payment from this till.' }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('row 15: an authorized row is money in motion: changed, nothing posted', async () => {
+    const { calls, pay } = shop([conflict(partial([till10, row('019abcde-0000-7000-8000-0000000000cc', 'authorized', '20.00', 'pos_card')]))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'changed', status: 'pos-partial', capturedMinor: 1000 }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each<[string, Row, unknown]>([
+    ['another currency', partial([{ ...till10, currency: 'EUR' }], { currency: 'EUR' }), { kind: 'refused', code: 'currency_mismatch' }],
+    ['a total that does not parse', partial([till10], { total: 'x' }), { kind: 'retry', reason: 'bad_body' }],
+    ['another order id', partial([till10], { id: 99 }), { kind: 'refused', code: 'order_mismatch' }],
+    ['an unreadable ledger', order({ status: 'pos-partial', total: '30.00' }, [ledger([], 2)]), { kind: 'refused', code: 'ledger_unreadable' }],
+  ])('fails closed on %s, nothing posted', async (_name, current, outcome) => {
+    const { calls, pay } = shop([conflict(current)]);
+    await expect(pay()).resolves.toMatchObject({ outcome, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a read the store accepts is refused read_accepted, nothing posted', async () => {
+    const { calls, pay } = shop([json(200, { document: order(), currentRevision: rev(2) })]);
+    await expect(pay()).resolves.toMatchObject({ outcome: { kind: 'refused', code: 'read_accepted' }, recorded: [] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a pending order with nothing captured and the whole total due is sent', async () => {
+    const legs: Leg[] = [{ id: newA, method: 'external', amountMinor: 3000 }];
+    const { records, pay } = shop([conflict(order({ total: '30.00' })), recordedAnswer(2), conflict(paid([row(newA, 'captured', '30.00', 'pos_card')]), rev(2))], legs);
+    await expect(pay()).resolves.toMatchObject({ outcome: { kind: 'done' }, recorded: [newA] });
+    expect(records()).toHaveLength(1);
+  });
+});

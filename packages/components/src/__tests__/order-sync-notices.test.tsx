@@ -145,7 +145,10 @@ describe('OrderSyncNotices order left on the store (#1101)', () => {
     const cancel = (state: NonNullable<PosOrder['storeSettlement']>['state'], extra: Partial<NonNullable<PosOrder['storeSettlement']>> = {}) =>
       left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'cancel', state, attemptId: 'a', at: '2026-11-25T10:00:00.000Z', ...extra } });
     it.each<[string, PosOrder, string]>([
-      ['done', cancel('done', { storeStatus: 'cancelled' }), 'Order #115 was cancelled on the store.'],
+      ['done, row 17: names the cash taken on this till', cancel('done', { storeStatus: 'cancelled' }),
+        'Order #115 was cancelled on the store. If you gave back the $10.00 cash taken on this till, record it as a pay-out.'],
+      ['done, row 17: a card-only order keeps the sentence alone', { ...cancel('done', { storeStatus: 'cancelled' }),
+        payments: [{ id: 'card', method: 'external', amountMinor: 1000 }] }, 'Order #115 was cancelled on the store.'],
       ['gone', cancel('gone'), 'Order #115 was removed on the store.'],
       ['gone, without a store order (the till reference)', order('abcdefgh12345678', { syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'x' },
         storeSettlement: { kind: 'cancel', state: 'gone', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } }), 'Order #12345678 was removed on the store.'],
@@ -185,11 +188,51 @@ describe('OrderSyncNotices order left on the store (#1101)', () => {
       expect(container.textContent).not.toContain('Store says no');
     });
     it('20: a settlement of another kind adds nothing', () => {
-      const sale = left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'pay', state: 'done', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } });
+      const sale = left('invalid_payload', { orderId: '115' }, { storeSettlement: { kind: 'reverse', state: 'done', attemptId: 'a', at: '2026-11-25T10:00:00.000Z' } });
       const { container } = render(<OrderSyncNotices order={sale} />);
       expect(screen.queryByTestId('order-settlement-x')).toBeNull();
       expect(container.textContent).toBe(`${PLATFORM_ERROR}${NOTHING_PAID}`);
     });
+  });
+});
+
+describe('OrderSyncNotices: Pay the rest on store (#1101 slice 3)', () => {
+  // The store recorded the cash 10.00 of a 30.00 sale; the till's two card 10.00 legs are the rest.
+  const PART_PAID = `Order #115 was left part paid on the online store: ${formatMoney({ amount: 1000, currency: 'USD' })} of ${formatMoney({ amount: 3000, currency: 'USD' })}.`;
+  const pay = (state: NonNullable<PosOrder['storeSettlement']>['state'], extra: Partial<NonNullable<PosOrder['storeSettlement']>> = {}) => order('x', {
+    currency: 'USD', totalMinor: 3000, syncStatus: 'rejected',
+    payments: [{ id: 'p0', method: 'cash', amountMinor: 1000 }, { id: 'p1', method: 'external', amountMinor: 1000 }, { id: 'p2', method: 'external', amountMinor: 1000 }],
+    error: { code: 'invalid_payload', message: 'created, part paid', data: { orderId: '115', recorded: 1 } },
+    storeSettlement: { kind: 'pay', state, attemptId: 'a', at: '2026-11-25T10:00:00.000Z', payments: [
+      { id: 'n1', method: 'external', amountMinor: 1000, done: true }, { id: 'n2', method: 'external', amountMinor: 1000 }], ...extra },
+  });
+  it('done: says so alone, as a settled row', () => {
+    const { container } = render(<OrderSyncNotices order={pay('done', { storeStatus: 'completed' })} />);
+    expect(container.textContent).toBe('Order #115 is paid on the store.');
+  });
+  it.each<[string, NonNullable<PosOrder['storeSettlement']>, string]>([
+    ['row 5: changed to completed', { ...pay('changed').storeSettlement!, storeStatus: 'completed', capturedMinor: 3000 },
+      'Order #115 is already paid on the store. Nothing was recorded from this till.'],
+    ['changed, part paid', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 1500 },
+      `Order #115 changed on the store: ${formatMoney({ amount: 1500, currency: 'USD' })} is paid there. Nothing was recorded from this till. Check it in the store's admin.`],
+    ['row 10: gone with 10.00 recorded, the done leg counted', { ...pay('gone').storeSettlement! },
+      `Order #115 is not on the store any more; ${formatMoney({ amount: 2000, currency: 'USD' })} was recorded on it.`],
+  ])('%s replaces the left line and keeps the sentence', (_name, storeSettlement, line) => {
+    const { container } = render(<OrderSyncNotices order={{ ...pay('changed'), storeSettlement }} />);
+    expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
+    expect(container.textContent).toBe(`${PLATFORM_ERROR}${line}`);
+    expect(container.textContent).not.toContain('pos-partial');
+  });
+  it.each<[string, PosOrder, string]>([
+    ['row 7: refused names R of T', pay('refused', { code: 'wcpos_amount_exceeds_balance', message: 'Store says no.' }),
+      `The store did not record the rest of order #115: ${formatMoney({ amount: 2000, currency: 'USD' })} of ${formatMoney({ amount: 3000, currency: 'USD' })} is recorded there. Check it in the store's admin.`],
+    ['sending', pay('sending'), 'Recording the rest of order #115 on the store is not finished.'],
+  ])('%s adds its line after the left line, never the code or message', (_name, sale, line) => {
+    const { container } = render(<OrderSyncNotices order={sale} />);
+    expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
+    expect(container.textContent).toBe(`${PLATFORM_ERROR}${PART_PAID}${line}`);
+    expect(container.textContent).not.toContain('wcpos_amount_exceeds_balance');
+    expect(container.textContent).not.toContain('Store says no');
   });
 });
 

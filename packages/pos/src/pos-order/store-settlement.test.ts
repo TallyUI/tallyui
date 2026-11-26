@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { addPosOrderCollection } from './open';
 import { addPosOrderCollectionTests, olderCollection } from './open.test-helper';
-import { canCancelOnStore, settledOnStore } from './store-settlement';
+import { canCancelOnStore, canPayRestOnStore, settledOnStore, unrecordedLegs } from './store-settlement';
 import type { PosOrder, PosOrderStoreSettlement } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -50,6 +50,43 @@ describe('settledOnStore', () => {
     [undefined, false], ['sending', false], ['changed', false], ['refused', false], ['done', true], ['gone', true],
   ])('%s: %s', (state, expected) => {
     expect(settledOnStore({ storeSettlement: state ? settlement(state) : undefined })).toBe(expected);
+  });
+});
+
+// #1101 slice 3: a part-paid store order, the till's cash 10.00 recorded there and its card 20.00 not.
+describe('Pay the rest on store', () => {
+  const partPaid = (overrides: Partial<PosOrder> = {}, data: Record<string, unknown> = { orderId: '115', recorded: 1 }) => refused({
+    payments: [{ id: uuidv7(), method: 'cash', amountMinor: 1000 }, { id: uuidv7(), method: 'external', amountMinor: 2000 }],
+    totalMinor: 3000, ...overrides }, data);
+
+  it('unrecordedLegs is the payments after the recorded count, as storeOrderLeft counts them', () => {
+    const order = partPaid();
+    expect(unrecordedLegs(order)).toEqual([order.payments[1]]);
+    expect(unrecordedLegs(partPaid({}, { orderId: '115', recorded: 0 }))).toHaveLength(2);
+    expect(unrecordedLegs(partPaid({}, { orderId: '115', recorded: 1.5 }))).toHaveLength(2);
+    expect(unrecordedLegs(partPaid({}, { orderId: '115', recorded: 2 }))).toEqual([]);
+  });
+
+  it.each<[string, PosOrder, boolean]>([
+    ['recorded 1 of cash 10 + card 20', partPaid(), true],
+    ['row 12: recorded 0 (Cancel on store is offered)', partPaid({}, { orderId: '115', recorded: 0 }), false],
+    ['recorded 2 of 2, nothing left to record', partPaid({}, { orderId: '115', recorded: 2 }), false],
+    ['no store order', partPaid({}, { storeCode: 'x', recorded: 1 }), false],
+    ['a zero leg left', partPaid({ payments: [{ id: uuidv7(), method: 'cash', amountMinor: 1000 }, { id: uuidv7(), method: 'external', amountMinor: 0 }] }), false],
+    ['a pay still sending', partPaid({ storeSettlement: settlement('sending', 'pay') }), true],
+    ['a pay the store changed', partPaid({ storeSettlement: settlement('changed', 'pay') }), true],
+    ['a pay the store refused', partPaid({ storeSettlement: settlement('refused', 'pay') }), true],
+    ['a pay done', partPaid({ storeSettlement: settlement('done', 'pay') }), false],
+    ['a cancel still sending', partPaid({ storeSettlement: settlement('sending') }), false],
+    ['a cancel refused', partPaid({ storeSettlement: settlement('refused') }), true],
+  ])('canPayRestOnStore: %s', (_name, order, expected) => {
+    expect(canPayRestOnStore(order)).toBe(expected);
+  });
+
+  it('row 10: gone with 10.00 recorded is not settled; gone with nothing recorded is', () => {
+    expect(settledOnStore(partPaid({ storeSettlement: settlement('gone', 'pay') }))).toBe(false);
+    expect(settledOnStore(partPaid({ storeSettlement: settlement('gone') }, { orderId: '115', recorded: 0 }))).toBe(true);
+    expect(settledOnStore(partPaid({ storeSettlement: settlement('done', 'pay') }))).toBe(true);
   });
 });
 

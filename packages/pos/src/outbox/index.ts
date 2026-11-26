@@ -1,7 +1,7 @@
 export { createHttpCommandTransport } from './http-transport';
 export type { HttpTransportOptions } from './http-transport';
 export { createOrderOutbox, isRequeueable, isRequeueableOrder } from './order-outbox';
-export { cancelOnStore, type CancelOnStoreDeps } from './store-settlement';
+export { cancelOnStore, payRestOnStore, type CancelOnStoreDeps, type PayRestOnStoreDeps } from './store-settlement';
 export type { OrderOutboxOptions, OrderOutbox } from './order-outbox';
 export { createRegisterOutbox, isRegisterRequeueable } from './register-outbox';
 export type { RegisterOutboxOptions, RegisterOutbox } from './register-outbox';

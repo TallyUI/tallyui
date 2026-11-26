@@ -1,10 +1,18 @@
 import { storeOrderLeft } from './store-order-left';
 import type { PosOrder } from './types';
 
-/** Whether the store order a refused sale left behind is settled on the store (#1101): its settlement is done or gone. */
-export function settledOnStore(order: Pick<PosOrder, 'storeSettlement'>): boolean {
+type LeftOrder = Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error' | 'payments' | 'storeSettlement'>;
+
+/**
+ * Whether the store order a refused sale left behind is settled on the store (#1101): its settlement is done, or gone
+ * while the store had recorded nothing on it (desk ruling: a gone order with money recorded still needs a manager).
+ */
+export function settledOnStore(order: LeftOrder | Pick<PosOrder, 'storeSettlement'>): boolean {
   const state = order.storeSettlement?.state;
-  return state === 'done' || state === 'gone';
+  if (state === 'done') return true;
+  if (state !== 'gone') return false;
+  const left = 'syncStatus' in order ? storeOrderLeft(order) : undefined;
+  return !left || left.recordedMinor === 0;
 }
 
 /**
@@ -12,9 +20,30 @@ export function settledOnStore(order: Pick<PosOrder, 'storeSettlement'>): boolea
  * store had recorded nothing paid on it, it is not settled (`settledOnStore`), and there is no settlement yet, or a
  * cancel (whose `sending` attempt a repeat finishes), or one the store changed or refused.
  */
-export function canCancelOnStore(order: Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error' | 'payments' | 'storeSettlement'>): boolean {
+export function canCancelOnStore(order: LeftOrder): boolean {
   const left = storeOrderLeft(order);
   if (!left || left.recordedMinor !== 0 || settledOnStore(order)) return false;
   const settlement = order.storeSettlement;
   return settlement === undefined || settlement.kind === 'cancel' || settlement.state === 'changed' || settlement.state === 'refused';
+}
+
+/** The till's legs the store had not recorded at the refusal (#1101 slice 3): the payments after `data.recorded`, counted
+ * as `storeOrderLeft` counts them. */
+export function unrecordedLegs(order: Pick<PosOrder, 'error' | 'payments'>): PosOrder['payments'] {
+  const recorded = order.error?.data?.recorded;
+  return order.payments.slice(Number.isSafeInteger(recorded) && (recorded as number) > 0 ? recorded as number : 0);
+}
+
+/**
+ * Whether the till may record its unrecorded legs on the part-paid store order a refused sale left behind (#1101 slice
+ * 3): the store had recorded some of the sale, it is not settled, every leg left has an amount, and there is no
+ * settlement yet, or a pay (whose `sending` attempt a repeat finishes), or one the store changed or refused.
+ */
+export function canPayRestOnStore(order: LeftOrder): boolean {
+  const left = storeOrderLeft(order);
+  if (!left || left.recordedMinor <= 0 || settledOnStore(order)) return false;
+  const legs = unrecordedLegs(order);
+  if (legs.length === 0 || !legs.every((leg) => leg.amountMinor > 0)) return false;
+  const settlement = order.storeSettlement;
+  return settlement === undefined || settlement.kind === 'pay' || settlement.state === 'changed' || settlement.state === 'refused';
 }

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
-import { canCancelOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, storeOrderLeft, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { canCancelOnStore, canPayRestOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -35,6 +35,9 @@ const REFUSAL_SENTENCES = new Map([
 ]);
 // Any other code, or none: platform_error's sentence, as the generic fallback (approved by the Front desk, 2026-09-30).
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
+/** Pay the rest on store's dialog (#1101 slice 3): the front desk's wording until slice 4 handles money given back. */
+const GIVE_BACK = "If the money was given back, do not record it; a manager must check the order in the store's admin.";
+const methodLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card terminal');
 const REOPEN_AGAIN_SENTENCE = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
 
 /** Keeps an unparseable value as is, like medusapos's date util, since `Intl` throws on an invalid date. */
@@ -68,19 +71,36 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
       ? REOPEN_AGAIN_SENTENCE : refusalSentence(left && order.error?.code === 'invalid_payload' ? 'platform_error' : order.error?.code)
     : order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE ? UPDATE_UNSENDABLE_MESSAGE : undefined;
   const extras = extrasNotSent(order);
-  // #1101: where the till's cancel of the order the refused sale left on the store stands. Done, gone and changed say it
-  // in place of the "left" line; refused and sending add to it. The store's code and message never show (#269).
-  const settlement = order.syncStatus === 'rejected' && order.storeSettlement?.kind === 'cancel' ? order.storeSettlement : undefined;
+  // #1101: where the till's cancel, or pay of the rest, of the order the refused sale left on the store stands. Done, gone
+  // and changed say it in place of the "left" line; refused and sending add to it. The store's code and message never show (#269).
+  const kind = order.storeSettlement?.kind;
+  const settlement = order.syncStatus === 'rejected' && (kind === 'cancel' || kind === 'pay') ? order.storeSettlement : undefined;
   const reference = left?.reference ?? orderReference(order);
-  const settledText = settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.`
-    : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`
-      : settlement?.state === 'changed' ? `Order #${reference} changed on the store${settlement.capturedMinor
-        ? `: ${formatMoney({ amount: settlement.capturedMinor, currency: order.currency })} is paid there`
-        : ''}. Nothing was cancelled from this till. Check it in the store's admin.`
-        : undefined;
-  const addedText = settlement?.state === 'refused' ? `The store did not cancel order #${reference}. Check it in the store's admin.`
-    : settlement?.state === 'sending' ? `Cancelling order #${reference} on the store is not finished.` : undefined;
-  const settled = settlement?.state === 'done' || settlement?.state === 'gone';
+  const money = (amount: number) => formatMoney({ amount, currency: order.currency });
+  const sum = (legs: { amountMinor: number }[]) => legs.reduce((total, leg) => total + leg.amountMinor, 0);
+  const paidThere = settlement?.capturedMinor ? `: ${money(settlement.capturedMinor)} is paid there` : '';
+  // A pay's R: what the store had recorded at the refusal, plus each leg this till has recorded since.
+  const recorded = money((left?.recordedMinor ?? 0) + sum(settlement?.payments?.filter((payment) => payment.done) ?? []));
+  const cashTaken = sum(order.payments.filter((payment) => payment.method === 'cash'));
+  const settledText = settlement?.kind === 'pay'
+    ? settlement.state === 'done' ? `Order #${reference} is paid on the store.`
+      : settlement.state === 'gone' ? `Order #${reference} is not on the store any more; ${recorded} was recorded on it.`
+        : settlement.state !== 'changed' ? undefined
+          : settlement.storeStatus === 'completed' ? `Order #${reference} is already paid on the store. Nothing was recorded from this till.`
+            : `Order #${reference} changed on the store${paidThere}. Nothing was recorded from this till. Check it in the store's admin.`
+    : settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.${cashTaken
+      ? ` If you gave back the ${money(cashTaken)} cash taken on this till, record it as a pay-out.` : ''}`
+      : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`
+        : settlement?.state === 'changed' ? `Order #${reference} changed on the store${paidThere}. Nothing was cancelled from this till. Check it in the store's admin.`
+          : undefined;
+  const pay = settlement?.kind === 'pay';
+  const addedText = settlement?.state === 'refused' ? pay
+    ? `The store did not record the rest of order #${reference}: ${recorded} of ${money(order.totalMinor)} is recorded there. Check it in the store's admin.`
+    : `The store did not cancel order #${reference}. Check it in the store's admin.`
+    : settlement?.state === 'sending' ? pay ? `Recording the rest of order #${reference} on the store is not finished.`
+      : `Cancelling order #${reference} on the store is not finished.` : undefined;
+  // A pay gone with money recorded on the store is not settled (`settledOnStore`): it stays a destructive line.
+  const settled = !!settlement && settledOnStore(order);
   return <>
     {stuckEntry ? <Text className="text-destructive">
       {/* A parked sale needs a manager; other retries keep the hour as the status line has it (numeric, #245), with no reason code. */}
@@ -144,8 +164,12 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * `onCancelOnStore` adds "Cancel order on store" to a Needs attention row whose refused sale left an unpaid order on the
  * store (`canCancelOnStore`, #1101), asked in a confirm dialog first: the app wires `useOrderOutbox`'s `cancelOnStore`.
  * A cancel still `sending` is finished with no dialog. With it, such a row offers no Retry, except an `insufficient_stock`
- * refusal's, which reads "Try the payment again". */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore }: {
+ * refusal's, which reads "Try the payment again".
+ * `onPayRestOnStore` adds "Pay the rest on store" to a Needs attention row whose refused sale left a part-paid order on
+ * the store (`canPayRestOnStore`, #1101 slice 3), asked in a confirm dialog naming each leg to record (no money is taken):
+ * the app wires `useOrderOutbox`'s `payRestOnStore`. A pay still `sending` is finished with no dialog. With it, a row
+ * with money recorded on the store offers no Retry. */
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
@@ -153,6 +177,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   onReopen?: (order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>;
   onResume?: (order: PosOrder) => void;
   onCancelOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
+  onPayRestOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
 }) {
   const formatMoney = useFormatMoney();
   const hintId = useId();
@@ -204,6 +229,28 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       cancelling.current.delete(order.id);
     }
   }
+  /** Each row's Pay the rest on store (#1101 slice 3): in flight, or the last press got no answer from the store. */
+  const paying = useRef(new Set<string>());
+  const [pays, setPays] = useState(new Map<string, 'busy' | 'failed'>());
+  const [askingPay, setAskingPay] = useState<PosOrder | null>(null);
+  const setPay = (id: string, state?: 'busy' | 'failed') => setPays((current) => {
+    const next = new Map(current);
+    if (state) next.set(id, state); else next.delete(id);
+    return next;
+  });
+  async function payRestOnStore(order: PosOrder) {
+    if (!onPayRestOnStore || paying.current.has(order.id)) return;
+    paying.current.add(order.id);
+    setPay(order.id, 'busy');
+    try {
+      const outcome = await onPayRestOnStore(order);
+      setPay(order.id, outcome.kind === 'retry' ? 'failed' : undefined);
+    } catch {
+      setPay(order.id, 'failed');
+    } finally {
+      paying.current.delete(order.id);
+    }
+  }
   const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {
     for (const id of retrying.current) {
@@ -250,7 +297,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const finishing = order.storeSettlement?.kind === 'cancel' && order.storeSettlement.state === 'sending';
           // #1101: with the cancel wired, an unpaid order left on the store is cancelled rather than resent, except a stock refusal.
           const left = storeOrderLeft(order);
-          const retryLabel = onCancelOnStore && left?.recordedMinor === 0
+          const payable = attention && !!onPayRestOnStore && canPayRestOnStore(order);
+          const payState = pays.get(order.id);
+          const finishingPay = order.storeSettlement?.kind === 'pay' && order.storeSettlement.state === 'sending';
+          // #1101 slice 3: with the pay wired, a part-paid order left on the store has its rest recorded, never resent.
+          const retryLabel = onPayRestOnStore && left && left.recordedMinor > 0 ? undefined : onCancelOnStore && left?.recordedMinor === 0
             ? order.error?.code === 'insufficient_stock' ? 'Try the payment again' : undefined : 'Retry';
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
@@ -274,7 +325,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             {isExpanded ? <View testID={`order-detail-${order.id}`} className="mt-1 gap-1 border-t border-border pt-2">
               {order.lines.map((line) => <Text key={line.id} className="text-foreground">{`${line.quantity} × ${line.name}`}</Text>)}
               {order.payments.map((payment) => <Text key={payment.id} className="text-muted-foreground">
-                {`${payment.method === 'cash' ? 'Cash' : 'Card terminal'} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
+                {`${methodLabel(payment.method)} ${formatMoney({ amount: payment.amountMinor, currency: order.currency })}${payment.reference ? ` · ${payment.reference}` : ''}`}
               </Text>)}
               {refundDueMinor > 0 ? <Text testID={`order-refund-due-${order.id}`} className="text-foreground">
                 {`Refund due ${formatMoney({ amount: refundDueMinor, currency: order.currency })}`}</Text> : null}
@@ -304,6 +355,17 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               </Text>
             </Pressable> : null}
             {cancellable && cancelState === 'failed' ? <Text testID={`order-${order.id}-cancel-on-store-error`} className="text-muted-foreground">
+              Could not reach the store. Try again.</Text> : null}
+            {payable ? <Pressable accessibilityRole="button" testID={`order-${order.id}-pay-rest-on-store`} disabled={payState === 'busy'}
+              onPress={() => {
+                if (paying.current.has(order.id)) return;
+                if (finishingPay) void payRestOnStore(order); else setAskingPay(order);
+              }} className="rounded-md bg-primary px-4 py-2">
+              <Text className="text-center font-semibold text-primary-foreground">
+                {payState === 'busy' ? 'Recording on store…' : finishingPay ? 'Finish recording on store' : 'Pay the rest on store'}
+              </Text>
+            </Pressable> : null}
+            {payable && payState === 'failed' ? <Text testID={`order-${order.id}-pay-rest-on-store-error`} className="text-muted-foreground">
               Could not reach the store. Try again.</Text> : null}
             {/* Reopen needs a reopenable code, which Retry never resends (NOT_REQUEUEABLE), so the two never show together. */}
             {attention && order.reopenedAt !== undefined ? <>
@@ -339,6 +401,12 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       description={`Order #${reference} is waiting on the online store with nothing paid. This cancels it there. The payments taken on this till stay as they are.`}
       cancelLabel="Keep order" confirmLabel="Cancel order on store"
       onConfirm={() => { setAskingCancel(null); void cancelOnStore(askingCancel); }} />)(storeOrderLeft(askingCancel)?.reference ?? orderReference(askingCancel)) : null}
+    {askingPay ? ((reference) => <ConfirmDialog testID={`order-${askingPay.id}-pay-rest-on-store-dialog`} tone="default" open
+      onOpenChange={(open) => { if (!open) setAskingPay(null); }} title={`Record the rest of order #${reference} on the store?`}
+      description={[...unrecordedLegs(askingPay).map((leg) => `${methodLabel(leg.method)} ${formatMoney({ amount: leg.amountMinor, currency: askingPay.currency })}, already taken on this till.`),
+        'No money is taken now.', GIVE_BACK].join('\n')}
+      cancelLabel="Keep as is" confirmLabel="Record on store"
+      onConfirm={() => { setAskingPay(null); void payRestOnStore(askingPay); }} />)(storeOrderLeft(askingPay)?.reference ?? orderReference(askingPay)) : null}
     {footer}
   </ScrollView>;
 }

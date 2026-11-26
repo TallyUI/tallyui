@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { OrderCreateEnvelope } from '@tallyui/core';
+import type { OrderCreateEnvelope, SettlePayRequest } from '@tallyui/core';
 import { createOrderBuilder } from '../order';
 import type { LogEntry } from '../logging';
 import { addPosOrderCollection, finalizeOrder, needsAttention, OrderContentMismatchError, uuidv7, type PosOrder } from '../pos-order';
@@ -361,11 +361,10 @@ describe('useOrderOutbox options', () => {
 
   describe('cancelOnStore (#1101)', () => {
     const leftBehind = { code: 'invalid_payload', message: 'created, not paid', data: { orderId: '115' } };
-    const refusing = (order: PosOrder) => vi.fn<CommandTransport<OrderCreateEnvelope>['send']>()
-      .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected', error: leftBehind }] });
-    async function refusedOnStore(options: Partial<UseOrderOutboxOptions>) {
-      const order = sale();
-      const base = { deviceId: 'register-1', open: openStore, transport: fakeTransport(refusing(order)), ...options };
+    const refusing = (order: PosOrder, error = leftBehind) => vi.fn<CommandTransport<OrderCreateEnvelope>['send']>()
+      .mockResolvedValueOnce({ kind: 'results', results: [{ id: order.commandId, status: 'rejected', error }] });
+    async function refusedOnStore(options: Partial<UseOrderOutboxOptions>, order = sale(), error = leftBehind) {
+      const base = { deviceId: 'register-1', open: openStore, transport: fakeTransport(refusing(order, error)), ...options };
       const view = renderOptions({ ...base, storeKey: null });
       expect(await outbox.cancelOnStore(order.id)).toEqual({ kind: 'not_offered' });
       view.rerender({ ...base, storeKey: session.baseUrl });
@@ -401,6 +400,51 @@ describe('useOrderOutbox options', () => {
       await act(async () => { await expect(outbox.cancelOnStore(order.id)).rejects.toBe(crash); });
       expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('sending');
       expect(outbox.state.rejected).toBe(1);
+    });
+
+    describe('payRestOnStore (#1101 slice 3)', () => {
+      // The store recorded the cash 500; the card 700 is the rest.
+      const partPaid = { ...leftBehind, data: { orderId: '115', recorded: 1 } };
+      function twoLegs() {
+        const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 0 } });
+        builder.addLine({ productId: 'shirt', variantId: 'blue', name: 'Blue shirt', unitPrice: { amount: 1200, currency: 'EUR' } });
+        builder.addPayment({ method: 'cash', amountMinor: 500 });
+        builder.addPayment({ method: 'external', amountMinor: 700 });
+        return finalizeOrder(builder.getSnapshot(), { registerId: 'register-1' });
+      }
+
+      it('pays with the pay bound for the open store, then drops the row from state.rejected', async () => {
+        const keys: string[] = [];
+        const seen: SettlePayRequest[] = [];
+        const settlement = { async pay(request: SettlePayRequest) {
+          seen.push(request);
+          return { outcome: { kind: 'done' as const, status: 'completed' }, recorded: request.payments.map(({ id }) => id) };
+        } };
+        const order = await refusedOnStore({ storeSettlement: (key) => { keys.push(key); return settlement; } }, twoLegs(), partPaid);
+        let outcome: unknown;
+        await act(async () => { outcome = await outbox.payRestOnStore(order.id); });
+        expect(outcome).toEqual({ kind: 'done', status: 'completed' });
+        expect(keys).toEqual([session.baseUrl]);
+        expect(seen).toEqual([{ storeOrderId: '115', clientOrderId: order.id, attemptId: expect.any(String), currency: 'EUR',
+          payments: [{ id: expect.any(String), method: 'external', amountMinor: 700 }] }]);
+        expect(outbox.state.rejected).toBe(0);
+        expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('done');
+      });
+
+      it.each([['no storeSettlement option', {}], ['a settlement without pay (row 16)', { storeSettlement: () => ({ cancel: vi.fn() }) }],
+        ['an undefined settlement', { storeSettlement: () => undefined }]])('is not offered with %s', async (_name, options) => {
+        const order = await refusedOnStore(options, twoLegs(), partPaid);
+        expect(await outbox.payRestOnStore(order.id)).toEqual({ kind: 'not_offered' });
+        expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement).toBeUndefined();
+      });
+
+      it('rejects with the pay error, still recounting the state, and the row stays sending', async () => {
+        const crash = new Error('crash');
+        const order = await refusedOnStore({ storeSettlement: () => ({ pay: async () => { throw crash; } }) }, twoLegs(), partPaid);
+        await act(async () => { await expect(outbox.payRestOnStore(order.id)).rejects.toBe(crash); });
+        expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('sending');
+        expect(outbox.state.rejected).toBe(1);
+      });
     });
   });
 

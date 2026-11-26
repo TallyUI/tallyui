@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import type { OrderCreateEnvelope, SettleCancelRequest, SettleOutcome } from '@tallyui/core';
+import type { OrderCreateEnvelope, SettleCancelRequest, SettleOutcome, SettlePayRequest, SettlePayResult } from '@tallyui/core';
 import { callbackSink, type LogEntry } from '../logging';
 import { needsAttention, posOrderCollection, uuidv7, type PosOrder, type PosOrderStoreSettlement } from '../pos-order';
 import { createOrderOutbox, type OrderOutbox } from './order-outbox';
 import { outboxLogger } from './logger';
-import { cancelOnStore } from './store-settlement';
+import { cancelOnStore, payRestOnStore } from './store-settlement';
 import type { CommandTransport, OutboxState } from './types';
 
 const name = `storesettle${uuidv7().replaceAll('-', '')}`;
@@ -198,6 +198,145 @@ describe('cancelOnStore', () => {
       await cancelOnStore({ orders, cancel: async () => ({ kind: 'retry', reason: 'status_503' }) }, order.id);
     } finally { sink(); }
     expect(entries).toEqual([expect.objectContaining({ level: 'info', data: expect.objectContaining({ orderId: order.id, reason: 'status_503' }) })]);
+  });
+});
+
+// #1101 slice 3: the till's cash 10.00 is recorded on store order 115, its card 20.00 and (row 2) cash legs are not.
+describe('payRestOnStore', () => {
+  const partPaid = (payments: PosOrder['payments'], overrides: Partial<PosOrder> = {}) =>
+    refused({ payments, totalMinor: payments.reduce((sum, leg) => sum + leg.amountMinor, 0), ...overrides }, { orderId: '115', displayId: '1001', recorded: 1 });
+  const cash10 = () => ({ id: uuidv7(), method: 'cash' as const, amountMinor: 1000 });
+  const card = (amountMinor: number) => ({ id: uuidv7(), method: 'external' as const, amountMinor });
+  type Pay = (request: SettlePayRequest) => Promise<SettlePayResult>;
+  const answering = (outcome: SettleOutcome, recorded: (request: SettlePayRequest) => string[] = () => []) =>
+    vi.fn<Pay>(async (request) => ({ outcome, recorded: recorded(request) }));
+  const all = (request: SettlePayRequest) => request.payments.map(({ id }) => id);
+
+  it('row 1: stores sending with new ids before the call, then done with each payment done; the row leaves attention, money untouched', async () => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    let seenDuringCall: PosOrder | undefined;
+    const pay = vi.fn<Pay>(async (request) => {
+      seenDuringCall = await stored(order.id);
+      return { outcome: { kind: 'done', status: 'completed' }, recorded: all(request) };
+    });
+    expect(await payRestOnStore({ orders, pay, now: () => at }, order.id)).toEqual({ kind: 'done', status: 'completed' });
+    const [request] = pay.mock.calls[0];
+    expect(request).toEqual({ storeOrderId: '115', clientOrderId: order.id, attemptId: expect.any(String), currency: 'EUR',
+      payments: [{ id: expect.any(String), method: 'external', amountMinor: 2000 }] });
+    expect(request.payments[0].id).not.toBe(order.payments[1].id);
+    expect(seenDuringCall?.storeSettlement).toEqual({ kind: 'pay', state: 'sending', attemptId: request.attemptId, at: at.toISOString(),
+      payments: [{ id: request.payments[0].id, method: 'external', amountMinor: 2000 }] });
+    const after = await stored(order.id);
+    expect(after.storeSettlement).toEqual({ kind: 'pay', state: 'done', attemptId: request.attemptId, at: at.toISOString(), storeStatus: 'completed',
+      payments: [{ id: request.payments[0].id, method: 'external', amountMinor: 2000, done: true }] });
+    expect(JSON.stringify(untouched(after))).toBe(JSON.stringify(untouched(order)));
+    expect(needsAttention([after])).toEqual([]);
+  });
+
+  it('row 2: a cash leg copies tenderedMinor and never the change; a card leg carries no tendered', async () => {
+    const order = partPaid([cash10(), { id: uuidv7(), method: 'cash', amountMinor: 2000, tenderedMinor: 5000, changeMinor: 3000 },
+      { ...card(500), tenderedMinor: 900 }]);
+    await orders.insert(order);
+    const pay = answering({ kind: 'done', status: 'completed' }, all);
+    await payRestOnStore({ orders, pay }, order.id);
+    expect(pay.mock.calls[0][0].payments).toEqual([{ id: expect.any(String), method: 'cash', amountMinor: 2000, tenderedMinor: 5000 },
+      { id: expect.any(String), method: 'external', amountMinor: 500 }]);
+  });
+
+  it('row 7: refused keeps the payments, marks the recorded ones done, and the row stays in attention', async () => {
+    const order = partPaid([cash10(), card(500), card(1500)]);
+    await orders.insert(order);
+    const pay = answering({ kind: 'refused', code: 'wcpos_amount_exceeds_balance', message: 'No.' }, (request) => [request.payments[0].id]);
+    await payRestOnStore({ orders, pay }, order.id);
+    const after = await stored(order.id);
+    expect(after.storeSettlement).toMatchObject({ kind: 'pay', state: 'refused', code: 'wcpos_amount_exceeds_balance', message: 'No.' });
+    expect(after.storeSettlement?.payments?.map((payment) => payment.done)).toEqual([true, undefined]);
+    expect(needsAttention([after])).toEqual([after]);
+  });
+
+  it('row 8: a pay still sending is resent with the same attemptId and both ids', async () => {
+    const order = partPaid([card(1000), { id: uuidv7(), method: 'cash', amountMinor: 500 }, card(1500)]);
+    await orders.insert(order);
+    const pay = vi.fn<Pay>().mockRejectedValueOnce(new Error('crash'))
+      .mockImplementationOnce(async (request) => ({ outcome: { kind: 'done', status: 'completed' }, recorded: all(request) }));
+    await expect(payRestOnStore({ orders, pay }, order.id)).rejects.toThrow('crash');
+    expect((await stored(order.id)).storeSettlement?.state).toBe('sending');
+    await db.close();
+    await open();
+    await payRestOnStore({ orders, pay }, order.id);
+    expect(pay.mock.calls[1][0]).toEqual(pay.mock.calls[0][0]);
+    expect(pay.mock.calls[1][0].payments.map(({ amountMinor }) => amountMinor)).toEqual([500, 1500]);
+    expect((await stored(order.id)).storeSettlement?.payments?.every((payment) => payment.done)).toBe(true);
+  });
+
+  it.each(['network', 'status_503', 'woo_rxdb_sync_record_locked'])('row 9: retry %s keeps sending and the ids; the next call sends the same ids', async (reason) => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    const pay = answering({ kind: 'retry', reason });
+    expect(await payRestOnStore({ orders, pay, now: () => at }, order.id)).toEqual({ kind: 'retry', reason });
+    const sending = (await stored(order.id)).storeSettlement;
+    expect(sending).toMatchObject({ kind: 'pay', state: 'sending', attemptId: pay.mock.calls[0][0].attemptId });
+    await payRestOnStore({ orders, pay, now: () => at }, order.id);
+    expect(pay.mock.calls[1][0]).toEqual(pay.mock.calls[0][0]);
+    expect((await stored(order.id)).storeSettlement).toEqual(sending);
+  });
+
+  it('row 10: gone is stored, and the row with 10.00 recorded stays in attention', async () => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    expect(await payRestOnStore({ orders, pay: answering({ kind: 'gone' }) }, order.id)).toEqual({ kind: 'gone' });
+    const after = await stored(order.id);
+    expect(after.storeSettlement?.state).toBe('gone');
+    expect(needsAttention([after])).toEqual([after]);
+  });
+
+  it('row 13: retry not_completed with the id recorded marks it done and keeps sending', async () => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    const pay = answering({ kind: 'retry', reason: 'not_completed' }, all);
+    await payRestOnStore({ orders, pay }, order.id);
+    const after = (await stored(order.id)).storeSettlement;
+    expect(after).toMatchObject({ state: 'sending', attemptId: pay.mock.calls[0][0].attemptId });
+    expect(after?.payments).toEqual([{ id: pay.mock.calls[0][0].payments[0].id, method: 'external', amountMinor: 2000, done: true }]);
+    expect(needsAttention([await stored(order.id)])).toHaveLength(1);
+  });
+
+  it('changed stores the store figures, and a new tap mints a new attemptId and new ids', async () => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    const pay = answering({ kind: 'changed', status: 'pos-partial', capturedMinor: 1500 });
+    await payRestOnStore({ orders, pay }, order.id);
+    expect((await stored(order.id)).storeSettlement).toMatchObject({ state: 'changed', storeStatus: 'pos-partial', capturedMinor: 1500 });
+    await payRestOnStore({ orders, pay }, order.id);
+    expect(pay.mock.calls[1][0].attemptId).not.toBe(pay.mock.calls[0][0].attemptId);
+    expect(pay.mock.calls[1][0].payments[0].id).not.toBe(pay.mock.calls[0][0].payments[0].id);
+  });
+
+  it.each<[string, () => PosOrder | undefined]>([
+    ['row 12: recorded 0', () => refused({}, { orderId: '115', recorded: 0 })],
+    ['a pay done', () => partPaid([cash10(), card(2000)], { storeSettlement: settlement('done', 'pay') })],
+    ['a cancel sending', () => partPaid([cash10(), card(2000)], { storeSettlement: settlement('sending') })],
+    ['an unknown id', () => undefined],
+  ])('%s: not offered, pay never called, the row unchanged', async (_name, make) => {
+    const order = make();
+    if (order) await orders.insert(order);
+    const pay = answering({ kind: 'done', status: 'completed' });
+    expect(await payRestOnStore({ orders, pay }, order?.id ?? 'missing')).toEqual({ kind: 'not_offered' });
+    expect(pay).not.toHaveBeenCalled();
+    if (order) expect(await stored(order.id)).toEqual(order);
+  });
+
+  it('an outcome that arrives after the row took another attemptId leaves the stored settlement untouched', async () => {
+    const order = partPaid([cash10(), card(2000)]);
+    await orders.insert(order);
+    const other = settlement('sending', 'pay');
+    const pay = vi.fn<Pay>(async (request) => {
+      await (await orders.findOne(order.id).exec())!.incrementalPatch({ storeSettlement: other });
+      return { outcome: { kind: 'done', status: 'completed' }, recorded: all(request) };
+    });
+    await payRestOnStore({ orders, pay }, order.id);
+    expect((await stored(order.id)).storeSettlement).toEqual(other);
   });
 });
 
