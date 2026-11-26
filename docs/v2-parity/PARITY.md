@@ -74,21 +74,21 @@ Motion clips are GIFs of a Playwright video:
 
 ## Scoreboard
 
-There are 30 screen sections and 5 motion rows. The counts are per app.
+There are 31 screen sections and 5 motion rows. The counts are per app.
 
 | App | match | close | gap | missing | not reachable |
 |---|---|---|---|---|---|
-| Tally Woo | 0 | 3 | 26 | 1 | 5 |
-| medusapos | 1 | 16 | 14 | 4 | 0 |
-| vendurepos | 1 | 19 | 13 | 2 | 0 |
+| Tally Woo | 0 | 3 | 27 | 1 | 5 |
+| medusapos | 1 | 16 | 15 | 4 | 0 |
+| vendurepos | 1 | 19 | 14 | 2 | 0 |
 
 Rows that are not `match`, by kind:
 
 | App | feature | visual | motion | open in all |
 |---|---|---|---|---|
-| Tally Woo | 25 | 5 | 5 | 35 |
-| medusapos | 17 | 12 | 5 | 34 |
-| vendurepos | 17 | 12 | 5 | 34 |
+| Tally Woo | 26 | 5 | 5 | 36 |
+| medusapos | 18 | 12 | 5 | 35 |
+| vendurepos | 18 | 12 | 5 | 35 |
 
 What changed since 2026-11-10:
 
@@ -176,6 +176,9 @@ Rows only one app has:
 16. **vendurepos cashier sheet**
     ([Cashier switch and sign-out](#cashier-switch-and-sign-out); vendurepos).
     It has email, store and Sign out only.
+17. **Cart line record editor** ([Cart line: edit the whole line](#cart-line-edit-the-whole-line);
+    feature; `@tallyui/components`). v2's swiped line offers Edit, which opens
+    the whole line in one form. No app has it. Not started, no spec yet.
 
 ## Audit disagreements
 
@@ -357,6 +360,24 @@ line-discount form.
 
 **Closes it:** the keypad is done. Applying as you type is `new`; see also
 [Motion: price keypad over the till](#motion-price-keypad-over-the-till).
+
+## Cart line: edit the whole line
+
+**v2:** swiping a product line open shows Edit and Remove. Edit opens the line
+in a record dialog: a form with name, quantity, price and regular price, SKU,
+categories and meta, plus a JSON tab
+(`pos/cart/cells/edit-cart-item-button.tsx`, `edit-line-item/form.tsx`).
+
+| App | Status | Kind | Fix in | What differs |
+|---|---|---|---|---|
+| Tally Woo | gap | feature | `@tallyui/components` | `@tallyui/components` has no whole-line editor; its lines edit per cell (quantity and price popovers). |
+| medusapos | gap | feature | `@tallyui/components` | The same. |
+| vendurepos | gap | feature | `@tallyui/components` | The same. |
+
+**Closes it:** a line record editor in `@tallyui/components`. Not started; no
+spec yet. When it is built, Edit joins the product line's swipe strip, which
+until then offers Remove only (front desk ruling, 2026-11-26). The per-cell
+popovers stay as they are.
 
 ## Fee and shipping
 
@@ -841,6 +862,11 @@ aware). Open-order tabs fade in and out (`pos/cart/tabs.tsx:127, 446`).
 | vendurepos | gap | motion | `@tallyui/components` | The same. |
 
 The same clips as above (add, then remove the line).
+
+**Closes it:** the swipe in `CartLineStrip`, in two slices. Slice one: fee and
+shipping rows drag open onto Edit and Remove, and fling off. Slice two: product
+lines get the same strip with Remove only; Edit joins it with the
+[line record editor](#cart-line-edit-the-whole-line).
 
 ### Motion: sheet and modal open and close
 
