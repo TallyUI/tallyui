@@ -157,6 +157,7 @@ export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscou
 export { uuidv7, AFTER_CLOSE_PAYMENTS_CHANGED, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, storeOrderLeft, canCancelOnStore, canPayRestOnStore, canReverseOnStore, recordedLegs, settledOnStore, unrecordedLegs, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { settledAwayOnStore, tillPayments } from './pos-order';
 export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';

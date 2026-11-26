@@ -8,6 +8,7 @@ export { addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger } from 
 export { getDeviceId } from './device-id';
 export { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 export { storeOrderLeft } from './store-order-left';
+export { settledAwayOnStore, tillPayments } from './till-payments';
 export { canCancelOnStore, canPayRestOnStore, canReverseOnStore, recordedLegs, settledOnStore, unrecordedLegs } from './store-settlement';
 export { markAttentionHandled } from './attention-handled';
 export { moneyDivergence, type MoneyDivergence } from './money-divergence';

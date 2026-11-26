@@ -29,6 +29,8 @@ With `onPayRestOnStore`, a Needs attention row whose refused sale left an order 
 
 With `onReverseOnStore`, a part-paid order can also offer "Give back and cancel" after "Pay the rest on store". The confirmation names every payment taken on the till and tells the cashier where to give it back. The till takes its manual payments off the store order, reads it again, and cancels only if nothing is still paid there. No money moves automatically: after cancellation, hand the cash back from the drawer or give the card payment back on the terminal. The till leaves that money out of its expected figures itself, so nothing is recorded as a pay-out. An unfinished attempt can be continued without confirming again. If the store refuses a step, the row stays in Needs attention and says which payments were taken off.
 
+Both cancellation actions require `openSessionId` to match every till payment's session; otherwise, in place of the action the row says “Taken in a session that has closed: a manager must settle this sale in the store's admin.”
+
 `OrderSyncNotices` renders one sale's sync notices on their own, for an app's own order screen: `<OrderSyncNotices order={order} stuck={outbox.state.stuck}>{retry}</OrderSyncNotices>`. Its `children` go where OrdersList puts Retry, between the notes and the store's warnings.
 
 ## Server order history

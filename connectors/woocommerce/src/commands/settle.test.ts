@@ -156,6 +156,11 @@ describe('wooSettleRefusedOrder.reverse', () => {
     expect(await shop.reverse([cash, card])).toEqual({ outcome: { kind: 'retry', reason: 'status_503' }, voided: [cash.paymentId] });
     expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
   });
+  it('V1: a lost void answer confirms both voids on read-back without cancelling', async () => {
+    const shop = store([read([cashRow, cardRow]), ok(), json(503, {}), open(cardRow)]);
+    expect(await shop.reverse([cash, card])).toEqual({ outcome: { kind: 'retry', reason: 'status_503' }, voided: [cash.paymentId, card.paymentId] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush]);
+  });
   it('a read back that fails confirms nothing', async () => {
     const shop = store([read(), ok(), new Error('offline')]);
     expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'retry', reason: 'network' }, voided: [] });

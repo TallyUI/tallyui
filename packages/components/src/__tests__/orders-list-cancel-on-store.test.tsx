@@ -16,7 +16,7 @@ type Handler = (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered
 function refused(id: string, code = 'invalid_payload', data: Record<string, unknown> = { orderId: '115', displayId: '1001' }, overrides: Partial<PosOrder> = {}): PosOrder {
   const createdAt = '2026-11-25T10:00:00.000Z';
   return {
-    id, commandId: `command-${id}`, createdAt, updatedAt: createdAt, currency: 'EUR', pricesIncludeTax: false,
+    id, sessionId: 'open', commandId: `command-${id}`, createdAt, updatedAt: createdAt, currency: 'EUR', pricesIncludeTax: false,
     lines: [{ id: `line-${id}`, productId: 'shirt', variantId: 'blue', name: 'Blue shirt', sku: 'BLUE', quantity: 1,
       unitPriceMinor: 1200, discountMinor: 0, netMinor: 1200, taxLines: [] }],
     payments: [{ id: `payment-${id}`, method: 'cash', amountMinor: 1200 }], customer: null,
@@ -32,6 +32,12 @@ const button = (id: string) => screen.queryByTestId(`order-${id}-cancel-on-store
 const done: Handler = async () => ({ kind: 'done', status: 'cancelled' });
 
 describe('Cancel order on store', () => {
+  it('G3: a leg without its own session belongs to the closed order session', () => {
+    const order = { ...refused('o1'), sessionId: 'closed' };
+    show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={done} />);
+    expect(button('o1')).toBeNull();
+    expect(screen.getByText("Taken in a session that has closed: a manager must settle this sale in the store's admin.")).toBeTruthy();
+  });
   it.each<[string, PosOrder, Handler | undefined, boolean]>([
     ['recorded 0, with the handler', refused('o1', 'invalid_payload', { orderId: '115', recorded: 0 }), done, true],
     ['a total_mismatch refusal with a store order', refused('o1', 'invalid_payload', { orderId: '115', storeCode: 'total_mismatch' }), done, true],
@@ -41,12 +47,12 @@ describe('Cancel order on store', () => {
     ['settled gone', refused('o1', 'invalid_payload', undefined, { storeSettlement: settlement('gone') }), done, false],
     ['no store order', refused('o1', 'invalid_payload', { storeCode: 'x' }), done, false],
   ])('18: %s', (_name, order, handler, shown) => {
-    show(<OrdersList orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
     expect(button('o1') !== null).toBe(shown);
   });
 
   it('18: never in the Recent section', () => {
-    show(<OrdersList orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={done} />);
+    show(<OrdersList openSessionId="open" orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={done} />);
     expect(attention().getByTestId('order-o1-cancel-on-store')).toBeTruthy();
     expect(recent().queryByTestId('order-o1-cancel-on-store')).toBeNull();
     expect(screen.getAllByTestId('order-o1-cancel-on-store')).toHaveLength(1);
@@ -54,7 +60,7 @@ describe('Cancel order on store', () => {
 
   it('asks first, names the store reference, and Keep order calls nothing', () => {
     const handler = vi.fn<Handler>(done);
-    show(<OrdersList orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={handler} />);
     expect(button('o1')!.textContent).toBe('Cancel order on store');
     fireEvent.click(button('o1')!);
     const dialog = within(screen.getByTestId('order-o1-cancel-on-store-dialog'));
@@ -71,7 +77,7 @@ describe('Cancel order on store', () => {
     let answer!: (outcome: SettleOutcome) => void;
     const handler = vi.fn<Handler>(() => new Promise((resolve) => { answer = resolve; }));
     const order = refused('o1');
-    show(<OrdersList orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
     fireEvent.click(button('o1')!);
     await act(async () => { fireEvent.click(screen.getByTestId('order-o1-cancel-on-store-dialog-confirm')); });
     expect(handler).toHaveBeenCalledTimes(1);
@@ -91,7 +97,7 @@ describe('Cancel order on store', () => {
     ['a rejected handler', async () => { throw new Error('offline'); }],
   ])('21: %s says the store could not be reached, until the next press', async (_name, first) => {
     const handler = vi.fn<Handler>(first);
-    show(<OrdersList orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={handler} />);
     fireEvent.click(button('o1')!);
     await act(async () => { fireEvent.click(screen.getByTestId('order-o1-cancel-on-store-dialog-confirm')); });
     expect(screen.getByTestId('order-o1-cancel-on-store-error').textContent).toBe('Could not reach the store. Try again.');
@@ -105,7 +111,7 @@ describe('Cancel order on store', () => {
   });
 
   it('21: not_offered clears the in-flight state and shows nothing else', async () => {
-    show(<OrdersList orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={async () => ({ kind: 'not_offered' })} />);
+    show(<OrdersList openSessionId="open" orders={[refused('o1')]} onRetry={async () => 0} onCancelOnStore={async () => ({ kind: 'not_offered' })} />);
     fireEvent.click(button('o1')!);
     await act(async () => { fireEvent.click(screen.getByTestId('order-o1-cancel-on-store-dialog-confirm')); });
     expect(button('o1')!.textContent).toBe('Cancel order on store');
@@ -115,7 +121,7 @@ describe('Cancel order on store', () => {
   it('21: a cancel still sending reads Finish cancelling on store and calls the handler with no dialog', async () => {
     const handler = vi.fn<Handler>(done);
     const order = refused('o1', 'invalid_payload', undefined, { storeSettlement: settlement('sending') });
-    show(<OrdersList orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
     expect(button('o1')!.textContent).toBe('Finish cancelling on store');
     await act(async () => { fireEvent.click(button('o1')!); });
     expect(screen.queryByTestId('order-o1-cancel-on-store-dialog')).toBeNull();
@@ -133,13 +139,13 @@ describe('Retry beside Cancel order on store', () => {
     ['insufficient_stock, recorded 1, with the handler', refused('o1', 'insufficient_stock', { orderId: '115', recorded: 1 }), done, ['Retry']],
     ['insufficient_stock, no orderId, with the handler', refused('o1', 'insufficient_stock', { storeCode: 'x' }), done, ['Retry']],
   ])('19: %s', (_name, order, handler, labels) => {
-    show(<OrdersList orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
+    show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={handler} />);
     expect(retryLabels()).toEqual(labels);
   });
 
   it('19: Try the payment again resends the order', async () => {
     const onRetry = vi.fn(async () => 1);
-    show(<OrdersList orders={[refused('o1', 'insufficient_stock')]} onRetry={onRetry} onCancelOnStore={done} />);
+    show(<OrdersList openSessionId="open" orders={[refused('o1', 'insufficient_stock')]} onRetry={onRetry} onCancelOnStore={done} />);
     await act(async () => { fireEvent.click(attention().getByText('Try the payment again')); });
     expect(onRetry).toHaveBeenCalledWith(['o1']);
   });

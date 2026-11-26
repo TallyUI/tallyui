@@ -50,7 +50,7 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   // Needs attention for reopened sales (ADR-090 W4c): the pure row-aware Retry predicate and unsendable-update message, never a hook or the store.
   'isRequeueableOrder', 'UPDATE_UNSENDABLE', 'UPDATE_UNSENDABLE_MESSAGE',
   // Cancel order on store and give back and cancel (#1101): the pure store-order predicates and payment leg selectors, never a hook or the store.
-  'canCancelOnStore', 'settledOnStore', 'canPayRestOnStore', 'unrecordedLegs', 'canReverseOnStore', 'recordedLegs',
+  'canCancelOnStore', 'settledOnStore', 'canPayRestOnStore', 'unrecordedLegs', 'canReverseOnStore', 'recordedLegs', 'tillPayments',
   // the refund form (plan unit 20, ADR-080 amendment 2): the pure refundable-quantity and refund pricing the form shows and sends, never a hook or the store.
   'refundableLines', 'priceRefund',
   // the parked needs_admin outcome (#1280): the pure refund lead line and retry-reason parse, never a hook or the store.

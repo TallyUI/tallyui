@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
-import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, tillPayments, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -184,6 +184,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * reopened and with no store order: the app wires `reopenRefusedOrder`. When it refuses `coupon_carry_inexact` with a
  * `toCollectMinor`, the row offers "Reopen without the coupon", which calls it again with `{ withoutCoupons: true }`.
  * `onResume` adds Resume to a reopened row; the app resumes the parked sale, whose draft id is the order's id.
+ * `openSessionId` must match the session of every till payment to offer or finish either store cancellation action.
  * `onCancelOnStore` adds "Cancel order on store" to a Needs attention row whose refused sale left an unpaid order on the
  * store (`canCancelOnStore`, #1101), asked in a confirm dialog first: the app wires `useOrderOutbox`'s `cancelOnStore`.
  * A cancel still `sending` is finished with no dialog. With it, such a row offers no Retry, except an `insufficient_stock`
@@ -192,13 +193,14 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * the store (`canPayRestOnStore`, #1101 slice 3), asked in a confirm dialog naming each leg to record (no money is taken):
  * the app wires `useOrderOutbox`'s `payRestOnStore`. A pay still `sending` is finished with no dialog. With it, a row
  * with money recorded on the store offers no Retry. */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore, onReverseOnStore }: {
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore, onReverseOnStore, openSessionId }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
   onReopen?: (order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>;
   onResume?: (order: PosOrder) => void;
+  openSessionId?: string;
   onCancelOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
   onPayRestOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
   onReverseOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
@@ -295,6 +297,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       });
     }
   }
+  const inOpenSession = (order: PosOrder) => openSessionId !== undefined && tillPayments(order.payments).every((payment) => (payment.sessionId ?? order.sessionId) === openSessionId);
   const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {
     for (const id of retrying.current) {
@@ -336,7 +339,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const reopenable = attention && !!onReopen && order.syncStatus === 'rejected' && REOPENABLE_CODES.includes(order.error?.code ?? '')
             && order.storeOrderId === undefined && order.reopenedAt === undefined;
           const reopenState = reopens.get(order.id);
-          const cancellable = attention && !!onCancelOnStore && canCancelOnStore(order);
+          const cancelOffered = attention && !!onCancelOnStore && canCancelOnStore(order);
           const cancelState = cancels.get(order.id);
           const finishing = order.storeSettlement?.kind === 'cancel' && order.storeSettlement.state === 'sending';
           // #1101: with the cancel wired, an unpaid order left on the store is cancelled rather than resent, except a stock refusal.
@@ -345,7 +348,9 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const payState = pays.get(order.id);
           const finishingPay = order.storeSettlement?.kind === 'pay' && order.storeSettlement.state === 'sending';
           // #1101 slice 3: with the pay wired, a part-paid order left on the store has its rest recorded, never resent.
-          const reversible = attention && !!onReverseOnStore && canReverseOnStore(order);
+          const reverseOffered = attention && !!onReverseOnStore && canReverseOnStore(order);
+          const closedSession = (cancelOffered || reverseOffered) && !inOpenSession(order);
+          const cancellable = cancelOffered && !closedSession, reversible = reverseOffered && !closedSession;
           const reverseState = reverses.get(order.id), finishingReverse = order.storeSettlement?.kind === 'reverse' && order.storeSettlement.state === 'sending';
           const retryLabel = (onPayRestOnStore || onReverseOnStore) && left && left.recordedMinor > 0 ? undefined : onCancelOnStore && left?.recordedMinor === 0
             ? order.error?.code === 'insufficient_stock' ? 'Try the payment again' : undefined : 'Retry';
@@ -391,6 +396,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">{retryLabel}</Text>
               </Pressable> : null}
+            {closedSession ? <Text className="text-muted-foreground">{"Taken in a session that has closed: a manager must settle this sale in the store's admin."}</Text> : null}
             {cancellable ? <Pressable accessibilityRole="button" testID={`order-${order.id}-cancel-on-store`} disabled={cancelState === 'busy'}
               onPress={() => {
                 if (cancelling.current.has(order.id)) return;
@@ -447,7 +453,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
         })}
       </View>
     ))}
-    {askingCancel ? ((reference) => <ConfirmDialog testID={`order-${askingCancel.id}-cancel-on-store-dialog`} tone="destructive" open
+    {askingCancel && inOpenSession(askingCancel) ? ((reference) => <ConfirmDialog testID={`order-${askingCancel.id}-cancel-on-store-dialog`} tone="destructive" open
       onOpenChange={(open) => { if (!open) setAskingCancel(null); }} title={`Cancel order #${reference} on the store?`}
       description={`Order #${reference} is waiting on the online store with nothing paid. This cancels it there. The payments taken on this till stay as they are.`}
       cancelLabel="Keep order" confirmLabel="Cancel order on store"
@@ -456,12 +462,12 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       onOpenChange={(open) => { if (!open) setAskingPay(null); }} title={`Record the rest of order #${reference} on the store?`}
       description={[...legs.filter((_leg, index) => !(stored?.kind === 'pay' && stored.payments?.length === legs.length && stored.payments[index].done))
         .map((leg) => `${methodLabel(leg.method)} ${formatMoney({ amount: leg.amountMinor, currency: askingPay.currency })}, already taken on this till.`),
-        'No money is taken now.', onReverseOnStore && canReverseOnStore(askingPay) ? GIVE_BACK_INSTEAD : GIVE_BACK].join('\n')}
+        'No money is taken now.', onReverseOnStore && canReverseOnStore(askingPay) && inOpenSession(askingPay) ? GIVE_BACK_INSTEAD : GIVE_BACK].join('\n')}
       cancelLabel="Keep as is" confirmLabel="Record on store"
       onConfirm={() => { setAskingPay(null); void payRestOnStore(askingPay); }} />)(storeOrderLeft(askingPay)?.reference ?? orderReference(askingPay),
       // Only the legs still to record: the stored pay is index-aligned with them when the lengths match, as the outbox reuses it.
       unrecordedLegs(askingPay), askingPay.storeSettlement) : null}
-    {askingReverse ? <ConfirmDialog testID={`order-${askingReverse.id}-reverse-on-store-dialog`} tone="destructive" open
+    {askingReverse && inOpenSession(askingReverse) ? <ConfirmDialog testID={`order-${askingReverse.id}-reverse-on-store-dialog`} tone="destructive" open
       onOpenChange={(open) => { if (!open) setAskingReverse(null); }} title={`Give the money back and cancel order #${storeOrderLeft(askingReverse)?.reference ?? orderReference(askingReverse)}?`}
       description={[...askingReverse.payments.map((leg) => `${legWording(leg.method, formatMoney({ amount: leg.amountMinor, currency: askingReverse.currency }))}.`),
         'The store stops counting the payments it recorded and cancels the order.', 'Hand the money back once this till shows the order cancelled. If you already gave it back, go ahead.'].join('\n')}

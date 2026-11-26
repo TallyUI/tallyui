@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countedTillPayments } from '../pos-order/till-payments';
+import { countedTillPayments, settledAwayOnStore } from '../pos-order/till-payments';
 import type { PosOrderStoreSettlement } from '../pos-order/types';
 import { deriveExpected, paymentLedgerRows, takingsByMethod } from './expected';
 
@@ -15,6 +15,14 @@ const expected = (payments: typeof cash[], storeSettlement?: ReturnType<typeof s
 });
 
 describe('settled till payments (#1380)', () => {
+  it.each([
+    [undefined, false], [settlement('cancel', 'done'), true], [settlement('reverse', 'done'), true],
+    [settlement('pay', 'done'), false], [settlement('reverse', 'sending'), false], [partial, false],
+    [settlement('reverse', 'changed'), false], [settlement('reverse', 'gone'), false],
+    [settlement('cancel', 'sending'), false], [settlement('cancel', 'refused'), false],
+  ] as const)('H1: settledAwayOnStore(%o) is %s', (storeSettlement, away) => {
+    expect(settledAwayOnStore({ storeSettlement })).toBe(away);
+  });
   it.each([
     ['E1: cash give back done', [cash], settlement('reverse', 'done', leg(cash, true)), 10000],
     ['E2: cancel done', [cash], settlement('cancel', 'done'), 10000],
