@@ -41,12 +41,21 @@ export function roundedPickTarget(targetMinor: number, rounding: PaymentRounding
   return rounding ? roundToIncrement(targetMinor, rounding.incrementMinor, rounding.mode) : targetMinor;
 }
 
-/** ADR-094: the live entries a remainder rounds against, leaving out a pick leg's own entry (its leg carries units). */
-export function remainderEntriesMinor(order: { payments: readonly { id: string; units?: Readonly<Record<string, number>> }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }): number {
+/** A cash leg carrying units: a cash part pick, whose entry is its own rounding (ADR-094 item 7). */
+const cashPickLeg = (leg: { method?: string; units?: Readonly<Record<string, number>> }) => leg.method === 'cash' && leg.units !== undefined && Object.keys(leg.units).length > 0;
+
+/** ADR-094: the live entries a remainder rounds against, leaving out a cash pick leg's own entry (a cash leg carrying units). */
+export function remainderEntriesMinor(order: { payments: readonly { id: string; method?: string; units?: Readonly<Record<string, number>> }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }): number {
   return (order.cashRoundings ?? []).reduce((sum, entry) => {
-    const units = order.payments.find((leg) => leg.id === entry.paymentId)?.units;
-    return !units || Object.keys(units).length === 0 ? sum + entry.minor : sum;
+    const leg = order.payments.find((candidate) => candidate.id === entry.paymentId);
+    return leg && cashPickLeg(leg) ? sum : sum + entry.minor;
   }, 0);
+}
+
+/** ADR-094 item 1 (#1365): the zero-remainder write-off's leg, the last counting leg that is not a cash pick, else the last counting leg. */
+export function writeOffLeg<L extends { id: string; method?: string; status?: PaymentLegStatus; units?: Readonly<Record<string, number>> }>(order: { payments: readonly L[] }): L | undefined {
+  const counted = order.payments.filter(countsTowardPaid);
+  return counted.filter((leg) => !cashPickLeg(leg)).at(-1) ?? counted.at(-1);
 }
 
 /** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live cash leg's entry was computed against this leg's. */

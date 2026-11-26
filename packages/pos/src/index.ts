@@ -199,7 +199,7 @@ import { minorToDecimal as registerMinorToDecimal } from './register';
 /** @deprecated Use `minorToMajor(minor, digits)` from `@tallyui/core`, which also rejects an amount that is not a safe integer. */
 export const minorToDecimal: (minor: number, exponent: number) => string = registerMinorToDecimal;
 export { useRegisterSession, RegisterTenderInProgressError, RegisterSaleSavingError, RegisterSessionAlreadyOpenError, RegisterCloseIncompleteError, RegisterApprovalRequiredError, type ApprovalNeeded, type UseRegisterSessionOptions } from './register';
-export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedPickTarget, remainderEntriesMinor, roundedDue, tenderRounding } from './tender';
+export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedPickTarget, remainderEntriesMinor, writeOffLeg, roundedDue, tenderRounding } from './tender';
 export type { TenderRounding } from './tender';
 export { suggestFloat, type FloatSuggestion } from './register';
 export { switchWarnings, handoverSlip } from './register';
