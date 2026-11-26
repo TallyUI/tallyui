@@ -18,7 +18,7 @@ type Handler = (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered
 function partPaid(id: string, recorded = 1, overrides: Partial<PosOrder> = {}): PosOrder {
   const createdAt = '2026-11-25T10:00:00.000Z';
   return {
-    id, commandId: `command-${id}`, createdAt, updatedAt: createdAt, currency: 'EUR', pricesIncludeTax: false,
+    id, sessionId: 'open', commandId: `command-${id}`, createdAt, updatedAt: createdAt, currency: 'EUR', pricesIncludeTax: false,
     lines: [{ id: `line-${id}`, productId: 'shirt', variantId: 'blue', name: 'Blue shirt', sku: 'BLUE', quantity: 1,
       unitPriceMinor: 3000, discountMinor: 0, netMinor: 3000, taxLines: [] }],
     payments: [{ id: `cash-${id}`, method: 'cash', amountMinor: 1000 }, { id: `card-${id}`, method: 'external', amountMinor: 1500 },
@@ -37,6 +37,16 @@ const done: Handler = async () => ({ kind: 'done', status: 'completed' });
 const cancelDone: Handler = async () => ({ kind: 'done', status: 'cancelled' });
 
 describe('Pay the rest on store', () => {
+  it('row 18: point to Give back and cancel only when offered', () => {
+    const payments = [{ id: 'cash', method: 'cash' as const, amountMinor: 1000 }, { id: 'card', method: 'external' as const, amountMinor: 2000 }];
+    for (const handler of [undefined, cancelDone]) {
+      show(<OrdersList openSessionId="open" orders={[partPaid('o1', 1, { payments })]} onRetry={async () => 0} onPayRestOnStore={done} onReverseOnStore={handler} />);
+      fireEvent.click(button('o1')!);
+      expect(screen.getByTestId('order-o1-pay-rest-on-store-dialog').textContent).toContain(handler
+        ? 'If the money was given back, use Give back and cancel instead.' : "If the money was given back, do not record it; a manager must check the order in the store's admin.");
+      cleanup();
+    }
+  });
   it.each<[string, PosOrder, Handler | undefined, boolean]>([
     ['recorded 1, with the handler', partPaid('o1'), done, true],
     ['row 12: recorded 0', partPaid('o1', 0), done, false],
@@ -53,7 +63,7 @@ describe('Pay the rest on store', () => {
   });
 
   it('row 12: recorded 0 offers Cancel order on store instead', () => {
-    show(<OrdersList orders={[partPaid('o1', 0)]} onRetry={async () => 0} onCancelOnStore={cancelDone} onPayRestOnStore={done} />);
+    show(<OrdersList openSessionId="open" orders={[partPaid('o1', 0)]} onRetry={async () => 0} onCancelOnStore={cancelDone} onPayRestOnStore={done} />);
     expect(button('o1')).toBeNull();
     expect(screen.getByTestId('order-o1-cancel-on-store')).toBeTruthy();
   });

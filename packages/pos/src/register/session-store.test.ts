@@ -774,23 +774,85 @@ it('Z1 uses the stored inclusive fee mode for the closure tax rates', async () =
   expect(rates.reduce((sum, rate) => sum + rate.net_minor, 0)).toBe(1602);
 });
 
+describe('store settlements on the Z', () => {
+  function sale(sessionId: string, ratePpm: number): PosOrder {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => ratePpm } });
+    builder.addLine({ productId: 'shirt', name: 'Shirt', unitPrice: { amount: 1200, currency: 'EUR' } });
+    builder.addPayment({ method: 'cash', amountMinor: 600, sessionId });
+    builder.addPayment({ method: 'cash', amountMinor: 600, sessionId });
+    return { ...finalizeOrder(builder.getSnapshot()), sessionId, syncStatus: 'applied' };
+  }
+  async function close(sessionId: string, counted: number, orders: PosOrder[]) {
+    const session = await closeSession(db.register_sessions, sessionId, { counted: { cash: counted } });
+    return writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session, counted,
+      otherTenders: {}, movements: [], orders, softwareVersion: '1.0.0' });
+  }
+
+  it('G7: an unsettled sale taken in a closed session contributes nothing to the next Z', async () => {
+    await ensureRegister(db.register_sessions, 'web');
+    const first = await openSession(db.register_sessions, input);
+    const unsettled = sale(first.id, 100_000);
+    unsettled.syncStatus = 'rejected';
+    unsettled.storeSettlement = { kind: 'reverse', state: 'sending', attemptId: 'attempt', at: unsettled.updatedAt };
+    await closeSession(db.register_sessions, first.id, { counted: { cash: 11200 } });
+    const next = await openSession(db.register_sessions, input);
+    const own = sale(next.id, 200_000);
+    const closure = await close(next.id, 11200, [unsettled, own]);
+    expect(closure.till_expected.cash).toBe(11200);
+    expect(closure.period_sales_total_minor).toBe(1200);
+    expect(closure.order_ids).toEqual([own.id]);
+    expect(closure.breakdowns.transaction_count).toBe(1);
+    expect(Object.keys(closure.breakdowns.tax_rates as object)).toEqual(['200000:']);
+  });
+
+  it.each(['done', 'refused'] as const)('Z1/Z2: count the reverse and its tax only when not done (%s)', async (state) => {
+    await ensureRegister(db.register_sessions, 'web');
+    const session = await openSession(db.register_sessions, input);
+    const plain = sale(session.id, 100_000), cancelled = sale(session.id, 50_000), reversed = sale(session.id, 200_000);
+    cancelled.storeSettlement = { kind: 'cancel', state: 'done', attemptId: 'cancel', at: cancelled.updatedAt };
+    reversed.storeSettlement = { kind: 'reverse', state, attemptId: 'reverse', at: reversed.updatedAt,
+      legs: reversed.payments.map((leg, index) => ({ paymentId: leg.id, commandId: `void-${index}`, done: index === 0 || state === 'done' })) };
+    const closure = await close(session.id, state === 'done' ? 11200 : 11800, [plain, cancelled, reversed]);
+    const rates = Object.values(closure.breakdowns.tax_rates as Record<string, { rate_ppm: number; gross_minor: number }>);
+    expect(closure.breakdowns.transaction_count).toBe(state === 'done' ? 1 : 2);
+    expect(rates.map((row) => [row.rate_ppm, row.gross_minor])).toEqual(state === 'done' ? [[100_000, 1200]] : [[100_000, 1200], [200_000, 1200]]);
+    if (state === 'done') expect(rates.reduce((sum, row) => sum + row.gross_minor, 0) + Number(closure.breakdowns.cash_rounding_minor ?? 0)).toBe(closure.period_sales_total_minor);
+  });
+});
+
 describe('cash rounding on the Z (ADR-094)', () => {
   // One sale of 10.02 including 10% tax (net 9.11, tax 0.91), taken as 10.00 in cash with its -2 entry, or as 10.02 unrounded.
-  async function closureOfOneSale(rounded: boolean, legSessionId?: string) {
+  async function closureOfOneSale(rounded: boolean, legSessionId?: string, reversed = false) {
     await ensureRegister(db.register_sessions, 'web');
     const doc = await openSession(db.register_sessions, input);
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100_000 } });
-    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1002, currency: 'EUR' } });
-    const taken = rounded ? 1000 : 1002;
+    const amount = reversed && !rounded ? 1000 : 1002;
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount, currency: 'EUR' } });
+    const taken = rounded ? 1000 : amount;
     builder.addPayment({ method: 'cash', amountMinor: taken, tenderedMinor: taken, changeMinor: 0 }, rounded ? { minor: -2 } : undefined);
     const finalized = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
     const order: PosOrder = { ...finalized, sessionId: doc.id, ...(legSessionId ? { payments: finalized.payments.map((payment) => ({ ...payment, sessionId: legSessionId })) } : {}) };
-    const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: 10000 + taken } });
+    if (reversed) order.storeSettlement = { kind: 'reverse', state: 'done', at: order.updatedAt, attemptId: 'attempt',
+      legs: [{ paymentId: order.payments[0].id, commandId: 'void', done: true }] };
+    const counted = reversed ? 10000 : 10000 + taken;
+    const closed = await closeSession(db.register_sessions, doc.id, { counted: { cash: counted } });
     return writeClosure({
-      closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted: 10000 + taken,
+      closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed, counted,
       otherTenders: {}, movements: [], orders: [order], softwareVersion: '1.0.0',
     });
   }
+
+  it('E10: a reversed sale no longer contributes cash rounding', async () => {
+    const closure = await closureOfOneSale(true, undefined, true);
+    expect(closure.breakdowns).not.toHaveProperty('cash_rounding_minor');
+  });
+
+  it('E11: a reversed sale leaves only the float and contributes no sales', async () => {
+    const closure = await closureOfOneSale(false, undefined, true);
+    expect(closure.till_expected.cash).toBe(10000);
+    expect(closure.breakdowns.payment_methods).toEqual({});
+    expect(closure.period_sales_total_minor).toBe(0);
+  });
 
   it('writeClosure records the session\'s cash rounding total, and tax gross plus rounding equals taxed takings', async () => {
     const closure = await closureOfOneSale(true);
