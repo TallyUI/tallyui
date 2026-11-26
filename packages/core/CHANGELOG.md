@@ -1,5 +1,17 @@
 # @tallyui/core
 
+## 5.1.0
+
+### Minor Changes
+
+- b1962cf: `precheckCommand` now refuses an order.create payload that fails the shape check at every version, not only version 5 and later, as `invalid_payload` with the same messages. The same applies to an order.update's create part at any `createVersion`. A command the store has already applied still replays as `duplicate` when the plugin runs its replay lookup before `precheckCommand`, as documented.
+- aba5fd7: A refused sale whose order the store created part paid can now have the rest recorded on the store from the till, with no new money taken. `@tallyui/core` adds `SettlePayment`, `SettlePayRequest` and `SettlePayResult`, and `RefusedOrderSettlement` gains an optional `pay`. The WooCommerce connector's `pay` reads the order, records the till's unrecorded payments under new ids only when the store's amount due is exactly their sum and the order is still open, then reads it again: only a completed order is `done`. `@tallyui/pos` adds `canPayRestOnStore`, `unrecordedLegs` and the outbox's `payRestOnStore`; `useOrderOutbox`'s `storeSettlement` option takes the connector's `pay` too and the hook returns `payRestOnStore(orderId)`. The attempt and its payment ids are stored as `storeSettlement` (kind `pay`) before the call, so a repeat sends the same ids; no schema change. `settledOnStore` now counts a `gone` settlement as settled only when the store had recorded nothing. `OrdersList` takes `onPayRestOnStore`, which adds "Pay the rest on store" behind a confirm dialog naming each payment to record; with it, a row with money recorded on the store has no Retry. `OrderSyncNotices` says where the pay stands, never with the store's code or message, and a cancelled sale with cash legs now asks the cashier to record any cash they gave back as a pay-out.
+- 93fb2b9: Adds `TallyConnector.settleRefusedOrder` with the `SettleOutcome`, `SettleCancelRequest` and `RefusedOrderSettlement` types, and the WooCommerce `settleRefusedOrder.cancel`: it reads the order the store created before refusing a sale through a WCPOS 2.0 read push, and cancels it with the revision that read returned only when the store's record shows nothing paid and the order is still pending or open; otherwise it answers `changed`, `refused`, `gone` or `retry`.
+
+### Patch Changes
+
+- 2ef5a3d: `precheckCommand` now also refuses a malformed order.refund, order.reopen or register command payload as `invalid_payload`, with the messages of `refundPayloadErrors`, `reopenPayloadErrors` and `registerPayloadErrors` (at most 10, joined with `; `). The version check still answers first. Plugins still run the shape check themselves before any lookup; this is a backstop for one that skips it.
+
 ## 5.0.0
 
 ### Minor Changes

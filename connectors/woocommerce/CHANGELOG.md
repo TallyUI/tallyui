@@ -1,5 +1,23 @@
 # @tallyui/connector-woocommerce
 
+## 5.1.0
+
+### Minor Changes
+
+- aba5fd7: A refused sale whose order the store created part paid can now have the rest recorded on the store from the till, with no new money taken. `@tallyui/core` adds `SettlePayment`, `SettlePayRequest` and `SettlePayResult`, and `RefusedOrderSettlement` gains an optional `pay`. The WooCommerce connector's `pay` reads the order, records the till's unrecorded payments under new ids only when the store's amount due is exactly their sum and the order is still open, then reads it again: only a completed order is `done`. `@tallyui/pos` adds `canPayRestOnStore`, `unrecordedLegs` and the outbox's `payRestOnStore`; `useOrderOutbox`'s `storeSettlement` option takes the connector's `pay` too and the hook returns `payRestOnStore(orderId)`. The attempt and its payment ids are stored as `storeSettlement` (kind `pay`) before the call, so a repeat sends the same ids; no schema change. `settledOnStore` now counts a `gone` settlement as settled only when the store had recorded nothing. `OrdersList` takes `onPayRestOnStore`, which adds "Pay the rest on store" behind a confirm dialog naming each payment to record; with it, a row with money recorded on the store has no Retry. `OrderSyncNotices` says where the pay stands, never with the store's code or message, and a cancelled sale with cash legs now asks the cashier to record any cash they gave back as a pay-out.
+- 93fb2b9: Adds `TallyConnector.settleRefusedOrder` with the `SettleOutcome`, `SettleCancelRequest` and `RefusedOrderSettlement` types, and the WooCommerce `settleRefusedOrder.cancel`: it reads the order the store created before refusing a sale through a WCPOS 2.0 read push, and cancels it with the revision that read returned only when the store's record shows nothing paid and the order is still pending or open; otherwise it answers `changed`, `refused`, `gone` or `retry`.
+
+### Patch Changes
+
+- 27a3830: A WooCommerce POS 2.0 sale the store refused after it had created the order now says so. The transport adds the order's `displayId` next to `orderId` in the refusal's `error.data`. The new `storeOrderLeft` in `@tallyui/pos` reads that order's reference and how much was recorded on it at the refusal. `OrderSyncNotices` shows it under the refusal sentence ("Order #1001 was left pending on the online store. Nothing was paid there.", or "left part paid" with the amount and the total), and uses the general refusal sentence in place of `invalid_payload`'s for such a sale. `needsAttention` keeps such a sale even when it was marked handled.
+- f34ab3c: On a WooCommerce store, a sale with a fee or shipping could be refused by the server because a charge's receipt row was one cent off the amount sent for it. The till now sends each fee and shipping charge at its receipt row on WooCommerce-rounded sales, and the WooCommerce order's body is unchanged, as it is priced from the stored charge; the stored sale and its totals are unchanged.
+- f20e9ed: On a tax-inclusive WooCommerce store, a sale with a till discount and a coupon could reach WooCommerce without the till discount when the coupon took off more tax than the discount, so the order total in WooCommerce was higher than the sale. The till now sends each line's discount net of its tax before the coupon, and the WooCommerce order always carries the line discount.
+- Updated dependencies [2ef5a3d]
+- Updated dependencies [b1962cf]
+- Updated dependencies [aba5fd7]
+- Updated dependencies [93fb2b9]
+  - @tallyui/core@5.1.0
+
 ## 5.0.0
 
 ### Minor Changes

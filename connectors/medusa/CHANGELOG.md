@@ -1,5 +1,15 @@
 # @tallyui/connector-medusa
 
+## 5.1.0
+
+### Patch Changes
+
+- Updated dependencies [2ef5a3d]
+- Updated dependencies [b1962cf]
+- Updated dependencies [aba5fd7]
+- Updated dependencies [93fb2b9]
+  - @tallyui/core@5.1.0
+
 ## 5.0.0
 
 ### Minor Changes
