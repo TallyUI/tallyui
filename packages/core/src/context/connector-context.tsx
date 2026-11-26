@@ -59,6 +59,11 @@ export function useConnector(): TallyConnector {
   return connector;
 }
 
+/** Returns the active connector, or null without a provider. */
+export function useOptionalConnector(): TallyConnector | null {
+  return useContext(ConnectorContext);
+}
+
 /**
  * Convenience hook: grab just the product traits from the active connector.
  */

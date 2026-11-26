@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { ConnectorProvider, useConnector, useProductTraits, useStockOverlaid, useStockOverlayAsOf } from '../context/connector-context';
+import { ConnectorProvider, useConnector, useOptionalConnector, useProductTraits, useStockOverlaid, useStockOverlayAsOf } from '../context/connector-context';
 import type { StockReconcileAdapter, TallyConnector } from '../types';
 
 /**
@@ -61,6 +61,11 @@ const stubConnector: TallyConnector = {
 function wrapper({ children }: { children: ReactNode }) {
   return <ConnectorProvider connector={stubConnector}>{children}</ConnectorProvider>;
 }
+
+it('useOptionalConnector returns null without a provider and the connector inside one', () => {
+  expect(renderHook(useOptionalConnector).result.current).toBeNull();
+  expect(renderHook(useOptionalConnector, { wrapper }).result.current).toBe(stubConnector);
+});
 
 describe('ConnectorProvider + useConnector', () => {
   it('provides the connector through context', () => {

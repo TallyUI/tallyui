@@ -105,6 +105,7 @@ export type { ReconcileFeed, ReconcileFeedEntry, ReconcileFetchEntry, KeyedRecon
 export {
   ConnectorProvider,
   useConnector,
+  useOptionalConnector,
   useProductTraits,
   useCustomerTraits,
   useTraitContext,

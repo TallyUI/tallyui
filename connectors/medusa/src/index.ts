@@ -141,6 +141,8 @@ export function createMedusaConnector(): TallyConnector {
 
 // Everything but the reconcile feed and what is wired to it: stateless, so every instance shares it.
 const medusaConnectorParts = {
+  // Medusa's live item totals shrink once a return is received; refunds price from the plugin's sold figures (contract 7).
+  lineTotalsShrinkOnReturn: true,
   id: 'medusa',
   name: 'MedusaJS',
   description: 'Connect to MedusaJS v2 backends via the Admin API',
