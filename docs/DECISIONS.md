@@ -7136,5 +7136,12 @@ interface OrderCreatePayload {
        entries' sum is in R(mode) (item 6). The one exception is a sale stored before the carry rule and closed again
        after a reopen: its sum can stay outside R, and one new entry, not necessarily the last, can reach one
        increment or more (item 6). Copyable order.create rows are in the PR that made the carry rule.
+     - **Per-entry basis: considered and rejected** (Front desk, 2026-11-26; #1368, #1364). Each entry would have
+       carried the amounts it rounded, as an order.create v13 field and a `pos_orders` v23 field. Two reasons
+       rule it out. First, the aggregate bound (item 6) is the check, and a basis would prove only the till's
+       arithmetic. Second, it cannot explain entries stored before the carry rule. `units` on the wire (#1364) is
+       not sent either: with the aggregate bound as the check, it adds nothing a server can check. A connector
+       checks a closed sale's sum of live entries against R(mode) (item 6), not each entry against a basis; the
+       stored-reopen exception above still applies.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.
