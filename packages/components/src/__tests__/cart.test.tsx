@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'react-native';
+import { AccessibilityInfo, Animated, Text } from 'react-native';
 import { formatMoney } from '@tallyui/core';
 import { SALE_SAVING, SPLIT_FIXED_DISCOUNT } from '@tallyui/pos';
 import { PortalHost } from '@tallyui/primitives';
@@ -1090,5 +1090,83 @@ describe('Cart columns (v2 Cart Settings › Columns)', () => {
       expect(fees()[0].percent).toBe(12.5);
       expect(price(0)).toBe('12.5%');
     });
+  });
+});
+
+// PARITY row 3, slice two: product lines get the swipe strip with Remove only.
+describe('Cart product line strip', () => {
+  afterEach(() => vi.restoreAllMocks());
+  // Set before the render: each strip reads the setting once, when it mounts.
+  const reduceMotion = (on: boolean) => vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(on);
+  const lineRow = (id: string) => within(screen.getByTestId(`cart-row-${id}`)).getByTestId('cart-line-row');
+  const strip = (id: string) => within(within(screen.getByTestId(`cart-row-${id}`)).getByTestId('cart-line-strip'));
+  const swipeRemove = (id: string, name: string) => {
+    click(`Edit total of ${name}`);
+    fireEvent.click(strip(id).getByRole('button', { name: `Remove ${name}` }));
+  };
+
+  it.each(['inline', 'popover'] as const)('C1/C2: the Total opens a strip with Remove only, and Remove removes the line (lineEditor %s)', async (lineEditor) => {
+    reduceMotion(true);
+    render(<><SaleHarness>{(sale) => <Cart sale={sale} lineEditor={lineEditor} />}</SaleHarness><PortalHost /></>);
+    act(() => sale.add(blue, traits));
+    await act(async () => {});
+    const id = sale.order.lineItems[0].id;
+    if (lineEditor === 'popover') {
+      click('Edit quantity of Shirt');
+      expect(screen.getByRole('dialog', { name: 'Quantity for Shirt' })).toBeTruthy();
+      act(() => { fireEvent.keyDown(document, { key: 'Escape' }); });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
+    click('Edit total of Shirt');
+    expect(strip(id).queryByRole('button', { name: 'Edit Shirt' })).toBeNull();
+    expect(strip(id).queryByTestId('cart-line-edit')).toBeNull();
+    fireEvent.click(strip(id).getByRole('button', { name: 'Remove Shirt' }));
+    expect(sale.order.lineItems).toEqual([]);
+  });
+
+  it('C3: a refused remove keeps the line, closes the strip and brings the row back', async () => {
+    // The harness's real sale refuses only while saving, so Cart gets the sale with remove as a no-op; removal still finds the line.
+    reduceMotion(true);
+    render(<SaleHarness>{(sale) => <Cart sale={{ ...sale, remove: () => {} }} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    await act(async () => {});
+    const id = sale.order.lineItems[0].id;
+    swipeRemove(id, 'Shirt');
+    expect(sale.order.lineItems.map((line) => line.id)).toEqual([id]);
+    expect(strip(id).queryByRole('button', { name: 'Remove Shirt' })).toBeNull();
+    expect((lineRow(id).children[1] as HTMLElement).style.transform).toBe('translateX(0px)');
+  });
+
+  it('C4: a swiped-off line comes back at its index through removal and restore', async () => {
+    reduceMotion(true);
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => { sale.add(blue, traits); sale.addCustomLine({ name: 'Alteration', priceMinor: 360 }); });
+    await act(async () => {});
+    const id = sale.order.lineItems[0].id;
+    const removal = sale.removal('line', id)!;
+    swipeRemove(id, 'Shirt');
+    expect(sale.order.lineItems.map((line) => line.name)).toEqual(['Alteration']);
+    await act(async () => { expect(sale.restore(removal)).toBeNull(); });
+    expect(sale.order.lineItems.map((line) => line.id)[0]).toBe(id);
+    expect(screen.getByTestId(`cart-row-${id}`)).toBeTruthy();
+  });
+
+  it('C6: with motion on, the row flies off toward its width before the line goes', async () => {
+    let finish: ((result: { finished: boolean }) => void) | undefined;
+    vi.spyOn(Animated, 'timing').mockImplementation(() => ({ start: (cb?: (result: { finished: boolean }) => void) => { finish = cb; },
+      stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation);
+    reduceMotion(false);
+    render(<SaleHarness>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+    act(() => sale.add(blue, traits));
+    await act(async () => {});
+    const id = sale.order.lineItems[0].id;
+    // react-native-web keeps a View's onLayout on its node (useElementLayout); jsdom has no ResizeObserver to call it.
+    const node = lineRow(id) as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => node.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 360, height: 44 } } }));
+    swipeRemove(id, 'Shirt');
+    expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: -360 }));
+    expect(sale.order.lineItems).toHaveLength(1);
+    act(() => finish!({ finished: true }));
+    expect(sale.order.lineItems).toEqual([]);
   });
 });

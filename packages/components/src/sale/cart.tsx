@@ -119,7 +119,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     | { type: 'edit-charge'; kind: 'fees' | 'shipping'; id: string } | null>(null);
   // The picker's bill is read-only: no form shows, nor any control that opens one.
   const form = picker ? null : openForm;
-  const ChargeStrip = picker ? ReadOnlyStrip : CartLineStrip;
+  const Strip = picker ? ReadOnlyStrip : CartLineStrip;
   const chargesOffered = (sale.capabilities?.orderCreate ?? 0) >= 5;
   // #1115: front desk 2026-11-20, a Woo store at order.create 6+ takes a No tax shipping line (stock 2.0.4 proof F2).
   const shippingNoTax = (sale.capabilities?.orderCreate ?? 0) >= 6;
@@ -143,11 +143,16 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
     if (refused === null) setPriceError((now) => (now?.lineId === line.id ? null : now));
     return refused;
   };
+  // sale.remove returns nothing, so a refused remove (editRefusal, which sets sale.error) is read back from the builder, and the strip brings the row back.
+  const removeLine = (id: string) => {
+    sale.remove(id);
+    return sale.removal('line', id) ? 'refused' : null;
+  };
   const unpaid = (line: typeof order.lineItems[number]) => line.quantity - (picker?.paid[line.id] ?? 0);
   const pickable = (line: typeof order.lineItems[number]) => Number.isInteger(line.quantity) && line.quantity > 0
     && display(line.id).amountMinor >= 0 && unpaid(line) > 0;
   const renderItem = (line: typeof order.lineItems[number]) => <>
-    <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
+    <Strip name={line.name} onRemove={() => removeLine(line.id)}>{(wrapTotal) => <CartLine name={line.name} attributes={line.attributes} quantity={line.quantity} unitPrice={money(line.unitPriceMinor)}
       regularUnitPrice={line.regularUnitPriceMinor === undefined ? undefined : money(line.regularUnitPriceMinor)}
       lineTotal={money(display(line.id).amountMinor)} showPrice={showPrice}
       columns={columns} sku={line.sku} imageUrl={line.imageUrl} onSplit={picker ? undefined : () => split(line.id)} picking={picker !== undefined}
@@ -162,7 +167,8 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       priceSlot={pricePopover && !picker ? <LinePopover kind="price" lineName={line.name} currency={order.currency} value={line.unitPriceMinor}
         regularValue={line.regularUnitPriceMinor} actions={[{ id: 'discount', label: 'Discount', onPress: () => setForm({ type: 'discount', lineId: line.id }) }]}
         quickDiscounts={quickDiscounts} textClassName="text-right text-muted-foreground" onApply={(amount) => applyPrice(line, amount)}
-        commit={lineCommit} onCloseRefused={(message) => setPriceError({ lineId: line.id, message })} /> : undefined} />
+        commit={lineCommit} onCloseRefused={(message) => setPriceError({ lineId: line.id, message })} /> : undefined} wrapTotal={wrapTotal} />}
+    </Strip>
     {splitError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-split-error"
       className="px-3 text-sm text-destructive">{splitError.message}</Text> : null}
     {priceError?.lineId === line.id ? <Text accessibilityRole="alert" testID="cart-line-price-error"
@@ -201,12 +207,12 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
       {(['fees', 'shipping'] as const).map((kind) => <MotionRows key={kind} items={order[kind] ?? []} keyOf={(charge) => charge.id}
         pulseKey={() => 0} identity={order.id} renderItem={(charge, index) =>
         <View testID={`cart-${kind === 'fees' ? 'fee' : 'shipping'}-${index}`}>
-          <ChargeStrip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
+          <Strip name={charge.name} onEdit={() => setForm({ type: 'edit-charge', kind, id: charge.id })}
             onRemove={() => kind === 'fees' ? sale.removeFee(charge.id) : sale.removeShipping(charge.id)}>
             {(wrapTotal) => <CartChargeLine name={charge.name} price={money(charge.amountMinor)} percent={charge.percent}
               total={money(order.display[kind]!.find((row) => row.id === charge.id)!.amountMinor)}
               showPrice={showPrice} columns={columns} picking={picker !== undefined} testID="cart-charge-line" wrapTotal={wrapTotal} />}
-          </ChargeStrip>
+          </Strip>
           {form?.type === 'edit-charge' && form.kind === kind && form.id === charge.id ? <ChargeForm key={charge.id}
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
             allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
@@ -260,7 +266,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   </View>;
 }
 
-/** A fee or shipping row on the picker's read-only bill: the row alone, no Edit or Remove strip. */
+/** A product, fee or shipping row on the picker's read-only bill: the row alone, no Edit or Remove strip. */
 const ReadOnlyStrip = ({ children }: Parameters<typeof CartLineStrip>[0]) => <>{children((content) => content)}</>;
 
 /** WCPOS v2's `− n of unpaid +` stepper (tender/unit-stepper.tsx), the one Cart's `picker` draws in each pickable line's

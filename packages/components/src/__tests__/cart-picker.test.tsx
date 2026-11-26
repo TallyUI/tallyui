@@ -63,6 +63,15 @@ describe('Cart picker', () => {
     expect(screen.queryByTestId(`cart-line-${a}-pick-amount`)).toBeNull();
   });
 
+  it('C5: with picker, a product row shows no strip; without it, it has one', { timeout: 20_000 }, () => {
+    const { a, pick } = setup();
+    expect(within(screen.getByTestId(`cart-row-${a}`)).getByTestId('cart-line-strip')).toBeTruthy();
+    pick({});
+    const line = within(screen.getByTestId(`cart-row-${a}`));
+    expect(line.getByText('Shirt')).toBeTruthy();
+    for (const id of ['cart-line-strip', 'cart-line-total', 'cart-line-remove']) expect(line.queryByTestId(id)).toBeNull();
+  });
+
   it("P3: picked units show what they add, through the caller's unitMinor", { timeout: 20_000 }, () => {
     const { a, b, pick } = setup();
     pick({ [a]: 2 });

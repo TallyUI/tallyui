@@ -445,7 +445,7 @@ describe('CartLineStrip', () => {
     await strip(undefined, undefined, 400);
     click('Edit total of Bag');
     const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
-    // Caught mid-close at -40.
+    // Caught at -40 on its way open to -strip.
     act(() => offset.setValue(-40));
     expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
     act(() => {
@@ -453,5 +453,31 @@ describe('CartLineStrip', () => {
       pan.onPanResponderMove!(event, gesture(0));
     });
     expect(offset.__getValue()).toBe(-60);
+  });
+
+  it('B2: when stopAnimation never calls back, the grant starts from the open place plus the claimed distance', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    click('Edit total of Bag');
+    const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
+    expect(offset.__getValue()).toBe(-160);
+    vi.spyOn(offset, 'stopAnimation').mockImplementation(() => {});
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(0));
+    });
+    expect(offset.__getValue()).toBe(-180);
+  });
+
+  it('R1: without onEdit, the opened strip shows Remove and no Edit', async () => {
+    const onRemove = vi.fn();
+    render(<CartLineStrip name="Bag" onRemove={onRemove}>{(wrapTotal) => <View>{wrapTotal(<Text>€1.20</Text>)}</View>}</CartLineStrip>);
+    await act(async () => {});
+    click('Edit total of Bag');
+    expect(screen.queryByRole('button', { name: 'Edit Bag' })).toBeNull();
+    expect(screen.queryByTestId('cart-line-edit')).toBeNull();
+    click('Remove Bag');
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });
