@@ -1,9 +1,12 @@
-// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; the Total peeks on hover; no swipe yet) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
+// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; the Total peeks on hover; drag to open or fling off by v2's release rule (line-strip.geometry.ts); no remove-point haptic or Edit swallow) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
 import { useRef, useState, type JSX, type ReactNode } from 'react';
-import { Animated, Platform, Pressable, View } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, View } from 'react-native';
 import { Button, Text } from '../ui';
 import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK, PEEK_SPRING } from '../lib/motion';
 import { useReducedMotion } from '../lib/use-reduced-motion';
+import { releaseOutcome } from './line-strip-geometry';
+// A release this long after the last move is not a flick: PanResponder's vx is the last move's speed and survives a pause (react-native-web PanResponder index.js:234-235).
+const STILL_MS = 50;
 
 /** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Edit and Remove. */
 export function CartLineStrip({ name, onEdit, onRemove, children }: {
@@ -42,6 +45,34 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
       settle(false);
     });
   };
+  // The pan handlers are created once: they read the widths, the drag's base and the latest settle and leave through this ref.
+  const drag = useRef({ row: 0, strip: 0, base: 0, claimed: 0, settle, leave });
+  Object.assign(drag.current, { row: rowWidth ?? 0, strip: stripWidth, settle, leave });
+  const clamp = (x: number) => Math.min(0, Math.max(-drag.current.row, x));
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dx, dy }) => !leaving.current && drag.current.row > 0
+      && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) && (drag.current.claimed = dx, true),
+    onPanResponderGrant: () => {
+      const { claimed } = drag.current;
+      // PanResponder zeroes dx at grant (react-native Libraries/Interaction/PanResponder.js onResponderGrant; react-native-web vendor PanResponder index.js:330), so the claimed distance joins the base.
+      drag.current.base = (opened.current ? -drag.current.strip : 0) + claimed;
+      drag.current.claimed = 0;
+      // The row's real place: synchronous on the JS driver, later on the native one, so the immediate base above stays as the fallback.
+      offset.stopAnimation((value) => { drag.current.base = value + claimed; });
+    },
+    onPanResponderMove: (_, { dx }) => offset.setValue(clamp(drag.current.base + dx)),
+    onPanResponderRelease: (event, { dx, vx, _accountsForMovesUpTo }) => {
+      drag.current.claimed = 0;
+      const { row, strip, base } = drag.current;
+      // gestureState.vx is px per ms, dx over DOM timeStamp ms (react-native-web dist/vendor/react-native/PanResponder/index.js:235); v2's rule takes px/s.
+      // react-native's GestureResponderEvent type leaves out touchHistory, which PanResponder itself reads (react-native-web PanResponder index.js:306).
+      const still = (event as unknown as { touchHistory: { mostRecentTimeStamp: number } }).touchHistory.mostRecentTimeStamp - _accountsForMovesUpTo > STILL_MS;
+      const outcome = releaseOutcome({ revealed: -clamp(base + dx), velocityX: still ? 0 : vx * 1000, rowWidth: row, stripWidth: strip });
+      if (outcome === 'remove') drag.current.leave();
+      else drag.current.settle(outcome === 'open');
+    },
+    onPanResponderTerminate: () => { drag.current.claimed = 0; drag.current.settle(opened.current); },
+  })).current;
   // v2's peek: only a closed, staying row, and only with reduced motion known to be off.
   const peek = (on: boolean) => {
     if (opened.current || leaving.current || reduced) return;
@@ -67,6 +98,6 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
           onPress={leave}><Text>Remove</Text></Button>
       </View>
     </View>
-    <Animated.View className="bg-background" style={{ transform: [{ translateX: shown }] }}>{children(wrapTotal)}</Animated.View>
+    <Animated.View {...pan.panHandlers} className="bg-background" style={{ transform: [{ translateX: shown }] }}>{children(wrapTotal)}</Animated.View>
   </View>;
 }
