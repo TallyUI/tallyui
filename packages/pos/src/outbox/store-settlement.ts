@@ -75,10 +75,12 @@ type StoredPayment = NonNullable<PosOrderStoreSettlement['payments']>[number];
  * Records on the store the legs of a refused sale its part-paid store order is missing (#1101 slice 3), when
  * `canPayRestOnStore` allows it on the stored row; otherwise resolves to `not_offered` and never calls `pay`. No money is
  * taken: each leg of `unrecordedLegs` is sent under a new id (method, amount, and `tenderedMinor` for cash only, never
- * the change). It first stores the attempt as `sending` with those ids (a pay still `sending` keeps its `attemptId` and
- * ids, so a repeat is the same attempt), and only once that write has resolved calls `pay`. The answer is written only
- * while the stored settlement is still this attempt's `sending` one: every id in `recorded` is marked `done` whatever
- * the outcome, `retry` keeps `sending`, and a rejected `pay` leaves the row `sending` and rejects with the same error.
+ * the change), except that a stored pay with one payment per leg keeps its ids, amounts and `done` flags, so the store
+ * skips a leg it already holds. It first stores the attempt as `sending` with those ids (a pay still `sending` also keeps
+ * its `attemptId`, so a repeat is the same attempt; any other mints a new one), and only once that write has resolved
+ * calls `pay`. The answer is written only while the stored settlement is still this attempt's `sending` one: every id in
+ * `recorded` is marked `done` whatever the outcome, `retry` keeps `sending`, and a rejected `pay` leaves the row
+ * `sending` and rejects with the same error.
  * `syncStatus`, `error`, `commandId`, `payments` and the totals are never changed.
  */
 export async function payRestOnStore(deps: PayRestOnStoreDeps, orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }> {
@@ -89,9 +91,10 @@ export async function payRestOnStore(deps: PayRestOnStoreDeps, orderId: string):
     request = undefined;
     if (data._deleted || !canPayRestOnStore(data)) return data;
     const stored = data.storeSettlement;
-    const again = stored?.kind === 'pay' && stored.state === 'sending' && stored.payments?.length ? stored : undefined;
-    const attemptId = again?.attemptId ?? uuidv7();
-    const payments: StoredPayment[] = again?.payments ?? unrecordedLegs(data).map((leg) => ({
+    const legs = unrecordedLegs(data);
+    const again = stored?.kind === 'pay' && stored.payments?.length === legs.length ? stored : undefined;
+    const attemptId = again?.state === 'sending' ? again.attemptId : uuidv7();
+    const payments: StoredPayment[] = again?.payments ?? legs.map((leg) => ({
       id: uuidv7(), method: leg.method, amountMinor: leg.amountMinor,
       ...(leg.method === 'cash' && leg.tenderedMinor !== undefined ? { tenderedMinor: leg.tenderedMinor } : {}),
     }));

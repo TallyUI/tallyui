@@ -36,8 +36,9 @@ export function unrecordedLegs(order: Pick<PosOrder, 'error' | 'payments'>): Pos
 
 /**
  * Whether the till may record its unrecorded legs on the part-paid store order a refused sale left behind (#1101 slice
- * 3): the store had recorded some of the sale, it is not settled, every leg left has an amount, and there is no
- * settlement yet, or a pay (whose `sending` attempt a repeat finishes), or one the store changed or refused.
+ * 3): the store had recorded some of the sale, it is not settled, every leg left has an amount, the settlement is not
+ * `gone` (the order is not on the store, so a press could only read 404 again), and there is no settlement yet, or a
+ * pay (whose `sending` attempt a repeat finishes), or one the store changed or refused.
  */
 export function canPayRestOnStore(order: LeftOrder): boolean {
   const left = storeOrderLeft(order);
@@ -45,5 +46,6 @@ export function canPayRestOnStore(order: LeftOrder): boolean {
   const legs = unrecordedLegs(order);
   if (legs.length === 0 || !legs.every((leg) => leg.amountMinor > 0)) return false;
   const settlement = order.storeSettlement;
+  if (settlement?.state === 'gone') return false;
   return settlement === undefined || settlement.kind === 'pay' || settlement.state === 'changed' || settlement.state === 'refused';
 }

@@ -210,11 +210,15 @@ describe('OrderSyncNotices: Pay the rest on store (#1101 slice 3)', () => {
     const { container } = render(<OrderSyncNotices order={pay('done', { storeStatus: 'completed' })} />);
     expect(container.textContent).toBe('Order #115 is paid on the store.');
   });
+  // The two legs this till sent, neither recorded.
+  const unsent = [{ id: 'n1', method: 'external' as const, amountMinor: 1000 }, { id: 'n2', method: 'external' as const, amountMinor: 1000 }];
   it.each<[string, NonNullable<PosOrder['storeSettlement']>, string]>([
-    ['row 5: changed to completed', { ...pay('changed').storeSettlement!, storeStatus: 'completed', capturedMinor: 3000 },
+    ['row 5: changed to completed', { ...pay('changed').storeSettlement!, storeStatus: 'completed', capturedMinor: 3000, payments: unsent },
       'Order #115 is already paid on the store. Nothing was recorded from this till.'],
-    ['changed, part paid', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 1500 },
+    ['changed, part paid', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 1500, payments: unsent },
       `Order #115 changed on the store: ${formatMoney({ amount: 1500, currency: 'USD' })} is paid there. Nothing was recorded from this till. Check it in the store's admin.`],
+    ['changed, part paid, after this till recorded a leg', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 2000 },
+      `Order #115 changed on the store: ${formatMoney({ amount: 2000, currency: 'USD' })} is paid there. Nothing more was recorded from this till. Check it in the store's admin.`],
     ['row 10: gone with 10.00 recorded, the done leg counted', { ...pay('gone').storeSettlement! },
       `Order #115 is not on the store any more; ${formatMoney({ amount: 2000, currency: 'USD' })} was recorded on it.`],
   ])('%s replaces the left line and keeps the sentence', (_name, storeSettlement, line) => {

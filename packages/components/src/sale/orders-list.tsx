@@ -82,12 +82,14 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   // A pay's R: what the store had recorded at the refusal, plus each leg this till has recorded since.
   const recorded = money((left?.recordedMinor ?? 0) + sum(settlement?.payments?.filter((payment) => payment.done) ?? []));
   const cashTaken = sum(order.payments.filter((payment) => payment.method === 'cash'));
+  // A pay changed after this till recorded a leg on an earlier attempt says nothing more was recorded.
+  const nothing = `Nothing ${settlement?.payments?.some((payment) => payment.done) ? 'more ' : ''}was recorded from this till.`;
   const settledText = settlement?.kind === 'pay'
     ? settlement.state === 'done' ? `Order #${reference} is paid on the store.`
       : settlement.state === 'gone' ? `Order #${reference} is not on the store any more; ${recorded} was recorded on it.`
         : settlement.state !== 'changed' ? undefined
-          : settlement.storeStatus === 'completed' ? `Order #${reference} is already paid on the store. Nothing was recorded from this till.`
-            : `Order #${reference} changed on the store${paidThere}. Nothing was recorded from this till. Check it in the store's admin.`
+          : settlement.storeStatus === 'completed' ? `Order #${reference} is already paid on the store. ${nothing}`
+            : `Order #${reference} changed on the store${paidThere}. ${nothing} Check it in the store's admin.`
     : settlement?.state === 'done' ? `Order #${reference} was cancelled on the store.${cashTaken
       ? ` If you gave back the ${money(cashTaken)} cash taken on this till, record it as a pay-out.` : ''}`
       : settlement?.state === 'gone' ? `Order #${reference} was removed on the store.`

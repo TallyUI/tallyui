@@ -334,6 +334,24 @@ describe('wooSettleRefusedOrder.pay', () => {
     expect(records()).toStrictEqual([{ payment: { id: newB, method_id: 'pos_card', amount: '15.00', currency: 'USD' }, revision: rev(2) }]);
   });
 
+  it('a repeat whose first id the store holds as captured records only the second', async () => {
+    const legs: Leg[] = [{ id: newA, method: 'cash', amountMinor: 500 }, { id: newB, method: 'external', amountMinor: 1500 }];
+    const cash5 = row(newA, 'captured', '5.00');
+    const { records, pay } = shop([conflict(partial([till10, cash5]), rev(2)), recordedAnswer(3),
+      conflict(paid([till10, cash5, row(newB, 'captured', '15.00', 'pos_card')]), rev(3))], legs);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA, newB] });
+    expect(records()).toStrictEqual([{ payment: { id: newB, method_id: 'pos_card', amount: '15.00', currency: 'USD' }, revision: rev(2) }]);
+  });
+
+  it("the store's own due decides: store total 35.00, 15.00 captured, unsent 20.00 records", async () => {
+    // The till sold for 30.00; the store's order reads 35.00, so its due is 35.00 - 15.00, the card 20.00 left.
+    const other5 = row('019abcde-0000-7000-8000-0000000000cc', 'captured', '5.00');
+    const { records, pay } = shop([conflict(partial([till10, other5], { total: '35.00' })), recordedAnswer(2),
+      conflict(order({ status: 'completed', total: '35.00', date_paid: '2026-11-26T10:00:00' }, [ledger([till10, other5, row(newA, 'captured', '20.00', 'pos_card')])]), rev(2))]);
+    await expect(pay()).resolves.toStrictEqual({ outcome: { kind: 'done', status: 'completed' }, recorded: [newA] });
+    expect(records().map((body) => body.payment.amount)).toStrictEqual(['20.00']);
+  });
+
   it.each<[string, () => Response | Error, string]>([
     ['status 0', () => new TypeError('Failed to fetch'), 'network'],
     ['503', () => new Response('<html>', { status: 503 }), 'status_503'],

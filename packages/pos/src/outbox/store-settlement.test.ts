@@ -302,7 +302,7 @@ describe('payRestOnStore', () => {
     expect(needsAttention([await stored(order.id)])).toHaveLength(1);
   });
 
-  it('changed stores the store figures, and a new tap mints a new attemptId and new ids', async () => {
+  it('changed stores the store figures, and a new tap mints a new attemptId and keeps the ids', async () => {
     const order = partPaid([cash10(), card(2000)]);
     await orders.insert(order);
     const pay = answering({ kind: 'changed', status: 'pos-partial', capturedMinor: 1500 });
@@ -310,7 +310,21 @@ describe('payRestOnStore', () => {
     expect((await stored(order.id)).storeSettlement).toMatchObject({ state: 'changed', storeStatus: 'pos-partial', capturedMinor: 1500 });
     await payRestOnStore({ orders, pay }, order.id);
     expect(pay.mock.calls[1][0].attemptId).not.toBe(pay.mock.calls[0][0].attemptId);
-    expect(pay.mock.calls[1][0].payments[0].id).not.toBe(pay.mock.calls[0][0].payments[0].id);
+    expect(pay.mock.calls[1][0].payments[0].id).toBe(pay.mock.calls[0][0].payments[0].id);
+  });
+
+  it('a repeat after refused keeps the stored ids and done flags, under a new attemptId', async () => {
+    const legs = [{ id: uuidv7(), method: 'cash' as const, amountMinor: 500, done: true }, { id: uuidv7(), method: 'external' as const, amountMinor: 1500 }];
+    const before = { ...settlement('refused', 'pay'), code: 'wcpos_amount_exceeds_balance', message: 'No.', payments: legs };
+    const order = partPaid([cash10(), { id: uuidv7(), method: 'cash', amountMinor: 500 }, card(1500)], { storeSettlement: before });
+    await orders.insert(order);
+    const pay = answering({ kind: 'done', status: 'completed' }, all);
+    await payRestOnStore({ orders, pay }, order.id);
+    const [request] = pay.mock.calls[0];
+    expect(request.payments).toEqual([{ id: legs[0].id, method: 'cash', amountMinor: 500 }, { id: legs[1].id, method: 'external', amountMinor: 1500 }]);
+    expect(request.attemptId).not.toBe(before.attemptId);
+    expect((await stored(order.id)).storeSettlement).toMatchObject({ state: 'done', attemptId: request.attemptId,
+      payments: [{ ...legs[0], done: true }, { ...legs[1], done: true }] });
   });
 
   it.each<[string, () => PosOrder | undefined]>([

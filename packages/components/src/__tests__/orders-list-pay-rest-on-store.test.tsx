@@ -42,8 +42,8 @@ describe('Pay the rest on store', () => {
     ['row 12: recorded 0', partPaid('o1', 0), done, false],
     ['row 16: no handler', partPaid('o1'), undefined, false],
     ['settled done', partPaid('o1', 1, { storeSettlement: settlement('done') }), done, false],
-    // canPayRestOnStore as the spec has it: a pay that is not settled (gone with money recorded) stays offered.
-    ['row 10: gone with 10.00 recorded is not settled, so still offered', partPaid('o1', 1, { storeSettlement: settlement('gone') }), done, true],
+    // A pay gone is not on the store, so a press could only read 404 again; with money recorded it is still not settled.
+    ['row 10b: a pay gone with 10.00 recorded is not offered again', partPaid('o1', 1, { storeSettlement: settlement('gone') }), done, false],
     ['changed', partPaid('o1', 1, { storeSettlement: settlement('changed') }), done, true],
     ['refused', partPaid('o1', 1, { storeSettlement: settlement('refused') }), done, true],
     ['every leg recorded', partPaid('o1', 3), done, false],
@@ -61,6 +61,12 @@ describe('Pay the rest on store', () => {
   it('row 10: a gone pay with money recorded stays in Needs attention with its notice', () => {
     show(<OrdersList orders={[partPaid('o1', 1, { storeSettlement: settlement('gone') })]} onRetry={async () => 0} onPayRestOnStore={done} />);
     expect(attention().getByTestId('order-settlement-o1').textContent).toBe(`Order #1001 is not on the store any more; ${eur(1000)} was recorded on it.`);
+  });
+
+  it('row 10b: a pay gone with 10.00 recorded offers neither Pay the rest on store nor Retry', () => {
+    show(<OrdersList orders={[partPaid('o1', 1, { storeSettlement: settlement('gone') })]} onRetry={async () => 0} onPayRestOnStore={done} />);
+    expect(button('o1')).toBeNull();
+    expect(attention().queryByRole('button', { name: 'Retry' })).toBeNull();
   });
 
   it('only in Needs attention', () => {

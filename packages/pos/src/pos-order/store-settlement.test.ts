@@ -88,6 +88,12 @@ describe('Pay the rest on store', () => {
     expect(settledOnStore(partPaid({ storeSettlement: settlement('gone') }, { orderId: '115', recorded: 0 }))).toBe(true);
     expect(settledOnStore(partPaid({ storeSettlement: settlement('done', 'pay') }))).toBe(true);
   });
+
+  it('row 10b: a pay gone with 10.00 recorded is not offered again', () => {
+    const order = partPaid({ storeSettlement: settlement('gone', 'pay') });
+    expect(settledOnStore(order)).toBe(false);
+    expect(canPayRestOnStore(order)).toBe(false);
+  });
 });
 
 type Storage = Parameters<typeof createRxDatabase>[0]['storage'];
