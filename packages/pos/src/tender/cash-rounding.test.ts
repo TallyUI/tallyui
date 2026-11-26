@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { paymentMethodOf, type PaymentRounding } from '@tallyui/core';
-import { cashVoidRefusal, nearestPayableCash, roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding } from './cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundToIncrement, roundedDue, roundedRemainder, settlesAtRoundedDue, tenderRounding, writeOffLeg } from './cash-rounding';
 
 describe('nearestPayableCash', () => {
   it.each([
@@ -208,5 +208,28 @@ describe('roundedRemainder', () => {
         }
       }
     }
+  });
+});
+
+describe('writeOffLeg (ADR-094 item 1, #1365)', () => {
+  it('P1: card 10, then a cash pick (units) 40: the write-off goes on the card', () => {
+    expect(writeOffLeg({ payments: [{ id: 'card', method: 'external', amountMinor: 10 }, { id: 'pick', method: 'cash', amountMinor: 40, units: { l1: 1 } }] })?.id).toBe('card');
+  });
+  it('P2: plain cash 10, then a card pick (units) 40: the card pick, which is not a cash leg', () => {
+    expect(writeOffLeg({ payments: [{ id: 'cash', method: 'cash', amountMinor: 10 }, { id: 'cardPick', method: 'external', amountMinor: 40, units: { l1: 1 } }] })?.id).toBe('cardPick');
+  });
+  it('P3: two cash picks: the last counting leg, pick B, as the fallback', () => {
+    expect(writeOffLeg({ payments: [{ id: 'a', method: 'cash', units: { l1: 1 } }, { id: 'b', method: 'cash', units: { l2: 1 } }] })?.id).toBe('b');
+  });
+  it('P4: a voided card 10, then a cash pick 40: the voided card does not count, so the cash pick', () => {
+    expect(writeOffLeg({ payments: [{ id: 'card', method: 'external', status: 'voided' }, { id: 'pick', method: 'cash', units: { l1: 1 } }] })?.id).toBe('pick');
+  });
+  it('P5: remainderEntriesMinor leaves out only a cash pick\'s entry, counting a card pick\'s and a plain cash leg\'s', () => {
+    const payments: { id: string; method: string; units?: Record<string, number> }[] = [{ id: 'cashPick', method: 'cash', units: { l1: 1 } }, { id: 'cardPick', method: 'external', units: { l2: 1 } }, { id: 'cash', method: 'cash' }];
+    expect(remainderEntriesMinor({ payments, cashRoundings: [{ paymentId: 'cashPick', minor: 2 }, { paymentId: 'cardPick', minor: -3 }, { paymentId: 'cash', minor: 1 }] })).toBe(-2);
+  });
+  it('P6: with no leg counting toward paid there is no write-off leg', () => {
+    expect(writeOffLeg({ payments: [] })).toBeUndefined();
+    expect(writeOffLeg({ payments: [{ id: 'card', method: 'external', status: 'voided' }, { id: 'p', method: 'cash', status: 'pending' }] })).toBeUndefined();
   });
 });

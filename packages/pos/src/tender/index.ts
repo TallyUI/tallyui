@@ -7,7 +7,7 @@ export { tenderFigures, runsWholeOrder } from './tender-figures';
 export type { TenderFacts, TenderFigures } from './tender-figures';
 export { tenderVoidSchema, tenderVoidCollection } from './tender-void';
 export type { TenderVoid } from './tender-void';
-export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedPickTarget, remainderEntriesMinor, roundedDue, tenderRounding } from './cash-rounding';
+export { cashVoidRefusal, type CashVoidRefusal, nearestPayableCash, roundedPickTarget, remainderEntriesMinor, writeOffLeg, roundedDue, tenderRounding } from './cash-rounding';
 export type { TenderRounding } from './cash-rounding';
 export { legStatus, countsTowardPaid, isInMotion, capturedMinor, inMotionMinor, canMoveLeg, canVoidLeg } from './payment-legs';
 export type { PaymentLegStatus } from './payment-legs';

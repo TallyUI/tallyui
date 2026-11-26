@@ -7034,7 +7034,10 @@ interface OrderCreatePayload {
   against a store whose connector declares the cashRounding capability.
 - **Details:**
   1. **Zero remainder.** When the remainder rounds to 0, the entry's `paymentId` is the last leg in `order.payments`
-     that counts toward paid, whatever its method: that leg left the remainder, so voiding it clears the entry. With
+     that counts toward paid and is not a cash leg carrying units (a cash pick), whatever its method; when every
+     counting leg is a cash pick, it is the last counting leg. Voiding the leg clears the entry. Amended 2026-11-26
+     (#1365): the write-off used to go on the last counting leg even when that was a cash pick, whose entry
+     `remainderEntriesMinor` leaves out, so void-and-tap cycles could write off one remainder after another. With
      no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
      While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
      leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
@@ -7075,8 +7078,9 @@ interface OrderCreatePayload {
        and `tenderedMinor`) to the increment. The leg records the rounded amount and its own entry. A pick that
        rounds to 0 is refused, and the pane says cash cannot pay it.
      - A card or other non-cash pick is never rounded.
-     - A cash remainder rounds the remainder only. `remainderEntriesMinor` leaves out the entries of legs that carry
-       units, so an already rounded pick is never rounded again.
+     - A cash remainder rounds the remainder only. `remainderEntriesMinor` leaves out the entries of **cash** legs
+       that carry units, so an already rounded pick is never rounded again. A card pick's entry can only be a
+       write-off, so it is counted.
      - The sale's `cashRoundings` is the sum of the leg entries, and the sale's total paid is the items total plus
        that sum.
      - Example (increment 0.05, nearest): two items of 3.33. Pick one and hand over 5.00: the leg is 3.35, with
@@ -7101,9 +7105,10 @@ interface OrderCreatePayload {
        - A pick that covers the whole balance is not a part pick. It settles through the ordinary rounded path, but
          its leg carries units, so `remainderEntriesMinor` leaves its entry out of any later remainder (reached only
          after a void).
-       - A zero-remainder write-off that lands on a pick leg is left out of later remainders in the same way. In
-         `down` mode, a write-off plus a later remainder can sum to more than one increment (−8 at increment 5); item 6's latest-first void
-         rule still unwinds it.
+       - Fixed 2026-11-26 (#1365): a write-off lands on a cash pick leg only when every counting leg is a cash pick,
+         and then no earlier leg's void can reopen a remainder that is not a whole number of cash steps. In `down`
+         mode a write-off plus a later remainder can still sum to more than one increment (−8 at increment 5);
+         item 6's latest-first void rule still unwinds it.
        - Reopen drops the legs' units, so a reopened order's pick entries are counted with its remainder.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.

@@ -9,7 +9,7 @@ import { useEffect, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses,
+  activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses, writeOffLeg,
   type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -116,7 +116,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const zeroDue = sale.capabilities?.cashRounding === true && !partPick && figures.roundedDueMinor === 0 && figures.roundingMinor !== 0
     && inMotionMinor(order.payments) === 0;
   // The 16-entry cap as addTender applies it: a settle that adds an entry is refused at 16; a write-off onto a leg with one is not.
-  const lastCounted = order.payments.filter(countsTowardPaid).at(-1);
+  const lastCounted = writeOffLeg(order);
   const settleLimit = !partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0
     && (order.cashRoundings ?? []).length > CASH_PICK_ENTRIES_MAX
     && !(zeroDue && lastCounted !== undefined && (order.cashRoundings ?? []).some((e) => e.paymentId === lastCounted.id));

@@ -1211,3 +1211,89 @@ it('PK18: at 16 entries on a cash-only store a later plain cash part payment is 
   expect(sale.order.cashRoundings!.at(-1)!.minor).toBe(2);
   expect(sale.order.balanceDueMinor).toBe(0);
 });
+
+// #1365 (ADR-094 item 1): a zero-remainder write-off goes on the last counting leg that is not a cash pick, so a later remainder counts it.
+const onCashPick = (paymentId: string) => { const leg = sale.order.payments.find((l) => l.id === paymentId); return leg?.method === 'cash' && Object.keys(leg.units ?? {}).length > 0; };
+const liveEntries = (skipCashPicks: boolean) => (sale.order.cashRoundings ?? []).filter((entry) => {
+  const leg = sale.order.payments.find((l) => l.id === entry.paymentId);
+  return leg !== undefined && countsTowardPaid(leg) && !(skipCashPicks && onCashPick(entry.paymentId));
+}).reduce((sum, entry) => sum + entry.minor, 0);
+/** Goods 0.52: six card legs of 0.02, a `pickBy` pick of the whole 0.40 line, then six cycles of void the earliest card, tap cash at zero; then the rest at the prefill. */
+async function voidCycles(rule: PaymentRounding, pickBy: 'cash' | 'external', bound: number): Promise<PosOrder> {
+  const [, item] = startLines([12, 40], rounding(rule));
+  const cards: string[] = [];
+  for (let i = 0; i < 6; i++) act(() => { cards.push(sale.addTender({ method: 'external', amountMinor: 2 })!); });
+  if (pickBy === 'external') press('tender-method-external');
+  pickLine(item);
+  press('tender-take');
+  expect(lastLeg()).toMatchObject({ method: pickBy, amountMinor: 40, units: { [item]: 1 } });
+  expect(sale.order.balanceDueMinor).toBe(0);
+  for (const id of cards) {
+    act(() => { expect(sale.voidTender(id)).toBe(true); });
+    act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: rule }); });
+    expect(Math.abs(liveEntries(true))).toBeLessThanOrEqual(bound);
+    expect(liveEntries(false)).toBeGreaterThan(-12);
+  }
+  press('tender-method-cash');
+  if (sale.order.balanceDueMinor > 0) press('tender-take');
+  expect(sale.order.balanceDueMinor).toBe(0);
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBeGreaterThanOrEqual(52 - bound);
+  balances(posOrder, 52);
+  return posOrder;
+}
+
+it('S1 (#1365): void-and-tap-zero cycles after a cash pick write off at most one remainder (nearest 0.05)', async () => {
+  const posOrder = await voidCycles(five, 'cash', 4);
+  expect(posOrder.totalMinor).toBe(50); // at least 50: never the -12 that #1365 reproduced
+  expect(posOrder.payments.map((leg) => [leg.method, leg.amountMinor, legStatus(leg as Parameters<typeof legStatus>[0])])).toEqual([
+    ['cash', 40, 'captured'], ['cash', 10, 'captured'], // the six voided cards are not sent
+  ]);
+  expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[1].id, minor: -2 }]);
+});
+
+it('S2 (#1365): the S1 cycles in up mode stay within 0.04', async () => { await voidCycles({ incrementMinor: 5, mode: 'up' }, 'cash', 4); });
+it('S3 (#1365): the S1 cycles in down mode stay within 0.08', async () => { await voidCycles({ incrementMinor: 5, mode: 'down' }, 'cash', 8); });
+it('S4 (#1365): the S1 cycles at nearest 0.10 stay within 0.08', async () => { await voidCycles(nearest, 'cash', 8); });
+it('S5 (#1365): after a card pick the write-off on it is counted by later remainders (rule 2)', async () => { await voidCycles(five, 'external', 4); });
+
+it('S6 (#1365): the ADR 3.33 + 3.33 example still closes at 6.70', async () => {
+  const [a] = startLines([333, 333]);
+  cashPick(a, 500);
+  press('tender-take');
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(670);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, 2]);
+});
+
+it('S7 (#1365): when every counting leg is a cash pick the write-off falls back onto the pick leg', async () => {
+  const [a] = startLines([333, 2]);
+  const pick = cashPick(a, 500);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: pick.id, minor: 2 }]);
+  expect(sale.order.balanceDueMinor).toBe(2);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBe(pick.id); });
+  expect(sale.order.cashRoundings ?? []).toEqual([]); // the pick's +2 and the write-off's -2 sum to nothing
+  expect(sale.order.balanceDueMinor).toBe(0);
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(335);
+  balances(posOrder, 335);
+});
+
+it('S8 (#1365): at 16 entries a write-off onto an earlier card with none is refused, though the last leg is a cash pick with one', () => {
+  const ids = startLines([...Array.from({ length: 15 }, () => 333), 1003]);
+  let early = '', target = '';
+  act(() => { early = sale.addTender({ method: 'external', amountMinor: 2 })!; });
+  act(() => { target = sale.addTender({ method: 'external', amountMinor: 500 })!; });
+  for (const id of ids.slice(0, 15)) cashPick(id, 500);
+  // 5998 + 30 - 502 - 5025 = 501 due: the whole last line settles at 500 (-1), the 16th entry, on a cash leg carrying units.
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500, units: { [ids[15]]: 1 }, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  act(() => { expect(sale.voidTender(early)).toBe(true); });
+  expect(sale.order.balanceDueMinor).toBe(2);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  expect((sale.order.cashRoundings ?? []).some((entry) => entry.paymentId === target)).toBe(false);
+});

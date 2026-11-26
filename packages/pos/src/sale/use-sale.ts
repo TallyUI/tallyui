@@ -13,7 +13,7 @@ import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
-import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue } from '../tender/cash-rounding';
+import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue, writeOffLeg } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
 import { isRegisterClosing } from '../register/closing';
@@ -965,7 +965,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const entries = remainderEntriesMinor(snapshot);
         const dueMinor = rule ? roundedRemainder(due, entries, rule) : due;
         if (rule && settlesAtRoundedDue({ amountMinor: Math.min(tender.amountMinor, due), tenderedMinor: tender.amountMinor, balanceMinor: due, dueMinor })) {
-          const against = snapshot.payments.filter(countsTowardPaid).at(-1);
+          const against = writeOffLeg(snapshot);
           const roundings = snapshot.cashRoundings ?? [];
           // The 16-entry cap: a settle that adds an entry (a rounded leg, or a write-off onto a leg with none) is refused at 16.
           if (roundings.length >= CASH_PICK_ENTRIES_MAX + 1 && (dueMinor > 0 ? dueMinor !== due
@@ -974,7 +974,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           if (dueMinor > 0) {
             return addOne({ ...tender, amountMinor: dueMinor, tenderedMinor: tender.amountMinor, changeMinor: tender.amountMinor - dueMinor }, true, { minor: dueMinor - due });
           }
-          // A remainder that rounds to zero closes the sale: no leg, its entry goes on the last leg counting toward paid.
+          // A remainder that rounds to zero closes the sale: no leg, its entry goes on writeOffLeg (ADR-094 item 1, #1365).
           if (!against) { setError(NOTHING_TO_ROUND_AGAINST); return null; }
           builderNow.current.addCashRounding({ paymentId: against.id, minor: -due });
           return against.id;
