@@ -45,8 +45,8 @@ export function fiscalFiguresErrors(payload: OrderCreatePayload): string[] {
     if (payload.fees?.length || payload.shipping?.length) check(display.taxInclusive === payload.pricesIncludeTax, 'display.taxInclusive', 'payload.pricesIncludeTax')
     for (const field of ['fees', 'shipping'] as const) {
       const id = field === 'fees' ? 'clientFeeId' : 'clientShippingId'
-      const amounts = new Map((payload[field] ?? []).map(entry => [
-        'clientFeeId' in entry ? entry.clientFeeId : entry.clientShippingId, entry.amountMinor,
+      const charges = new Map((payload[field] ?? []).map(entry => [
+        'clientFeeId' in entry ? entry.clientFeeId : entry.clientShippingId, entry,
       ]))
       const rows = display[field]
       if (rows !== undefined) check(Array.isArray(rows), `display.${field}`, 'an array')
@@ -56,12 +56,18 @@ export function fiscalFiguresErrors(payload: OrderCreatePayload): string[] {
         if (!object(row, path, [id, 'amountMinor'])) return
         check(typeof row[id] === 'string' && row[id].length > 0, `${path}.${id}`, 'a non-empty string')
         money(row, path, ['amountMinor'])
-        check(amounts.has(row[id] as string), `${path}.${id}`, `a payload.${field}[].${id}`)
+        const entry = charges.get(row[id] as string)
+        check(entry !== undefined, `${path}.${id}`, `a payload.${field}[].${id}`)
         check(!seen.has(row[id]), `${path}.${id}`, `no duplicate ${id}`)
         seen.add(row[id])
-        if (amounts.has(row[id] as string)) check(row.amountMinor === amounts.get(row[id] as string), `${path}.amountMinor`, `the payload.${field} amountMinor`)
+        if (entry) {
+          // #1383: the display row stays in display mode; the wire charge is in its own mode.
+          const converted = entry.amountIncludesTax !== undefined && entry.amountIncludesTax !== payload.pricesIncludeTax
+          const expected = !converted ? entry.amountMinor : entry.amountMinor + (entry.amountIncludesTax ? -entry.taxMinor : entry.taxMinor)
+          check(row.amountMinor === expected, `${path}.amountMinor`, `the payload.${field} amountMinor${converted ? ' converted to the display tax mode' : ''}`)
+        }
       })
-      for (const key of amounts.keys()) check(seen.has(key), `display.${field}`, `a row for ${id} ${key}`)
+      for (const key of charges.keys()) check(seen.has(key), `display.${field}`, `a row for ${id} ${key}`)
     }
     const codes = new Set((payload.coupons ?? []).map(coupon => coupon.code))
     const seen = new Set<string>()
