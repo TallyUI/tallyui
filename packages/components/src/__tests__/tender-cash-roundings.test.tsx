@@ -1576,3 +1576,37 @@ it('C19b (carry): at 16 entries a promoted pick whose amount equals the balance 
   expect(sale.order.cashRoundings).toHaveLength(16);
   expect(sale.order.balanceDueMinor).toBe(0);
 });
+
+it('C20 (connector shape W1): a card write-off stays beside a later cash entry, cannot be voided from under it, and both reach the stored order (nearest 0.05)', async () => {
+  startCustom(24, rounding(five), carries);
+  let c1 = '', c21 = '', cashId = '';
+  act(() => { c1 = sale.addTender({ method: 'external', amountMinor: 1 })!; });
+  act(() => { c21 = sale.addTender({ method: 'external', amountMinor: 21 })!; });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c21, minor: -2 }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(c1)).toBe(true); });
+  expect(sale.order.balanceDueMinor).toBe(1);
+  act(() => { cashId = sale.addTender({ method: 'cash', amountMinor: 5, rounding: five })!; });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c21, minor: -2 }, { paymentId: cashId, minor: 4 }]);
+  act(() => { expect(sale.voidTender(c21)).toBe(false); });
+  expect(sale.error).toBe(VOID_LATER_CASH_FIRST);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c21, minor: -2 }, { paymentId: cashId, minor: 4 }]);
+  const posOrder = await complete();
+  expect(posOrder.payments).toMatchObject([{ method: 'external', amountMinor: 21 }, { method: 'cash', amountMinor: 5 }]);
+  expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[0].id, minor: -2 }, { paymentId: posOrder.payments[1].id, minor: 4 }]);
+});
+
+it('C20b (connector shape W2): the same in down 0.05: -4 on the card, +4 on the cash', () => {
+  startCustom(24, rounding(down5), carries);
+  let c1 = '', c19 = '', cashId = '';
+  act(() => { c1 = sale.addTender({ method: 'external', amountMinor: 1 })!; });
+  act(() => { c19 = sale.addTender({ method: 'external', amountMinor: 19 })!; });
+  act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: down5 }); });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c19, minor: -4 }]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.voidTender(c1)).toBe(true); });
+  expect(sale.order.balanceDueMinor).toBe(1);
+  act(() => { cashId = sale.addTender({ method: 'cash', amountMinor: 5, rounding: down5 })!; });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c19, minor: -4 }, { paymentId: cashId, minor: 4 }]);
+});
