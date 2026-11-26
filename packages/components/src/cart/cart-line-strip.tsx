@@ -8,10 +8,10 @@ import { releaseOutcome } from './line-strip-geometry';
 // A release this long after the last move is not a flick: PanResponder's vx is the last move's speed and survives a pause (react-native-web PanResponder index.js:234-235).
 const STILL_MS = 50;
 
-/** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Edit and Remove. */
+/** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Remove, with Edit beside it when `onEdit` is given. */
 export function CartLineStrip({ name, onEdit, onRemove, children }: {
   name: string;
-  onEdit: () => void;
+  onEdit?: () => void;
   // A returned string is a refusal, and the row comes back.
   onRemove: () => string | null | void;
   children: (wrapTotal: (content: ReactNode) => ReactNode) => ReactNode;
@@ -57,7 +57,8 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
       // PanResponder zeroes dx at grant (react-native Libraries/Interaction/PanResponder.js onResponderGrant; react-native-web vendor PanResponder index.js:330), so the claimed distance joins the base.
       drag.current.base = (opened.current ? -drag.current.strip : 0) + claimed;
       drag.current.claimed = 0;
-      // The row's real place: synchronous on the JS driver, later on the native one, so the immediate base above stays as the fallback.
+      // The row's real place: the callback is synchronous on the JS driver (web). On the native driver it can land after the first moves, so a row
+      // grabbed mid-spring can jump once by the distance between the spring's target and its real place; the immediate base above is where it starts until then.
       offset.stopAnimation((value) => { drag.current.base = value + claimed; });
     },
     onPanResponderMove: (_, { dx }) => offset.setValue(clamp(drag.current.base + dx)),
@@ -92,8 +93,8 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
       style={rowWidth === undefined ? undefined : { width: rowWidth }} pointerEvents={open ? 'auto' : 'none'}
       accessibilityElementsHidden={!open} importantForAccessibility={open ? 'auto' : 'no-hide-descendants'} aria-hidden={!open}>
       <View testID="cart-line-strip-actions" className="flex-row items-stretch" onLayout={(event) => setStripWidth(event.nativeEvent.layout.width)}>
-        <Button variant="default" testID="cart-line-edit" accessibilityLabel={`Edit ${name}`} className={block}
-          onPress={() => { if (leaving.current) return; settle(false); onEdit(); }}><Text>Edit</Text></Button>
+        {onEdit ? <Button variant="default" testID="cart-line-edit" accessibilityLabel={`Edit ${name}`} className={block}
+          onPress={() => { if (leaving.current) return; settle(false); onEdit(); }}><Text>Edit</Text></Button> : null}
         <Button variant="destructive" testID="cart-line-remove" accessibilityLabel={`Remove ${name}`} className={block}
           onPress={leave}><Text>Remove</Text></Button>
       </View>

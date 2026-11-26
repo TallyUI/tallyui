@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Children, cloneElement, type ReactElement, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import { useFormatMoney, type Money } from '@tallyui/core';
 import { Image } from '@tallyui/primitives';
@@ -35,6 +35,9 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
   picking?: boolean;
   locale?: string;
   className?: string;
+  /** The line strip's press target (`CartLineStrip`): wraps the Total cell's content, or with Total hidden the last visible
+   * cell's that holds no button of its own (not Quantity, nor Price while `priceSlot` is set). */
+  wrapTotal?: (content: ReactNode) => ReactNode;
 }
 
 // Name and attributes: WCPOS v2 packages/core/src/screens/main/pos/cart/cells/product-name.tsx; price:
@@ -48,14 +51,16 @@ export interface CartLineProps extends Omit<HStackProps, 'children'> {
  * ```
  */
 export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPrice, lineTotal, showPrice = true, quantitySlot, priceSlot,
-  columns, sku, imageUrl, onSplit, picking = false, locale, className, ...props }: CartLineProps) {
+  columns, sku, imageUrl, onSplit, picking = false, locale, className, wrapTotal, ...props }: CartLineProps) {
   const formatMoney = useFormatMoney();
   const t = useT();
   const options = Object.entries(attributes ?? {}).map(([key, value]) => `${key}: ${value}`).join(' · ');
   const sameCurrency = regularUnitPrice?.currency === unitPrice.currency;
   const regular = (columns?.price?.onSale ?? true) && regularUnitPrice && sameCurrency && regularUnitPrice.amount > unitPrice.amount
     ? formatMoney(regularUnitPrice, locale) ?? '—' : null;
-  const cells: Record<ReturnType<typeof cartColumnSlots>[number], ReactNode> = {
+  const slots = cartColumnSlots(columns, { showPrice });
+  const target = slots.includes('total') ? 'total' : slots.filter((id) => id !== 'quantity' && !(id === 'price' && priceSlot)).pop();
+  const cells: Record<(typeof slots)[number], ReactElement<{ children?: ReactNode }>> = {
     fill: <View key="fill" className="flex-1" />,
     quantity: <View key="quantity" className={(picking ? CART_PICKING_QUANTITY : CART_COLUMNS.quantity).cell}>
       {quantitySlot ?? <Text className="text-sm tabular-nums">{quantity}</Text>}
@@ -90,7 +95,7 @@ export function CartLine({ name, attributes, quantity, unitPrice, regularUnitPri
   };
   return (
     <HStack space="none" className={cn('py-2.5', className)} {...props}>
-      {cartColumnSlots(columns, { showPrice }).map((id) => cells[id])}
+      {slots.map((id) => wrapTotal && id === target ? cloneElement(cells[id], {}, wrapTotal(Children.toArray(cells[id].props.children))) : cells[id])}
     </HStack>
   );
 }

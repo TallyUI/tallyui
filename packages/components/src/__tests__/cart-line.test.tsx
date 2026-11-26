@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { Text, View } from 'react-native';
 import { CartLine } from '../cart/cart-line';
 
 const eur = (amount: number) => ({ amount, currency: 'EUR' });
@@ -97,5 +99,25 @@ describe('CartLine columns', () => {
     expect(screen.queryByTestId('cart-line-split')).toBeNull();
     rerender(<CartLine {...line} quantity={3} lineTotal={eur(2550)} onSplit={onSplit} />);
     expect(screen.queryByTestId('cart-line-split')).toBeNull();
+  });
+});
+
+describe('CartLine wrapTotal', () => {
+  const line = { name: 'Coffee', quantity: 2, unitPrice: eur(850), lineTotal: eur(1700), locale: 'en' };
+  const wrapTotal = (content: ReactNode) => <View testID="wrapped">{content}</View>;
+  const wrapped = () => screen.getAllByTestId('wrapped').map((node) => node.textContent);
+
+  it('L1: wraps the Total cell, or with Total hidden the last cell that holds no button of its own', () => {
+    const { rerender } = render(<CartLine {...line} wrapTotal={wrapTotal} />);
+    expect(wrapped()).toEqual(['€17.00']);
+    rerender(<CartLine {...line} columns={{ total: { show: false } }} wrapTotal={wrapTotal} />);
+    expect(wrapped()).toEqual(['€8.50']);
+    // A price popover is a button of its own, so the Item cell takes the press.
+    rerender(<CartLine {...line} columns={{ total: { show: false } }} priceSlot={<Text>slot</Text>} wrapTotal={wrapTotal} />);
+    expect(wrapped()).toEqual(['Coffee']);
+    // The quantity cell can hold the Split link and the quantity popover, so it is never the target.
+    rerender(<CartLine {...line} columns={{ total: { show: false }, price: { show: false }, order: ['name', 'quantity'] }}
+      quantitySlot={<Text>qty</Text>} wrapTotal={wrapTotal} />);
+    expect(wrapped()).toEqual(['Coffee']);
   });
 });
