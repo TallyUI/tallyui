@@ -769,8 +769,9 @@ it('Z1 uses the stored inclusive fee mode for the closure tax rates', async () =
   const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: counted } });
   const closure = await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed,
     counted, otherTenders: {}, movements: [], orders: [{ ...order, sessionId: session.id }], softwareVersion: '1.0.0' });
-  const rates = Object.values(closure.breakdowns.tax_rates as Record<string, { tax_minor: number }>);
+  const rates = Object.values(closure.breakdowns.tax_rates as Record<string, { tax_minor: number; net_minor: number }>);
   expect(rates.reduce((sum, rate) => sum + rate.tax_minor, 0)).toBe(400);
+  expect(rates.reduce((sum, rate) => sum + rate.net_minor, 0)).toBe(1602);
 });
 
 describe('cash rounding on the Z (ADR-094)', () => {

@@ -1,8 +1,11 @@
 import type { TaxRounding } from '@tallyui/core';
 
-/** A stored order's charges for `taxedLinesFor`: a charge kept with `entered` is in the cashier's mode (#1383). */
-export function storedCharges<C extends { entered?: { amountIncludesTax: boolean } }>(charges: readonly C[]): Array<C & { amountIncludesTax?: boolean }> {
-  return charges.map((charge) => charge.entered === undefined ? charge : { ...charge, amountIncludesTax: charge.entered.amountIncludesTax });
+/** Undoes `finalize.ts`'s `storedCharge` for taxation: restores the entered mode and, for a generic charge, the entered net. */
+export function storedCharges<C extends { entered?: { amountMinor: number; amountIncludesTax: boolean }; totalMinor?: number; netMinor?: number }>(
+  charges: readonly C[],
+): Array<C & { amountIncludesTax?: boolean }> {
+  return charges.map((charge) => charge.entered === undefined ? charge : { ...charge, amountIncludesTax: charge.entered.amountIncludesTax,
+    ...(charge.totalMinor === undefined ? { netMinor: charge.entered.amountMinor } : {}) });
 }
 
 /** The lines and charges `taxLinesByRate` splits, each in the tax mode its tax was rounded in (ADR-065: the

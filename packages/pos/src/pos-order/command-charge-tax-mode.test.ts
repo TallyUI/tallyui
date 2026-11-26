@@ -139,11 +139,12 @@ it('T17 only falls back from per-rate-group rounding for inclusive items', () =>
   expect(rounded(sale(undefined, false, true))).toBeUndefined();
 });
 
-it('T18 preserves stored amounts and sets the mode only for a charge with an entry', () => {
-  const charges = [{ amountMinor: 500 }, { amountMinor: 802, entered }];
+it('T18 restores the entered mode and generic charge net without changing stored amounts', () => {
+  const charges = [{ amountMinor: 500 }, { amountMinor: 802, netMinor: 802, entered }, { amountMinor: 802, netMinor: 750, totalMinor: 1002, entered }];
   const result = storedCharges(charges);
   expect(result[0]).toBe(charges[0]);
-  expect(result).toStrictEqual([{ amountMinor: 500 }, { amountMinor: 802, entered, amountIncludesTax: true }]);
+  expect(result).toStrictEqual([{ amountMinor: 500 }, { amountMinor: 802, netMinor: 1002, entered, amountIncludesTax: true },
+    { amountMinor: 802, netMinor: 750, totalMinor: 1002, entered, amountIncludesTax: true }]);
 });
 
 it.each([['T19', 'addFee'], ['T20', 'addShipping']] as const)('%s recomputes the stored tax by rate for %s', (_, add) => {
@@ -152,8 +153,10 @@ it.each([['T19', 'addFee'], ['T20', 'addShipping']] as const)('%s recomputes the
   const split = (rows: typeof charges) => taxLinesByRate(taxedLinesFor(order.lines, rows, order.pricesIncludeTax, order.taxRounding),
     order.taxMinor, undefined, order.taxRounding);
   const corrected = split(storedCharges(charges));
-  const amounts = ({ ratePpm, amountMinor }: { ratePpm: number; amountMinor: number }) => ({ ratePpm, amountMinor });
+  const amounts = ({ ratePpm, code, netMinor, amountMinor }: { ratePpm: number; code?: string; netMinor: number; amountMinor: number }) =>
+    ({ ratePpm, code, netMinor, amountMinor });
   expect(corrected.map(amounts)).toStrictEqual(order.taxByRate!.map(amounts));
   expect(corrected.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(400);
+  expect(corrected.reduce((sum, row) => sum + row.netMinor, 0)).toBe(1602);
   expect(split(charges).reduce((sum, row) => sum + row.amountMinor, 0)).not.toBe(400);
 });
