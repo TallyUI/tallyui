@@ -12,7 +12,7 @@
  */
 import type { RxCollection } from 'rxdb';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
-import { taxedLinesFor } from '../tax/taxed-lines';
+import { storedCharges, taxedLinesFor } from '../tax/taxed-lines';
 import type { PosOrder } from '../pos-order/types';
 import { replacedOrderIds } from '../pos-order/reopened';
 import { tillPayments } from '../pos-order/till-payments';
@@ -578,7 +578,7 @@ export async function writeClosure({
     const recorded = order.taxRounding ?? DEFAULT_TAX_ROUNDING;
     const rounding = recorded.granularity === 'custom' ? DEFAULT_TAX_ROUNDING : recorded;
     roundings.add(rounding.granularity === 'woocommerce' ? `woocommerce ${rounding.roundAtSubtotal}` : `${rounding.granularity} ${rounding.mode}`);
-    const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+    const taxedLines = taxedLinesFor(order.lines, storedCharges([...(order.fees ?? []), ...(order.shipping ?? [])]), order.pricesIncludeTax, order.taxRounding);
     for (const { ratePpm, code, netMinor, amountMinor } of taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding)) {
       const existing = taxRates.get(taxRateKey(code, ratePpm));
       taxRates.set(taxRateKey(code, ratePpm), {

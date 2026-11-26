@@ -1,5 +1,10 @@
 import type { TaxRounding } from '@tallyui/core';
 
+/** A stored order's charges for `taxedLinesFor`: a charge kept with `entered` is in the cashier's mode (#1383). */
+export function storedCharges<C extends { entered?: { amountIncludesTax: boolean } }>(charges: readonly C[]): Array<C & { amountIncludesTax?: boolean }> {
+  return charges.map((charge) => charge.entered === undefined ? charge : { ...charge, amountIncludesTax: charge.entered.amountIncludesTax });
+}
+
 /** The lines and charges `taxLinesByRate` splits, each in the tax mode its tax was rounded in (ADR-065: the
  *  receipt's figures, which every per-rate split must equal). Under `woocommerce` rounding a line with `netMicros`
  *  is in the store's mode, since WooCommerce rounds every line that way. Otherwise a line keeps its own mode, and

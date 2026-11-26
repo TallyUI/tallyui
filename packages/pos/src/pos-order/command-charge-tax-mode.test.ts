@@ -5,8 +5,8 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { createOrderBuilder } from '../order/order-builder';
 import type { Order } from '../order/types';
-import { roundedTaxByRate } from '../tax/exact';
-import { taxedLinesFor } from '../tax/taxed-lines';
+import { roundedTaxByRate, taxLinesByRate } from '../tax/exact';
+import { storedCharges, taxedLinesFor } from '../tax/taxed-lines';
 import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder, withSentForm } from './finalize';
 import { posOrderCollection } from './schema';
@@ -137,4 +137,23 @@ it('T17 only falls back from per-rate-group rounding for inclusive items', () =>
   expect(snapshot.taxMinor).toBe(result!.taxMinor);
   expect(snapshot.totalMinor).toBe(1300 + result!.taxMinor);
   expect(rounded(sale(undefined, false, true))).toBeUndefined();
+});
+
+it('T18 preserves stored amounts and sets the mode only for a charge with an entry', () => {
+  const charges = [{ amountMinor: 500 }, { amountMinor: 802, entered }];
+  const result = storedCharges(charges);
+  expect(result[0]).toBe(charges[0]);
+  expect(result).toStrictEqual([{ amountMinor: 500 }, { amountMinor: 802, entered, amountIncludesTax: true }]);
+});
+
+it.each([['T19', 'addFee'], ['T20', 'addShipping']] as const)('%s recomputes the stored tax by rate for %s', (_, add) => {
+  const order = finalize(sale((builder) => builder[add](inclusive), false, true));
+  const charges = [...(order.fees ?? []), ...(order.shipping ?? [])];
+  const split = (rows: typeof charges) => taxLinesByRate(taxedLinesFor(order.lines, rows, order.pricesIncludeTax, order.taxRounding),
+    order.taxMinor, undefined, order.taxRounding);
+  const corrected = split(storedCharges(charges));
+  const amounts = ({ ratePpm, amountMinor }: { ratePpm: number; amountMinor: number }) => ({ ratePpm, amountMinor });
+  expect(corrected.map(amounts)).toStrictEqual(order.taxByRate!.map(amounts));
+  expect(corrected.reduce((sum, row) => sum + row.amountMinor, 0)).toBe(400);
+  expect(split(charges).reduce((sum, row) => sum + row.amountMinor, 0)).not.toBe(400);
 });

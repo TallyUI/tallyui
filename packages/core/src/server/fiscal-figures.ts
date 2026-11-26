@@ -61,10 +61,10 @@ export function fiscalFiguresErrors(payload: OrderCreatePayload): string[] {
         check(!seen.has(row[id]), `${path}.${id}`, `no duplicate ${id}`)
         seen.add(row[id])
         if (entry) {
-          // #1383: the display row stays in display mode, the wire charge is in its own mode, and a converted taxed row may carry the till's one-cent display residue (order-builder.ts).
+          // #1383: the display row stays in display mode, the wire charge is in its own mode, and a converted row may carry the till's one-cent display residue (order-builder.ts).
           const converted = entry.amountIncludesTax !== undefined && entry.amountIncludesTax !== payload.pricesIncludeTax
           const expected = !converted ? entry.amountMinor : entry.amountMinor + (entry.amountIncludesTax ? -entry.taxMinor : entry.taxMinor)
-          const matches = converted && entry.taxMinor !== 0 ? typeof row.amountMinor === 'number' && Math.abs(row.amountMinor - expected) <= 1 : row.amountMinor === expected
+          const matches = converted ? typeof row.amountMinor === 'number' && Math.abs(row.amountMinor - expected) <= 1 : row.amountMinor === expected
           check(matches, `${path}.amountMinor`, `the payload.${field} amountMinor${converted ? ' converted to the display tax mode' : ''}`)
         }
       })

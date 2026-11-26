@@ -62,8 +62,10 @@ it('C9 accepts one cent of residue on a gross fee displayed net', () => {
 })
 it.each([
   ['C10 refuses two cents of residue on a converted taxed fee', 200, -2],
-  ['C11 refuses one cent of residue on a converted untaxed fee', 0, -1],
 ] as const)('%s', (_, taxMinor, residue) => {
   expect(precheckCommand(create(false, true, 'fees', false, taxMinor, residue), enabled)).toEqual(refusal(
     'display.fees[0].amountMinor: expected the payload.fees amountMinor converted to the display tax mode'))
+})
+it('C11 accepts one cent of residue on a converted fee with zero taxMinor', () => {
+  expect(precheckCommand(create(false, true, 'fees', false, 0, -1), enabled)).toBeUndefined()
 })

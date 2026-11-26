@@ -3,7 +3,7 @@ import { tillPayments } from '../pos-order/till-payments';
 import type { PosOrder } from '../pos-order/types';
 import type { PosRefund } from '../refund/pos-refund';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
-import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
+import { recordedTaxByRate, storedCharges, taxedLinesFor } from '../tax/taxed-lines';
 import type { LineJoin, ReportLine, ReportOrder, ReportRefund } from './types';
 
 function joinedLine(line: { productId?: string; variantId?: string; quantity: number }, join?: LineJoin): Pick<ReportLine, 'costMinor' | 'category'> {
@@ -19,7 +19,7 @@ function joinedLine(line: { productId?: string; variantId?: string; quantity: nu
 }
 
 export function reportOrderFromPosOrder(order: PosOrder, join?: LineJoin, methodTitle?: (methodId: string) => string | undefined): ReportOrder {
-  const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+  const taxedLines = taxedLinesFor(order.lines, storedCharges([...(order.fees ?? []), ...(order.shipping ?? [])]), order.pricesIncludeTax, order.taxRounding);
   const taxes = recordedTaxByRate(order) ?? taxLinesByRate(taxedLines, order.taxMinor, undefined, order.taxRounding);
   const till = tillPayments(order.payments);
   const amountOf = (payments: readonly { amountMinor: number }[]) => payments.reduce((total, payment) => total + payment.amountMinor, 0);

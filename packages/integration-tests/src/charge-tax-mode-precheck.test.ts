@@ -28,3 +28,14 @@ it('I2 refuses the same envelope when the server disables chargeTaxMode', () => 
 it('I3 accepts a net fee on a tax-inclusive sale', () => {
   expect(precheckCommand(sell(true), supported)).toBeUndefined();
 });
+it('I4 accepts converted shipping with display residue when its tax rounds to zero', () => {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 50000 } });
+  builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1, currency: 'EUR' } });
+  builder.addShipping({ name: 'Shipping', amountMinor: 10, amountIncludesTax: true, taxClass: 'standard' });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, chargeTaxMode: true } });
+  const envelope = toOrderCreateEnvelope(order, 'device-1383', 1, { maxVersion: 12 });
+  expect(envelope.payload.shipping?.[0]).toMatchObject({ amountMinor: 10, amountIncludesTax: true, taxMinor: 0 });
+  expect(envelope.payload.display?.shipping?.[0].amountMinor).toBe(9);
+  expect(precheckCommand(envelope, supported)).toBeUndefined();
+});
