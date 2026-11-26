@@ -6,7 +6,7 @@
 
 A fee or shipping charge entered in a mode other than the store's is sent in its own mode (`amountIncludesTax`), but only to a store whose connector declares `chargeTaxMode`. connector-vendure maps `/tally/v1/info`'s `chargeTaxMode: { v: 1 }`.
 
-This ends the one-cent drift of an inclusive fee in a tax-exclusive Vendure store. Without the capability, nothing changes.
+This ends the one-cent drift of an inclusive fee in a tax-exclusive Vendure store. Without the capability, order.create sends the same bytes as before.
 
 - **Apps:** nothing to do beyond passing the connector's capabilities to `finalizeOrder`, as before. The WooCommerce and Medusa connectors need no change.
 - **Servers built on `@tallyui/core/server`:** a server whose connector declares the capability must pass `supported.chargeTaxMode: true` to `precheckCommand`. Otherwise it refuses every sale that carries `amountIncludesTax` with `invalid_payload`.
