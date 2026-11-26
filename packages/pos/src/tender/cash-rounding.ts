@@ -36,26 +36,25 @@ export function roundedRemainder(balanceMinor: number, entriesMinor: number, rou
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
-/** ADR-094 (cash picks): a cash part pick rounds its own target; 0 means cash cannot pay it. */
-export function roundedPickTarget(targetMinor: number, rounding: PaymentRounding | null | undefined): number {
-  return rounding ? roundToIncrement(targetMinor, rounding.incrementMinor, rounding.mode) : targetMinor;
+/** ADR-094 item 7 (carry): a cash part pick rounds its target less `entriesMinor`, the live entries the pick carries against; it defaults to 0, the 5.0.0 per-pick rounding. 0 means cash cannot pay it. */
+export function roundedPickTarget(targetMinor: number, rounding: PaymentRounding | null | undefined, entriesMinor = 0): number {
+  if (!rounding) return targetMinor;
+  const unrounded = targetMinor - entriesMinor;
+  return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
-/** A cash leg carrying units: a cash part pick, whose entry is its own rounding (ADR-094 item 7). */
-const cashPickLeg = (leg: { method?: string; units?: Readonly<Record<string, number>> }) => leg.method === 'cash' && leg.units !== undefined && Object.keys(leg.units).length > 0;
-
-/** ADR-094: the live entries a remainder rounds against, leaving out a cash pick leg's own entry (a cash leg carrying units). */
+/** ADR-094 items 1 and 6: the live entries a remainder rounds against, every entry on the sale (cash-pick entries included since the carry rule). */
 export function remainderEntriesMinor(order: { payments: readonly { id: string; method?: string; units?: Readonly<Record<string, number>> }[]; cashRoundings?: readonly { paymentId: string; minor: number }[] }): number {
-  return (order.cashRoundings ?? []).reduce((sum, entry) => {
-    const leg = order.payments.find((candidate) => candidate.id === entry.paymentId);
-    return leg && cashPickLeg(leg) ? sum : sum + entry.minor;
-  }, 0);
+  return (order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0);
 }
 
-/** ADR-094 item 1 (#1365): the zero-remainder write-off's leg, the last counting leg that is not a cash pick, else the last counting leg. */
+/**
+ * ADR-094 item 1 (#1365, amended by the carry rule 2026-11-26): the zero-remainder write-off's leg, the last counting leg with
+ * wire method 'cash', else the last counting leg. A later cash leg rounds against a non-cash leg's write-off; `cashVoidRefusal` keeps the entries a stack.
+ */
 export function writeOffLeg<L extends { id: string; method?: string; status?: PaymentLegStatus; units?: Readonly<Record<string, number>> }>(order: { payments: readonly L[] }): L | undefined {
   const counted = order.payments.filter(countsTowardPaid);
-  return counted.filter((leg) => !cashPickLeg(leg)).at(-1) ?? counted.at(-1);
+  return counted.filter((leg) => leg.method === 'cash').at(-1) ?? counted.at(-1);
 }
 
 /** Why a void is refused by ADR-094 item 6 (desk ruling (i), #1292): a later live cash leg's entry was computed against this leg's. */

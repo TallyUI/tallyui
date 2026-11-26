@@ -917,7 +917,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       });
     },
     setTender,
-    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). A cash part pick rounds its own target on a cashRounding store (ADR-094). */
+    /** ADR-072: external is capped at the balance due; change comes only from cash. A cash leg records the amount applied, the amount handed over (`tenderedMinor`) and the change (`changeMinor`). A leg is captured unless a status says otherwise; a leg in motion is held against the external cap. Units are checked against the units legs hold (`heldUnitsByLine`), but a leg's amount is not tied to its units' money here; the pane enforces that (#1133). A cash part pick rounds its target less the live entries on a cashRounding store, and one that reaches the whole-settle due is taken as that settle (ADR-094 item 7). */
     addTender(input: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; tenderedMinor?: number; reference?: string; units?: Readonly<Record<string, number>>; status?: 'pending' | 'authorized' | 'captured'; rounding?: PaymentRounding }): string | null {
       const { rounding, ...tender } = input;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return null; }
@@ -926,7 +926,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       // A leg in motion means this cash leg does not settle the sale, so nothing rounds: BASE's row 500 leg, but the leg it records must still be a whole number of cash steps (refused with CASH_WAITS_FOR_PAYMENT otherwise).
       const rule = rounding && tender.tenderedMinor === undefined && opts.capabilities?.cashRounding === true
         && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
-      // ADR-094 (cash picks): a cash part pick rounds its own target and carries its own entry.
+      // ADR-094 item 7 (carry): a cash part pick rounds its target less the sale's live entries, and carries amount less target.
       const pickRule = rounding && tender.method === 'cash' && opts.capabilities?.cashRounding === true
         && inMotionMinor(builderNow.current.getSnapshot().payments) === 0 ? rounding : null;
       if (locked() || !Number.isInteger(tender.amountMinor) || tender.amountMinor < 0 || (tender.amountMinor === 0 && !rule)) return null;
@@ -940,13 +940,20 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
         if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
       }
-      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, pickRule) : tender.amountMinor;
+      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, pickRule, remainderEntriesMinor(builderNow.current.getSnapshot())) : tender.amountMinor;
       if (tender.tenderedMinor !== undefined && pickMinor === 0) return null;
       if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
         || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < pickMinor)) return null;
       if (tender.tenderedMinor !== undefined) {
         const snapshot = builderNow.current.getSnapshot();
         if (tender.amountMinor > snapshot.balanceDueMinor - inMotionMinor(snapshot.payments)) return null;
+        // ADR-094 item 7 (promotion): a carried pick that reaches the whole-settle due is that settle, keeping its units; entry due - balance.
+        const due = snapshot.balanceDueMinor;
+        if (pickRule && pickMinor === roundedRemainder(due, remainderEntriesMinor(snapshot), pickRule)) {
+          if ((snapshot.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX + 1 && pickMinor !== due) { setError(CASH_SETTLE_LIMIT); return null; }
+          clearStaleError();
+          return addOne({ ...tender, amountMinor: pickMinor, changeMinor: tender.tenderedMinor - pickMinor }, true, pickMinor !== due ? { minor: pickMinor - due } : undefined);
+        }
         if (pickMinor !== tender.amountMinor && (snapshot.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX) { setError(CASH_PICK_LIMIT); return null; }
         if (rounding && opts.capabilities?.cashRounding === true && tender.method === 'cash' && inMotionMinor(snapshot.payments) > 0
           && nearestPayableCash(tender.amountMinor, rounding.incrementMinor) !== null) { setError(CASH_WAITS_FOR_PAYMENT); return null; }
