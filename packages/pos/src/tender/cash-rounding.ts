@@ -50,7 +50,7 @@ export function remainderEntriesMinor(order: { payments: readonly { id: string; 
 
 /**
  * ADR-094 item 1 (#1365, amended by the carry rule 2026-11-26): the zero-remainder write-off's leg, the last counting leg with
- * wire method 'cash', else the last counting leg. Every entry then sits on a cash leg unless the sale has none, so latest-first keeps the entries a stack.
+ * wire method 'cash', else the last counting leg. A later cash leg rounds against a non-cash leg's write-off; `cashVoidRefusal` keeps the entries a stack.
  */
 export function writeOffLeg<L extends { id: string; method?: string; status?: PaymentLegStatus; units?: Readonly<Record<string, number>> }>(order: { payments: readonly L[] }): L | undefined {
   const counted = order.payments.filter(countsTowardPaid);

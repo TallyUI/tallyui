@@ -232,12 +232,21 @@ describe('ADR-094 carry rule: fixed rows', () => {
       'card5 void0 cash10 card805 whole#1 void2 card1 cash805 void4 whole#6 void3 cardPick#6', []],
     ['the #1365 reproduction (six card 0.02, a cash pick of 0.40, void-and-tap-zero cycles)', [12, 40], nearest5,
       'card2 card2 card2 card2 card2 card2 whole#1 void0 cash0 void1 cash0 void2 cash0 void3 cash0 void4 cash0 void5 cash0', [-2]],
+    ['a card write-off under a later cash entry (nearest 5, goods 0.24)', [24], nearest5, 'card1 card21 cash0 void0 cash5', [-2, 4]],
+    ['a card write-off under a later cash entry (down 5, goods 0.24)', [24], { incrementMinor: 5, mode: 'down' } as Rule, 'card1 card19 cash0 void0 cash5', [-4, 4]],
   ] as [string, number[], Rule, string, number[]][])('%s closes with S in R', (_name, goods, rule, plan, final) => {
     const { m, s: end } = replay(goods, rule, plan);
     const s = closeInCash(m, end);
     expect(m.closed(s), witness(m, goods, s)).toBe(true);
     expect(inR(rule, m.S(s)), witness(m, goods, s)).toBe(true);
     expect(m.entries(s).map((e) => e.minor), witness(m, goods, s)).toEqual(final);
+  });
+
+  it('the card write-off cannot be voided from under the later cash entry', () => {
+    const { m, s, refused } = replay([24], nearest5, 'card1 card21 cash0 void0 cash5');
+    expect(refused).toEqual([]);
+    expect(s.entry[s.legs[1].id]).toBe(-2);
+    expect(m.voidLeg(s, 1), witness(m, [24], s)).toBeNull();
   });
 });
 
@@ -280,6 +289,7 @@ describe('ADR-094 carry rule: stored and locked legs', () => {
           observe(acc, m, rule, t, g);
           next.push(t);
           expect(t.legs[0].live, witness(m, g, t)).toBe(true); // the locked leg is never voided
+          expect(t.entry.S0 ?? 0, witness(m, g, t)).toBe(0); // the locked leg carries no entry
           // Every till leg can be voided, latest first.
           let u = t;
           for (let idx = u.legs.length - 1; idx > 0; idx--) if (u.legs[idx].live) u = m.voidLeg(u, idx) ?? u;

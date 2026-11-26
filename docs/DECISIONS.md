@@ -7037,10 +7037,12 @@ interface OrderCreatePayload {
      that counts toward paid and is a cash leg; when no counting leg is cash, it is the last counting leg (`writeOffLeg`).
      Voiding the leg clears the entry. Amended 2026-11-26 (the carry rule, amending #1365 of the same day): #1365 put
      the write-off on the last counting leg that was not a cash pick, so it could sit on a card under a later cash
-     entry; since every entry now counts toward a remainder (item 7), it goes on the last cash leg, and a card carries
-     an entry only on a sale with no live cash leg. The write-off counts on the Z of the session that took the cash leg
-     it sits on (session-store.ts, unchanged), so when a sale's legs were taken in two sessions its write-off can move
-     from the card leg's session to the cash leg's; cash rounding then sits with the cash. With
+     entry; since every entry now counts toward a remainder (item 7), it goes on the last cash leg. A non-cash leg
+     carries the write-off only when no counting leg is cash at the moment of the write-off; a cash leg taken later
+     rounds against it and carries its own entry, and the void rule (item 6) keeps the two a stack. The write-off
+     counts on the Z of the session that took the cash leg it sits on (session-store.ts, unchanged), so when a sale's
+     legs were taken in two sessions its write-off can move from the card leg's session to the cash leg's; cash
+     rounding then sits with the cash. With
      no such leg (the whole sale rounds to 0) the Take is refused with `NOTHING_TO_ROUND_AGAINST` and adds no entry.
      While any leg is pending or authorized nothing rounds (from Q2: only a leg that settles the sale rounds): a cash
      leg is recorded unrounded, net of the legs in motion, a zero cash Take is a no-op with no error, and the tender
@@ -7076,13 +7078,17 @@ interface OrderCreatePayload {
      the range of `roundToIncrement(u) − u` for the cash method's increment inc: (−inc/2, inc/2] for nearest, [0, inc)
      for up, (−inc, 0] for down. Connectors check against R per mode; that is the number they use. Why it holds:
      every rounding event (a settle, a carried pick, a write-off) rounds the goods less the live entries, so it leaves
-     S = round(x) − x, which is in R. Every entry sits on a cash leg unless the sale has no cash leg, so latest-first
-     makes the entries a stack and a void pops back to an earlier S. A search pins it
+     S = round(x) − x, which is in R. A leg carrying an entry cannot be voided while a later live cash leg carries one
+     (`cashVoidRefusal`, whatever the earlier leg's method), so the entries are a stack and a void pops back to an
+     earlier S. A search pins it
      (`cash-rounding.search.test.ts`: every reached state, open or closed, has S in R, and none is stranded). Its
      limits: at most 16 entries (the order.create cap); goods sets of 2 to 3 increments plus a few minor units, and the
      fixed rows of the #1365 and S8 reviews; multi-unit picks beyond merged lines are not searched; sales closed before
-     this change may hold larger sums and are read as they are, with no migration. An open or reopened sale may carry
-     more while open, and must always be completable or cancellable.
+     this change may hold larger sums and are read as they are, with no migration. Reopening such a sale and closing
+     it under this rule rounds against that sum, so its new entry can be one increment or more (the search's
+     stored-reopen row ends with −22 at increment 5); the closed sum is then in R again, while finishing it by card
+     adds no entry and keeps the stored sum. An open or reopened sale may carry more while open, and must always be
+     completable or cancellable.
   7. **A cash part pick rounds against the sale's live entries (the carry).** Amended 2026-11-24 (Front desk, picks/legs ruling (b), option 1),
      verbatim: "Cash rounding belongs to the cash actually handed over, so a cash part-pick leg rounds its own target
      and carries its own rounding entry; per-payer sums differing from whole-sale rounding is how rounding stores work
@@ -7124,8 +7130,10 @@ interface OrderCreatePayload {
        later remainder now, since every entry does. Reopen drops the legs' units; that no longer changes what a
        remainder rounds against.
      - **Connector shapes.** A connector carrying `cashRounding` must accept any entry with |minor| < inc on a cash
-       leg, of either sign in every mode; several entries per sale, up to 16; and an entry on a non-cash leg only
-       when the sale has no live cash leg. The entries' sum is in R(mode) (item 6). Copyable order.create rows are in
+       leg, of either sign in every mode; several entries per sale, up to 16; and an entry on a non-cash leg (the
+       zero-remainder write-off when no counting leg was cash), which may sit before later cash legs' entries. The
+       entries' sum is in R(mode) (item 6). The one exception is a sale stored before the carry rule and closed again
+       after a reopen: its last entry can reach one increment or more (item 6). Copyable order.create rows are in
        the PR that made the carry rule.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.
