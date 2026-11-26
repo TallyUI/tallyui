@@ -51,4 +51,19 @@ test.describe('Cart line strip swipe (PARITY row 3)', () => {
     await dragLeft(page, Math.ceil(width * 0.7) + 1);
     await expect(page.getByTestId('cart-fee-0')).toHaveCount(0);
   });
+
+  test('E5: a quick drag past the strip that holds still before the release opens and keeps the line', async ({ page }) => {
+    await addBag(page);
+    const box = (await page.getByTestId('cart-fee-0').getByText('Bag', { exact: true }).boundingBox())!;
+    const [x, y] = [box.x + box.width - 8, box.y + box.height / 2];
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    // Two quick moves, not dragLeft's 10 steps: in a local dev run those landed 25-115 ms apart, too slow for a flick (0.8 px/ms) even without the pause.
+    await page.mouse.move(x - 20, y);
+    await page.mouse.move(x - 180, y);
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    await expect(page.getByRole('button', { name: 'Remove Bag' })).toBeVisible();
+    await expect(page.getByTestId('cart-fee-0')).toHaveCount(1);
+  });
 });

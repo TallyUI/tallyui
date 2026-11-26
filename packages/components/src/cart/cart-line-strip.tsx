@@ -5,6 +5,8 @@ import { Button, Text } from '../ui';
 import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK, PEEK_SPRING } from '../lib/motion';
 import { useReducedMotion } from '../lib/use-reduced-motion';
 import { releaseOutcome } from './line-strip-geometry';
+// A release this long after the last move is not a flick: PanResponder's vx is the last move's speed and survives a pause (react-native-web PanResponder index.js:234-235).
+const STILL_MS = 50;
 
 /** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Edit and Remove. */
 export function CartLineStrip({ name, onEdit, onRemove, children }: {
@@ -51,17 +53,21 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
     onMoveShouldSetPanResponder: (_, { dx, dy }) => !leaving.current && drag.current.row > 0
       && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) && (drag.current.claimed = dx, true),
     onPanResponderGrant: () => {
-      offset.stopAnimation();
+      const { claimed } = drag.current;
       // PanResponder zeroes dx at grant (react-native Libraries/Interaction/PanResponder.js onResponderGrant; react-native-web vendor PanResponder index.js:330), so the claimed distance joins the base.
-      drag.current.base = (opened.current ? -drag.current.strip : 0) + drag.current.claimed;
+      drag.current.base = (opened.current ? -drag.current.strip : 0) + claimed;
       drag.current.claimed = 0;
+      // The row's real place: synchronous on the JS driver, later on the native one, so the immediate base above stays as the fallback.
+      offset.stopAnimation((value) => { drag.current.base = value + claimed; });
     },
     onPanResponderMove: (_, { dx }) => offset.setValue(clamp(drag.current.base + dx)),
-    onPanResponderRelease: (_, { dx, vx }) => {
+    onPanResponderRelease: (event, { dx, vx, _accountsForMovesUpTo }) => {
       drag.current.claimed = 0;
       const { row, strip, base } = drag.current;
       // gestureState.vx is px per ms, dx over DOM timeStamp ms (react-native-web dist/vendor/react-native/PanResponder/index.js:235); v2's rule takes px/s.
-      const outcome = releaseOutcome({ revealed: -clamp(base + dx), velocityX: vx * 1000, rowWidth: row, stripWidth: strip });
+      // react-native's GestureResponderEvent type leaves out touchHistory, which PanResponder itself reads (react-native-web PanResponder index.js:306).
+      const still = (event as unknown as { touchHistory: { mostRecentTimeStamp: number } }).touchHistory.mostRecentTimeStamp - _accountsForMovesUpTo > STILL_MS;
+      const outcome = releaseOutcome({ revealed: -clamp(base + dx), velocityX: still ? 0 : vx * 1000, rowWidth: row, stripWidth: strip });
       if (outcome === 'remove') drag.current.leave();
       else drag.current.settle(outcome === 'open');
     },

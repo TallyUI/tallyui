@@ -10,7 +10,11 @@ type Done = (result: { finished: boolean }) => void;
 const fake = (cb?: Done) => { cb?.({ finished: true }); };
 let start: (cb?: Done) => void = fake;
 let held: Done[] = [];
-const animation = () => ({ start: (cb?: Done) => start(cb), stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation;
+// A finished animation leaves the value at its target, where the grant's stopAnimation then reads it.
+const animation = (value: Animated.Value | Animated.ValueXY, { toValue }: { toValue: unknown }) => ({ start: (cb?: Done) => {
+  if (start === fake) (value as Animated.Value).setValue(toValue as number);
+  start(cb);
+}, stop() {}, reset() {} }) as unknown as Animated.CompositeAnimation;
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 // react-native-web's useHover listens for pointerenter and pointerleave on the Pressable's node (modules/useHover/index.js).
 const hover = (on: boolean) => fireEvent[on ? 'pointerEnter' : 'pointerLeave'](screen.getByTestId('cart-line-total'), { pointerType: 'mouse' });
@@ -37,14 +41,22 @@ const capturePan = () => {
   const real = PanResponder.create.bind(PanResponder);
   vi.spyOn(PanResponder, 'create').mockImplementation((config) => { pan = config; return real(config); });
 };
-const gesture = (dx: number, dy = 0, vx = 0) => ({ dx, dy, vx, vy: 0, stateID: 0, moveX: 0, moveY: 0, x0: 0, y0: 0,
-  numberActiveTouches: 1, _accountsForMovesUpTo: 0 }) as PanResponderGestureState;
-const event = {} as GestureResponderEvent;
+const gesture = (dx: number, dy = 0, vx = 0, accountsFor = 0) => ({ dx, dy, vx, vy: 0, stateID: 0, moveX: 0, moveY: 0, x0: 0, y0: 0,
+  numberActiveTouches: 1, _accountsForMovesUpTo: accountsFor }) as PanResponderGestureState;
+// PanResponder reads the touch history off the event (react-native-web PanResponder index.js:306); the release compares its last time with the last move's.
+const touchedAt = (mostRecentTimeStamp: number) => ({ touchHistory: { mostRecentTimeStamp } }) as unknown as GestureResponderEvent;
+const event = touchedAt(0);
 /** Grant, move to `dx`, then release with `vx` (px/ms, as PanResponder reports it). */
 const drag = (dx: number, vx = 0) => act(() => {
   pan.onPanResponderGrant!(event, gesture(0));
   pan.onPanResponderMove!(event, gesture(dx));
   pan.onPanResponderRelease!(event, gesture(dx, 0, vx));
+});
+/** Grant, move to -170 at 900 ms, then release with a -0.9 px/ms flick at `releasedAt` ms. */
+const flick = (releasedAt: number) => act(() => {
+  pan.onPanResponderGrant!(event, gesture(0));
+  pan.onPanResponderMove!(event, gesture(-170, 0, 0, 900));
+  pan.onPanResponderRelease!(touchedAt(releasedAt), gesture(-170, 0, -0.9, 900));
 });
 const translate = () => (screen.getByTestId('cart-line-row').children[1] as HTMLElement).style.transform;
 
@@ -319,7 +331,12 @@ describe('CartLineStrip', () => {
     vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
     capturePan();
     const { onRemove } = await strip(undefined, undefined, 400);
-    drag(-100);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(-100));
+    });
+    expect(translate()).toBe('translateX(-100px)');
+    act(() => pan.onPanResponderRelease!(event, gesture(-100)));
     expect(screen.getByRole('button', { name: 'Remove Bag' })).toBeTruthy();
     expect(translate()).toBe('translateX(-160px)');
     click('Edit total of Bag');
@@ -391,9 +408,50 @@ describe('CartLineStrip', () => {
   it('S5: a rejected move before the claim does not change the swipe distance', async () => {
     capturePan();
     await strip(undefined, undefined, 400);
-    expect(pan.onMoveShouldSetPanResponder!(event, gesture(4, 0))).toBe(false);
-    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
-    drag(-70);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, -30))).toBe(false);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 2))).toBe(true);
+    // Exact tracking reveals 20 + 59 = 79, short of half the strip.
+    drag(-59);
+    springs({ toValue: 0 });
+  });
+
+  it('V1: a flick that holds still 100 ms before the release opens and does not remove', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    flick(1000);
     springs({ toValue: -160 });
+    expect(Animated.timing).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('V2: a flick released 30 ms after the last move removes', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    flick(930);
+    expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: -400 }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('V3: a flick released exactly 50 ms after the last move still removes', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    flick(950);
+    expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: -400 }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('B1: a row grabbed mid-spring starts from where it is, not from where it was heading', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    click('Edit total of Bag');
+    const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
+    // Caught mid-close at -40.
+    act(() => offset.setValue(-40));
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(0));
+    });
+    expect(offset.__getValue()).toBe(-60);
   });
 });
