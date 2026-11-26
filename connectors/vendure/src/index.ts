@@ -54,6 +54,8 @@ export const createVendureConnector = (options: {
     name: 'Vendure',
     description: 'Connect to Vendure backends via the Admin GraphQL API',
     icon: undefined,
+    // ADR-048: Vendure taxes each discounted line as its own TALLY-DISCOUNT row and rounds each row once.
+    discountsAreTaxedRows: true,
 
     auth: vendureAuth,
 
