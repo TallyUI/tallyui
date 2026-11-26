@@ -46,6 +46,9 @@ describe('reverse notices', () => {
     expect(text).not.toMatch(/hand it back|give it back/);
     expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
   });
+  it('refused with no leg done says only that it was not cancelled', () => {
+    expect(notice('refused', [cash, card], [])).toBe("The store did not cancel order #115. Check it in the store's admin.");
+  });
   it('row 8: a changed cancel names the confirmed void', () => {
     const text = notice('changed', [cash], ['cash']);
     expect(text).toBe(`Order #115 was not cancelled on the store. Taken off it: Cash ${eur(1000)}. A manager must check it in the store's admin before any money is given back.`);
@@ -66,6 +69,14 @@ describe('reverse notices', () => {
     expect(notice('done', [cash, card], ['cash', 'card'])).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cashText}; ${cardText}. Record the ${eur(1000)} cash you give back as a pay-out.`);
     cleanup();
     expect(notice('done', [card], ['card'])).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cardText}.`);
+  });
+  it('done names unrecorded legs and counts their cash in the pay-out', () => {
+    render(<OrderSyncNotices order={order('reverse', { syncStatus: 'rejected', subtotalMinor: 1800, totalMinor: 1800,
+      error: { code: 'invalid_payload', message: 'secret', data: { orderId: '115', recorded: 2 } },
+      payments: [cash, card, { id: 'rest', method: 'cash', amountMinor: 300 }],
+      storeSettlement: { kind: 'reverse', state: 'done', at: '2026-11-25T10:00:00.000Z', attemptId: 'attempt',
+        legs: [cash, card].map(({ id }) => ({ paymentId: id, commandId: `cmd-${id}`, done: true })) } })} />);
+    expect(screen.getByTestId('order-settlement-reverse').textContent).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cashText}; ${cardText}; Cash ${eur(300)}: hand it back from the drawer. Record the ${eur(1300)} cash you give back as a pay-out.`);
   });
 });
 

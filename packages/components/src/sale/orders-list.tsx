@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
-import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, recordedLegs, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -118,12 +118,13 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     settledText = undefined;
     addedText = undefined;
     if (settlement.state === 'done') {
+      const legs = order.payments.map((payment) => ({ ...payment, done: settlement.legs?.find((leg) => leg.paymentId === payment.id)?.done }));
       const cash = sum(legs.filter((leg) => leg.method === 'cash'));
       settledText = `${subject} was cancelled on the store.${legs.length ? ` Give back to the customer: ${list(legs)}.` : ''}${cash ? ` Record the ${money(cash)} cash you give back as a pay-out.` : ''}`;
     } else if (settlement.state === 'gone') settledText = `${subject} is not on the store any more.${taken ? ` Taken off it before that: ${taken}.` : ''} Check it in the store's admin.`;
     else if (settlement.state === 'sending') addedText = `Cancelling order #${reference} on the store is not finished.${taken ? ` Taken off it so far: ${taken}.` : ''}`;
     else if (hasDone) addedText = `${subject} was not cancelled on the store.${taken ? ` Taken off it: ${taken}.` : ''}${still ? ` Still paid there: ${still}.` : ''} A manager must check it in the store's admin before any money is given back.`;
-    else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}; nothing was taken off it. Check it in the store's admin.`;
+    else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}. Check it in the store's admin.`;
     else settledText = `${subject} changed on the store${paidThere}. Nothing was taken off it or cancelled from this till. Check it in the store's admin.`;
   }
   // A pay gone with money recorded on the store is not settled (`settledOnStore`): it stays a destructive line.
@@ -467,8 +468,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       unrecordedLegs(askingPay), askingPay.storeSettlement) : null}
     {askingReverse ? <ConfirmDialog testID={`order-${askingReverse.id}-reverse-on-store-dialog`} tone="destructive" open
       onOpenChange={(open) => { if (!open) setAskingReverse(null); }} title={`Give the money back and cancel order #${storeOrderLeft(askingReverse)?.reference ?? orderReference(askingReverse)}?`}
-      description={[...recordedLegs(askingReverse).map((leg) => `${legWording(leg.method, formatMoney({ amount: leg.amountMinor, currency: askingReverse.currency }))}.`),
-        'The store stops counting these payments and cancels the order.', 'Hand the money back once this till shows the order cancelled. If you already gave it back, go ahead.'].join('\n')}
+      description={[...askingReverse.payments.map((leg) => `${legWording(leg.method, formatMoney({ amount: leg.amountMinor, currency: askingReverse.currency }))}.`),
+        'The store stops counting the payments it recorded and cancels the order.', 'Hand the money back once this till shows the order cancelled. If you already gave it back, go ahead.'].join('\n')}
       cancelLabel="Keep order" confirmLabel="Give back and cancel" onConfirm={() => { setAskingReverse(null); void reverseOnStore(askingReverse); }} /> : null}
     {footer}
   </ScrollView>;

@@ -32,7 +32,8 @@ it('row 16: name each physical hand-back and confirm before calling', async () =
   expect(dialog.getByText('Give the money back and cancel order #1001?')).toBeTruthy();
   expect(dialog.getByText((_content, node) => node?.textContent === [
     `Cash ${eur(1000)}: hand it back from the drawer.`, `Card ${eur(500)}: give it back on the card terminal.`,
-    'The store stops counting these payments and cancels the order.',
+    `Card ${eur(2000)}: give it back on the card terminal.`,
+    'The store stops counting the payments it recorded and cancels the order.',
     'Hand the money back once this till shows the order cancelled. If you already gave it back, go ahead.',
   ].join('\n') && node.children.length === 0)).toBeTruthy();
   expect(screen.getByTestId(`${id}-dialog-cancel`).textContent).toBe('Keep order');
