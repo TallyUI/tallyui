@@ -100,6 +100,41 @@ describe('needsAttention', () => {
   });
 });
 
+describe('a rounding bridge within ADR-048 tolerance', () => {
+  it.each<[string, number, number, number, number, boolean]>([
+    ['B1 positive bridge at T', 1, 0, 0, 1, false],
+    ['B2 negative bridge at T', 1, 0, 0, -1, false],
+    ['B3 positive bridge above T', 1, 0, 0, 2, true],
+    ['B4 negative bridge above T', 1, 0, 0, -2, true],
+    ['B5 a fee row counts', 2, 1, 0, 2, false],
+    ['B6 a shipping row counts', 2, 0, 1, 2, false],
+    ['B7 at T with both surcharges', 3, 1, 1, 3, false],
+    ['B7 above T with both surcharges', 3, 1, 1, 4, true],
+    ['B8 an empty order has zero tolerance', 0, 0, 0, 1, true],
+  ])('%s', (_name, lines, fees, shipping, bridgeMinor, listed) => {
+    const base = sale();
+    const order: PosOrder = { ...base, syncStatus: 'applied',
+      lines: Array.from({ length: lines }, (_, index) => ({ ...base.lines[0], id: `line-${index}` })),
+      fees: Array.from({ length: fees }, () => ({} as NonNullable<PosOrder['fees']>[number])),
+      shipping: Array.from({ length: shipping }, () => ({} as NonNullable<PosOrder['shipping']>[number])),
+      warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1200 - bridgeMinor, bridgeMinor }] };
+    expect(needsAttention([order])).toEqual(listed ? [order] : []);
+  });
+
+  const mismatch = { code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1199 } as const;
+  const bridged = { ...mismatch, bridgeMinor: 1 };
+  it.each<[string, Partial<PosOrder>]>([
+    ['B9 mismatch without a bridge', { warnings: [mismatch] }],
+    ['B10 malformed bridge', { warnings: [{ ...bridged, serverMinor: 1198 }] }],
+    ['B11 bridge plus insufficient stock', { warnings: [bridged, { code: 'insufficient_stock', variantId: 'blue', quantity: 1 }] }],
+    ['B12 bridge plus tax rate mismatch', { warnings: [bridged, { code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }] }],
+    ['B13 bridge on a rejected sale', { syncStatus: 'rejected', warnings: [bridged] }],
+  ])('%s remains listed', (_name, overrides) => {
+    const order: PosOrder = { ...sale(), syncStatus: 'applied', ...overrides };
+    expect(needsAttention([order])).toEqual([order]);
+  });
+});
+
 describe('attention handled (ADR-092 6f)', () => {
   it.each<[string, Partial<PosOrder>]>([
     ['rejected', { syncStatus: 'rejected' }],

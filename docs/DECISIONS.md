@@ -1955,6 +1955,15 @@ interface OrderCreatePayload {
     T = ⌈(lines + surcharges) / 2⌉ minor units, and never carries several
     rates. `expectedMinor` is the till's `taxByRate[].taxMinor` for that
     rate, and `serverMinor` is that rate's tax in Vendure's `taxSummary`.
+  - **The till's Needs attention (Front desk, 2026-11-26):** a `total_mismatch`
+    whose |`bridgeMinor`| ≤ T is a till notice only, and the sale is not
+    listed under Needs attention for it; above T it is listed, as is every
+    `tax_rate_mismatch`. The till counts T from the stored order's rows of
+    lines, fees and shipping. A bridge is one whole-order figure while the
+    plugin's T is per rate, so the till applies a single T to the whole
+    order, the stricter reading, and never multiplies it by the number of
+    rates. It does not count the plugin's `TALLY-DISCOUNT` surcharges, so
+    its T is never above the plugin's.
   - Across spike S1's 12 tax cases (2 strategies × 2 pricing modes, with
     discounts, mixed rates and a negative tie), the largest per-rate
     difference was 1 and the largest bridge was 1.

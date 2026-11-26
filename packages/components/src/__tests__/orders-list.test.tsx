@@ -599,6 +599,15 @@ describe('OrdersList', () => {
     expect(screen.getAllByText('The online store worked out different figures for one line of this sale.')).toHaveLength(2);
   });
 
+  it('C1 renders the rounding line only in Recent for a bridge within tolerance', () => {
+    const warned = order('w', { syncStatus: 'applied',
+      warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1199, bridgeMinor: 1 }] });
+    render(<OrdersList orders={[warned]} onRetry={async () => 0} />);
+    const expected = `Store calculated ${formatMoney({ amount: 1199, currency: 'EUR' })}; a rounding line of +${formatMoney({ amount: 1, currency: 'EUR' })} brought it to ${formatMoney({ amount: 1200, currency: 'EUR' })}`;
+    expect(headers()).toEqual(['Recent']);
+    expect(screen.getAllByText(expected)).toHaveLength(1);
+  });
+
   it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {
     const warned = order('w', { syncStatus: 'applied',
       warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1195, bridgeMinor: 5 }] });

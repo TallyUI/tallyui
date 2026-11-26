@@ -8,12 +8,19 @@ import type { PosOrder } from './types';
 export const UPDATE_UNSENDABLE = 'update_unsendable';
 export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet. Ask the owner to update the POS plugin, then press Retry.";
 
+/** ADR-048's T = ⌈(lines + surcharges) / 2⌉, applied once to the whole order: stored lines, fees and shipping rows. */
+function roundingBridgeTolerance(order: PosOrder): number {
+  return Math.ceil((order.lines.length + (order.fees?.length ?? 0) + (order.shipping?.length ?? 0)) / 2);
+}
+
 /**
  * The orders a cashier must look at: rejected, applied with a known warning, taken after their
  * session closed (`lateSessionId`) or with local warnings (whatever the sync status), or pending with a `commandId` in
  * `stuckCommandIds` (the outbox's `OutboxState.stuck`: the store keeps failing it), newest first.
  * A warning code this till version doesn't know is not shown here (`knownWarnings`). Never changes `orders`.
  * `register_session_unknown` is not shown, because the store counts the order once its session arrives (ADR-078).
+ * A `total_mismatch` whose rounding bridge is within ADR-048's tolerance (|`bridgeMinor`| ≤ ⌈(lines + fees + shipping) / 2⌉)
+ * is not shown for itself: the row's notice says it.
  * A refused order is left out once its finalized successor is in `orders`.
  * Pending updates marked `UPDATE_UNSENDABLE` are shown until a person acts.
  * An order a cashier marked handled (`markAttentionHandled`) is left out while its `commandId` is the one it was marked
@@ -23,11 +30,16 @@ export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet
  */
 export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
-  return orders.filter((order) => (order.syncStatus === 'rejected' && !settledOnStore(order))
-    || (order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE)
-    || (order.localWarnings?.length ?? 0) > 0
-    || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown')) || order.lateSessionId !== undefined
-    || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true))
+  return orders.filter((order) => {
+    const tolerance = roundingBridgeTolerance(order);
+    return (order.syncStatus === 'rejected' && !settledOnStore(order))
+      || (order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE)
+      || (order.localWarnings?.length ?? 0) > 0
+      || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown'
+        && !(warning.code === 'total_mismatch' && warning.bridgeMinor !== undefined && Math.abs(warning.bridgeMinor) <= tolerance)))
+      || order.lateSessionId !== undefined
+      || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true);
+  })
     .filter((order) => !replaced.has(order.id) && !(order.attentionHandledFor !== undefined && order.attentionHandledFor === order.commandId
       && storeOrderLeft(order) === undefined))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
