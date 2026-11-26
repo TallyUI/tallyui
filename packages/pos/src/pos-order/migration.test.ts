@@ -61,7 +61,9 @@ it('T12 migrates a version-22 order with a fee and shipping to version 23 byte f
   builder.addFee({ name: 'Fee', amountMinor: 1002, amountIncludesTax: true, taxClass: 'standard' });
   builder.addShipping({ name: 'Shipping', amountMinor: 500, methodId: 'flat', taxClass: 'standard' });
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
-  const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } });
+  const order = structuredClone(finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5 } }));
+  // a 5.1.0 (version-22) order never carries `entered`
+  for (const charge of [...order.fees!, ...order.shipping!]) delete charge.entered;
   const name = await seed(storage, order, 22);
   const original = await olderDocument(storage, name, order.id, 22);
   const db = await createRxDatabase({ name, storage, multiInstance: false });
