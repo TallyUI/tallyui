@@ -124,7 +124,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
       check(object(item), path, 'an object')
       if (!object(item)) return
       const keys = custom ? ['name', 'sku', 'taxClass', 'taxStatus']
-        : [id, 'name', 'amountMinor', 'taxMinor', 'taxStatus', 'taxClass', ...(field === 'shipping' ? ['methodId'] : [])]
+        : [id, 'name', 'amountMinor', 'amountIncludesTax', 'taxMinor', 'taxStatus', 'taxClass', ...(field === 'shipping' ? ['methodId'] : [])]
       for (const key of Object.keys(item)) check(keys.includes(key), `${path}.${key}`, 'no unknown key')
       check(typeof item.name === 'string' && item.name.length > 0, `${path}.name`, 'a non-empty string')
       check(item.taxStatus === 'taxable' || item.taxStatus === 'none', `${path}.taxStatus`, 'taxable or none')
@@ -132,6 +132,7 @@ export function payloadShapeErrors(payload: unknown): string[] {
         if (item[key] !== undefined) check(typeof item[key] === 'string', `${path}.${key}`, 'a string')
       }
       if (!custom) {
+        if (item.amountIncludesTax !== undefined) check(typeof item.amountIncludesTax === 'boolean', `${path}.amountIncludesTax`, 'a boolean')
         check(typeof item[id] === 'string' && item[id].length > 0, `${path}.${id}`, 'a non-empty string')
         check(!seen.has(item[id]), `${path}.${id}`, `no duplicate ${id}`)
         seen.add(item[id])

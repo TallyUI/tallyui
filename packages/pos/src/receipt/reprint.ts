@@ -3,7 +3,7 @@ import { noteDelivery } from '../pos-order/note-delivery';
 import { refundDueOf } from '../pos-order/refund-due';
 import type { PosOrder } from '../pos-order/types';
 import { roundMicrosToMinor, taxLinesByRate } from '../tax/exact';
-import { recordedTaxByRate, taxedLinesFor } from '../tax/taxed-lines';
+import { recordedTaxByRate, storedCharges, taxedLinesFor } from '../tax/taxed-lines';
 import { receiptRounding } from './build-receipt-data';
 import { carriedRows } from './carried-rows';
 import type { ReceiptConfig, ReceiptData, ReceiptLineItem } from './types';
@@ -69,7 +69,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     };
   });
   // Use a stored split unless recordedTaxByRate refuses it; otherwise compute it as buildReceiptData does.
-  const taxedLines = taxedLinesFor(order.lines, [...(order.fees ?? []), ...(order.shipping ?? [])], order.pricesIncludeTax, order.taxRounding);
+  const taxedLines = taxedLinesFor(order.lines, storedCharges([...(order.fees ?? []), ...(order.shipping ?? [])]), order.pricesIncludeTax, order.taxRounding);
   const recorded = recordedTaxByRate(order);
   const taxLines = recorded ? recorded.map((row) => ({
     label: config.taxLabels?.[row.ratePpm] ?? row.label ?? `Tax ${row.ratePpm / 10000}%`, code: row.code, ratePpm: row.ratePpm, amountMinor: row.amountMinor,

@@ -142,7 +142,7 @@ export interface ChargeLine {
   amountMinor: number; // integer >= 0, as entered, in the charge's own mode (amountIncludesTax, else the order's; ADR-075)
   taxClass?: string;
   taxStatus: 'taxable' | 'none';
-  /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order. */
+  /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order; a `chargeTaxMode` store keeps it in the stored charge's `entered`. */
   amountIncludesTax?: boolean;
   /** A fee's percentage of the cart (v2 Add Fee "%"): the builder sets `amountMinor` to it on every build. Fees only. Never stored on a finalized order. */
   percent?: number;

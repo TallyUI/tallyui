@@ -17,6 +17,24 @@ function stubFetch(info: () => Response, probe: () => Response = () => json({ da
 const read = () => readVendureCapabilities('https://vendure.test', { Authorization: 'Bearer tok' });
 
 describe('readVendureCapabilities', () => {
+  it('T13 reads a versioned chargeTaxMode and warns once for each malformed advertisement', async () => {
+    let body: { chargeTaxMode?: unknown } = {};
+    stubFetch(() => json(body));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+    for (const v of [1, 2]) {
+      body = { chargeTaxMode: { v } };
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1, chargeTaxMode: true });
+    }
+    expect(warn).not.toHaveBeenCalled();
+    for (const chargeTaxMode of [{ v: 0 }, { v: '1' }, true, [], null]) {
+      body = { chargeTaxMode };
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring a malformed chargeTaxMode');
+      warn.mockClear();
+    }
+  });
+
   // The plugin's exact bodies (vendurepos/app#60): it always sends taxRounding.
   it.each([
     '{"contracts":{"order.create":[1,2,3]},"taxRounding":{"granularity":"per_line_items","mode":"half_up"}}',

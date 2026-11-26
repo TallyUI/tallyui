@@ -1,5 +1,13 @@
 import type { TaxRounding } from '@tallyui/core';
 
+/** Undoes `finalize.ts`'s `storedCharge` for taxation: restores the entered mode and, for a generic charge, the entered net. */
+export function storedCharges<C extends { entered?: { amountMinor: number; amountIncludesTax: boolean }; totalMinor?: number; netMinor?: number }>(
+  charges: readonly C[],
+): Array<C & { amountIncludesTax?: boolean }> {
+  return charges.map((charge) => charge.entered === undefined ? charge : { ...charge, amountIncludesTax: charge.entered.amountIncludesTax,
+    ...(charge.totalMinor === undefined ? { netMinor: charge.entered.amountMinor } : {}) });
+}
+
 /** The lines and charges `taxLinesByRate` splits, each in the tax mode its tax was rounded in (ADR-065: the
  *  receipt's figures, which every per-rate split must equal). Under `woocommerce` rounding a line with `netMicros`
  *  is in the store's mode, since WooCommerce rounds every line that way. Otherwise a line keeps its own mode, and

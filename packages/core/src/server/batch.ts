@@ -89,9 +89,10 @@ function unsupportedOptional(envelope: { id: string; type: string; version: numb
  * `precheckCommand(envelope, { orderCreate: [1, 2, 3], register: [1], orderRefund: [1], orderReopen: [1], orderUpdate: [1] })` (`orderRefund`, `orderReopen` and `orderUpdate` are optional).
  * `cashRounding` is the server's own word too (ADR-094): without `true`, an order.create (or an order.update's create part)
  * carrying `cashRoundings` is refused as `invalid_payload`, never sent on with the field dropped, which would be a wrong total.
+ * Likewise, a fee or shipping charge carrying `amountIncludesTax` is refused unless the server declares `chargeTaxMode: true`.
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean; chargeTaxMode?: boolean }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
@@ -130,6 +131,10 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   }
   if ((command.payload as { cashRoundings?: unknown }).cashRoundings !== undefined && supported.cashRounding !== true) {
     return rejected(command.id, 'invalid_payload', 'cashRoundings requires the cashRounding capability, which this server does not declare')
+  }
+  if (supported.chargeTaxMode !== true && [command.payload.fees, command.payload.shipping].some(items =>
+    Array.isArray(items) && items.some(entry => entry?.amountIncludesTax !== undefined))) {
+    return rejected(command.id, 'invalid_payload', 'amountIncludesTax requires the chargeTaxMode capability, which this server does not declare')
   }
   // ADR-062 sends version 2 exactly when there is a discount, so version 1 can never create adjustments.
   const { lines, discountMinor } = command.payload as { lines?: unknown; discountMinor?: unknown }

@@ -95,10 +95,14 @@ export interface PosOrder {
   /** pos_orders v9, ADR-077 d2; present only on a sale with coupons */
   coupons?: PosOrderCoupon[];
   fees?: Array<FeeLine & {
+    /** vendurepos 2.10b: the charge as the cashier entered it, kept only for a store whose connector declares `chargeTaxMode` and only when its mode differs from `pricesIncludeTax`; order.create sends it as `amountMinor` + `amountIncludesTax`. Absent: sent in the order's mode, as stored. */
+    entered?: { amountMinor: number; amountIncludesTax: boolean };
     /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
     storeLineId?: string;
   }>;
   shipping?: Array<ShippingLine & {
+    /** vendurepos 2.10b: the charge as the cashier entered it, kept only for a store whose connector declares `chargeTaxMode` and only when its mode differs from `pricesIncludeTax`; order.create sends it as `amountMinor` + `amountIncludesTax`. Absent: sent in the order's mode, as stored. */
+    entered?: { amountMinor: number; amountIncludesTax: boolean };
     /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
     storeLineId?: string;
   }>;

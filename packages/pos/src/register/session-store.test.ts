@@ -756,6 +756,24 @@ describe('openSession without storeKey is deprecated (#1068)', () => {
   });
 });
 
+it('Z1 uses the stored inclusive fee mode for the closure tax rates', async () => {
+  await ensureRegister(db.register_sessions, 'web');
+  const session = await openSession(db.register_sessions, input);
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 250000,
+    rounding: { granularity: 'per_rate_group_items', mode: 'half_up' } } });
+  builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 800, currency: 'EUR' } });
+  builder.addFee({ name: 'Charge', amountMinor: 1002, amountIncludesTax: true, taxClass: 'standard' });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5, chargeTaxMode: true } });
+  const counted = input.countedFloatMinor + order.totalMinor;
+  const closed = await closeSession(db.register_sessions, session.id, { counted: { cash: counted } });
+  const closure = await writeClosure({ closures: db.closures, register: db.register_sessions, storeKey: 'store', session: closed,
+    counted, otherTenders: {}, movements: [], orders: [{ ...order, sessionId: session.id }], softwareVersion: '1.0.0' });
+  const rates = Object.values(closure.breakdowns.tax_rates as Record<string, { tax_minor: number; net_minor: number }>);
+  expect(rates.reduce((sum, rate) => sum + rate.tax_minor, 0)).toBe(400);
+  expect(rates.reduce((sum, rate) => sum + rate.net_minor, 0)).toBe(1602);
+});
+
 describe('store settlements on the Z', () => {
   function sale(sessionId: string, ratePpm: number): PosOrder {
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => ratePpm } });

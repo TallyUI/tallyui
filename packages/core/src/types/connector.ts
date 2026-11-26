@@ -92,6 +92,8 @@ export interface ServerCapabilities {
   pluginContract?: number;
   /** True only when the store's connector carries order.create's `cashRoundings` (ADR-094). Absent: the till never rounds a cash leg, and finalize refuses an order with entries. */
   cashRounding?: boolean;
+  /** True only when the store takes a fee's or shipping charge's own tax mode as order.create's `amountIncludesTax` (vendurepos 2.10b). Absent: finalize converts every charge to the order's mode and sends no `amountIncludesTax`. */
+  chargeTaxMode?: boolean;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */

@@ -356,8 +356,10 @@ export interface OrderCreateFee {
   clientFeeId: string;
   /** Recorded fee title, 1–255 characters. */
   name: string;
-  /** Instruction: integer >= 0, gross when pricesIncludeTax, net otherwise; never discounted. */
+  /** Instruction: integer >= 0, gross when its own mode (`amountIncludesTax`, else `pricesIncludeTax`) includes tax, net otherwise; never discounted. */
   amountMinor: number;
+  /** Instruction (vendurepos 2.10b): `amountMinor`'s own mode, gross when true and net when false. Absent means `pricesIncludeTax`'s. Sent only to a store whose connector declares `chargeTaxMode`, and only when it differs from `pricesIncludeTax`. */
+  amountIncludesTax?: boolean;
   /** Instruction: `none` means no tax on this fee. */
   taxStatus: 'taxable' | 'none';
   /** Instruction, at most 64 characters; absent means the standard class. */

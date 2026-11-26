@@ -53,13 +53,14 @@ export const sameCharges = (a: readonly Charge[] = [], b: readonly Charge[] = []
 /** A line name in a refusal message: 60 UTF-16 units of it plus '…' at most, so a cashier-facing message stays short. */
 export const MESSAGE_NAME_MAX = 61;
 
-/** A charge as stored and sent: in the order's mode, without the cashier's own mode (vendurepos gap 2.10).
+/** A charge as stored: in the order's mode, with the cashier's differing mode kept separately when supported.
  *  A converted generic charge keeps its display row, so the payload equals the display (core fiscal-figures.ts). */
-function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean, displayMinor: number | undefined): C {
+function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean, displayMinor: number | undefined, chargeTaxMode = false): C {
   if (charge.amountIncludesTax === undefined && charge.percent === undefined) return charge;
-  const { amountIncludesTax: _mode, percent: _percent, ...rest } = charge;
+  const { amountIncludesTax, percent: _percent, ...rest } = charge;
   const amountMinor = charge.totalMinor === undefined && displayMinor !== undefined ? displayMinor : chargeOrderModeMinor(charge, pricesIncludeTax);
-  return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}) } as C;
+  return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}),
+    ...(chargeTaxMode === true && amountIncludesTax !== undefined && amountIncludesTax !== pricesIncludeTax ? { entered: { amountMinor: charge.amountMinor, amountIncludesTax } } : {}) } as C;
 }
 
 /** The receipt shows the order as it was stored and sent (Front desk, 2026-09-29). */
@@ -298,8 +299,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
-  const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
-  const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, options.capabilities?.chargeTaxMode), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, options.capabilities?.chargeTaxMode), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
     method: payment.method as PosOrderPayment['method'],
