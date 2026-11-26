@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createOrderBuilder } from '../order/order-builder';
 import { buildReceiptData } from './build-receipt-data';
+import { buildReceiptDataFromPosOrder } from './reprint';
+import { finalizeOrder } from '../pos-order/finalize';
 import { roundMicrosToMinor } from '../tax/exact';
 import type { Order } from '../order/types';
 import type { ReceiptConfig, ReceiptData } from './types';
@@ -485,4 +487,20 @@ describe('buildReceiptData', () => {
     expect(receipt.orderDiscountMinor).toBe(order.display.orderDiscountMinor);
     expectReceiptAddsUp(receipt);
   });
+});
+
+it('C15 (ADR-094 carry): two cash picks of 3.33, at 3.35 (+0.02) and 3.30 (-0.03), print a Rounding row of -0.01 and a total of 6.65', () => {
+  const builder = createOrderBuilder({ currency: 'USD', taxContext: { getTaxRatePpm: () => 0, pricesIncludeTax: false } });
+  const a = builder.addLine({ productId: 'p1', name: 'Item A', unitPrice: { amount: 333, currency: 'USD' }, taxRates: [] });
+  const b = builder.addLine({ productId: 'p2', name: 'Item B', unitPrice: { amount: 333, currency: 'USD' }, taxRates: [] });
+  builder.addPayment({ method: 'cash', amountMinor: 335, tenderedMinor: 335, changeMinor: 0, units: { [a]: 1 } }, { minor: 2 });
+  builder.addPayment({ method: 'cash', amountMinor: 330, tenderedMinor: 330, changeMinor: 0, units: { [b]: 1 } }, { minor: -3 });
+  const live = buildReceiptData(builder.getSnapshot(), config);
+  expect(live.payments.map((leg) => leg.amountMinor)).toEqual([335, 330]);
+  expect(live.rounding).toEqual({ name: 'Rounding', amountMinor: -1 });
+  // The finalized sale's total counts the rounding (ADR-094 detail 5): 6.66 of goods less 0.01.
+  const receipt = buildReceiptDataFromPosOrder(finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } }), config);
+  expect(receipt.payments.map((leg) => leg.amountMinor)).toEqual([335, 330]);
+  expect(receipt.rounding).toEqual({ name: 'Rounding', amountMinor: -1 });
+  expect(receipt.totals.totalMinor).toBe(665);
 });

@@ -94,12 +94,16 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const partPick = pick !== null && target < balance;
   // ADR-094: the pane rounds exactly when addTender does: only on a store whose connector declares cashRounding, and only while no leg is in motion.
   const rounds = sale.capabilities?.cashRounding === true && inMotionMinor(order.payments) === 0;
-  // ADR-094 (cash picks): a cash part pick rounds its own target; addTender rounds the leg, the pane shows the same figure.
+  // ADR-094 item 7 (carry): a cash part pick rounds its target less the live entries; addTender rounds the leg, the pane shows the same figure.
   const pickRounding = rounds && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding ? method.defaults.rounding : null;
-  const pickTarget = partPick ? roundedPickTarget(target, pickRounding) : target;
-  const entry = state.entryDirty ? state.entryMinor : pickTarget;
   const entries = remainderEntriesMinor(order);
+  const pickTarget = partPick ? roundedPickTarget(target, entries, pickRounding) : target;
+  const entry = state.entryDirty ? state.entryMinor : pickTarget;
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, pickTarget, null) : tenderRounding(state, balance, rounds ? method : null, entries);
+  // Promotion: a carried pick at the whole-settle due is taken as that settle (addTender), so it meets the settle's 16-entry cap.
+  const promoted = partPick && pickRounding !== null && pickTarget === tenderRounding(state, balance, method, entries).roundedDueMinor;
+  // "Rounded from": a pick's own goods when its amount differs from them; a settle's balance.
+  const roundedFrom = promoted ? (pickTarget !== balance ? balance : null) : partPick ? (pickTarget !== target ? target : null) : figures.roundingMinor !== 0 ? balance : null;
   const cashNotPayable = rounds && pick === null && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding
     && figures.roundingMinor === 0 && figures.appliedMinor < figures.roundedDueMinor
     ? nearestPayableCash(figures.entryMinor, method.defaults.rounding.incrementMinor) : null;
@@ -108,7 +112,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       ? nearestPayableCash(target, method.defaults.rounding.incrementMinor) !== null
       : figures.entryMinor > 0 && nearestPayableCash(Math.min(figures.entryMinor, balance - inMotionMinor(order.payments)), method.defaults.rounding.incrementMinor) !== null);
   // order-payload-shape.ts's 16-entry cap: a pick that would add an entry is refused once the sale has CASH_PICK_ENTRIES_MAX.
-  const pickLimit = partPick && pickTarget !== target && (order.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX;
+  const pickLimit = partPick && !promoted && pickTarget !== target && (order.cashRoundings ?? []).length >= CASH_PICK_ENTRIES_MAX;
   const pickRefused = (partPick && entry > 0 && (givesChange ? entry < pickTarget : entry !== pickTarget))
     || (pick !== null && !partPick && figures.appliedMinor > 0 && figures.appliedMinor < figures.roundedDueMinor);
   // Row 500: judged against the due less the legs in motion, as addTender records the leg's change.
@@ -117,7 +121,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     && inMotionMinor(order.payments) === 0;
   // The 16-entry cap as addTender applies it: a settle that adds an entry is refused at 16; a write-off onto a leg with one is not.
   const lastCounted = writeOffLeg(order);
-  const settleLimit = !partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0
+  const settleLimit = ((!partPick && sale.capabilities?.cashRounding === true && figures.roundingMinor !== 0) || (promoted && pickTarget !== balance))
     && (order.cashRoundings ?? []).length > CASH_PICK_ENTRIES_MAX
     && !(zeroDue && lastCounted !== undefined && (order.cashRoundings ?? []).some((e) => e.paymentId === lastCounted.id));
   // With no other method, a cash-only store frees an entry by voiding its latest rounded cash leg, which no later cash leg's entry blocks; offered methods are all manual capture.
@@ -224,10 +228,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       {changeLeads ? <>
         <Text testID="tender-entry-hint" className="text-4xl font-bold text-success">{hint}</Text>
         <Text testID="tender-tendered-line" className="min-h-6 text-sm text-muted-foreground">{t('pos_checkout.tendered')} <Text testID="tender-entry-amount" className="font-semibold text-foreground">{money(figures.entryMinor)}</Text>{order.totalMinor !== balance ? ` · ${t('common.total')} ${money(order.totalMinor)}` : ''}</Text>
-        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+        {roundedFrom !== null ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(roundedFrom) })}</Text> : null}
       </> : <>
         <Text testID="tender-entry-amount" className={cn('text-4xl font-bold text-foreground', !state.entryDirty && 'opacity-70')}>{money(figures.entryMinor)}</Text>
-        {figures.roundingMinor !== 0 ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(balance) })}</Text> : null}
+        {roundedFrom !== null ? <Text className="text-sm text-muted-foreground">{t('pos_checkout.rounded_from', { amount: money(roundedFrom) })}</Text> : null}
         <Text testID="tender-entry-hint" className={cn('min-h-6 text-center text-sm', noChange || capped || pickRefused || cashWaits || pickLimit || settleLimit ? 'text-warning-text' : 'text-muted-foreground')}>{hint}</Text>
       </>}
     </View> : null}

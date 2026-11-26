@@ -229,7 +229,7 @@ it('R7c: with a leg in motion, a cash leg that is not a whole number of cash ste
   act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 2130, rounding: nearest })).toBeTypeOf('string'); });
 });
 
-it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 on the card leg', () => {
+it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 on the cash leg', () => {
   start(2, rounding(nearest), carries);
   enter(1000);
   press('tender-take');
@@ -239,11 +239,12 @@ it('R7d: with no leg in motion a split\'s zero remainder still rounds: entry -2 
   expect(text('tender-entry-amount')).toBe(money(0));
   press('tender-take');
   expect(sale.order.payments).toHaveLength(2);
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: cardId, minor: -2 }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: sale.order.payments[0].id, minor: -2 }]);
+  expect(sale.order.cashRoundings?.some((entry) => entry.paymentId === cardId)).toBe(false);
   expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
 });
 
-it('R7e: after the pending card captures, Take at zero writes off the remainder on that card', () => {
+it('R7e: after the pending card captures, Take at zero writes off the remainder on the cash leg', () => {
   start(2, rounding(nearest), carries);
   enter(1000);
   press('tender-take');
@@ -261,7 +262,7 @@ it('R7e: after the pending card captures, Take at zero writes off the remainder 
   enter(0);
   expect(disabled('tender-take')).toBe(false);
   press('tender-take');
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: cardId, minor: -2 }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: sale.order.payments[0].id, minor: -2 }]);
   expect(sale.order).toMatchObject({ totalMinor: 3123, balanceDueMinor: 0 });
 });
 
@@ -280,7 +281,7 @@ it('R7f: a part payment while a leg is in motion must be a whole number of cash 
 
 const five: PaymentRounding = { incrementMinor: 5, mode: 'nearest' };
 
-it('10.08 (desk): the void of a cash leg is allowed when only a card carries a later entry', () => {
+it('10.08 (desk): the void of a cash leg is allowed when no later cash leg carries an entry', () => {
   startCustom(1008, [rounding(five)[0], { ...card, capabilities: { ...card.capabilities, void: false } }], carries);
   let part = '', cashA = '', cardId = '';
   act(() => { part = sale.addTender({ method: 'cash', amountMinor: 500 })!; });
@@ -288,7 +289,7 @@ it('10.08 (desk): the void of a cash leg is allowed when only a card carries a l
   act(() => { expect(sale.voidTender(part)).toBe(true); });
   act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 497 })!; });
   act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: 2 }, { paymentId: cardId, minor: -3 }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashA, minor: -1 }]);
   act(() => { expect(sale.voidTender(cashA)).toBe(true); });
   expect(legStatus(sale.order.payments.find((leg) => leg.id === cardId)!)).toBe('captured');
   expect(Math.abs((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0))).toBeLessThan(5);
@@ -417,7 +418,7 @@ it('property (desk): a closed sale\'s entries stay under one increment; an open 
   }
 }, 120_000);
 
-it('1012 (desk review): a reopened write-off may carry -6 while open; cash 5 closes it at -2', () => {
+it('1012 (desk review): the write-off merges onto the last cash leg, so its void leaves -2 open; cash 5 closes it at -2', () => {
   startCustom(1012, rounding(five), carries);
   const steps: string[] = ['nearest, price 1012'];
   let card10 = '', cash1000 = '', card9 = '', cash5 = '', card5 = '';
@@ -430,12 +431,13 @@ it('1012 (desk review): a reopened write-off may carry -6 while open; cash 5 clo
   steps.push('card 5'); act(() => { card5 = sale.addTender({ method: 'external', amountMinor: 5 })!; });
   steps.push('cash 0'); act(() => { sale.addTender({ method: 'cash', amountMinor: 0, rounding: five }); });
   expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(0);
-  expect(sale.order.cashRoundings, steps.join('; ')).toEqual([{ paymentId: cash1000, minor: -2 }, { paymentId: cash5, minor: 4 }, { paymentId: card5, minor: -4 }]);
+  expect(sale.order.cashRoundings, steps.join('; ')).toEqual([{ paymentId: cash1000, minor: -2 }]);
+  expect(sale.order.cashRoundings?.some((entry) => entry.paymentId === cash5 || entry.paymentId === card5), steps.join('; ')).toBe(false);
   expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-2);
   expect(sale.order.paidMinor - 1012, steps.join('; ')).toBe(-2);
   steps.push('void cash 5'); act(() => { expect(sale.voidTender(cash5), steps.join('; ')).toBe(true); });
-  expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-6);
-  expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(1);
+  expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-2);
+  expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(5);
   steps.push('cash 5'); act(() => { sale.addTender({ method: 'cash', amountMinor: 5, rounding: five }); });
   expect(sale.order.balanceDueMinor, steps.join('; ')).toBe(0);
   expect((sale.order.cashRoundings ?? []).reduce((sum, entry) => sum + entry.minor, 0), steps.join('; ')).toBe(-2);
@@ -890,16 +892,16 @@ it('PK2: two cash picks each carry their own entry, and the remainder rounds on 
   const first = cashPick(a, 500);
   expect(first).toMatchObject({ amountMinor: 335, changeMinor: 165 });
   const second = cashPick(b, 500);
-  expect(second).toMatchObject({ amountMinor: 335, changeMinor: 165 });
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 2 }, { paymentId: second.id, minor: 2 }]);
+  expect(second).toMatchObject({ amountMinor: 330, changeMinor: 170 });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 2 }, { paymentId: second.id, minor: -3 }]);
   expect(sale.order.balanceDueMinor).toBe(334);
   press('tender-take');
   const rest = lastLeg();
   expect(rest).toMatchObject({ method: 'cash', amountMinor: 335 });
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 2 }, { paymentId: second.id, minor: 2 }, { paymentId: rest.id, minor: 1 }]);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 2 }, { paymentId: second.id, minor: -3 }, { paymentId: rest.id, minor: 1 }]);
   const posOrder = await complete();
-  expect(posOrder.totalMinor).toBe(1005);
-  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, 2, 1]);
+  expect(posOrder.totalMinor).toBe(1000);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3, 1]);
   balances(posOrder, 1000);
 });
 
@@ -934,21 +936,21 @@ it('PK4: a card pick is never rounded; the cash remainder then rounds as usual',
   balances(posOrder, 1004);
 });
 
-it('PK5: after a rounded pick the cash remainder rounds the remainder only (the ADR 3.33 + 3.33 example)', async () => {
+it('PK5: after a rounded pick the cash remainder rounds against its entry (the ADR 3.33 + 3.33 example)', async () => {
   const [a] = startLines([333, 333]);
   const leg = cashPick(a, 500);
   expect(leg).toMatchObject({ amountMinor: 335 });
   expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: 2 }]);
   expect(sale.order.balanceDueMinor).toBe(333);
-  expect(text('tender-entry-amount')).toBe(money(335));
+  expect(text('tender-entry-amount')).toBe(money(330));
   press('tender-take');
   const rest = lastLeg();
-  expect(rest).toMatchObject({ method: 'cash', amountMinor: 335 });
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: 2 }, { paymentId: rest.id, minor: 2 }]);
-  // One cash payment of the whole sale would be 6.65; the per-payer 6.70 is the ruling's accepted outcome.
+  expect(rest).toMatchObject({ method: 'cash', amountMinor: 330 });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: leg.id, minor: 2 }, { paymentId: rest.id, minor: -3 }]);
+  // ADR-094 item 7 (carry): the sale closes at 6.65, what one cash payment of the whole sale takes.
   const posOrder = await complete();
-  expect(posOrder.totalMinor).toBe(670);
-  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, 2]);
+  expect(posOrder.totalMinor).toBe(665);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3]);
   balances(posOrder, 666);
 });
 
@@ -1031,10 +1033,11 @@ it('PK9: 15 rounded cash picks are taken; the 16th that would add an entry is re
   const ids = startLines([...Array.from({ length: 16 }, () => 333), 335, 670]);
   for (const id of ids.slice(0, 15)) {
     const leg = cashPick(id, 500);
-    expect(leg).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
-    expect(sale.order.cashRoundings?.at(-1)).toEqual({ paymentId: leg.id, minor: 2 });
+    expect([335, 330]).toContain(leg.amountMinor);
+    expect(leg).toMatchObject({ method: 'cash', changeMinor: 500 - leg.amountMinor });
+    expect(sale.order.cashRoundings?.at(-1)).toEqual({ paymentId: leg.id, minor: leg.amountMinor - 333 });
   }
-  expect(sale.order.cashRoundings).toHaveLength(15);
+  expect(sale.order.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3, 2, -3, 2, 2, -3, 2, -3, 2, 2, -3, 2, -3, 2]);
   const sixteenth = ids[15];
   pickLine(sixteenth);
   enter(500);
@@ -1054,7 +1057,7 @@ it('PK9: 15 rounded cash picks are taken; the 16th that would add an entry is re
   expect(sale.order.cashRoundings?.at(-1)).toEqual({ paymentId: rest.id, minor: 2 });
   const posOrder = await complete();
   expect(posOrder.cashRoundings).toHaveLength(16);
-  expect(posOrder.totalMinor).toBe(15 * 333 + 335 + 333 + 670 + 32);
+  expect(posOrder.totalMinor).toBe(15 * 333 + 335 + 333 + 670 + 2);
   balances(posOrder, 6333);
 });
 
@@ -1128,17 +1131,16 @@ it('PK13: at 16 entries, a cash settle that needs no entry is still taken', () =
   expect(sale.order.balanceDueMinor).toBe(0);
 });
 
-it('PK14: at 16 entries a zero-remainder write-off onto a leg with no entry is refused', () => {
+it('PK14: at 16 entries a zero-remainder write-off goes on the last cash leg, which has an entry, so it is taken', () => {
   sixteenEntries(500, 505); // 503 due, rounded to 505 (+2)
   act(() => { expect(sale.addTender({ method: 'external', amountMinor: 497 })).toBeTypeOf('string'); });
-  // 3 left less the +2 is 1, which rounds to 0: the write-off would put a new -3 entry on the card.
+  // 3 left less the +2 is 1, which rounds to 0: the -3 write-off merges onto the 5.05 settle's +2 (ADR-094 item 1, the last cash leg).
   expect(sale.order.balanceDueMinor).toBe(3);
-  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
-  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
-  press('tender-method-cash');
-  expect(disabled('tender-take')).toBe(true);
-  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
-  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 3 })).toBeTypeOf('string'); });
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeTypeOf('string'); });
+  expect(sale.error).toBeNull();
+  expect(sale.order.cashRoundings!.at(-1)!.minor).toBe(-1);
+  expect(screen.queryByTestId('tender-method-cash')).toBeNull(); // the sale is paid: no method to take the rest by
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 3 })).toBeNull(); });
   expect(sale.order.balanceDueMinor).toBe(0);
   expect(sale.order.cashRoundings).toHaveLength(16);
 });
@@ -1249,7 +1251,7 @@ it('S1 (#1365): void-and-tap-zero cycles after a cash pick write off at most one
   expect(posOrder.payments.map((leg) => [leg.method, leg.amountMinor, legStatus(leg as Parameters<typeof legStatus>[0])])).toEqual([
     ['cash', 40, 'captured'], ['cash', 10, 'captured'], // the six voided cards are not sent
   ]);
-  expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[1].id, minor: -2 }]);
+  expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[0].id, minor: -2 }]);
 });
 
 it('S2 (#1365): the S1 cycles in up mode stay within 0.04', async () => { await voidCycles({ incrementMinor: 5, mode: 'up' }, 'cash', 4); });
@@ -1257,29 +1259,30 @@ it('S3 (#1365): the S1 cycles in down mode stay within 0.08', async () => { awai
 it('S4 (#1365): the S1 cycles at nearest 0.10 stay within 0.08', async () => { await voidCycles(nearest, 'cash', 8); });
 it('S5 (#1365): after a card pick the write-off on it is counted by later remainders (rule 2)', async () => { await voidCycles(five, 'external', 4); });
 
-it('S6 (#1365): the ADR 3.33 + 3.33 example still closes at 6.70', async () => {
+it('S6 (#1365): the ADR 3.33 + 3.33 example closes at 6.65 (the carry rule)', async () => {
   const [a] = startLines([333, 333]);
   cashPick(a, 500);
   press('tender-take');
   const posOrder = await complete();
-  expect(posOrder.totalMinor).toBe(670);
-  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, 2]);
+  expect(posOrder.totalMinor).toBe(665);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3]);
 });
 
-it('S7 (#1365): when every counting leg is a cash pick the write-off falls back onto the pick leg', async () => {
+it('S7 (#1365): a cash pick that reaches the whole-settle due is that settle, so nothing is left to write off', async () => {
   const [a] = startLines([333, 2]);
   const pick = cashPick(a, 500);
-  expect(sale.order.cashRoundings).toEqual([{ paymentId: pick.id, minor: 2 }]);
-  expect(sale.order.balanceDueMinor).toBe(2);
-  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBe(pick.id); });
-  expect(sale.order.cashRoundings ?? []).toEqual([]); // the pick's +2 and the write-off's -2 sum to nothing
+  expect(pick).toMatchObject({ method: 'cash', amountMinor: 335, units: { [a]: 1 } });
+  expect(sale.order.cashRoundings ?? []).toEqual([]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
+  expect(sale.order.cashRoundings ?? []).toEqual([]); // the promoted pick took 3.35 against a 3.35 due: no entry
   expect(sale.order.balanceDueMinor).toBe(0);
   const posOrder = await complete();
   expect(posOrder.totalMinor).toBe(335);
   balances(posOrder, 335);
 });
 
-it('S8 (#1365): at 16 entries a write-off onto an earlier card with none is refused, though the last leg is a cash pick with one', () => {
+it('S8 (#1365): at 16 entries the carried remainder is a rounded settle that would add an entry: the pane refuses it and the card gets none', () => {
   const ids = startLines([...Array.from({ length: 15 }, () => 333), 1003]);
   let early = '', target = '';
   act(() => { early = sale.addTender({ method: 'external', amountMinor: 2 })!; });
@@ -1294,6 +1297,210 @@ it('S8 (#1365): at 16 entries a write-off onto an earlier card with none is refu
   expect(disabled('tender-take')).toBe(true);
   expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
   act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
-  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  expect(sale.error).toBeNull(); // 2 less the -1 is 3, which rounds to 5: no write-off, so a zero tap takes nothing
   expect((sale.order.cashRoundings ?? []).some((entry) => entry.paymentId === target)).toBe(false);
+});
+
+// ADR-094 item 7 (carry, 2026-11-26): a cash part pick rounds its goods less the sale's live entries; one that reaches the
+// whole-settle due is that settle (promotion); the zero-remainder write-off goes on the last cash leg (item 1).
+const roundedFromCopy = (minor: number) => `Rounded from ${money(minor)}`;
+/** R(mode), the range of roundToIncrement(u) - u: the live entries of a sale closed under the carry rule sum into it. */
+const inR = (rule: NonNullable<PaymentRounding>, sum: number) => {
+  const i = rule.incrementMinor;
+  return rule.mode === 'nearest' ? 2 * sum > -i && 2 * sum <= i : rule.mode === 'up' ? sum >= 0 && sum < i : sum <= 0 && sum > -i;
+};
+const up5: PaymentRounding = { incrementMinor: 5, mode: 'up' };
+const down5: PaymentRounding = { incrementMinor: 5, mode: 'down' };
+
+it('C1 (carry): two items of 3.33, a cash pick of one at 3.35, then payer 2 is prefilled 3.30; the sale closes at 6.65', async () => {
+  const [a] = startLines([333, 333]);
+  const first = cashPick(a, 500);
+  expect(first).toMatchObject({ method: 'cash', amountMinor: 335, changeMinor: 165 });
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: first.id, minor: 2 }]);
+  expect(text('tender-entry-amount')).toBe(money(330));
+  press('tender-take');
+  expect(lastLeg()).toMatchObject({ method: 'cash', amountMinor: 330 });
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(665);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3]);
+  balances(posOrder, 666);
+});
+
+it('C2 (carry): down 0.05, two items of 3.33: 3.30 then 3.35, closing at 6.65', async () => {
+  const [a] = startLines([333, 333], rounding(down5));
+  expect(cashPick(a, 500)).toMatchObject({ method: 'cash', amountMinor: 330, changeMinor: 170 });
+  expect(text('tender-entry-amount')).toBe(money(335));
+  press('tender-take');
+  expect(lastLeg()).toMatchObject({ method: 'cash', amountMinor: 335 });
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(665);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([-3, 2]);
+  balances(posOrder, 666);
+});
+
+it('C3 (carry): up 0.05, four items of 1.01 each picked in cash: 1.05, 1.00, 1.00, 1.00, closing at 4.05', async () => {
+  const ids = startLines([101, 101, 101, 101], rounding(up5));
+  expect(ids.map((id) => cashPick(id, 500).amountMinor)).toEqual([105, 100, 100, 100]);
+  expect(sale.order.balanceDueMinor).toBe(0);
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(405);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([4, -1, -1, -1]);
+  balances(posOrder, 404);
+});
+
+it('C4 (carry): three items of 3.33, two picked in cash and the rest by card: 3.35 + 3.30 + 3.33 = 9.98', async () => {
+  const [a, b] = startLines([333, 333, 333]);
+  expect(cashPick(a, 500).amountMinor).toBe(335);
+  expect(cashPick(b, 500).amountMinor).toBe(330);
+  press('tender-method-external');
+  press('tender-take');
+  expect(lastLeg()).toMatchObject({ method: 'external', amountMinor: 333 });
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(998);
+  expect(posOrder.cashRoundings?.map((entry) => entry.minor)).toEqual([2, -3]);
+  balances(posOrder, 999);
+});
+
+/** Replays a search plan (cash-rounding.search.test.ts) through useSale and the pane: cardN, cashN, voidN (the Nth leg), pick#i / whole#i (pick line i, Take its prefill), cardPick#i; then the rest in cash at the prefill. */
+function replayPlan(prices: number[], rule: NonNullable<PaymentRounding>, plan: string) {
+  const ids = startLines(prices, rounding(rule));
+  const held = (id: string) => sale.order.payments.some((leg) => countsTowardPaid(leg) && (leg.units?.[id] ?? 0) > 0);
+  for (const token of plan.split(' ')) {
+    const pick = /^(?:pick|whole|cardPick)#(\d+)/.exec(token);
+    const n = Number(/\d+/.exec(token)?.[0]);
+    if (pick) {
+      const id = ids[Number(pick[1])];
+      if (sale.order.balanceDueMinor <= 0 || held(id)) continue;
+      if (tender.picker) press('tender-split-chip');
+      if (token.startsWith('cardPick')) press('tender-method-external');
+      pickLine(id);
+      press('tender-take');
+      if (tender.picker) press('tender-split-chip'); // a refused Take leaves the pick: clear it
+      if (token.startsWith('cardPick') && sale.order.balanceDueMinor > 0) press('tender-method-cash');
+    } else if (token.startsWith('card')) act(() => { sale.addTender({ method: 'external', amountMinor: n }); });
+    else if (token.startsWith('cash')) act(() => { sale.addTender({ method: 'cash', amountMinor: n, rounding: rule }); });
+    else if (token.startsWith('void')) act(() => { const leg = sale.order.payments[n]; if (leg) sale.voidTender(leg.id); });
+  }
+  if (sale.order.balanceDueMinor > 0) {
+    if (tender.picker) press('tender-split-chip');
+    press('tender-method-cash');
+    press('tender-take');
+  }
+  expect(sale.order.balanceDueMinor, plan).toBe(0);
+  return liveEntries(false);
+}
+const PUMP1 = 'card5 cash4100 void0 card1 cash0 void1 card4094 whole#1@10 void3 card4090 whole#2@10 void5 card4086 whole#3@10 void7 card4082 whole#4@10';
+const PUMP2 = 'card9 card9 card9 card3 cash4075 void0 cash5 void3 card2 cash5 void1 card5 cash0 void7 void2 card8 whole#1@10 void6 whole#2@10 void9 card6 whole#3@10';
+
+it('C5 (carry): pump1 replayed closes with its entries in R (main: +20)', () => {
+  const sum = replayPlan([103, 1000, 1000, 1000, 1000], five, PUMP1);
+  expect(inR(five, sum), `S = ${sum}`).toBe(true);
+});
+
+it('C6 (carry): pump2 replayed closes with its entries in R (main: +18)', () => {
+  const sum = replayPlan([103, 1000, 1000, 1000, 1000], five, PUMP2);
+  expect(inR(five, sum), `S = ${sum}`).toBe(true);
+});
+
+it('C7 (carry): the reviewer\'s 52 plan replayed closes with its entries in R (main: -6)', () => {
+  const sum = replayPlan([12, 40], five, 'pick#0:12->10 card1 card2 whole#1@35 void2 cash0');
+  expect(inR(five, sum), `S = ${sum}`).toBe(true);
+});
+
+it('C8 (carry): plan 103 replayed closes with its entries in R (main: -4)', () => {
+  const sum = replayPlan([103], five, 'card5 cash100 void0 card1 cash0 void1 card98');
+  expect(inR(five, sum), `S = ${sum}`).toBe(true);
+});
+
+/** C9's sale: 10.03, cash 10.00, card 0.01, then a zero tap writes off the 0.02 left. */
+function cashThenCardWriteOff() {
+  startLines([1003]);
+  let cashId = '', cardId = '';
+  act(() => { cashId = sale.addTender({ method: 'cash', amountMinor: 1000, rounding: five })!; });
+  act(() => { cardId = sale.addTender({ method: 'external', amountMinor: 1 })!; });
+  expect(sale.order.balanceDueMinor).toBe(2);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBe(cashId); });
+  return { cashId, cardId };
+}
+
+it('C9 (carry): a write-off when the last counting leg is a card goes on the earlier cash leg; the card carries none', () => {
+  const { cashId, cardId } = cashThenCardWriteOff();
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: cashId, minor: -2 }]);
+  expect(sale.order.cashRoundings?.some((entry) => entry.paymentId === cardId)).toBe(false);
+  expect(sale.order.balanceDueMinor).toBe(0);
+});
+
+it('C10 (carry): after C9 the card\'s void is allowed, then the cash leg\'s (nothing later carries an entry)', () => {
+  const { cashId, cardId } = cashThenCardWriteOff();
+  act(() => { expect(sale.voidTender(cardId)).toBe(true); });
+  expect(sale.error).toBeNull();
+  act(() => { expect(sale.voidTender(cashId)).toBe(true); });
+  expect(sale.error).toBeNull();
+  expect(liveEntries(false)).toBe(0);
+  expect(sale.order.balanceDueMinor).toBe(1003);
+});
+
+it('C11 (carry): a cash pick of 3.33 against 3.33 + 0.02 is promoted: one cash leg at the whole-settle due, one tap closes', async () => {
+  const [a] = startLines([333, 2]);
+  pickLine(a);
+  expect(text('tender-entry-amount')).toBe(money(335));
+  expect(disabled('tender-take')).toBe(false);
+  press('tender-take');
+  expect(sale.order.payments).toHaveLength(1);
+  expect(lastLeg()).toMatchObject({ method: 'cash', amountMinor: 335, units: { [a]: 1 } });
+  expect(sale.order.balanceDueMinor).toBe(0);
+  expect(inR(five, liveEntries(false))).toBe(true);
+  const posOrder = await complete();
+  expect(posOrder.totalMinor).toBe(335);
+  balances(posOrder, 335);
+});
+
+it('C12 (carry): a carried pick at the 16-entry cap is refused with CASH_PICK_LIMIT, and the pane disables Take', () => {
+  const ids = startLines([...Array.from({ length: 14 }, () => 333), 331, 333, 670]);
+  for (const id of ids.slice(0, 15)) cashPick(id, 500);
+  expect(sale.order.cashRoundings).toHaveLength(15);
+  expect(liveEntries(false)).toBe(2); // 14 picks of 3.33 leave -2; 3.31 + 0.02 rounds to 3.35 (+4)
+  pickLine(ids[15]);
+  expect(text('tender-entry-amount')).toBe(money(330)); // 3.33 less the +2 carried
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe('Too many rounded cash payments on this sale: take the rest as one payment.');
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 333, tenderedMinor: 330, units: { [ids[15]]: 1 }, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_PICK_LIMIT);
+  expect(sale.order.cashRoundings).toHaveLength(15);
+});
+
+it('C13 (carry): the payer sees why: payer 1\'s pick shows 3.35 "Rounded from 3.33" (its goods); payer 2 sees 3.30 "Rounded from 3.33"', () => {
+  const [a, b] = startLines([333, 333]);
+  pickLine(a);
+  expect(text('tender-entry-amount')).toBe(money(335));
+  expect(screen.getByText(roundedFromCopy(333))).toBeTruthy();
+  expect(screen.queryByText(roundedFromCopy(666))).toBeNull(); // the pick's goods, not the balance
+  press('tender-take');
+  pickLine(b);
+  expect(text('tender-entry-amount')).toBe(money(330));
+  expect(screen.getByText(roundedFromCopy(333))).toBeTruthy();
+});
+
+it('C14 (carry): a pick whose carried amount equals its goods shows no "Rounded from" line', () => {
+  const [a, b] = startLines([333, 335, 670]);
+  cashPick(a, 500); // +2
+  pickLine(b);
+  expect(text('tender-entry-amount')).toBe(money(335)); // 3.35 less the +2 is 3.33, which rounds back to 3.35
+  expect(screen.queryByText(/^Rounded from/)).toBeNull();
+});
+
+it('C17 (carry): at 16 entries a write-off onto a last cash leg with no entry is refused with CASH_SETTLE_LIMIT', () => {
+  sixteenEntries(500, 505); // 500 left, entries +2
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 490, rounding: five })).toBeTypeOf('string'); }); // a part payment: no entry
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 7 })).toBeTypeOf('string'); });
+  // 3 left less the +2 is 1, which rounds to 0: the write-off would put a new -3 entry on the 4.90 cash leg.
+  expect(sale.order.balanceDueMinor).toBe(3);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 0, rounding: five })).toBeNull(); });
+  expect(sale.error).toBe(CASH_SETTLE_LIMIT);
+  press('tender-method-cash');
+  expect(disabled('tender-take')).toBe(true);
+  expect(text('tender-entry-hint')).toBe(SETTLE_LIMIT_COPY);
+  act(() => { expect(sale.addTender({ method: 'external', amountMinor: 3 })).toBeTypeOf('string'); });
+  expect(sale.order.cashRoundings).toHaveLength(16);
+  expect(sale.order.balanceDueMinor).toBe(0);
 });

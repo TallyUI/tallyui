@@ -23,6 +23,7 @@ import type { PosRefund } from '../refund/pos-refund';
 import { ensureRegister, readRegister } from './register-document';
 import { cashMovementSchema, closureSchema, registerSessionCreator, type RegisterSession } from './schemas';
 import { serverClose as closeOnServer } from './server-close.test-helper';
+import { writeOffLeg } from '../tender/cash-rounding';
 import {
   backToSelling,
   closeSession,
@@ -875,5 +876,24 @@ describe('cash rounding on the Z (ADR-094)', () => {
     expect(zB.session_id).not.toBe(a);
     expect(zB.breakdowns).not.toHaveProperty('cash_rounding_minor');
     expect(zB.period_sales_total_minor).toBe(0);
+  });
+
+  it('C16 (ADR-094 item 1, 2026-11-26): cash 10.00 here and card 0.01 in session B: the -2 write-off goes on the cash leg and counts on this Z, not B\'s', async () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 100_000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1003, currency: 'EUR' } });
+    const cashId = builder.addPayment({ method: 'cash', amountMinor: 1000, tenderedMinor: 1000, changeMinor: 0 });
+    builder.addPayment({ method: 'external', amountMinor: 1 });
+    expect(writeOffLeg(builder.getSnapshot())?.id).toBe(cashId);
+    builder.addCashRounding({ paymentId: cashId, minor: -2 });
+    const finalized = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, cashRounding: true } });
+    const legsBy = (cashSession: string, cardSession: string): PosOrder => ({
+      ...finalized, sessionId: cashSession,
+      payments: finalized.payments.map((payment) => ({ ...payment, sessionId: payment.method === 'cash' ? cashSession : cardSession })),
+    });
+    let a = '';
+    const zA = await closeWith((id) => { a = id; return { orders: [legsBy(id, 'session-b')] }; }, 1000);
+    expect(zA.breakdowns.cash_rounding_minor).toBe(-2);
+    const zB = await closeWith((id) => ({ orders: [legsBy(a, id)] }));
+    expect(zB.breakdowns).not.toHaveProperty('cash_rounding_minor');
   });
 });
