@@ -1,9 +1,10 @@
-// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; the Total peeks on hover; no swipe yet) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
+// Ported from WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx (press to open, Remove flies the row off; the Total peeks on hover; drag to open or fling off by v2's release rule (line-strip.geometry.ts); no remove-point haptic or Edit swallow) and cells/edit-cart-item-button.tsx; MIT, WCPOS.
 import { useRef, useState, type JSX, type ReactNode } from 'react';
-import { Animated, Platform, Pressable, View } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, View } from 'react-native';
 import { Button, Text } from '../ui';
 import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK, PEEK_SPRING } from '../lib/motion';
 import { useReducedMotion } from '../lib/use-reduced-motion';
+import { releaseOutcome } from './line-strip-geometry';
 
 /** A cart row with v2's hidden strip under it: pressing the row's Total slides the row left onto a solid Edit and Remove. */
 export function CartLineStrip({ name, onEdit, onRemove, children }: {
@@ -42,6 +43,27 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
       settle(false);
     });
   };
+  // The pan handlers are created once: they read the widths, the drag's base and the latest settle and leave through this ref.
+  const drag = useRef({ row: 0, strip: 0, base: 0, settle, leave });
+  Object.assign(drag.current, { row: rowWidth ?? 0, strip: stripWidth, settle, leave });
+  const clamp = (x: number) => Math.min(0, Math.max(-drag.current.row, x));
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dx, dy }) => !leaving.current && drag.current.row > 0
+      && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy),
+    onPanResponderGrant: () => {
+      offset.stopAnimation();
+      drag.current.base = opened.current ? -drag.current.strip : 0;
+    },
+    onPanResponderMove: (_, { dx }) => offset.setValue(clamp(drag.current.base + dx)),
+    onPanResponderRelease: (_, { dx, vx }) => {
+      const { row, strip, base } = drag.current;
+      // gestureState.vx is px per ms, dx over DOM timeStamp ms (react-native-web dist/vendor/react-native/PanResponder/index.js:235); v2's rule takes px/s.
+      const outcome = releaseOutcome({ revealed: -clamp(base + dx), velocityX: vx * 1000, rowWidth: row, stripWidth: strip });
+      if (outcome === 'remove') drag.current.leave();
+      else drag.current.settle(outcome === 'open');
+    },
+    onPanResponderTerminate: () => drag.current.settle(opened.current),
+  })).current;
   // v2's peek: only a closed, staying row, and only with reduced motion known to be off.
   const peek = (on: boolean) => {
     if (opened.current || leaving.current || reduced) return;
@@ -67,6 +89,6 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
           onPress={leave}><Text>Remove</Text></Button>
       </View>
     </View>
-    <Animated.View className="bg-background" style={{ transform: [{ translateX: shown }] }}>{children(wrapTotal)}</Animated.View>
+    <Animated.View {...pan.panHandlers} className="bg-background" style={{ transform: [{ translateX: shown }] }}>{children(wrapTotal)}</Animated.View>
   </View>;
 }

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { AccessibilityInfo, Animated, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, PanResponder, Text, View, type GestureResponderEvent,
+  type PanResponderCallbacks, type PanResponderGestureState } from 'react-native';
 import { CartLineStrip } from '../cart/cart-line-strip';
+import { releaseOutcome } from '../cart/line-strip-geometry';
 import { ARM, EASE_EXIT, PANEL_SLIDE_OUT, PEEK } from '../lib/motion';
 
 type Done = (result: { finished: boolean }) => void;
@@ -28,6 +30,37 @@ async function strip(onEdit = vi.fn(), onRemove = vi.fn(), rowWidth?: number) {
   }
   return { onEdit, onRemove };
 }
+
+// The config CartLineStrip handed PanResponder.create, so a test can drive the row's drag directly.
+let pan: PanResponderCallbacks;
+const capturePan = () => {
+  const real = PanResponder.create.bind(PanResponder);
+  vi.spyOn(PanResponder, 'create').mockImplementation((config) => { pan = config; return real(config); });
+};
+const gesture = (dx: number, dy = 0, vx = 0) => ({ dx, dy, vx, vy: 0, stateID: 0, moveX: 0, moveY: 0, x0: 0, y0: 0,
+  numberActiveTouches: 1, _accountsForMovesUpTo: 0 }) as PanResponderGestureState;
+const event = {} as GestureResponderEvent;
+/** Grant, move to `dx`, then release with `vx` (px/ms, as PanResponder reports it). */
+const drag = (dx: number, vx = 0) => act(() => {
+  pan.onPanResponderGrant!(event, gesture(0));
+  pan.onPanResponderMove!(event, gesture(dx));
+  pan.onPanResponderRelease!(event, gesture(dx, 0, vx));
+});
+const translate = () => (screen.getByTestId('cart-line-row').children[1] as HTMLElement).style.transform;
+
+describe('releaseOutcome', () => {
+  const at = (revealed: number, velocityX = 0, rowWidth = 400) => releaseOutcome({ revealed, velocityX, rowWidth, stripWidth: 160 });
+  it('G1: short of half the strip goes home', () => expect(at(79)).toBe('home'));
+  it('G2: past half the strip opens', () => expect(at(81)).toBe('open'));
+  it('G3: just short of the remove point opens', () => expect(at(239)).toBe('open'));
+  it('G4: at the remove point removes', () => expect(at(240)).toBe('remove'));
+  it('G5: a fast flick past the open strip removes', () => expect(at(161, -800)).toBe('remove'));
+  it('G6: a fast flick not past the open strip opens', () => expect(at(160, -800)).toBe('open'));
+  it('G7: on a narrow row the band floor wins over 60 %', () => {
+    expect(at(215, 0, 200)).toBe('open');
+    expect(at(216, 0, 200)).toBe('remove');
+  });
+});
 
 describe('CartLineStrip', () => {
   beforeEach(() => {
@@ -205,5 +238,107 @@ describe('CartLineStrip', () => {
     hover(true);
     hover(false);
     expect(Animated.spring).toHaveBeenCalledTimes(count);
+  });
+
+  it('the row claims only a horizontal move, and only once it is measured', async () => {
+    capturePan();
+    await strip();
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 2))).toBe(false);
+    const row = screen.getByTestId('cart-line-row') as HTMLElement & { __reactLayoutHandler: (event: unknown) => void };
+    act(() => row.__reactLayoutHandler({ nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 44 } } }));
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(4, 0))).toBe(false);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, -30))).toBe(false);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 2))).toBe(true);
+    expect(pan.onStartShouldSetPanResponder).toBeUndefined();
+    expect(pan.onStartShouldSetPanResponderCapture).toBeUndefined();
+    expect(pan.onMoveShouldSetPanResponderCapture).toBeUndefined();
+  });
+
+  it('D1: a drag past half the strip opens it', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    drag(-100);
+    springs({ toValue: -160 });
+    expect(screen.getByRole('button', { name: 'Remove Bag' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit Bag' })).toBeTruthy();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('D2: a drag short of half the strip goes home', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    drag(-60);
+    springs({ toValue: 0 });
+    expect(screen.queryByRole('button', { name: 'Remove Bag' })).toBeNull();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('D3: a drag past the remove point flies the row off, then removes', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    start = (cb) => { if (cb) held.push(cb); };
+    drag(-250);
+    expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: -400 }));
+    expect(onRemove).not.toHaveBeenCalled();
+    act(() => held.shift()!({ finished: true }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('D4: a fast flick past the open strip removes', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    drag(-170, -0.9);
+    expect(Animated.timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: -400 }));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('D5: dragging an open strip back past half closes it', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    click('Edit total of Bag');
+    drag(100);
+    springs({ toValue: 0 });
+    expect(screen.queryByRole('button', { name: 'Remove Bag' })).toBeNull();
+  });
+
+  it('D6: a rightwards drag never moves the row right of rest', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    drag(-60);
+    // The spring mock's first argument is the row's offset; the body's interpolation alone would hide a positive one.
+    const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(50));
+    });
+    expect(offset.__getValue()).toBe(0);
+    expect(translate()).toBe('translateX(0px)');
+  });
+
+  it('D7: with reduced motion, the drag still follows and the release snaps', async () => {
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    drag(-100);
+    expect(screen.getByRole('button', { name: 'Remove Bag' })).toBeTruthy();
+    expect(translate()).toBe('translateX(-160px)');
+    click('Edit total of Bag');
+    expect(screen.queryByRole('button', { name: 'Remove Bag' })).toBeNull();
+    drag(-250);
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(Animated.spring).not.toHaveBeenCalled();
+    expect(Animated.timing).not.toHaveBeenCalled();
+  });
+
+  it('D8: a terminated drag settles back and does not remove', async () => {
+    capturePan();
+    const { onRemove } = await strip(undefined, undefined, 400);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(-100));
+      pan.onPanResponderTerminate!(event, gesture(-100));
+    });
+    springs({ toValue: 0 });
+    expect(onRemove).not.toHaveBeenCalled();
   });
 });
