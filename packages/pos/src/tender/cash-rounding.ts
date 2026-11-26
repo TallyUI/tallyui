@@ -36,8 +36,8 @@ export function roundedRemainder(balanceMinor: number, entriesMinor: number, rou
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);
 }
 
-/** ADR-094 item 7 (carry): a cash part pick rounds its target less the live entries already on the sale; 0 means cash cannot pay it. */
-export function roundedPickTarget(targetMinor: number, entriesMinor: number, rounding: PaymentRounding | null | undefined): number {
+/** ADR-094 item 7 (carry): a cash part pick rounds its target less `entriesMinor`, the live entries the pick carries against; it defaults to 0, the 5.0.0 per-pick rounding. 0 means cash cannot pay it. */
+export function roundedPickTarget(targetMinor: number, rounding: PaymentRounding | null | undefined, entriesMinor = 0): number {
   if (!rounding) return targetMinor;
   const unrounded = targetMinor - entriesMinor;
   return unrounded <= 0 ? 0 : roundToIncrement(unrounded, rounding.incrementMinor, rounding.mode);

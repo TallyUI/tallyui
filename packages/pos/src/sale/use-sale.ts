@@ -940,7 +940,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         const unpaid = unpaidUnitsByLine(lineItems.map(({ id, quantity }) => ({ id, quantity, totalMinor: 0 })), heldUnitsByLine(payments));
         if (Object.entries(tender.units).some(([id, units]) => !id || !Number.isInteger(units) || units <= 0 || !Object.hasOwn(unpaid, id) || units > unpaid[id])) return null;
       }
-      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, remainderEntriesMinor(builderNow.current.getSnapshot()), pickRule) : tender.amountMinor;
+      const pickMinor = pickRule && tender.tenderedMinor !== undefined ? roundedPickTarget(tender.amountMinor, pickRule, remainderEntriesMinor(builderNow.current.getSnapshot())) : tender.amountMinor;
       if (tender.tenderedMinor !== undefined && pickMinor === 0) return null;
       if (tender.tenderedMinor !== undefined && (tender.method !== 'cash' || !tender.units || !Object.keys(tender.units).length
         || !Number.isInteger(tender.tenderedMinor) || tender.tenderedMinor < pickMinor)) return null;

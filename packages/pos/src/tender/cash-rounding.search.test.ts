@@ -58,7 +58,7 @@ function model(goods: number[], rule: Rule) {
   /** use-sale.ts:943-957 and :1000-1001: a cash part pick of goods t < balance carries; one at the whole-settle due is promoted. */
   const partPick = (s: St, i: number, t: number): St | null => {
     const rem = remainderEntriesMinor(snap(s));
-    const a = roundedPickTarget(t, rem, rule);
+    const a = roundedPickTarget(t, rule, rem);
     if (a === 0) return null; // cash cannot pay it
     const B = bal(s);
     if (a === roundedRemainder(B, rem, rule)) {

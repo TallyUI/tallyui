@@ -244,6 +244,10 @@ describe('roundedPickTarget (ADR-094 item 7, the carry rule)', () => {
     [333, 2, { incrementMinor: 5, mode: 'down' } as PaymentRounding, 330], [333, -2, { incrementMinor: 5, mode: 'down' } as PaymentRounding, 335],
     [2, 2, five, 0], [1, 4, five, 0], [333, 2, null, 333],
   ])('goods %i less entries %i, rule %j: %i', (target, entries, rule, expected) => {
-    expect(roundedPickTarget(target, entries, rule)).toBe(expected);
+    expect(roundedPickTarget(target, rule, entries)).toBe(expected);
+  });
+  it('a two-argument call is the 5.0.0 per-pick rounding', () => {
+    expect(roundedPickTarget(333, { incrementMinor: 5, mode: 'nearest' })).toBe(335);
+    expect(roundedPickTarget(333, null)).toBe(333);
   });
 });

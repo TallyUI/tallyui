@@ -97,7 +97,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   // ADR-094 item 7 (carry): a cash part pick rounds its target less the live entries; addTender rounds the leg, the pane shows the same figure.
   const pickRounding = rounds && method !== null && wireMethodOf(method) === 'cash' && method.capture.mode === 'manual' && method.defaults.rounding ? method.defaults.rounding : null;
   const entries = remainderEntriesMinor(order);
-  const pickTarget = partPick ? roundedPickTarget(target, entries, pickRounding) : target;
+  const pickTarget = partPick ? roundedPickTarget(target, pickRounding, entries) : target;
   const entry = state.entryDirty ? state.entryMinor : pickTarget;
   const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, pickTarget, null) : tenderRounding(state, balance, rounds ? method : null, entries);
   // Promotion: a carried pick at the whole-settle due is taken as that settle (addTender), so it meets the settle's 16-entry cap.
