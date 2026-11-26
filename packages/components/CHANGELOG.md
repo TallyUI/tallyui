@@ -1,5 +1,36 @@
 # @tallyui/components
 
+## 5.1.0
+
+### Minor Changes
+
+- 977dd67: A refused sale whose order the store created with nothing paid can now be cancelled on the store from the till. `@tallyui/pos` adds `canCancelOnStore`, `settledOnStore` and the outbox's `cancelOnStore`, and `useOrderOutbox` takes a `storeSettlement` option (the connector's `cancel` for the open store) and returns `cancelOnStore(orderId)`. The till stores where the cancel stands on the order as `storeSettlement`: `pos_orders` goes to schema version 22, an identity migration that is one-way, like version 21 (an older build opens a version-22 store but shows none of its orders; the sales it rings meanwhile are migrated in when the till opens at 22 again). A settled row (cancelled or gone on the store) leaves `needsAttention` and the outbox's `rejected` count, and `requeue()` never resends a row with a settlement. `discard()` now keeps a refused sale whose order the store created and resolves to false: the till settles that order instead. `OrdersList` takes `onCancelOnStore`, which adds "Cancel order on store" behind a confirm dialog; with it, such a row has no Retry, except a stock refusal, whose Retry reads "Try the payment again". `OrderSyncNotices` says where the cancel stands, never with the store's code or message.
+- f20b7d2: `Cart` takes `taxDisplay`: `'itemized'` (the default, one tax row per rate, as before) or `'single'`, one Total Tax row with the order's total tax, tagged Including or Excluding tax and drawn only when that tax is not 0, as WCPOS v2 does when the store shows its tax as one total. `taxLabel` now gets a second argument, `{ code, ratePpm }`, so a platform can name two rates with the same percentage apart by their tax code; a one-argument `taxLabel` keeps working and the default label is unchanged. Receipts, `CartTotal` and every order figure are unchanged.
+- aba5fd7: A refused sale whose order the store created part paid can now have the rest recorded on the store from the till, with no new money taken. `@tallyui/core` adds `SettlePayment`, `SettlePayRequest` and `SettlePayResult`, and `RefusedOrderSettlement` gains an optional `pay`. The WooCommerce connector's `pay` reads the order, records the till's unrecorded payments under new ids only when the store's amount due is exactly their sum and the order is still open, then reads it again: only a completed order is `done`. `@tallyui/pos` adds `canPayRestOnStore`, `unrecordedLegs` and the outbox's `payRestOnStore`; `useOrderOutbox`'s `storeSettlement` option takes the connector's `pay` too and the hook returns `payRestOnStore(orderId)`. The attempt and its payment ids are stored as `storeSettlement` (kind `pay`) before the call, so a repeat sends the same ids; no schema change. `settledOnStore` now counts a `gone` settlement as settled only when the store had recorded nothing. `OrdersList` takes `onPayRestOnStore`, which adds "Pay the rest on store" behind a confirm dialog naming each payment to record; with it, a row with money recorded on the store has no Retry. `OrderSyncNotices` says where the pay stands, never with the store's code or message, and a cancelled sale with cash legs now asks the cashier to record any cash they gave back as a pay-out.
+- 27a3830: A WooCommerce POS 2.0 sale the store refused after it had created the order now says so. The transport adds the order's `displayId` next to `orderId` in the refusal's `error.data`. The new `storeOrderLeft` in `@tallyui/pos` reads that order's reference and how much was recorded on it at the refusal. `OrderSyncNotices` shows it under the refusal sentence ("Order #1001 was left pending on the online store. Nothing was paid there.", or "left part paid" with the amount and the total), and uses the general refusal sentence in place of `invalid_payload`'s for such a sale. `needsAttention` keeps such a sale even when it was marked handled.
+
+### Patch Changes
+
+- 1584891: Cash rounding (ADR-094): a closed cash sale's rounding now stays under one increment. A cash part pick rounds against the sale's earlier rounding, so two cash picks of 3.33 at a 0.05 increment take 3.35 and then 3.30, closing at 6.65 rather than 6.70; a pick that reaches the rounded due settles the sale. The zero-remainder write-off goes on the last cash leg, falling back to the last leg only when no cash leg counts.
+
+  `roundedPickTarget` takes the sale's live entries as a new optional third argument; a call without it rounds the pick on its own, as in 5.0.0.
+
+- 79ccd4d: `@tallyui/pos` adds the pure `writeOffLeg` helper, which `addTender` and the tender pane's 16-entry check both use for the leg a zero-remainder cash write-off goes on (the rule is in the cash-rounding entry above), so the two always agree (#1365). Cycles of voiding an earlier card and taking cash at zero after a pick can no longer write off one remainder after another and undercharge the sale.
+- Updated dependencies [977dd67]
+- Updated dependencies [1584891]
+- Updated dependencies [79ccd4d]
+- Updated dependencies [2ef5a3d]
+- Updated dependencies [b1962cf]
+- Updated dependencies [aba5fd7]
+- Updated dependencies [27a3830]
+- Updated dependencies [93fb2b9]
+- Updated dependencies [f34ab3c]
+- Updated dependencies [f20e9ed]
+  - @tallyui/pos@5.1.0
+  - @tallyui/core@5.1.0
+  - @tallyui/primitives@5.1.0
+  - @tallyui/theme@5.1.0
+
 ## 5.0.0
 
 ### Minor Changes
