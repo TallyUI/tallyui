@@ -341,4 +341,59 @@ describe('CartLineStrip', () => {
     springs({ toValue: 0 });
     expect(onRemove).not.toHaveBeenCalled();
   });
+
+  it('S1: the claimed distance takes a 90 px swipe past halfway', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
+    drag(-70);
+    springs({ toValue: -160 });
+  });
+
+  it('S2: a 70 px swipe including the claim still goes home', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
+    drag(-50);
+    springs({ toValue: 0 });
+  });
+
+  it('S3: the row holds the claimed offset without further motion', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    drag(-60);
+    const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-12, 0))).toBe(true);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(0));
+    });
+    expect(offset.__getValue()).toBe(-12);
+    act(() => pan.onPanResponderRelease!(event, gesture(0)));
+  });
+
+  it('S4: an open strip follows the full 70 px rightward swipe and stays open', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    click('Edit total of Bag');
+    const offset = vi.mocked(Animated.spring).mock.calls.at(-1)![0] as Animated.Value & { __getValue: () => number };
+    vi.mocked(Animated.spring).mockClear();
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(20, 0))).toBe(true);
+    act(() => {
+      pan.onPanResponderGrant!(event, gesture(0));
+      pan.onPanResponderMove!(event, gesture(50));
+    });
+    expect(offset.__getValue()).toBe(-90);
+    act(() => pan.onPanResponderRelease!(event, gesture(50)));
+    springs({ toValue: -160 });
+  });
+
+  it('S5: a rejected move before the claim does not change the swipe distance', async () => {
+    capturePan();
+    await strip(undefined, undefined, 400);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(4, 0))).toBe(false);
+    expect(pan.onMoveShouldSetPanResponder!(event, gesture(-20, 0))).toBe(true);
+    drag(-70);
+    springs({ toValue: -160 });
+  });
 });

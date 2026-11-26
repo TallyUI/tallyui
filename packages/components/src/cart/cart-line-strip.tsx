@@ -44,25 +44,28 @@ export function CartLineStrip({ name, onEdit, onRemove, children }: {
     });
   };
   // The pan handlers are created once: they read the widths, the drag's base and the latest settle and leave through this ref.
-  const drag = useRef({ row: 0, strip: 0, base: 0, settle, leave });
+  const drag = useRef({ row: 0, strip: 0, base: 0, claimed: 0, settle, leave });
   Object.assign(drag.current, { row: rowWidth ?? 0, strip: stripWidth, settle, leave });
   const clamp = (x: number) => Math.min(0, Math.max(-drag.current.row, x));
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, { dx, dy }) => !leaving.current && drag.current.row > 0
-      && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy),
+      && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) && (drag.current.claimed = dx, true),
     onPanResponderGrant: () => {
       offset.stopAnimation();
-      drag.current.base = opened.current ? -drag.current.strip : 0;
+      // PanResponder zeroes dx at grant (react-native Libraries/Interaction/PanResponder.js onResponderGrant; react-native-web vendor PanResponder index.js:330), so the claimed distance joins the base.
+      drag.current.base = (opened.current ? -drag.current.strip : 0) + drag.current.claimed;
+      drag.current.claimed = 0;
     },
     onPanResponderMove: (_, { dx }) => offset.setValue(clamp(drag.current.base + dx)),
     onPanResponderRelease: (_, { dx, vx }) => {
+      drag.current.claimed = 0;
       const { row, strip, base } = drag.current;
       // gestureState.vx is px per ms, dx over DOM timeStamp ms (react-native-web dist/vendor/react-native/PanResponder/index.js:235); v2's rule takes px/s.
       const outcome = releaseOutcome({ revealed: -clamp(base + dx), velocityX: vx * 1000, rowWidth: row, stripWidth: strip });
       if (outcome === 'remove') drag.current.leave();
       else drag.current.settle(outcome === 'open');
     },
-    onPanResponderTerminate: () => drag.current.settle(opened.current),
+    onPanResponderTerminate: () => { drag.current.claimed = 0; drag.current.settle(opened.current); },
   })).current;
   // v2's peek: only a closed, staying row, and only with reduced motion known to be off.
   const peek = (on: boolean) => {
