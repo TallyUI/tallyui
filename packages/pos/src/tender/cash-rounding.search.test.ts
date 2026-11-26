@@ -272,7 +272,22 @@ describe('ADR-094 carry rule: stored and locked legs', () => {
     expect(inR(nearest5, m.S(byCash.s))).toBe(true);
   });
 
-  it('a locked store-order leg carries no entry and is never voided; the sale still finishes and every till leg can be voided', () => {
+  it('a reopened stored sale can close outside R, and its large new entry need not be the last', () => {
+    const m = model(goods, nearest5);
+    const a = replay(goods, nearest5, 'void4 card4077 cash0', stored);
+    expect(a.refused).toEqual([]);
+    expect(m.closed(a.s), witness(m, goods, a.s)).toBe(true);
+    expect(m.entries(a.s).map((e) => e.minor), witness(m, goods, a.s)).toEqual([-4, 6, 6, 6, 1]);
+    expect(m.S(a.s)).toBe(15);
+    expect(inR(nearest5, m.S(a.s))).toBe(false);
+    const b = replay(goods, nearest5, 'void4 pick#1 cash3080', stored);
+    expect(b.refused).toEqual([]);
+    expect(m.closed(b.s), witness(m, goods, b.s)).toBe(true);
+    expect(m.entries(b.s).map((e) => e.minor), witness(m, goods, b.s)).toEqual([-4, 6, 6, 6, 6, -20, -2]);
+    expect(inR(nearest5, m.S(b.s))).toBe(true);
+  });
+
+  it('a locked store-order leg is never voided; the sale still finishes and every till leg can be voided', () => {
     for (const [, rule] of RULES) {
       const g = [rule.incrementMinor * 3 + 2, rule.incrementMinor + 1];
       const m = model(g, rule);
@@ -289,7 +304,6 @@ describe('ADR-094 carry rule: stored and locked legs', () => {
           observe(acc, m, rule, t, g);
           next.push(t);
           expect(t.legs[0].live, witness(m, g, t)).toBe(true); // the locked leg is never voided
-          expect(t.entry.S0 ?? 0, witness(m, g, t)).toBe(0); // the locked leg carries no entry
           // Every till leg can be voided, latest first.
           let u = t;
           for (let idx = u.legs.length - 1; idx > 0; idx--) if (u.legs[idx].live) u = m.voidLeg(u, idx) ?? u;
@@ -301,6 +315,27 @@ describe('ADR-094 carry rule: stored and locked legs', () => {
       expect(acc.closed).toBeGreaterThan(0);
     }
   }, 60_000);
+
+  it('a zero-remainder write-off can land on a locked store-order leg (as on main)', () => {
+    for (const [, rule] of RULES) {
+      const inc = rule.incrementMinor;
+      const g = [inc * 3 + 2, inc + 1];
+      const m = model(g, rule);
+      const G = g[0] + g[1];
+      const init: St = { legs: [{ id: 'S0', method: 'card', amt: G - 2, pick: false, live: true, locked: true }], entry: {}, n: 1, ops: ['store-order'] };
+      const r = replay(g, rule, 'cash0', init);
+      if (rule.mode === 'up') {
+        expect(r.refused).toEqual(['cash0']);
+        expect(r.s.entry.S0 ?? 0).toBe(0);
+        expect(m.closed(r.s)).toBe(false);
+      } else {
+        expect(r.refused).toEqual([]);
+        expect(r.s.entry.S0).toBe(-2);
+        expect(m.closed(r.s)).toBe(true);
+        expect(r.s.legs[0].live).toBe(true);
+      }
+    }
+  });
 });
 
 describe('ADR-094 carry rule: R is the rounding range', () => {

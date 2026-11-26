@@ -7085,10 +7085,11 @@ interface OrderCreatePayload {
      limits: at most 16 entries (the order.create cap); goods sets of 2 to 3 increments plus a few minor units, and the
      fixed rows of the #1365 and S8 reviews; multi-unit picks beyond merged lines are not searched; sales closed before
      this change may hold larger sums and are read as they are, with no migration. Reopening such a sale and closing
-     it under this rule rounds against that sum, so its new entry can be one increment or more (the search's
-     stored-reopen row ends with −22 at increment 5); the closed sum is then in R again, while finishing it by card
-     adds no entry and keeps the stored sum. An open or reopened sale may carry more while open, and must always be
-     completable or cancellable.
+     it again under this rule does not bring its sum back into R. The till rounds against the stored entries, so the
+     sale can close with its sum still outside R (a search row closes the stored-reopen sale at +15 at increment 5).
+     One new entry, not necessarily the last, can reach one increment or more (the search's rows end with −22, and
+     with −20 followed by −2). Finishing it by card adds no entry. An open or reopened sale may carry more while open,
+     and must always be completable or cancellable.
   7. **A cash part pick rounds against the sale's live entries (the carry).** Amended 2026-11-24 (Front desk, picks/legs ruling (b), option 1),
      verbatim: "Cash rounding belongs to the cash actually handed over, so a cash part-pick leg rounds its own target
      and carries its own rounding entry; per-payer sums differing from whole-sale rounding is how rounding stores work
@@ -7133,7 +7134,7 @@ interface OrderCreatePayload {
        leg, of either sign in every mode; several entries per sale, up to 16; and an entry on a non-cash leg (the
        zero-remainder write-off when no counting leg was cash), which may sit before later cash legs' entries. The
        entries' sum is in R(mode) (item 6). The one exception is a sale stored before the carry rule and closed again
-       after a reopen: its last entry can reach one increment or more (item 6). Copyable order.create rows are in
-       the PR that made the carry rule.
+       after a reopen: its sum can stay outside R, and one new entry, not necessarily the last, can reach one
+       increment or more (item 6). Copyable order.create rows are in the PR that made the carry rule.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.

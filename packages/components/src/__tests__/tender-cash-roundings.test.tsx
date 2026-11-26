@@ -1597,7 +1597,7 @@ it('C20 (connector shape W1): a card write-off stays beside a later cash entry, 
   expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[0].id, minor: -2 }, { paymentId: posOrder.payments[1].id, minor: 4 }]);
 });
 
-it('C20b (connector shape W2): the same in down 0.05: -4 on the card, +4 on the cash', () => {
+it('C20b (connector shape W2): in down 0.05 a card write-off stays beside a later cash entry, cannot be voided from under it, and both reach the stored order', async () => {
   startCustom(24, rounding(down5), carries);
   let c1 = '', c19 = '', cashId = '';
   act(() => { c1 = sale.addTender({ method: 'external', amountMinor: 1 })!; });
@@ -1609,4 +1609,10 @@ it('C20b (connector shape W2): the same in down 0.05: -4 on the card, +4 on the 
   expect(sale.order.balanceDueMinor).toBe(1);
   act(() => { cashId = sale.addTender({ method: 'cash', amountMinor: 5, rounding: down5 })!; });
   expect(sale.order.cashRoundings).toEqual([{ paymentId: c19, minor: -4 }, { paymentId: cashId, minor: 4 }]);
+  act(() => { expect(sale.voidTender(c19)).toBe(false); });
+  expect(sale.error).toBe(VOID_LATER_CASH_FIRST);
+  expect(sale.order.cashRoundings).toEqual([{ paymentId: c19, minor: -4 }, { paymentId: cashId, minor: 4 }]);
+  const posOrder = await complete();
+  expect(posOrder.payments).toMatchObject([{ method: 'external', amountMinor: 19 }, { method: 'cash', amountMinor: 5 }]);
+  expect(posOrder.cashRoundings).toEqual([{ paymentId: posOrder.payments[0].id, minor: -4 }, { paymentId: posOrder.payments[1].id, minor: 4 }]);
 });
