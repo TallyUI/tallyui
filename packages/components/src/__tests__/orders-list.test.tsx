@@ -8,7 +8,7 @@
 // OrdersList). Every other test here is TallyUI's own, written from OrdersList's code.
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatMoney } from '@tallyui/core';
+import { ConnectorProvider, formatMoney, type TallyConnector } from '@tallyui/core';
 import { UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
 import { OrdersList, type OrderHistoryRow } from '../sale/orders-list';
 import { orderReference } from '../sale/order-reference';
@@ -606,6 +606,22 @@ describe('OrdersList', () => {
     const expected = `Store calculated ${formatMoney({ amount: 1199, currency: 'EUR' })}; a rounding line of +${formatMoney({ amount: 1, currency: 'EUR' })} brought it to ${formatMoney({ amount: 1200, currency: 'EUR' })}`;
     expect(headers()).toEqual(['Recent']);
     expect(screen.getAllByText(expected)).toHaveLength(1);
+  });
+
+  it.each([
+    ['C2 discounts are taxed rows', { discountsAreTaxedRows: true }, ['Recent']],
+    ['C3 no provider', null, ['Needs attention', 'Recent']],
+    ['C4 connector without the flag', {}, ['Needs attention', 'Recent']],
+  ] as const)('%s', (_name, connector, sections) => {
+    const base = order('w');
+    const warned = order('w', { syncStatus: 'applied',
+      lines: [0, 1].map((index) => ({ ...base.lines[0], id: `line-${index}`, discountMinor: 5 })),
+      warnings: [{ code: 'total_mismatch', expectedMinor: 1200, serverMinor: 1198, bridgeMinor: 2 }] });
+    const list = <OrdersList orders={[warned]} onRetry={async () => 0} />;
+    render(connector ? <ConnectorProvider connector={connector as unknown as TallyConnector}>{list}</ConnectorProvider> : list);
+    const expected = `Store calculated ${formatMoney({ amount: 1198, currency: 'EUR' })}; a rounding line of +${formatMoney({ amount: 2, currency: 'EUR' })} brought it to ${formatMoney({ amount: 1200, currency: 'EUR' })}`;
+    expect(headers()).toEqual(sections);
+    expect(screen.getAllByText(expected)).toHaveLength(sections.length);
   });
 
   it('renders the rounding line for a total_mismatch with a positive bridgeMinor', () => {

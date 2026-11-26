@@ -356,6 +356,8 @@ export interface RefusedOrderSettlement {
 export interface TallyConnector {
   /** True when the store's live order-line totals shrink as units are returned while `quantity` stays the sold quantity (Medusa). The refund form then refuses a partial refund of a line without `soldTotalMinor`/`soldTaxMinor`. Absent: line totals are as sold. */
   lineTotalsShrinkOnReturn?: boolean;
+  /** True when the store turns each discounted order line into its own taxed row and rounds each taxed row once (Vendure, ADR-048). The till's rounding tolerance then also counts the order's discounted lines. Absent: discounts are not separate taxed rows. */
+  discountsAreTaxedRows?: boolean;
   /** Unique identifier for this connector */
   id: string;
   /** Human-readable name */

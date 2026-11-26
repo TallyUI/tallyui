@@ -87,7 +87,7 @@ export const editedSku = (line: PosOrderLine) => !line.custom && line.catalogueS
  * its stored taxLines are after the coupon. Otherwise tax comes from stored taxLines after D, recomputed before a
  * store-priced coupon, and from `taxMicros` before D.
  */
-function netDiscountMinor(line: PosOrderLine, order: Pick<PosOrder, 'pricesIncludeTax' | 'taxRounding' | 'coupons' | 'currency'>): number {
+export function netDiscountMinor(line: PosOrderLine, order: Pick<PosOrder, 'pricesIncludeTax' | 'taxRounding' | 'coupons' | 'currency'>): number {
   if (!(line.taxInclusive ?? order.pricesIncludeTax) || line.discountMinor === 0) return line.discountMinor;
   const woocommerce = order.taxRounding?.granularity === 'woocommerce', stored: readonly LineTaxLine[] = line.taxLines;
   const afterDiscount = line.unitPriceMinor * line.quantity - line.discountMinor;

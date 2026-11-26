@@ -1,6 +1,7 @@
 // Ported from medusapos/app `563b03c4` `lib/order-store.test.ts` (ADR-052, TV7), word for word.
 import { describe, expect, it } from 'vitest';
 import { createOrderBuilder } from '../order';
+import { netDiscountMinor } from './command';
 import { finalizeOrder } from './finalize';
 import { needsAttention, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE } from './needs-attention';
 import type { PosOrder } from './types';
@@ -132,6 +133,72 @@ describe('a rounding bridge within ADR-048 tolerance', () => {
   ])('%s remains listed', (_name, overrides) => {
     const order: PosOrder = { ...sale(), syncStatus: 'applied', ...overrides };
     expect(needsAttention([order])).toEqual([order]);
+  });
+});
+
+describe('ADR-048 tolerance with discounts as taxed rows', () => {
+  const base = sale();
+  const mismatch = (bridgeMinor: number) => ({ code: 'total_mismatch' as const, expectedMinor: 1200, serverMinor: 1200 - bridgeMinor, bridgeMinor });
+  const warned = (discounts: number[], bridge: number, extra: Partial<PosOrder> = {}): PosOrder => ({
+    ...base, syncStatus: 'applied', warnings: [mismatch(bridge)],
+    lines: discounts.map((discountMinor, index) => ({ ...base.lines[0], id: `line-${index}`, discountMinor })), ...extra,
+  });
+  const carried = (...shares: number[]): PosOrder['coupons'] => [{ code: 'c', couponId: '1', discountMinor: 0, discountTaxMinor: 0, carried: true,
+    lines: shares.map((discountMinor, index) => ({ lineId: `line-${index}`, discountMinor, discountTaxMinor: 0 })) }];
+  const charges = { fees: [{} as NonNullable<PosOrder['fees']>[number]], shipping: [{} as NonNullable<PosOrder['shipping']>[number]] };
+  const six = [5, 5, 5, 5, 5, 5];
+  const cases: [string, PosOrder, boolean | undefined, boolean][] = [
+    ['V1 absent flag', warned([5, 5], 2), undefined, true],
+    ['V2 at T', warned([5, 5], 2), true, false],
+    ['V3 above T', warned([5, 5], 3), true, true],
+    ['V4 false flag', warned([5, 5], 2), false, true],
+    ['V5 no discounted lines', warned([0, 0], 2), true, true],
+    ['V6 three discounts at T', warned([5, 5, 5], 3), true, false],
+    ['V6 three discounts above T', warned([5, 5, 5], 4), true, true],
+    ['V7 six discounts at T', warned(six, 6), true, false],
+    ['V7 six discounts above T', warned(six, 7), true, true],
+    ['V8 fee and shipping at T', warned([5, 0, 0], 3, charges), true, false],
+    ['V8 fee and shipping above T', warned([5, 0, 0], 4, charges), true, true],
+    ['V9 carried share at T', warned([0, 0], 2, { coupons: carried(3, 0) }), true, false],
+    ['V9 carried share above T', warned([0, 0], 3, { coupons: carried(3, 0) }), true, true],
+    ['V10 one line counted once at T', warned([5], 1, { coupons: carried(2) }), true, false],
+    ['V10 one line counted once above T', warned([5], 2, { coupons: carried(2) }), true, true],
+    ['V11 tax mismatch remains listed', warned([5, 5], 1, { warnings: [mismatch(1), { code: 'tax_rate_mismatch', ratePpm: 55000, expectedMinor: 120, serverMinor: 100 }] }), true, true],
+    ['V12 rejected remains listed', warned([5, 5], 1, { syncStatus: 'rejected' }), true, true],
+  ];
+  it.each(cases)('%s', (_name, order, flag, listed) => {
+    const result = flag === undefined ? needsAttention([order]) : needsAttention([order], { discountsAreTaxedRows: flag });
+    expect(result).toEqual(listed ? [order] : []);
+  });
+
+  it('V13 unchanged without the flag', () => {
+    const orders = cases.map(([, order]) => order);
+    const baseline = needsAttention(orders);
+    expect(baseline).toContain(orders[0]);
+    expect(needsAttention(orders, {})).toEqual(baseline);
+    expect(needsAttention(orders, { discountsAreTaxedRows: false })).toEqual(baseline);
+  });
+
+  it('V14 a discount the payload nets to zero is not a taxed row', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: true, getTaxRatePpm: () => 2_000_000 } });
+    for (const productId of ['shirt', 'mug']) {
+      const lineId = builder.addLine({ productId, name: productId, unitPrice: { amount: 600, currency: 'EUR' } });
+      builder.applyLineDiscount(lineId, { type: 'fixed', value: 1 });
+    }
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const order: PosOrder = { ...finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 4 } }), syncStatus: 'applied', warnings: [mismatch(2)] };
+    expect(order.lines.map((line) => line.discountMinor)).toEqual([1, 1]);
+    expect(needsAttention([order], { discountsAreTaxedRows: true })).toEqual([order]);
+  });
+
+  it('V15 a pending order is not priced for rounding tolerance', () => {
+    const baseLine = base.lines[0];
+    const line = { ...baseLine, discountMinor: 1, netMinor: baseLine.unitPriceMinor * baseLine.quantity,
+      taxLines: [{ ...baseLine.taxLines[0], taxMicros: 'not-a-number' }] };
+    const order: PosOrder = { ...base, syncStatus: 'pending', pricesIncludeTax: true, lines: [line] };
+    delete (order as Partial<PosOrder>).taxRounding;
+    expect(() => netDiscountMinor(line, order)).toThrow(SyntaxError);
+    expect(needsAttention([order], { discountsAreTaxedRows: true })).toEqual([]);
   });
 });
 

@@ -1,4 +1,5 @@
 import { knownWarnings } from '@tallyui/core';
+import { netDiscountMinor } from './command';
 import { replacedOrderIds } from './reopened';
 import { storeOrderLeft } from './store-order-left';
 import { settledOnStore } from './store-settlement';
@@ -8,9 +9,14 @@ import type { PosOrder } from './types';
 export const UPDATE_UNSENDABLE = 'update_unsendable';
 export const UPDATE_UNSENDABLE_MESSAGE = "The store can't accept this change yet. Ask the owner to update the POS plugin, then press Retry.";
 
-/** ADR-048's T = ⌈(lines + surcharges) / 2⌉, applied once to the whole order: stored lines, fees and shipping rows. */
-function roundingBridgeTolerance(order: PosOrder): number {
-  return Math.ceil((order.lines.length + (order.fees?.length ?? 0) + (order.shipping?.length ?? 0)) / 2);
+function discountedLineCount(order: PosOrder): number {
+  return order.lines.filter((line) => (order.coupons ?? []).reduce((discount, coupon) => discount + (coupon.carried && coupon.lines
+    ? coupon.lines.find(({ lineId }) => lineId === line.id)?.discountMinor ?? 0 : 0), netDiscountMinor(line, order)) > 0).length;
+}
+
+/** ADR-048's T = ⌈rows / 2⌉ counts lines, fees and shipping once per order, adding discounted lines for a connector declaring `discountsAreTaxedRows`. */
+function roundingBridgeTolerance(order: PosOrder, discountsAreTaxedRows: boolean): number {
+  return Math.ceil((order.lines.length + (order.fees?.length ?? 0) + (order.shipping?.length ?? 0) + (discountsAreTaxedRows ? discountedLineCount(order) : 0)) / 2);
 }
 
 /**
@@ -21,6 +27,7 @@ function roundingBridgeTolerance(order: PosOrder): number {
  * `register_session_unknown` is not shown, because the store counts the order once its session arrives (ADR-078).
  * A `total_mismatch` whose rounding bridge is within ADR-048's tolerance (|`bridgeMinor`| ≤ ⌈(lines + fees + shipping) / 2⌉)
  * is not shown for itself: the row's notice says it.
+ * A connector declaring `discountsAreTaxedRows` adds the discounted lines to that row count.
  * A refused order is left out once its finalized successor is in `orders`.
  * Pending updates marked `UPDATE_UNSENDABLE` are shown until a person acts.
  * An order a cashier marked handled (`markAttentionHandled`) is left out while its `commandId` is the one it was marked
@@ -28,15 +35,14 @@ function roundingBridgeTolerance(order: PosOrder): number {
  * sale whose order the store created (`storeOrderLeft`, #1101). A refused sale whose store order is settled on the store
  * (`settledOnStore`: cancelled or gone, #1101) is not shown for its refusal; any other reason above still shows it.
  */
-export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[] } = {}): PosOrder[] {
+export function needsAttention(orders: PosOrder[], options: { stuckCommandIds?: readonly string[]; discountsAreTaxedRows?: boolean } = {}): PosOrder[] {
   const replaced = replacedOrderIds(orders);
   return orders.filter((order) => {
-    const tolerance = roundingBridgeTolerance(order);
     return (order.syncStatus === 'rejected' && !settledOnStore(order))
       || (order.syncStatus === 'pending' && order.error?.code === UPDATE_UNSENDABLE)
       || (order.localWarnings?.length ?? 0) > 0
       || (order.syncStatus === 'applied' && knownWarnings(order.warnings).some((warning) => warning.code !== 'register_session_unknown'
-        && !(warning.code === 'total_mismatch' && warning.bridgeMinor !== undefined && Math.abs(warning.bridgeMinor) <= tolerance)))
+        && !(warning.code === 'total_mismatch' && warning.bridgeMinor !== undefined && Math.abs(warning.bridgeMinor) <= roundingBridgeTolerance(order, options.discountsAreTaxedRows === true))))
       || order.lateSessionId !== undefined
       || (order.syncStatus === 'pending' && options.stuckCommandIds?.includes(order.commandId) === true);
   })
