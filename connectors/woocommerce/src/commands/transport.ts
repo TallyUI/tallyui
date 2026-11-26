@@ -3,6 +3,7 @@ import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax
 import { WCPOS_UUID_META_KEY } from '../replication/products';
 import { wooLedgerVersion } from '../store-settings';
 import { createWooCall, type Answer } from './http';
+import { paymentRecordBody } from './money-body';
 
 export type WooTransportOutcome =
   | { kind: 'results'; results: CommandResult[] }
@@ -239,11 +240,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   // (Money_Command.php:70-72): the same on every retry, never equal to a till's v7 id.
   const money: WooMoneyCommand[] | undefined = !ledger ? undefined : closes
     ? [{ path: 'close', body: { command_id: `${envelope.id.slice(0, 14)}8${envelope.id.slice(15)}` } }]
-    : p.payments.map((payment) => ({ path: 'payments', body: { payment: {
-      id: payment.clientPaymentId, method_id: payment.method === 'cash' ? 'pos_cash' : 'pos_card',
-      amount: major(payment.amountMinor), currency: p.currency,
-      ...(payment.method === 'cash' && payment.tenderedMinor !== undefined ? { tendered: major(payment.tenderedMinor) } : {}),
-    } } }));
+    : p.payments.map((payment) => ({ path: 'payments', body: paymentRecordBody({ ...payment, id: payment.clientPaymentId }, p.currency, digits) }));
   return { ...(money ? { money } : {}), payload: {
     ...(ledger ? { status: 'pending', currency: p.currency } : {
       status: 'completed', set_paid: true, currency: p.currency,

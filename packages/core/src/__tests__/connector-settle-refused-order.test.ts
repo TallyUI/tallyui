@@ -1,5 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest';
-import type { RefusedOrderSettlement, SettleCancelRequest, SettleOutcome, SyncContext, TallyConnector } from '../types/connector';
+import type { RefusedOrderSettlement, SettleCancelRequest, SettleOutcome, SettlePayment, SettlePayRequest, SettlePayResult, SyncContext, TallyConnector } from '../types/connector';
+import type { PaymentMethodKind } from '../types/commands';
 
 describe('TallyConnector settleRefusedOrder types', () => {
   it('accepts a connector without settleRefusedOrder', () => {
@@ -24,5 +25,16 @@ describe('TallyConnector settleRefusedOrder types', () => {
     expectTypeOf<{ kind: 'changed'; status: string; capturedMinor: number }>().toExtend<SettleOutcome>();
     expectTypeOf<{ kind: 'changed'; status: string }>().not.toExtend<SettleOutcome>();
     expectTypeOf<SettleCancelRequest>().toEqualTypeOf<{ storeOrderId: string; clientOrderId: string; attemptId: string }>();
+  });
+
+  it('#1101 slice 3: names the pay request and result, and pay is optional', () => {
+    type Pay = (context: SyncContext, request: SettlePayRequest) => Promise<SettlePayResult>;
+    expectTypeOf<RefusedOrderSettlement['pay']>().toEqualTypeOf<Pay | undefined>();
+    expectTypeOf<{ cancel: undefined; pay: Pay }>().toExtend<RefusedOrderSettlement>();
+    expectTypeOf<SettlePayment>().toEqualTypeOf<{ id: string; method: PaymentMethodKind; amountMinor: number; tenderedMinor?: number }>();
+    expectTypeOf<SettlePayRequest>().toExtend<SettleCancelRequest>();
+    expectTypeOf<SettlePayRequest['currency']>().toEqualTypeOf<string>();
+    expectTypeOf<SettlePayRequest['payments']>().toEqualTypeOf<readonly SettlePayment[]>();
+    expectTypeOf<SettlePayResult>().toEqualTypeOf<{ outcome: SettleOutcome; recorded: readonly string[] }>();
   });
 });

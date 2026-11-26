@@ -1,11 +1,11 @@
-import type { OrderCreateEnvelope, OrderUpdateEnvelope, SettleCancelRequest, SettleOutcome } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope, SettleCancelRequest, SettleOutcome, SettlePayRequest, SettlePayResult } from '@tallyui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { watchFresh } from '../rxdb';
 import { createOrderOutbox, refreshOutboxState } from './order-outbox';
-import { cancelOnStore as cancelStoreOrder } from './store-settlement';
+import { cancelOnStore as cancelStoreOrder, payRestOnStore as payStoreRest } from './store-settlement';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
@@ -29,9 +29,12 @@ export interface UseOrderOutboxOptions {
   onBusy?(busy: boolean): void;
   /** Called when `open` rejects, even if the key has changed since (medusapos: reports storage worker failures). */
   onOpenError?(error: unknown): void;
-  /** The settlement of a refused sale's store order (#1101) for `storeKey`: the connector's `cancel`, bound to that store.
-   * Read on each call, for the open store. */
-  storeSettlement?(storeKey: string): { cancel?(request: SettleCancelRequest): Promise<SettleOutcome> } | undefined;
+  /** The settlement of a refused sale's store order (#1101) for `storeKey`: the connector's `cancel` and `pay`, bound to
+   * that store. Read on each call, for the open store. */
+  storeSettlement?(storeKey: string): {
+    cancel?(request: SettleCancelRequest): Promise<SettleOutcome>;
+    pay?(request: SettlePayRequest): Promise<SettlePayResult>;
+  } | undefined;
 }
 
 export interface UseOrderOutboxResult {
@@ -66,6 +69,13 @@ export interface UseOrderOutboxResult {
    * Resolves to `not_offered` before the current store is ready, or when there is no `storeSettlement` or no `cancel`.
    */
   cancelOnStore(orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }>;
+  /**
+   * Records on the store the till's legs a refused sale's part-paid store order is missing (`payRestOnStore`, #1101
+   * slice 3), with the `pay` of `storeSettlement` for the open store, then recounts the outbox state, whether the pay
+   * resolved or rejected. Resolves to `not_offered` before the current store is ready, or when there is no
+   * `storeSettlement` or no `pay`.
+   */
+  payRestOnStore(orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }>;
   /**
    * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
    * (closing the store) while this is above 0, because a close that lands under a write stuck in
@@ -153,6 +163,19 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       if (!cancel) return { kind: 'not_offered' };
       try {
         return await cancelStoreOrder({ orders: opened.orders, cancel }, orderId);
+      } finally {
+        // A settled row leaves state.rejected: publish it before resolving.
+        try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
+      }
+    },
+    async payRestOnStore(orderId) {
+      const opened = current.current;
+      if (!opened || opened.storeKey !== storeKey) return { kind: 'not_offered' };
+      const settlement = latest.current.storeSettlement?.(opened.storeKey);
+      const pay = settlement?.pay?.bind(settlement);
+      if (!pay) return { kind: 'not_offered' };
+      try {
+        return await payStoreRest({ orders: opened.orders, pay }, orderId);
       } finally {
         // A settled row leaves state.rejected: publish it before resolving.
         try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }

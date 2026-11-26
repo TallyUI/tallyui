@@ -12,6 +12,7 @@ import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
 import type { ClosureReads } from './closures';
 import type { Cashier } from './cashier';
+import type { PaymentMethodKind } from './commands';
 import type { FailureClass } from '../connectivity';
 import type { DisplayAdvertisement, DisplaySignalling } from './display-signalling';
 import { parseDisplayAdvertisement } from '../customer-display/advertisement';
@@ -309,9 +310,23 @@ export type SettleOutcome =
 /** Which order to settle: the store's id, the till's own order uuid, and the id of this attempt. */
 export interface SettleCancelRequest { storeOrderId: string; clientOrderId: string; attemptId: string }
 
+/** One till leg to record on the store order (#1101 slice 3): a new payment id, the till leg's method, amount and cash tendered. */
+export interface SettlePayment { id: string; method: PaymentMethodKind; amountMinor: number; tenderedMinor?: number }
+/** Record the till's unrecorded legs on the store order a refused sale left part paid. */
+export interface SettlePayRequest extends SettleCancelRequest { currency: string; payments: readonly SettlePayment[] }
+/** `recorded`: the ids in `payments` the store holds as captured when the call ends, in request order. */
+export interface SettlePayResult { outcome: SettleOutcome; recorded: readonly string[] }
+
 /** Settlement of an order the store created before it refused the sale. */
 export interface RefusedOrderSettlement {
   cancel?: (context: SyncContext, request: SettleCancelRequest) => Promise<SettleOutcome>;
+  /**
+   * Records the till's unrecorded legs, money the customer already paid at the till, on a part-paid store order: no new
+   * money is taken. `done` means every payment is recorded and the order reads `completed`; `changed` means nothing was
+   * sent because the store's figures or status do not match; `gone` comes only from the uuid resolver's 404; `retry`
+   * means no definite answer: send again with the same `attemptId` and payment ids.
+   */
+  pay?: (context: SyncContext, request: SettlePayRequest) => Promise<SettlePayResult>;
 }
 
 /**
@@ -447,7 +462,8 @@ export interface TallyConnector {
   getOrders?: (context: SyncContext, ids: readonly string[]) => Promise<StoreOrder[]>;
   /**
    * Settles an order the store created before it refused the sale: online only, never through the outbox. `cancel`
-   * cancels it only when the store's own current record shows nothing paid. `attemptId` identifies one attempt and is
+   * cancels it only when the store's own current record shows nothing paid; `pay` records the till's unrecorded legs
+   * only when the store's due is exactly their sum. `attemptId` identifies one attempt and is
    * sent again unchanged until a definite answer; `retry` means no definite answer. Rejects with
    * `ConnectorUnauthorizedError` for credentials. `undefined` when the connector can't settle refused orders.
    */
