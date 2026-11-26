@@ -1962,8 +1962,21 @@ interface OrderCreatePayload {
     lines, fees and shipping. A bridge is one whole-order figure while the
     plugin's T is per rate, so the till applies a single T to the whole
     order, the stricter reading, and never multiplies it by the number of
-    rates. It does not count the plugin's `TALLY-DISCOUNT` surcharges, so
-    its T is never above the plugin's.
+    rates.
+
+    **Discounts as taxed rows (Front desk, 2026-11-26, vendurepos probe):** on
+    Vendure each discounted line becomes its own taxed `TALLY-DISCOUNT`
+    surcharge. The till rounds each rate's tax once, an error of at most ½.
+    Vendure's default strategy rounds once per taxed row (each line, each
+    discount surcharge, each fee and each shipping row), at most ½ each. So
+    |store − till| ≤ ⌈rows / 2⌉, and the probe reached that bound at 1 to 6
+    discounted lines. A connector that declares `discountsAreTaxedRows` (the
+    vendurepos app's) therefore counts T = ⌈(lines + fees + shipping +
+    discounted lines) / 2⌉. A discounted line is one the `order.create`
+    payload sends with `discountMinor` > 0, counted from the stored order as
+    a version 4+ payload nets it. The vendurepos plugin counts the same rows
+    from the payload (vendurepos/app#532). Without the flag, T is the count
+    above, unchanged.
   - Across spike S1's 12 tax cases (2 strategies × 2 pricing modes, with
     discounts, mixed rates and a negative tie), the largest per-rate
     difference was 1 and the largest bridge was 1.

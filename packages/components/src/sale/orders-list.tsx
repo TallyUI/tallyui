@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
+import { useFormatMoney, useOptionalConnector, knownWarnings, type SettleOutcome } from '@tallyui/core';
 import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, TILL_SESSION_CLOSED, tillPayments, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
@@ -208,6 +208,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   onReverseOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
 }) {
   const formatMoney = useFormatMoney();
+  const discountsAreTaxedRows = useOptionalConnector()?.discountsAreTaxedRows === true;
   const hintId = useId();
   const retrying = useRef(new Set<string>());
   const [retryingIds, setRetryingIds] = useState(new Set<string>());
@@ -316,7 +317,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     return bTime - aTime;
   });
   return <ScrollView className="flex-1 bg-background p-4">
-    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
+    {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds, discountsAreTaxedRows }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
         {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
