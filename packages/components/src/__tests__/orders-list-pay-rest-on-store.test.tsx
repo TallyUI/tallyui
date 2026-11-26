@@ -129,6 +129,28 @@ describe('Pay the rest on store', () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
+  it.each<[string, SettleOutcome, string]>([
+    ['a not_completed retry says the store has not finished, not that it could not be reached', { kind: 'retry', reason: 'not_completed' },
+      "The store has not finished this order yet. Try again, or check it in the store's admin."],
+    ['any other retry still says Could not reach the store', { kind: 'retry', reason: 'network' }, 'Could not reach the store. Try again.'],
+  ])('%s', async (_name, outcome, line) => {
+    show(<OrdersList orders={[partPaid('o1')]} onRetry={async () => 0} onPayRestOnStore={async () => outcome} />);
+    fireEvent.click(button('o1')!);
+    await act(async () => { fireEvent.click(screen.getByTestId('order-o1-pay-rest-on-store-dialog-confirm')); });
+    expect(screen.getByTestId('order-o1-pay-rest-on-store-error').textContent).toBe(line);
+  });
+
+  it('after an attempt that recorded leg 1, the dialog lists only leg 2', () => {
+    const storeSettlement: PosOrder['storeSettlement'] = { kind: 'pay', state: 'refused', attemptId: 'attempt-1', at: '2026-11-25T10:00:00.000Z',
+      payments: [{ id: 'n1', method: 'external', amountMinor: 1500, done: true }, { id: 'n2', method: 'cash', amountMinor: 500 }] };
+    show(<OrdersList orders={[partPaid('o1', 1, { storeSettlement })]} onRetry={async () => 0} onPayRestOnStore={done} />);
+    fireEvent.click(button('o1')!);
+    const description = within(screen.getByTestId('order-o1-pay-rest-on-store-dialog')).getByText((_content, element) =>
+      !!element?.textContent?.includes('No money is taken now.') && element.children.length === 0).textContent;
+    expect(description).toContain(`Cash ${eur(500)}, already taken on this till.`);
+    expect(description).not.toContain(`Card terminal ${eur(1500)}`);
+  });
+
   it('a pay still sending reads Finish recording on store and calls the handler with no dialog', async () => {
     const handler = vi.fn<Handler>(done);
     show(<OrdersList orders={[partPaid('o1', 1, { storeSettlement: settlement('sending') })]} onRetry={async () => 0} onPayRestOnStore={handler} />);

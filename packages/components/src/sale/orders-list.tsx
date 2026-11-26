@@ -82,8 +82,9 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   // A pay's R: what the store had recorded at the refusal, plus each leg this till has recorded since.
   const recorded = money((left?.recordedMinor ?? 0) + sum(settlement?.payments?.filter((payment) => payment.done) ?? []));
   const cashTaken = sum(order.payments.filter((payment) => payment.method === 'cash'));
-  // A pay changed after this till recorded a leg on an earlier attempt says nothing more was recorded.
-  const nothing = `Nothing ${settlement?.payments?.some((payment) => payment.done) ? 'more ' : ''}was recorded from this till.`;
+  // What this till has recorded on the stored pay, on this press or an earlier one: true in every state.
+  const doneMinor = sum(settlement?.payments?.filter((payment) => payment.done) ?? []);
+  const nothing = doneMinor > 0 ? `${money(doneMinor)} was recorded from this till.` : 'Nothing was recorded from this till.';
   const settledText = settlement?.kind === 'pay'
     ? settlement.state === 'done' ? `Order #${reference} is paid on the store.`
       : settlement.state === 'gone' ? `Order #${reference} is not on the store any more; ${recorded} was recorded on it.`
@@ -231,11 +232,12 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       cancelling.current.delete(order.id);
     }
   }
-  /** Each row's Pay the rest on store (#1101 slice 3): in flight, or the last press got no answer from the store. */
+  /** Each row's Pay the rest on store (#1101 slice 3): in flight, the last press got no answer from the store, or the store
+   * answered that the order is not completed there yet (`not_completed`). */
   const paying = useRef(new Set<string>());
-  const [pays, setPays] = useState(new Map<string, 'busy' | 'failed'>());
+  const [pays, setPays] = useState(new Map<string, 'busy' | 'failed' | 'unfinished'>());
   const [askingPay, setAskingPay] = useState<PosOrder | null>(null);
-  const setPay = (id: string, state?: 'busy' | 'failed') => setPays((current) => {
+  const setPay = (id: string, state?: 'busy' | 'failed' | 'unfinished') => setPays((current) => {
     const next = new Map(current);
     if (state) next.set(id, state); else next.delete(id);
     return next;
@@ -246,7 +248,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     setPay(order.id, 'busy');
     try {
       const outcome = await onPayRestOnStore(order);
-      setPay(order.id, outcome.kind === 'retry' ? 'failed' : undefined);
+      setPay(order.id, outcome.kind !== 'retry' ? undefined : outcome.reason === 'not_completed' ? 'unfinished' : 'failed');
     } catch {
       setPay(order.id, 'failed');
     } finally {
@@ -367,8 +369,8 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
                 {payState === 'busy' ? 'Recording on store…' : finishingPay ? 'Finish recording on store' : 'Pay the rest on store'}
               </Text>
             </Pressable> : null}
-            {payable && payState === 'failed' ? <Text testID={`order-${order.id}-pay-rest-on-store-error`} className="text-muted-foreground">
-              Could not reach the store. Try again.</Text> : null}
+            {payable && (payState === 'failed' || payState === 'unfinished') ? <Text testID={`order-${order.id}-pay-rest-on-store-error`} className="text-muted-foreground">
+              {payState === 'unfinished' ? "The store has not finished this order yet. Try again, or check it in the store's admin." : 'Could not reach the store. Try again.'}</Text> : null}
             {/* Reopen needs a reopenable code, which Retry never resends (NOT_REQUEUEABLE), so the two never show together. */}
             {attention && order.reopenedAt !== undefined ? <>
               <Text testID={`order-${order.id}-reopened`} className="text-muted-foreground">Reopened as a parked sale.</Text>
@@ -403,12 +405,15 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       description={`Order #${reference} is waiting on the online store with nothing paid. This cancels it there. The payments taken on this till stay as they are.`}
       cancelLabel="Keep order" confirmLabel="Cancel order on store"
       onConfirm={() => { setAskingCancel(null); void cancelOnStore(askingCancel); }} />)(storeOrderLeft(askingCancel)?.reference ?? orderReference(askingCancel)) : null}
-    {askingPay ? ((reference) => <ConfirmDialog testID={`order-${askingPay.id}-pay-rest-on-store-dialog`} tone="default" open
+    {askingPay ? ((reference, legs, stored) => <ConfirmDialog testID={`order-${askingPay.id}-pay-rest-on-store-dialog`} tone="default" open
       onOpenChange={(open) => { if (!open) setAskingPay(null); }} title={`Record the rest of order #${reference} on the store?`}
-      description={[...unrecordedLegs(askingPay).map((leg) => `${methodLabel(leg.method)} ${formatMoney({ amount: leg.amountMinor, currency: askingPay.currency })}, already taken on this till.`),
+      description={[...legs.filter((_leg, index) => !(stored?.kind === 'pay' && stored.payments?.length === legs.length && stored.payments[index].done))
+        .map((leg) => `${methodLabel(leg.method)} ${formatMoney({ amount: leg.amountMinor, currency: askingPay.currency })}, already taken on this till.`),
         'No money is taken now.', GIVE_BACK].join('\n')}
       cancelLabel="Keep as is" confirmLabel="Record on store"
-      onConfirm={() => { setAskingPay(null); void payRestOnStore(askingPay); }} />)(storeOrderLeft(askingPay)?.reference ?? orderReference(askingPay)) : null}
+      onConfirm={() => { setAskingPay(null); void payRestOnStore(askingPay); }} />)(storeOrderLeft(askingPay)?.reference ?? orderReference(askingPay),
+      // Only the legs still to record: the stored pay is index-aligned with them when the lengths match, as the outbox reuses it.
+      unrecordedLegs(askingPay), askingPay.storeSettlement) : null}
     {footer}
   </ScrollView>;
 }

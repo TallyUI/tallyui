@@ -218,7 +218,7 @@ describe('OrderSyncNotices: Pay the rest on store (#1101 slice 3)', () => {
     ['changed, part paid', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 1500, payments: unsent },
       `Order #115 changed on the store: ${formatMoney({ amount: 1500, currency: 'USD' })} is paid there. Nothing was recorded from this till. Check it in the store's admin.`],
     ['changed, part paid, after this till recorded a leg', { ...pay('changed').storeSettlement!, storeStatus: 'pos-partial', capturedMinor: 2000 },
-      `Order #115 changed on the store: ${formatMoney({ amount: 2000, currency: 'USD' })} is paid there. Nothing more was recorded from this till. Check it in the store's admin.`],
+      `Order #115 changed on the store: ${formatMoney({ amount: 2000, currency: 'USD' })} is paid there. ${formatMoney({ amount: 1000, currency: 'USD' })} was recorded from this till. Check it in the store's admin.`],
     ['row 10: gone with 10.00 recorded, the done leg counted', { ...pay('gone').storeSettlement! },
       `Order #115 is not on the store any more; ${formatMoney({ amount: 2000, currency: 'USD' })} was recorded on it.`],
   ])('%s replaces the left line and keeps the sentence', (_name, storeSettlement, line) => {
@@ -226,6 +226,14 @@ describe('OrderSyncNotices: Pay the rest on store (#1101 slice 3)', () => {
     expect(screen.getByTestId('order-settlement-x').textContent).toBe(line);
     expect(container.textContent).toBe(`${PLATFORM_ERROR}${line}`);
     expect(container.textContent).not.toContain('pos-partial');
+  });
+  it('changed after this press recorded every leg says what was recorded', () => {
+    const allDone = unsent.map((payment) => ({ ...payment, done: true }));
+    const storeSettlement = { ...pay('changed').storeSettlement!, storeStatus: 'processing', capturedMinor: 3000, payments: allDone };
+    render(<OrderSyncNotices order={{ ...pay('changed'), storeSettlement }} />);
+    const line = screen.getByTestId('order-settlement-x').textContent;
+    expect(line).toBe(`Order #115 changed on the store: ${formatMoney({ amount: 3000, currency: 'USD' })} is paid there. ${formatMoney({ amount: 2000, currency: 'USD' })} was recorded from this till. Check it in the store's admin.`);
+    expect(line).not.toContain('Nothing');
   });
   it.each<[string, PosOrder, string]>([
     ['row 7: refused names R of T', pay('refused', { code: 'wcpos_amount_exceeds_balance', message: 'Store says no.' }),
