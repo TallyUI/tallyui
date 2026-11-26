@@ -108,7 +108,7 @@ async function olderDocument(storage: Storage, databaseName: string, id: string)
 describe('from version 21', () => {
   describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 21 }));
 
-  it('keeps a version-21 refused sale byte for byte at 22, then stores its settlement through a close and reopen', async () => {
+  it('keeps a version-21 refused sale byte for byte at 23, then stores its settlement through a close and reopen', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const order = refused({}, { orderId: '115', displayId: '1001', recorded: 0 });
     const name = `possettle${uuidv7().replaceAll('-', '')}`;
@@ -120,7 +120,7 @@ describe('from version 21', () => {
     let db = await createRxDatabase({ name, storage, multiInstance: false });
     try {
       let orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(22);
+      expect(orders.schema.version).toBe(23);
       const migrated = await orders.findOne(order.id).exec();
       expect(migrated?.toJSON()).toStrictEqual(order);
       expect(migrated?.toJSON(true)._meta).toEqual(original._meta);

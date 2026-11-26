@@ -42,6 +42,7 @@ import type { PosOrder } from './types';
  * Version 21 adds the order's optional `cashRoundings` (ADR-094); identity migration, one-way like version 20.
  * Version 22 adds the order's optional `storeSettlement`, the till's settlement of a refused sale's store order (#1101);
  * identity migration, one-way like version 21.
+ * Version 23 adds a fee's and shipping line's optional `entered`, the cashier's own-mode amount for a `chargeTaxMode` store (vendurepos 2.10b); identity migration, one-way like version 22.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -51,7 +52,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 22, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 23, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -117,6 +118,9 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       required: ['id', 'productId', 'name', 'sku', 'quantity', 'unitPriceMinor', 'discountMinor', 'netMinor', 'taxLines'],
     } },
     fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      entered: { type: 'object', additionalProperties: false, properties: {
+        amountMinor: { type: 'integer', minimum: 0 }, amountIncludesTax: { type: 'boolean' },
+      }, required: ['amountMinor', 'amountIncludesTax'] },
       storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
@@ -128,6 +132,9 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       }, required: ['ratePpm', 'taxMicros'] } },
     }, required: ['id', 'name', 'amountMinor', 'taxStatus', 'taxLines', 'netMinor', 'taxMicros'] } },
     shipping: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+      entered: { type: 'object', additionalProperties: false, properties: {
+        amountMinor: { type: 'integer', minimum: 0 }, amountIncludesTax: { type: 'boolean' },
+      }, required: ['amountMinor', 'amountIncludesTax'] },
       storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
       methodId: { type: 'string', maxLength: 64 }, amountMinor: { type: 'integer', minimum: 0 }, taxClass: { type: 'string', maxLength: 64 },
@@ -238,5 +245,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity, 22: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity, 22: identity, 23: identity } };
 }

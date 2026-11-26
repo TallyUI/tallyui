@@ -6,7 +6,7 @@ import { signedOut } from './session-probe';
 export const CAPABILITIES_PATH = '/tally/v1/info';
 
 /**
- * Reads the store's contract capabilities (ADR-062) and `taxRounding` (#287) with the
+ * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287) and `chargeTaxMode` with the
  * connector's own headers. A 404 means an old plugin and gives the default; a network failure,
  * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
  * `undefined`. The route answers a dead session and a missing
@@ -41,5 +41,14 @@ export async function readVendureCapabilities(
   } catch {
     return undefined;
   }
-  return parseInfoCapabilities(body, (reason) => console.warn(`@tallyui/connector-vendure: ${reason}`));
+  const warn = (reason: string) => console.warn(`@tallyui/connector-vendure: ${reason}`);
+  const capabilities = parseInfoCapabilities(body, warn);
+  if (!capabilities) return undefined;
+  const { chargeTaxMode } = body as { chargeTaxMode?: unknown };
+  if (chargeTaxMode !== undefined) {
+    if (chargeTaxMode && typeof chargeTaxMode === 'object' && !Array.isArray(chargeTaxMode) && 'v' in chargeTaxMode
+      && typeof chargeTaxMode.v === 'number' && Number.isSafeInteger(chargeTaxMode.v) && chargeTaxMode.v >= 1) capabilities.chargeTaxMode = true;
+    else warn('ignoring a malformed chargeTaxMode');
+  }
+  return capabilities;
 }

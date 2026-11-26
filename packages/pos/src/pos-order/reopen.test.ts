@@ -63,6 +63,19 @@ function totals(order: Order | PosOrder) {
   return { totalMinor: order.totalMinor, subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor, taxMinor: order.taxMinor };
 }
 
+it('T11 reopens a total_mismatch with the inclusive fee the cashier entered', async () => {
+  const context = { pricesIncludeTax: false, getTaxRatePpm: () => 250000 };
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: context });
+  builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 800, currency: 'EUR' } });
+  builder.addFee({ name: 'Fee', amountMinor: 1002, amountIncludesTax: true });
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const order = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 5, chargeTaxMode: true }, now });
+  await db.pos_orders.insert({ ...order, syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'Total mismatch' } });
+  const saved = await draft(await reopenRefusedOrder(order.id, deps(context)));
+  expect(saved.fees![0]).toMatchObject({ amountMinor: 1002, amountIncludesTax: true });
+  expect(saved.totalMinor).toBe(2002);
+});
+
 it.each([
   ['coupon_invalid', false], ['total_mismatch', false], ['coupon_invalid', true],
 ] as const)('reopens %s with percentage order discount = %s and resumes with the stored totals', async (code, percentage) => {
