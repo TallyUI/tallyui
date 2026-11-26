@@ -1,7 +1,46 @@
-import type { SettleCancelRequest, SettleOutcome, SettlePayment, SettlePayRequest, SettlePayResult } from '@tallyui/core';
+import type { SettleCancelRequest, SettleOutcome, SettlePayment, SettlePayRequest, SettlePayResult, SettleReverseRequest, SettleReverseResult } from '@tallyui/core';
 import type { RxCollection } from 'rxdb';
 import { outboxLogger } from './logger';
-import { canCancelOnStore, canPayRestOnStore, storeOrderLeft, unrecordedLegs, uuidv7, type PosOrder, type PosOrderStoreSettlement } from '../pos-order';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, recordedLegs, storeOrderLeft, unrecordedLegs, uuidv7, type PosOrder, type PosOrderStoreSettlement } from '../pos-order';
+
+/** Store the void command ids before sending; only the same sending attempt can receive the outcome. */
+export async function reverseOnStore(deps: { orders: RxCollection<PosOrder>; reverse(request: SettleReverseRequest): Promise<SettleReverseResult>; now?: () => Date },
+  orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }> {
+  const stamp = () => (deps.now?.() ?? new Date()).toISOString();
+  let request: SettleReverseRequest | undefined;
+  await (await deps.orders.findOne(orderId).exec())?.incrementalModify((data) => {
+    request = undefined;
+    if (data._deleted || !canReverseOnStore(data)) return data;
+    const stored = data.storeSettlement?.kind === 'reverse' ? data.storeSettlement : undefined;
+    const again = stored?.state === 'sending' ? stored : undefined;
+    if (again && !again.legs?.length) return data;
+    const attemptId = again?.attemptId ?? uuidv7();
+    const legs = again?.legs ?? recordedLegs(data).map(({ id }) => stored?.legs?.find((leg) => leg.paymentId === id && leg.done)
+      ?? { paymentId: id, commandId: uuidv7() });
+    const at = stamp();
+    data.storeSettlement = { kind: 'reverse', state: 'sending', attemptId, at, legs };
+    data.updatedAt = at;
+    request = { storeOrderId: storeOrderLeft(data)!.orderId, clientOrderId: data.id, attemptId, legs: legs.map(({ paymentId, commandId }) => ({ paymentId, commandId })) };
+    return data;
+  });
+  if (!request) return { kind: 'not_offered' };
+  const sent: SettleReverseRequest = request;
+  const { outcome, voided } = await deps.reverse(sent);
+  await (await deps.orders.findOne(orderId).exec())?.incrementalModify((data) => {
+    const stored = data.storeSettlement;
+    if (stored?.kind !== 'reverse' || stored.attemptId !== sent.attemptId || stored.state !== 'sending') return data;
+    const legs = (stored.legs ?? []).map((leg) => voided.includes(leg.paymentId) ? { ...leg, done: true } : leg);
+    if (outcome.kind === 'retry' && legs.every((leg, index) => leg.done === stored.legs?.[index]?.done)) return data;
+    const at = stamp(), base = { kind: 'reverse' as const, attemptId: sent.attemptId, at, legs };
+    data.storeSettlement = outcome.kind === 'retry' ? { ...stored, legs }
+      : outcome.kind === 'done' ? { ...base, state: 'done', storeStatus: outcome.status }
+        : outcome.kind === 'changed' ? { ...base, state: 'changed', storeStatus: outcome.status, capturedMinor: outcome.capturedMinor }
+          : outcome.kind === 'refused' ? { ...base, state: 'refused', code: outcome.code, message: outcome.message } : { ...base, state: 'gone' };
+    if (outcome.kind !== 'retry') data.updatedAt = at;
+    return data;
+  });
+  return outcome;
+}
 
 export interface CancelOnStoreDeps {
   orders: RxCollection<PosOrder>;

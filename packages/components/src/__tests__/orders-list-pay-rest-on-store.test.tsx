@@ -37,6 +37,16 @@ const done: Handler = async () => ({ kind: 'done', status: 'completed' });
 const cancelDone: Handler = async () => ({ kind: 'done', status: 'cancelled' });
 
 describe('Pay the rest on store', () => {
+  it('row 18: point to Give back and cancel only when offered', () => {
+    const payments = [{ id: 'cash', method: 'cash' as const, amountMinor: 1000 }, { id: 'card', method: 'external' as const, amountMinor: 2000 }];
+    for (const handler of [undefined, cancelDone]) {
+      show(<OrdersList orders={[partPaid('o1', 1, { payments })]} onRetry={async () => 0} onPayRestOnStore={done} onReverseOnStore={handler} />);
+      fireEvent.click(button('o1')!);
+      expect(screen.getByTestId('order-o1-pay-rest-on-store-dialog').textContent).toContain(handler
+        ? 'If the money was given back, use Give back and cancel instead.' : "If the money was given back, do not record it; a manager must check the order in the store's admin.");
+      cleanup();
+    }
+  });
   it.each<[string, PosOrder, Handler | undefined, boolean]>([
     ['recorded 1, with the handler', partPaid('o1'), done, true],
     ['row 12: recorded 0', partPaid('o1', 0), done, false],

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
-import { canCancelOnStore, canPayRestOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, recordedLegs, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -37,6 +37,9 @@ const REFUSAL_SENTENCES = new Map([
 const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code ?? '') ?? REFUSAL_SENTENCES.get('platform_error')!;
 /** Pay the rest on store's dialog (#1101 slice 3): the front desk's wording until slice 4 handles money given back. */
 const GIVE_BACK = "If the money was given back, do not record it; a manager must check the order in the store's admin.";
+const GIVE_BACK_INSTEAD = 'If the money was given back, use Give back and cancel instead.';
+const legLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card');
+const legWording = (method: string, amount: string | undefined) => `${legLabel(method)} ${amount}: ${method === 'cash' ? 'hand it back from the drawer' : 'give it back on the card terminal'}`;
 const methodLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card terminal');
 const REOPEN_AGAIN_SENTENCE = "This order was changed in the online store after it was reopened here, so your change wasn't sent. Reopen the order and make the change again.";
 
@@ -74,7 +77,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   // #1101: where the till's cancel, or pay of the rest, of the order the refused sale left on the store stands. Done, gone
   // and changed say it in place of the "left" line; refused and sending add to it. The store's code and message never show (#269).
   const kind = order.storeSettlement?.kind;
-  const settlement = order.syncStatus === 'rejected' && (kind === 'cancel' || kind === 'pay') ? order.storeSettlement : undefined;
+  const settlement = order.syncStatus === 'rejected' && (kind === 'cancel' || kind === 'pay' || (kind === 'reverse' && order.storeSettlement?.legs?.length)) ? order.storeSettlement : undefined;
   const reference = left?.reference ?? orderReference(order);
   const money = (amount: number) => formatMoney({ amount, currency: order.currency });
   const sum = (legs: { amountMinor: number }[]) => legs.reduce((total, leg) => total + leg.amountMinor, 0);
@@ -85,7 +88,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
   // What this till has recorded on the stored pay, on this press or an earlier one: true in every state.
   const doneMinor = sum(settlement?.payments?.filter((payment) => payment.done) ?? []);
   const nothing = doneMinor > 0 ? `${money(doneMinor)} was recorded from this till.` : 'Nothing was recorded from this till.';
-  const settledText = settlement?.kind === 'pay'
+  let settledText = settlement?.kind === 'pay'
     ? settlement.state === 'done' ? `Order #${reference} is paid on the store.`
       : settlement.state === 'gone' ? `Order #${reference} is not on the store any more; ${recorded} was recorded on it.`
         : settlement.state !== 'changed' ? undefined
@@ -97,11 +100,31 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
         : settlement?.state === 'changed' ? `Order #${reference} changed on the store${paidThere}. Nothing was cancelled from this till. Check it in the store's admin.`
           : undefined;
   const pay = settlement?.kind === 'pay';
-  const addedText = settlement?.state === 'refused' ? pay
+  let addedText = settlement?.state === 'refused' ? pay
     ? `The store did not record the rest of order #${reference}: ${recorded} of ${money(order.totalMinor)} is recorded there. Check it in the store's admin.`
     : `The store did not cancel order #${reference}. Check it in the store's admin.`
     : settlement?.state === 'sending' ? pay ? `Recording the rest of order #${reference} on the store is not finished.`
       : `Cancelling order #${reference} on the store is not finished.` : undefined;
+  if (settlement?.kind === 'reverse' && settlement.legs) {
+    const legs = settlement.legs.flatMap((leg) => {
+      const payment = order.payments.find(({ id }) => id === leg.paymentId);
+      return payment ? [{ ...payment, done: leg.done }] : [];
+    });
+    const list = (payments: typeof legs) => payments.map((leg) => legWording(leg.method, money(leg.amountMinor))).join('; ');
+    const taken = list(legs.filter((leg) => leg.done)), still = list(legs.filter((leg) => !leg.done));
+    const hasDone = settlement.legs.some((leg) => leg.done);
+    const subject = `Order #${reference}`;
+    settledText = undefined;
+    addedText = undefined;
+    if (settlement.state === 'done') {
+      const cash = sum(legs.filter((leg) => leg.method === 'cash'));
+      settledText = `${subject} was cancelled on the store.${legs.length ? ` Give back to the customer: ${list(legs)}.` : ''}${cash ? ` Record the ${money(cash)} cash you give back as a pay-out.` : ''}`;
+    } else if (settlement.state === 'gone') settledText = `${subject} is not on the store any more. Check it in the store's admin.`;
+    else if (settlement.state === 'sending') addedText = `Cancelling order #${reference} on the store is not finished.${taken ? ` Taken off it so far: ${taken}.` : ''}`;
+    else if (hasDone) addedText = `${subject} was not cancelled on the store.${taken ? ` Taken off it: ${taken}.` : ''}${still ? ` Still paid there: ${still}.` : ''} A manager must check it in the store's admin before any money is given back.`;
+    else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}; nothing was taken off it. Check it in the store's admin.`;
+    else settledText = `${subject} changed on the store${paidThere}. Nothing was taken off it or cancelled from this till. Check it in the store's admin.`;
+  }
   // A pay gone with money recorded on the store is not settled (`settledOnStore`): it stays a destructive line.
   const settled = !!settlement && settledOnStore(order);
   return <>
@@ -172,7 +195,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * the store (`canPayRestOnStore`, #1101 slice 3), asked in a confirm dialog naming each leg to record (no money is taken):
  * the app wires `useOrderOutbox`'s `payRestOnStore`. A pay still `sending` is finished with no dialog. With it, a row
  * with money recorded on the store offers no Retry. */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore }: {
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore, onReverseOnStore }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
@@ -181,6 +204,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
   onResume?: (order: PosOrder) => void;
   onCancelOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
   onPayRestOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
+  onReverseOnStore?: (order: PosOrder) => Promise<SettleOutcome | { kind: 'not_offered' }>;
 }) {
   const formatMoney = useFormatMoney();
   const hintId = useId();
@@ -255,6 +279,25 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       paying.current.delete(order.id);
     }
   }
+  const reversing = useRef(new Set<string>());
+  const [reverses, setReverses] = useState(new Map<string, 'busy' | 'failed'>());
+  const [askingReverse, setAskingReverse] = useState<PosOrder | null>(null);
+  async function reverseOnStore(order: PosOrder) {
+    if (!onReverseOnStore || reversing.current.has(order.id)) return;
+    reversing.current.add(order.id);
+    setReverses((current) => new Map(current).set(order.id, 'busy'));
+    let failed = false;
+    try {
+      failed = (await onReverseOnStore(order)).kind === 'retry';
+    } catch { failed = true; } finally {
+      reversing.current.delete(order.id);
+      setReverses((current) => {
+        const next = new Map(current);
+        if (failed) next.set(order.id, 'failed'); else next.delete(order.id);
+        return next;
+      });
+    }
+  }
   const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {
     for (const id of retrying.current) {
@@ -305,7 +348,9 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
           const payState = pays.get(order.id);
           const finishingPay = order.storeSettlement?.kind === 'pay' && order.storeSettlement.state === 'sending';
           // #1101 slice 3: with the pay wired, a part-paid order left on the store has its rest recorded, never resent.
-          const retryLabel = onPayRestOnStore && left && left.recordedMinor > 0 ? undefined : onCancelOnStore && left?.recordedMinor === 0
+          const reversible = attention && !!onReverseOnStore && canReverseOnStore(order);
+          const reverseState = reverses.get(order.id), finishingReverse = order.storeSettlement?.kind === 'reverse' && order.storeSettlement.state === 'sending';
+          const retryLabel = (onPayRestOnStore || onReverseOnStore) && left && left.recordedMinor > 0 ? undefined : onCancelOnStore && left?.recordedMinor === 0
             ? order.error?.code === 'insufficient_stock' ? 'Try the payment again' : undefined : 'Retry';
           return (
           <View key={order.id} className="gap-1 rounded-md border border-border bg-card p-3">
@@ -371,6 +416,11 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
             </Pressable> : null}
             {payable && (payState === 'failed' || payState === 'unfinished') ? <Text testID={`order-${order.id}-pay-rest-on-store-error`} className="text-muted-foreground">
               {payState === 'unfinished' ? "The store has not finished this order yet. Try again, or check it in the store's admin." : 'Could not reach the store. Try again.'}</Text> : null}
+            {reversible ? <Pressable accessibilityRole="button" testID={`order-${order.id}-reverse-on-store`} disabled={reverseState === 'busy'}
+              onPress={() => { if (finishingReverse) void reverseOnStore(order); else setAskingReverse(order); }} className="rounded-md border border-border px-4 py-2">
+              <Text className="text-center font-semibold text-foreground">{reverseState === 'busy' ? 'Cancelling on store…' : finishingReverse ? 'Finish cancelling on store' : 'Give back and cancel'}</Text>
+            </Pressable> : null}
+            {reversible && reverseState === 'failed' ? <Text testID={`order-${order.id}-reverse-on-store-error`} className="text-muted-foreground">Could not reach the store. Try again.</Text> : null}
             {/* Reopen needs a reopenable code, which Retry never resends (NOT_REQUEUEABLE), so the two never show together. */}
             {attention && order.reopenedAt !== undefined ? <>
               <Text testID={`order-${order.id}-reopened`} className="text-muted-foreground">Reopened as a parked sale.</Text>
@@ -409,11 +459,16 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
       onOpenChange={(open) => { if (!open) setAskingPay(null); }} title={`Record the rest of order #${reference} on the store?`}
       description={[...legs.filter((_leg, index) => !(stored?.kind === 'pay' && stored.payments?.length === legs.length && stored.payments[index].done))
         .map((leg) => `${methodLabel(leg.method)} ${formatMoney({ amount: leg.amountMinor, currency: askingPay.currency })}, already taken on this till.`),
-        'No money is taken now.', GIVE_BACK].join('\n')}
+        'No money is taken now.', onReverseOnStore && canReverseOnStore(askingPay) ? GIVE_BACK_INSTEAD : GIVE_BACK].join('\n')}
       cancelLabel="Keep as is" confirmLabel="Record on store"
       onConfirm={() => { setAskingPay(null); void payRestOnStore(askingPay); }} />)(storeOrderLeft(askingPay)?.reference ?? orderReference(askingPay),
       // Only the legs still to record: the stored pay is index-aligned with them when the lengths match, as the outbox reuses it.
       unrecordedLegs(askingPay), askingPay.storeSettlement) : null}
+    {askingReverse ? <ConfirmDialog testID={`order-${askingReverse.id}-reverse-on-store-dialog`} tone="destructive" open
+      onOpenChange={(open) => { if (!open) setAskingReverse(null); }} title={`Give the money back and cancel order #${storeOrderLeft(askingReverse)?.reference ?? orderReference(askingReverse)}?`}
+      description={[...recordedLegs(askingReverse).map((leg) => `${legWording(leg.method, formatMoney({ amount: leg.amountMinor, currency: askingReverse.currency }))}.`),
+        'The store stops counting these payments and cancels the order.', 'Hand the money back once this till shows the order cancelled. If you already gave it back, go ahead.'].join('\n')}
+      cancelLabel="Keep order" confirmLabel="Give back and cancel" onConfirm={() => { setAskingReverse(null); void reverseOnStore(askingReverse); }} /> : null}
     {footer}
   </ScrollView>;
 }

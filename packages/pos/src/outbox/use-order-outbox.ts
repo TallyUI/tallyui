@@ -1,11 +1,11 @@
-import type { OrderCreateEnvelope, OrderUpdateEnvelope, SettleCancelRequest, SettleOutcome, SettlePayRequest, SettlePayResult } from '@tallyui/core';
+import type { OrderCreateEnvelope, OrderUpdateEnvelope, SettleCancelRequest, SettleOutcome, SettlePayRequest, SettlePayResult, SettleReverseRequest, SettleReverseResult } from '@tallyui/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection, RxError } from 'rxdb';
 import { outboxLogger } from './logger';
 import { OrderContentMismatchError, sameSale, type PosOrder } from '../pos-order';
 import { watchFresh } from '../rxdb';
 import { createOrderOutbox, refreshOutboxState } from './order-outbox';
-import { cancelOnStore as cancelStoreOrder, payRestOnStore as payStoreRest } from './store-settlement';
+import { cancelOnStore as cancelStoreOrder, payRestOnStore as payStoreRest, reverseOnStore } from './store-settlement';
 import type { CommandTransport, OutboxState } from './types';
 
 const idle: OutboxState = { pending: 0, sending: false };
@@ -34,6 +34,7 @@ export interface UseOrderOutboxOptions {
   storeSettlement?(storeKey: string): {
     cancel?(request: SettleCancelRequest): Promise<SettleOutcome>;
     pay?(request: SettlePayRequest): Promise<SettlePayResult>;
+    reverse?(request: SettleReverseRequest): Promise<SettleReverseResult>;
   } | undefined;
 }
 
@@ -76,6 +77,7 @@ export interface UseOrderOutboxResult {
    * `storeSettlement` or no `pay`.
    */
   payRestOnStore(orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }>;
+  reverseOnStore(orderId: string): Promise<SettleOutcome | { kind: 'not_offered' }>;
   /**
    * The count of `record()` calls not yet settled (resolved or rejected). An app holds sign-out
    * (closing the store) while this is above 0, because a close that lands under a write stuck in
@@ -178,6 +180,18 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
         return await payStoreRest({ orders: opened.orders, pay }, orderId);
       } finally {
         // A settled row leaves state.rejected: publish it before resolving.
+        try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
+      }
+    },
+    async reverseOnStore(orderId) {
+      const opened = current.current;
+      if (!opened || opened.storeKey !== storeKey) return { kind: 'not_offered' };
+      const settlement = latest.current.storeSettlement?.(opened.storeKey);
+      const reverse = settlement?.reverse?.bind(settlement);
+      if (!reverse) return { kind: 'not_offered' };
+      try {
+        return await reverseOnStore({ orders: opened.orders, reverse }, orderId);
+      } finally {
         try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
       }
     },

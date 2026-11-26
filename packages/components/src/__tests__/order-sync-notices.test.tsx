@@ -31,6 +31,30 @@ const edited = (id: string, name = 'Blue shirt') => ({ id, productId: 'shirt', v
   quantity: 1, unitPriceMinor: 600, discountMinor: 0, netMinor: 600, taxLines: [] });
 const extras = { customer: { taxIds: [{ type: 'eu_vat', value: 'DE123456789' }] }, meta: [{ key: 'gift', value: 'yes' }], lines: [edited('l1')] };
 
+describe('reverse notices', () => {
+  const cash = { id: 'cash', method: 'cash' as const, amountMinor: 1000 }, card = { id: 'card', method: 'external' as const, amountMinor: 500 };
+  const cashText = `Cash ${eur(1000)}: hand it back from the drawer`, cardText = `Card ${eur(500)}: give it back on the card terminal`;
+  function notice(state: NonNullable<PosOrder['storeSettlement']>['state'], payments: PosOrder['payments'], done: string[]) {
+    render(<OrderSyncNotices order={order('reverse', { syncStatus: 'rejected', error: { code: 'invalid_payload', message: 'secret', data: { orderId: '115', recorded: payments.length } },
+      payments, storeSettlement: { kind: 'reverse', state, at: '2026-11-25T10:00:00.000Z', attemptId: 'attempt',
+        legs: payments.map(({ id }) => ({ paymentId: id, commandId: `cmd-${id}`, done: done.includes(id) })) } })} />);
+    return screen.getByTestId('order-settlement-reverse').textContent;
+  }
+  it('row 3: partial refusal names what was taken off and still paid', () => {
+    expect(notice('refused', [cash, card], ['cash'])).toBe(`Order #115 was not cancelled on the store. Taken off it: ${cashText}. Still paid there: ${cardText}. A manager must check it in the store's admin before any money is given back.`);
+    expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
+  });
+  it('row 8: a changed cancel names the confirmed void', () => {
+    expect(notice('changed', [cash], ['cash'])).toBe(`Order #115 was not cancelled on the store. Taken off it: ${cashText}. A manager must check it in the store's admin before any money is given back.`);
+    expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
+  });
+  it('row 17: cancelled notice lists every leg and only cash needs a pay-out', () => {
+    expect(notice('done', [cash, card], ['cash', 'card'])).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cashText}; ${cardText}. Record the ${eur(1000)} cash you give back as a pay-out.`);
+    cleanup();
+    expect(notice('done', [card], ['card'])).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cardText}.`);
+  });
+});
+
 describe('OrderSyncNotices parked sales', () => {
   it.each([
     ['needs_admin:session_closed', 'Not in the online store yet. A manager must finish this sale in the store admin.'],

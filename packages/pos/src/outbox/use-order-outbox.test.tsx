@@ -413,6 +413,22 @@ describe('useOrderOutbox options', () => {
         return finalizeOrder(builder.getSnapshot(), { registerId: 'register-1' });
       }
 
+      it('row 14: without reverse the hook does not start a settlement', async () => {
+        const pay = vi.fn();
+        const order = await refusedOnStore({ storeSettlement: () => ({ pay }) }, twoLegs(), partPaid);
+        expect(await outbox.reverseOnStore(order.id)).toEqual({ kind: 'not_offered' });
+        expect(pay).not.toHaveBeenCalled();
+        expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement).toBeUndefined();
+      });
+
+      it('reverses through the open store and refreshes state.rejected', async () => {
+        const order = await refusedOnStore({ storeSettlement: () => ({ reverse: async ({ legs }) => ({
+          outcome: { kind: 'done', status: 'cancelled' }, voided: legs.map(({ paymentId }) => paymentId),
+        }) }) }, twoLegs(), partPaid);
+        await act(async () => { expect(await outbox.reverseOnStore(order.id)).toEqual({ kind: 'done', status: 'cancelled' }); });
+        expect(outbox.state.rejected).toBe(0);
+      });
+
       it('pays with the pay bound for the open store, then drops the row from state.rejected', async () => {
         const keys: string[] = [];
         const seen: SettlePayRequest[] = [];

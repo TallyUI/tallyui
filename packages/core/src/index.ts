@@ -30,7 +30,7 @@ export type {
   StoreTaxRate,
   StoreTaxRateLocation,
 } from './types';
-export type { SignInResult, ServerCapabilities, TaxRounding, SettleOutcome, SettleCancelRequest, SettlePayment, SettlePayRequest, SettlePayResult, RefusedOrderSettlement } from './types/connector';
+export type { SignInResult, ServerCapabilities, TaxRounding, SettleOutcome, SettleCancelRequest, SettlePayment, SettlePayRequest, SettlePayResult, SettleReverseLeg, SettleReverseRequest, SettleReverseResult, RefusedOrderSettlement } from './types/connector';
 export type {
   DisplaySignalling, DisplaySignallingContext, DisplaySignallingErrorCode, DisplayAdvertisement, IceServer,
   PendingPairing, DisplayRecord, SignalMessage, TillDevice,

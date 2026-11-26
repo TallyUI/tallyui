@@ -27,11 +27,30 @@ export function canCancelOnStore(order: LeftOrder): boolean {
   return settlement === undefined || settlement.kind === 'cancel' || settlement.state === 'changed' || settlement.state === 'refused';
 }
 
+function recordedCount(order: Pick<PosOrder, 'error'>): number {
+  const recorded = order.error?.data?.recorded;
+  return Number.isSafeInteger(recorded) && (recorded as number) > 0 ? recorded as number : 0;
+}
+
+/** The till's legs the store had recorded at the refusal, in recording order. */
+export function recordedLegs(order: Pick<PosOrder, 'error' | 'payments'>): PosOrder['payments'] {
+  return order.payments.slice(0, recordedCount(order));
+}
+
 /** The till's legs the store had not recorded at the refusal (#1101 slice 3): the payments after `data.recorded`, counted
  * as `storeOrderLeft` counts them. */
 export function unrecordedLegs(order: Pick<PosOrder, 'error' | 'payments'>): PosOrder['payments'] {
-  const recorded = order.error?.data?.recorded;
-  return order.payments.slice(Number.isSafeInteger(recorded) && (recorded as number) > 0 ? recorded as number : 0);
+  return order.payments.slice(recordedCount(order));
+}
+
+/** Whether the till can take its recorded legs off the store order and cancel it (#1101 slice 4). */
+export function canReverseOnStore(order: LeftOrder): boolean {
+  const left = storeOrderLeft(order), stored = order.storeSettlement;
+  if (!left || left.recordedMinor <= 0 || settledOnStore(order)) return false;
+  const legs = recordedLegs(order);
+  if (!legs.length || !legs.every((leg) => leg.amountMinor > 0)) return false;
+  return !stored || (stored.kind === 'reverse' && ['sending', 'changed', 'refused'].includes(stored.state))
+    || (stored.kind === 'pay' && ['changed', 'refused'].includes(stored.state) && !stored.payments?.some((payment) => payment.done));
 }
 
 /**

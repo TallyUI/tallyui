@@ -6,7 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { addPosOrderCollection } from './open';
 import { addPosOrderCollectionTests, olderCollection } from './open.test-helper';
-import { canCancelOnStore, canPayRestOnStore, settledOnStore, unrecordedLegs } from './store-settlement';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, recordedLegs, settledOnStore, unrecordedLegs } from './store-settlement';
 import type { PosOrder, PosOrderStoreSettlement } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -23,6 +23,18 @@ function refused(overrides: Partial<PosOrder> = {}, data: Record<string, unknown
 }
 const settlement = (state: PosOrderStoreSettlement['state'], kind: PosOrderStoreSettlement['kind'] = 'cancel'): PosOrderStoreSettlement =>
   ({ kind, state, attemptId: uuidv7(), at: '2026-11-25T10:00:00.000Z' });
+
+it('row 15: offer reverse only for positive recorded legs and resumable settlements', () => {
+  const order = refused({}, { orderId: '115', recorded: 1 });
+  const pay = settlement('refused', 'pay');
+  expect(recordedLegs(order)).toEqual(order.payments);
+  expect(recordedLegs(refused())).toEqual([]);
+  expect(canReverseOnStore(refused())).toBe(false);
+  expect(canReverseOnStore(order)).toBe(true);
+  for (const stored of [settlement('sending', 'pay'), { ...pay, payments: [{ ...order.payments[0], done: true }] },
+    settlement('gone', 'reverse'), settlement('done', 'reverse')]) expect(canReverseOnStore({ ...order, storeSettlement: stored })).toBe(false);
+  for (const stored of [pay, settlement('refused', 'reverse')]) expect(canReverseOnStore({ ...order, storeSettlement: stored })).toBe(true);
+});
 
 describe('canCancelOnStore', () => {
   it.each<[string, PosOrder, boolean]>([

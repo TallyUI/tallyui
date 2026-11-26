@@ -1,4 +1,4 @@
-import { ConnectorUnauthorizedError, type RefusedOrderSettlement, type SettleOutcome, type SettlePayment, type SettlePayRequest, type SettlePayResult, type SyncContext } from '@tallyui/core';
+import { ConnectorUnauthorizedError, type RefusedOrderSettlement, type SettleCancelRequest, type SettleOutcome, type SettlePayment, type SettlePayRequest, type SettlePayResult, type SettleReverseLeg, type SettleReverseRequest, type SettleReverseResult, type SyncContext } from '@tallyui/core';
 import { minor, paymentLedger } from '../orders';
 import { createWooCall, type Answer } from './http';
 import { paymentRecordBody } from './money-body';
@@ -100,6 +100,27 @@ function assessPay(body: Row, request: SettlePayRequest): PayAssessment {
     ? { send: unsent, revision: read.revision, recorded } : changed;
 }
 
+function assessReverse(body: Row, request: SettleReverseRequest): SettleReverseResult | { toVoid: SettleReverseLeg[]; voided: string[]; revision: string } {
+  const read = readLedger(body, request.storeOrderId);
+  if (!('rows' in read)) return { outcome: read, voided: [] };
+  const { current, status, rows, capturedMinor, revision } = read;
+  const toVoid: SettleReverseLeg[] = [], voided: string[] = [];
+  const changed = { outcome: { kind: 'changed' as const, status, capturedMinor }, voided };
+  let invalid = false;
+  for (const leg of request.legs) {
+    const matches = rows.filter((row) => row.id === leg.paymentId);
+    const row = matches[0];
+    if (matches.length !== 1 || (row.method_id !== 'pos_cash' && row.method_id !== 'pos_card')) invalid = true;
+    else if (row.status === 'voided') voided.push(leg.paymentId);
+    else if (row.status === 'captured') toVoid.push(leg);
+    else invalid = true;
+  }
+  if (invalid || rows.some((row) => !request.legs.some((leg) => leg.paymentId === row.id) && !NO_MONEY.has(row.status as string))) return changed;
+  if (!blank(current.date_paid) || !blank(current.date_paid_gmt)) return changed;
+  if (status === 'cancelled' && !toVoid.length) return { outcome: { kind: 'done', status }, voided };
+  return OPEN.has(status) ? { toVoid, voided, revision } : changed;
+}
+
 /** Any answer to a record other than a 2xx with a revision (a stale revision aside, which the caller resends). */
 function recordAnswer(answer: Answer): SettleOutcome {
   const { status } = answer;
@@ -152,24 +173,51 @@ function otherAnswer(answer: Answer, push: 'read' | 'cancel'): SettleOutcome {
  * that record shows nothing paid is a cancel pushed, with exactly the revision that answer carried. The store itself does
  * not refuse a cancel of a part-paid order, so this check fails closed.
  */
-export const wooSettleRefusedOrder: RefusedOrderSettlement = {
-  cancel: async (context, { storeOrderId, clientOrderId, attemptId }) => {
-    const { push, read: readOrder } = settleCalls(context, clientOrderId);
-    const read = await readOrder(attemptId);
-    if (!isConflict(read)) return otherAnswer(read, 'read');
-    let verdict = assess(read.body as Row, storeOrderId);
-    for (let sent = 0; verdict.kind === 'cancellable'; sent += 1) {
-      if (sent === MAX_CANCELS) return retry('conflict');
-      const answer = await push(attemptId, verdict.revision, { status: 'cancelled' });
-      if (answer.status === 200 || answer.status === 201) {
-        return isRow(answer.body) && isRow(answer.body.document) && answer.body.document.status === 'cancelled'
-          ? { kind: 'done', status: 'cancelled' }
-          : retry(answer.aborted ? 'timeout' : 'bad_body');
-      }
-      if (!isConflict(answer)) return otherAnswer(answer, 'cancel');
-      verdict = assess(answer.body as Row, storeOrderId);
+async function cancelOrder(context: SyncContext, { storeOrderId, clientOrderId, attemptId }: SettleCancelRequest): Promise<SettleOutcome> {
+  const { push, read: readOrder } = settleCalls(context, clientOrderId);
+  const read = await readOrder(attemptId);
+  if (!isConflict(read)) return otherAnswer(read, 'read');
+  let verdict = assess(read.body as Row, storeOrderId);
+  for (let sent = 0; verdict.kind === 'cancellable'; sent += 1) {
+    if (sent === MAX_CANCELS) return retry('conflict');
+    const answer = await push(attemptId, verdict.revision, { status: 'cancelled' });
+    if (answer.status === 200 || answer.status === 201) {
+      return isRow(answer.body) && isRow(answer.body.document) && answer.body.document.status === 'cancelled'
+        ? { kind: 'done', status: 'cancelled' }
+        : retry(answer.aborted ? 'timeout' : 'bad_body');
     }
-    return verdict;
+    if (!isConflict(answer)) return otherAnswer(answer, 'cancel');
+    verdict = assess(answer.body as Row, storeOrderId);
+  }
+  return verdict;
+}
+
+export const wooSettleRefusedOrder: RefusedOrderSettlement = {
+  cancel: cancelOrder,
+  reverse: async (context, request) => {
+    const { call, read } = settleCalls(context, request.clientOrderId);
+    const answer = await read(request.attemptId);
+    if (!isConflict(answer)) return { outcome: otherAnswer(answer, 'read'), voided: [] };
+    const verdict = assessReverse(answer.body as Row, request);
+    if ('outcome' in verdict) return verdict;
+    const confirmed = new Set(verdict.voided);
+    const result = (outcome: SettleOutcome) => ({ outcome, voided: request.legs.map(({ paymentId }) => paymentId).filter((id) => confirmed.has(id)) });
+    let revision = verdict.revision;
+    for (const leg of verdict.toVoid) {
+      const path = `orders/${request.storeOrderId}/payments/${leg.paymentId}/void`;
+      const body = { command_id: leg.commandId, reason: 'given back at the till' };
+      let reply = await call(path, { method: 'POST', body: { ...body, revision } });
+      for (let resent = 0; reply.status === 409 && isRow(reply.body) && reply.body.code === 'wcpos_revision_stale'; resent += 1) {
+        const stale = isRow(reply.body.data) ? text(reply.body.data.currentRevision) : undefined;
+        if (resent === 1 || !stale) return result(retry('conflict'));
+        reply = await call(path, { method: 'POST', body: { ...body, revision: stale } });
+      }
+      const next = reply.status >= 200 && reply.status < 300 && isRow(reply.body) ? text(reply.body.revision) : undefined;
+      if (!next) return result(recordAnswer(reply));
+      confirmed.add(leg.paymentId);
+      revision = next;
+    }
+    return result(await cancelOrder(context, request));
   },
   // No close is sent: the record that covers the balance completes a paid order. A 2xx alone is never done; a re-read decides.
   pay: async (context, request) => {
