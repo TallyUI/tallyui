@@ -110,7 +110,8 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
       const payment = order.payments.find(({ id }) => id === leg.paymentId);
       return payment ? [{ ...payment, done: leg.done }] : [];
     });
-    const list = (payments: typeof legs) => payments.map((leg) => legWording(leg.method, money(leg.amountMinor))).join('; ');
+    const list = (payments: typeof legs) => payments.map((leg) => settlement.state === 'done'
+      ? legWording(leg.method, money(leg.amountMinor)) : `${legLabel(leg.method)} ${money(leg.amountMinor)}`).join('; ');
     const taken = list(legs.filter((leg) => leg.done)), still = list(legs.filter((leg) => !leg.done));
     const hasDone = settlement.legs.some((leg) => leg.done);
     const subject = `Order #${reference}`;
@@ -119,7 +120,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     if (settlement.state === 'done') {
       const cash = sum(legs.filter((leg) => leg.method === 'cash'));
       settledText = `${subject} was cancelled on the store.${legs.length ? ` Give back to the customer: ${list(legs)}.` : ''}${cash ? ` Record the ${money(cash)} cash you give back as a pay-out.` : ''}`;
-    } else if (settlement.state === 'gone') settledText = `${subject} is not on the store any more. Check it in the store's admin.`;
+    } else if (settlement.state === 'gone') settledText = `${subject} is not on the store any more.${taken ? ` Taken off it before that: ${taken}.` : ''} Check it in the store's admin.`;
     else if (settlement.state === 'sending') addedText = `Cancelling order #${reference} on the store is not finished.${taken ? ` Taken off it so far: ${taken}.` : ''}`;
     else if (hasDone) addedText = `${subject} was not cancelled on the store.${taken ? ` Taken off it: ${taken}.` : ''}${still ? ` Still paid there: ${still}.` : ''} A manager must check it in the store's admin before any money is given back.`;
     else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}; nothing was taken off it. Check it in the store's admin.`;

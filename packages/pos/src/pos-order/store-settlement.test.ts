@@ -106,6 +106,19 @@ describe('Pay the rest on store', () => {
     expect(settledOnStore(order)).toBe(false);
     expect(canPayRestOnStore(order)).toBe(false);
   });
+  it('Pay the rest is not offered after a give back took a leg off the store', () => {
+    const order = partPaid();
+    for (const [state, done] of [['refused', true], ['changed', true], ['refused', false]] as const) {
+      const legs = [{ paymentId: order.payments[0].id, commandId: uuidv7(), done }];
+      expect(canPayRestOnStore({ ...order, storeSettlement: { ...settlement(state, 'reverse'), legs } })).toBe(!done);
+    }
+  });
+  it('canReverseOnStore across settlements', () => {
+    for (const state of ['changed', 'sending', 'refused', 'done', 'gone'] as const) {
+      expect(canReverseOnStore(partPaid({ storeSettlement: settlement(state, 'cancel') }))).toBe(false);
+      expect(canReverseOnStore(partPaid({ storeSettlement: settlement(state, 'reverse') }))).toBe(state !== 'done' && state !== 'gone');
+    }
+  });
 });
 
 type Storage = Parameters<typeof createRxDatabase>[0]['storage'];

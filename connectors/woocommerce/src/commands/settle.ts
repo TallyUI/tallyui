@@ -110,8 +110,14 @@ function assessReverse(body: Row, request: SettleReverseRequest): SettleReverseR
   for (const leg of request.legs) {
     const matches = rows.filter((row) => row.id === leg.paymentId);
     const row = matches[0];
-    if (matches.length !== 1 || (row.method_id !== 'pos_cash' && row.method_id !== 'pos_card')) invalid = true;
-    else if (row.status === 'voided') voided.push(leg.paymentId);
+    if (matches.length !== 1 || (row.method_id !== 'pos_cash' && row.method_id !== 'pos_card')) { invalid = true; continue; }
+    try {
+      if ((typeof row.currency === 'string' && row.currency !== read.currency) || minor(row.amount, read.currency) !== leg.amountMinor) {
+        invalid = true;
+        continue;
+      }
+    } catch { invalid = true; continue; }
+    if (row.status === 'voided') voided.push(leg.paymentId);
     else if (row.status === 'captured') toVoid.push(leg);
     else invalid = true;
   }

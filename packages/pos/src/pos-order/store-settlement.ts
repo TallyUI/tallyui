@@ -57,7 +57,7 @@ export function canReverseOnStore(order: LeftOrder): boolean {
  * Whether the till may record its unrecorded legs on the part-paid store order a refused sale left behind (#1101 slice
  * 3): the store had recorded some of the sale, it is not settled, every leg left has an amount, the settlement is not
  * `gone` (the order is not on the store, so a press could only read 404 again), and there is no settlement yet, or a
- * pay (whose `sending` attempt a repeat finishes), or one the store changed or refused.
+ * pay (whose `sending` attempt a repeat finishes), or one the store changed or refused without a reverse leg taken off.
  */
 export function canPayRestOnStore(order: LeftOrder): boolean {
   const left = storeOrderLeft(order);
@@ -66,5 +66,6 @@ export function canPayRestOnStore(order: LeftOrder): boolean {
   if (legs.length === 0 || !legs.every((leg) => leg.amountMinor > 0)) return false;
   const settlement = order.storeSettlement;
   if (settlement?.state === 'gone') return false;
+  if (settlement?.kind === 'reverse' && settlement.legs?.some((leg) => leg.done)) return false;
   return settlement === undefined || settlement.kind === 'pay' || settlement.state === 'changed' || settlement.state === 'refused';
 }

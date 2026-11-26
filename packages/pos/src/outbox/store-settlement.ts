@@ -17,10 +17,16 @@ export async function reverseOnStore(deps: { orders: RxCollection<PosOrder>; rev
     const attemptId = again?.attemptId ?? uuidv7();
     const legs = again?.legs ?? recordedLegs(data).map(({ id }) => stored?.legs?.find((leg) => leg.paymentId === id && leg.done)
       ?? { paymentId: id, commandId: uuidv7() });
+    const requestLegs = [];
+    for (const { paymentId, commandId } of legs) {
+      const payment = data.payments.find(({ id }) => id === paymentId);
+      if (!payment) return data;
+      requestLegs.push({ paymentId, commandId, amountMinor: payment.amountMinor });
+    }
     const at = stamp();
     data.storeSettlement = { kind: 'reverse', state: 'sending', attemptId, at, legs };
     data.updatedAt = at;
-    request = { storeOrderId: storeOrderLeft(data)!.orderId, clientOrderId: data.id, attemptId, legs: legs.map(({ paymentId, commandId }) => ({ paymentId, commandId })) };
+    request = { storeOrderId: storeOrderLeft(data)!.orderId, clientOrderId: data.id, attemptId, legs: requestLegs };
     return data;
   });
   if (!request) return { kind: 'not_offered' };

@@ -69,3 +69,11 @@ it('finishes sending without a dialog and shows a retryable error', async () => 
   await act(async () => { finish({ kind: 'retry', reason: 'network' }); });
   expect(screen.getByTestId(`${id}-error`).textContent).toBe('Could not reach the store. Try again.');
 });
+
+it('Pay the rest is hidden after a give back took a leg off the store', () => {
+  const sale: PosOrder = { ...order, storeSettlement: { kind: 'reverse', state: 'refused', at, attemptId: 'attempt',
+    legs: [{ paymentId: 'cash', commandId: 'first', done: true }, { paymentId: 'card', commandId: 'second' }] } };
+  render(<OrdersList orders={[sale]} onRetry={async () => 0} onPayRestOnStore={done} onReverseOnStore={done} />);
+  expect(screen.queryByTestId('order-sale-pay-rest-on-store')).toBeNull();
+  expect(screen.getByTestId(id)).toBeTruthy();
+});

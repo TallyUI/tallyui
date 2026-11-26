@@ -41,12 +41,26 @@ describe('reverse notices', () => {
     return screen.getByTestId('order-settlement-reverse').textContent;
   }
   it('row 3: partial refusal names what was taken off and still paid', () => {
-    expect(notice('refused', [cash, card], ['cash'])).toBe(`Order #115 was not cancelled on the store. Taken off it: ${cashText}. Still paid there: ${cardText}. A manager must check it in the store's admin before any money is given back.`);
+    const text = notice('refused', [cash, card], ['cash']);
+    expect(text).toBe(`Order #115 was not cancelled on the store. Taken off it: Cash ${eur(1000)}. Still paid there: Card ${eur(500)}. A manager must check it in the store's admin before any money is given back.`);
+    expect(text).not.toMatch(/hand it back|give it back/);
     expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
   });
   it('row 8: a changed cancel names the confirmed void', () => {
-    expect(notice('changed', [cash], ['cash'])).toBe(`Order #115 was not cancelled on the store. Taken off it: ${cashText}. A manager must check it in the store's admin before any money is given back.`);
+    const text = notice('changed', [cash], ['cash']);
+    expect(text).toBe(`Order #115 was not cancelled on the store. Taken off it: Cash ${eur(1000)}. A manager must check it in the store's admin before any money is given back.`);
+    expect(text).not.toMatch(/hand it back|give it back/);
     expect(screen.getByTestId('order-left-on-store-reverse')).toBeTruthy();
+  });
+  it('a sending reverse lists what was taken off without an instruction', () => {
+    const text = notice('sending', [cash, card], ['cash']);
+    expect(text).toBe(`Cancelling order #115 on the store is not finished. Taken off it so far: Cash ${eur(1000)}.`);
+    expect(text).not.toMatch(/hand it back|give it back/);
+  });
+  it('a gone reverse after a void names what was taken off', () => {
+    const text = notice('gone', [cash, card], ['cash']);
+    expect(text).toBe(`Order #115 is not on the store any more. Taken off it before that: Cash ${eur(1000)}. Check it in the store's admin.`);
+    expect(text).not.toMatch(/hand it back|give it back/);
   });
   it('row 17: cancelled notice lists every leg and only cash needs a pay-out', () => {
     expect(notice('done', [cash, card], ['cash', 'card'])).toBe(`Order #115 was cancelled on the store. Give back to the customer: ${cashText}; ${cardText}. Record the ${eur(1000)} cash you give back as a pay-out.`);

@@ -317,8 +317,9 @@ export interface SettlePayRequest extends SettleCancelRequest { currency: string
 /** `recorded`: the ids in `payments` the store holds as captured when the call ends, in request order. */
 export interface SettlePayResult { outcome: SettleOutcome; recorded: readonly string[] }
 
-/** One till leg to take off the store order (#1101 slice 4): its store payment id, and the void's command id, kept across repeats of an attempt. */
-export interface SettleReverseLeg { paymentId: string; commandId: string }
+/** One till leg to take off the store order (#1101 slice 4): its store payment id and the void's command id, kept across repeats of an attempt.
+ * `amountMinor` is the till leg's amount in minor units, which the connector checks against the store row. */
+export interface SettleReverseLeg { paymentId: string; commandId: string; amountMinor: number }
 /** Void the till's recorded legs on the store order a refused sale left part paid, then cancel it. */
 export interface SettleReverseRequest extends SettleCancelRequest { legs: readonly SettleReverseLeg[] }
 /** `voided`: the request's payment ids the store holds as voided when the call ends, in request order. */

@@ -9,7 +9,7 @@ describe('TallyConnector settleRefusedOrder types', () => {
     expectTypeOf<RefusedOrderSettlement['reverse']>().toEqualTypeOf<Reverse | undefined>();
     expectTypeOf<SettleReverseRequest>().toExtend<SettleCancelRequest>();
     expectTypeOf<SettleReverseRequest['legs']>().toEqualTypeOf<readonly SettleReverseLeg[]>();
-    expectTypeOf<SettleReverseLeg>().toEqualTypeOf<{ paymentId: string; commandId: string }>();
+    expectTypeOf<SettleReverseLeg>().toEqualTypeOf<{ paymentId: string; commandId: string; amountMinor: number }>();
     expectTypeOf<SettleReverseResult>().toEqualTypeOf<{ outcome: SettleOutcome; voided: readonly string[] }>();
   });
   it('accepts a connector without settleRefusedOrder', () => {

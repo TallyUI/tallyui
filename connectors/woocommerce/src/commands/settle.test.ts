@@ -34,14 +34,14 @@ function store(replies: Array<Response | Error>, storeOrderId = '16') {
   });
   const context: SyncContext = { connectorId: 'woocommerce', baseUrl, headers: { Authorization: 'Bearer t' }, fetch };
   return { calls, cancel: () => wooSettleRefusedOrder.cancel!(context, { storeOrderId, clientOrderId, attemptId }),
-    reverse: (legs: { paymentId: string; commandId: string }[]) => wooSettleRefusedOrder.reverse!(context, { storeOrderId, clientOrderId, attemptId, legs }) };
+    reverse: (legs: { paymentId: string; commandId: string; amountMinor: number }[]) => wooSettleRefusedOrder.reverse!(context, { storeOrderId, clientOrderId, attemptId, legs }) };
 }
 const push = (mutationId: string, baseRevision: string, payload: Row) => ({ url: `${baseUrl}/push/orders`, method: 'POST',
   body: { mutationId, operation: 'update', collection: 'orders', recordId: clientOrderId, baseRevision, payload } });
 
 describe('wooSettleRefusedOrder.reverse', () => {
-  const cash = { paymentId: '019abcde-0000-7000-8000-0000000000aa', commandId: '019abcde-0000-7000-8000-0000000000a1' };
-  const card = { paymentId: '019abcde-0000-7000-8000-0000000000bb', commandId: '019abcde-0000-7000-8000-0000000000b2' };
+  const cash = { paymentId: '019abcde-0000-7000-8000-0000000000aa', commandId: '019abcde-0000-7000-8000-0000000000a1', amountMinor: 1000 };
+  const card = { paymentId: '019abcde-0000-7000-8000-0000000000bb', commandId: '019abcde-0000-7000-8000-0000000000b2', amountMinor: 500 };
   const cashRow = payment('captured', { id: cash.paymentId, amount: '10.00' });
   const cardRow = payment('captured', { id: card.paymentId, method_id: 'pos_card' });
   const read = (rows: Row[] = [cashRow], over: Row = {}, revision = rev(1)) => conflict(order({ status: 'pos-partial', ...over }, [ledger(rows)]), revision);
@@ -130,6 +130,20 @@ describe('wooSettleRefusedOrder.reverse', () => {
       expect(await shop.reverse([cash, card])).toEqual({ outcome: done, voided: [cash.paymentId, card.paymentId] });
       expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1)), voidPost(card, rev(2)), readPush, voidPost(card, rev(1)), readPush, cancelPush]);
     }
+  });
+  it.each([
+    [{ ...cashRow, amount: '9.00' }, 'pos-partial', 900],
+    [{ ...cashRow, status: 'voided', amount: '9.00' }, 'cancelled', 0],
+    [{ ...cashRow, status: 'voided', currency: 'EUR' }, 'cancelled', 0],
+  ] as const)('row 14: a store row whose amount or currency differs from the till leg is not voided', async (row, status, capturedMinor) => {
+    const shop = store([read([row], { status })]);
+    expect(await shop.reverse([cash])).toEqual({ outcome: { kind: 'changed', status, capturedMinor }, voided: [] });
+    expect(shop.calls).toEqual([readPush]);
+  });
+  it('row 15: a void 2xx without a revision is retried and sends no cancel', async () => {
+    const shop = store([read(), json(200, {})]);
+    expect(await shop.reverse([cash])).toMatchObject({ outcome: { kind: 'retry' }, voided: [] });
+    expect(shop.calls).toEqual([readPush, voidPost(cash, rev(1))]);
   });
 });
 
