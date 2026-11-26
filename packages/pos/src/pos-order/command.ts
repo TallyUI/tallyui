@@ -233,25 +233,27 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
         ...(base === 6 && line.attributes && Object.keys(line.attributes).length ? { attributes: { ...line.attributes } } : {}),
         ...(base === 6 && line.anyAttributes?.length ? { anyAttributes: [...line.anyAttributes] } : {}),
       })),
-      ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => ({
-        clientFeeId: fee.id, name: fee.name, amountMinor: fee.entered?.amountMinor ?? wireChargeMinor(order, fee, order.display?.fees),
-        ...(fee.entered ? { amountIncludesTax: fee.entered.amountIncludesTax } : {}), taxStatus: fee.taxStatus,
-        ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
-        // #1131: WooCommerce totals a fee line's tax per rate, as its own order totals do.
-        taxMinor: order.taxRounding?.granularity === 'woocommerce'
-          ? woocommerceChargeTaxMinor(fee, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
-          : roundMicrosToMinor(BigInt(fee.taxMicros)),
-      })) } : {}),
-      ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => ({
-        clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
-        amountMinor: charge.entered?.amountMinor ?? wireChargeMinor(order, charge, order.display?.shipping),
-        ...(charge.entered ? { amountIncludesTax: charge.entered.amountIncludesTax } : {}), taxStatus: charge.taxStatus,
-        ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}),
-        // #1120: WooCommerce totals a shipping line's tax per rate, as its own order totals do.
-        taxMinor: order.taxRounding?.granularity === 'woocommerce'
-          ? woocommerceChargeTaxMinor(charge, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
-          : roundMicrosToMinor(BigInt(charge.taxMicros)),
-      })) } : {}),
+      ...(base >= 5 && order.fees?.length ? { fees: order.fees.map((fee) => {
+        const sent = fee.entered?.sent === true ? fee.entered : undefined;
+        return { clientFeeId: fee.id, name: fee.name, amountMinor: sent?.amountMinor ?? wireChargeMinor(order, fee, order.display?.fees),
+          ...(sent ? { amountIncludesTax: sent.amountIncludesTax } : {}), taxStatus: fee.taxStatus,
+          ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
+          // #1131: WooCommerce totals a fee line's tax per rate, as its own order totals do.
+          taxMinor: order.taxRounding?.granularity === 'woocommerce'
+            ? woocommerceChargeTaxMinor(fee, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+            : roundMicrosToMinor(BigInt(fee.taxMicros)) };
+      }) } : {}),
+      ...(base >= 5 && order.shipping?.length ? { shipping: order.shipping.map((charge) => {
+        const sent = charge.entered?.sent === true ? charge.entered : undefined;
+        return { clientShippingId: charge.id, name: charge.name, ...(charge.methodId !== undefined ? { methodId: charge.methodId } : {}),
+          amountMinor: sent?.amountMinor ?? wireChargeMinor(order, charge, order.display?.shipping),
+          ...(sent ? { amountIncludesTax: sent.amountIncludesTax } : {}), taxStatus: charge.taxStatus,
+          ...(charge.taxClass !== undefined ? { taxClass: charge.taxClass } : {}),
+          // #1120: WooCommerce totals a shipping line's tax per rate, as its own order totals do.
+          taxMinor: order.taxRounding?.granularity === 'woocommerce'
+            ? woocommerceChargeTaxMinor(charge, order.taxRounding.roundAtSubtotal, order.pricesIncludeTax)
+            : roundMicrosToMinor(BigInt(charge.taxMicros)) };
+      }) } : {}),
       ...(base === 6 && redeemable.length ? { coupons: redeemable.map(({ code, couponId, discountMinor, discountTaxMinor, lines }) => ({
         code, couponId, discountMinor, discountTaxMinor,
         ...(version >= 9 ? { lines: lines!.map(({ lineId, discountMinor, discountTaxMinor }) =>

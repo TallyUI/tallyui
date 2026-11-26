@@ -43,6 +43,7 @@ import type { PosOrder } from './types';
  * Version 22 adds the order's optional `storeSettlement`, the till's settlement of a refused sale's store order (#1101);
  * identity migration, one-way like version 21.
  * Version 23 adds a fee's and shipping line's optional `entered`, the cashier's own-mode amount for a `chargeTaxMode` store (vendurepos 2.10b); identity migration, one-way like version 22.
+ * `entered` is kept whenever the mode differs, and `sent` marks one sent to a `chargeTaxMode` store (#1391).
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -120,6 +121,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     fees: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       entered: { type: 'object', additionalProperties: false, properties: {
         amountMinor: { type: 'integer', minimum: 0 }, amountIncludesTax: { type: 'boolean' },
+        sent: { type: 'boolean', enum: [true] },
       }, required: ['amountMinor', 'amountIncludesTax'] },
       storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },
@@ -134,6 +136,7 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
     shipping: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       entered: { type: 'object', additionalProperties: false, properties: {
         amountMinor: { type: 'integer', minimum: 0 }, amountIncludesTax: { type: 'boolean' },
+        sent: { type: 'boolean', enum: [true] },
       }, required: ['amountMinor', 'amountIncludesTax'] },
       storeLineId: { type: 'string', minLength: 1, maxLength: 64 },
       id: { type: 'string', maxLength: 36 }, name: { type: 'string', minLength: 1, maxLength: 255 },

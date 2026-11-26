@@ -34,7 +34,7 @@ function finalize(snapshot: Order, capabilities: { orderCreate: number; chargeTa
 const payload = (order: PosOrder) => toOrderCreateEnvelope(order, 'till').payload;
 function expectInclusive(order: PosOrder, field: 'fees' | 'shipping') {
   const stored = order[field]![0], wire = payload(order);
-  expect(stored.entered).toStrictEqual(entered);
+  expect(stored.entered).toStrictEqual({ ...entered, sent: true });
   expect(stored.amountMinor).toBe(802);
   expect(stored).not.toHaveProperty('amountIncludesTax');
   expect(wire[field]![0]).toMatchObject({ ...entered, taxMinor: 200, [field === 'fees' ? 'clientFeeId' : 'clientShippingId']: stored.id });
@@ -49,7 +49,7 @@ it.each(['fees', 'shipping'] as const)('T1/T3 sends inclusive %s as entered but 
 
 it('T2 sends the converted fee, byte-identically for an absent or false capability', () => {
   const snapshot = sale(), order = finalize(snapshot, off), disabled = finalize(snapshot, { ...off, chargeTaxMode: false });
-  expect(order.fees![0]).not.toHaveProperty('entered');
+  expect(order.fees![0].entered).toStrictEqual(entered);
   expect(payload(order).fees![0]).not.toHaveProperty('amountIncludesTax');
   expect(payload(order).fees![0].amountMinor).toBe(802);
   expect(JSON.stringify(order)).toBe(JSON.stringify(disabled));
@@ -71,7 +71,7 @@ it('T4 opts in the inclusive fee, not the shipping beside it', () => {
 it('T5 sends the net fee at an inclusive store', () => {
   const net = { amountMinor: 800, amountIncludesTax: false };
   const snapshot = sale((builder) => builder.addFee({ name: 'Fee', ...net }), true), order = finalize(snapshot);
-  expect(order.fees![0].entered).toStrictEqual(net);
+  expect(order.fees![0].entered).toStrictEqual({ ...net, sent: true });
   expect(order.fees![0].amountMinor).toBe(1000);
   expect(order.fees![0].amountMinor).toBe(finalize(snapshot, off).fees![0].amountMinor);
   expect(payload(order).fees![0]).toMatchObject(net);
@@ -87,7 +87,7 @@ it('T6 sends a same-mode fee exactly like a fee with no mode', () => {
 
 it('T7 retains the entry even when the fee is untaxed', () => {
   const order = finalize(sale((builder) => builder.addFee({ ...inclusive, taxStatus: 'none' })));
-  expect(order.fees![0].entered).toStrictEqual(entered);
+  expect(order.fees![0].entered).toStrictEqual({ ...entered, sent: true });
   expect(payload(order).fees![0]).toMatchObject({ ...entered, taxMinor: 0 });
 });
 
