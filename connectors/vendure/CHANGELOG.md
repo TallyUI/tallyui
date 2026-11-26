@@ -1,5 +1,16 @@
 # @tallyui/connector-vendure
 
+## 5.3.0
+
+### Minor Changes
+
+- 720b21d: The Vendure connector declares `discountsAreTaxedRows: true`, so the till's ADR-048 rounding tolerance counts discounted lines on Vendure stores (#1402). An app that builds its connector with `createVendureConnector` needs no change.
+
+### Patch Changes
+
+- Updated dependencies [9943567]
+  - @tallyui/core@5.3.0
+
 ## 5.2.0
 
 ### Minor Changes

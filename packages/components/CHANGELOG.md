@@ -1,5 +1,21 @@
 # @tallyui/components
 
+## 5.3.0
+
+### Minor Changes
+
+- 9a3f9fe: Product cart lines get the swipe strip with Remove only: drag or press the Total to open it, or fling the row off.
+- 27f5f5d: A cart fee or shipping row now opens onto Edit and Remove with a leftwards drag, as WCPOS v2 does: let go past half the strip and it opens; drag past the remove point (60 % of the row, and at least 56 px past the strip) or fling it fast past the strip and the line is removed. Reduce motion snaps instead of animating. Pressing the Total still opens it.
+
+### Patch Changes
+
+- 9943567: ADR-048's rounding tolerance counts discounted lines on a store that taxes each discount as its own row. `TallyConnector` gains an optional `discountsAreTaxedRows`, and `needsAttention` takes a matching option, which `OrdersList` reads from the connector. When it is set, a `total_mismatch` bridge is a notice only up to ⌈(lines + fees + shipping + discounted lines) / 2⌉ minor units, where a discounted line is one the `order.create` payload sends with `discountMinor` above 0. Without it, nothing changes. `@tallyui/connector-vendure` sets `discountsAreTaxedRows: true`; an app that builds its own connector object must set it too. The vendurepos plugin must count its per-rate tolerance T from the same rows of the payload (vendurepos/app#532). The bound was probed on tax-exclusive lines of quantity 1; inclusive channels, quantity above 1, fees and shipping were not probed.
+- Updated dependencies [9943567]
+  - @tallyui/core@5.3.0
+  - @tallyui/pos@5.3.0
+  - @tallyui/primitives@5.3.0
+  - @tallyui/theme@5.3.0
+
 ## 5.2.0
 
 ### Minor Changes
