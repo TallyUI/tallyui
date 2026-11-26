@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, CustomerServiceError, UnsupportedOrderFilterError, type StoreOrder, type SyncContext } from '@tallyui/core';
 import { createMedusaOrders, MEDUSA_ORDER_FILTERS, medusaOrderFilters, ORDER_FIELDS, toMedusaStoreOrder } from './orders';
 import { medusaMinor, medusaSumMinor } from './money';
-import { createMedusaAdminUserConnector } from './index';
+import { createMedusaAdminUserConnector, createMedusaConnector } from './index';
 import fixture from './orders.fixture.json';
 import refundLinesFixture from './orders-refund-lines.fixture.json';
 
@@ -378,6 +378,68 @@ describe('refund lines (#1324)', () => {
   const pluginCalls = (spy: { mock: { calls: unknown[][] } }) =>
     spy.mock.calls.map(([href]) => new URL(String(href))).filter((sent) => sent.pathname === '/tally/v1/orders');
 
+  describe('sold figures (contract 7)', () => {
+    const ctx7: SyncContext = { ...context, capabilities: { orderCreate: 1, pluginContract: 7 } };
+    const mug = { id: 'ordli_01M7TS1E009FVGAKAB7AAMY0KK', soldTotalMinor: 3600, soldTaxMinor: 684, returnedQuantity: 1 };
+    const soldBody = (lines: unknown[] = [mug], orderId = tillOrder.id) => {
+      const body = structuredClone(refundLinesFixture);
+      return { ...body, orders: [{ ...body.orders[0]!, id: orderId, lines }] };
+    };
+    const soldLines = [tillOrder.lines[0], { ...tillOrder.lines[1], ...mug }];
+
+    it('getOrders merges sold figures by line and keeps the refund lines', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(soldBody()));
+      const [order] = await getOrders(ctx7, [tillOrder.id]);
+      expect(order!.lines).toStrictEqual(soldLines);
+      expect(order!.refunds).toStrictEqual([{ ...tillOrder.refunds[0], lines: [fixtureLine] }, tillOrder.refunds[1]]);
+    });
+
+    it('asks the plugin for an order without refunds', async () => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.detail)).mockResolvedValueOnce(plugin(soldBody([], detail.id)));
+      await getOrders(ctx7, [detail.id]);
+      expect(pluginCalls(spy).map((sent) => sent.searchParams.get('ids'))).toStrictEqual([detail.id]);
+    });
+
+    it('ignores the same sold figures at contract 6', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(soldBody()));
+      const [order] = await getOrders(ctx6, [tillOrder.id]);
+      expect(order!.lines).toStrictEqual(tillOrder.lines);
+    });
+
+    it.each([
+      { reason: 'negative total', entry: { ...mug, soldTotalMinor: -1 } },
+      { reason: 'fractional total', entry: { ...mug, soldTotalMinor: 1.5 } },
+      { reason: 'missing tax', entry: { id: mug.id, soldTotalMinor: 3600, returnedQuantity: 1 } },
+      { reason: 'quantity above sold', entry: { ...mug, returnedQuantity: 4 } },
+      { reason: 'unknown line', entry: { ...mug, id: 'unknown' } },
+      { reason: 'non-object', entry: null },
+    ])('drops a malformed entry ($reason) but keeps its valid sibling', async ({ entry }) => {
+      const other = { id: tillOrder.lines[0]!.id, soldTotalMinor: 5129, soldTaxMinor: 975, returnedQuantity: 0 };
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(soldBody([entry, other])));
+      const [order] = await getOrders(ctx7, [tillOrder.id]);
+      expect(order!.lines).toStrictEqual([{ ...tillOrder.lines[0], ...other }, tillOrder.lines[1]]);
+    });
+
+    it('listOrders reads sold figures from its own hits without another request', async () => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(plugin(soldBody())).mockResolvedValueOnce(listOf([L[0]]));
+      const page = await listOrders(ctx7, { registerId: 'reg-1' });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(url(spy, 0).pathname).toBe('/tally/v1/orders');
+      expect(url(spy, 1).pathname).toBe('/admin/orders');
+      expect(page.orders[0]!.lines).toStrictEqual(soldLines);
+    });
+
+    it('keeps the admin order without sold figures when the plugin request rejects', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockRejectedValueOnce(new Error('offline'));
+      expect(await getOrders(ctx7, [tillOrder.id])).toStrictEqual([tillOrder]);
+    });
+
+    it('declares shrinking live line totals on both Medusa connectors', () => {
+      expect(createMedusaConnector().lineTotalsShrinkOnReturn).toBe(true);
+      expect(createMedusaAdminUserConnector().lineTotalsShrinkOnReturn).toBe(true);
+    });
+  });
+
   it('getOrders merges the plugin\'s lines by refund id at contract 6', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(refundLinesFixture));
     const [order] = await getOrders(ctx6, [L[0].id]);
@@ -412,7 +474,7 @@ describe('refund lines (#1324)', () => {
     for (const refund of orders[0]!.refunds) expect(refund).not.toHaveProperty('lines');
   });
 
-  it('asks only for orders with refunds', async () => {
+  it('asks only for orders with refunds (contract 6)', async () => {
     expect(toMedusaStoreOrder(detail).refunds).toStrictEqual([]);
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response(fixture.detail)).mockResolvedValue(plugin(refundLinesFixture));
     await getOrders(ctx6, [detail.id]);

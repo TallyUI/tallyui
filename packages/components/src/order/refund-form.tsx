@@ -1,6 +1,6 @@
 import { useRef, useState, type JSX } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { useFormatMoney, useMoneyFormat, type MoneyFormat, type OrderRefundPayload } from '@tallyui/core';
+import { useFormatMoney, useMoneyFormat, useOptionalConnector, type MoneyFormat, type OrderRefundPayload } from '@tallyui/core';
 import { priceRefund, refundableLines, type EarlierRefund, type RefundableOrderLine } from '@tallyui/pos';
 import { QuantityStepper } from '../input/quantity-stepper';
 import { errorText } from '../lib/error-text';
@@ -62,6 +62,7 @@ export function RefundForm({
 }: RefundFormProps): JSX.Element {
   const formatMoney = useFormatMoney();
   const format = useMoneyFormat();
+  const lineTotalsShrinkOnReturn = useOptionalConnector()?.lineTotalsShrinkOnReturn === true;
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [restock, setRestock] = useState<Record<string, boolean>>({});
   const [shippingText, setShippingText] = useState('');
@@ -79,6 +80,12 @@ export function RefundForm({
     quantity: Math.min(quantities[orderLineId] ?? 0, refundableQuantity),
     restock: restock[orderLineId] ?? defaultRestock,
   })).filter(({ quantity }) => quantity > 0);
+  const missingSoldFigures = lineTotalsShrinkOnReturn && request.find(({ orderLineId, quantity }) => {
+    const index = lines.findIndex((line) => line.id === orderLineId);
+    const line = lines[index];
+    return (line.soldTotalMinor === undefined || line.soldTaxMinor === undefined)
+      && (quantity < line.quantity || available[index].refundedQuantity > 0);
+  });
   const priced = priceRefund(lines, refunds, request);
   const emptiesLines = priced.lines.length > 0 && available.every(({ orderLineId, refundableQuantity }) => (request.find((line) => line.orderLineId === orderLineId)?.quantity ?? 0) === refundableQuantity);
   const roundingShareMinor = emptiesLines ? cashRoundingMinor : 0;
@@ -90,6 +97,7 @@ export function RefundForm({
   const cashStep = destination === 'cash' && Number.isInteger(cashIncrementMinor) && cashIncrementMinor! > 1 && typeof totalMinor === 'number' && totalMinor > 0 && totalMinor % cashIncrementMinor! !== 0;
   const invalid = typeof shippingMinor === 'string' ? shippingMinor
     : typeof adjustmentMinor === 'string' ? adjustmentMinor
+    : missingSoldFigures ? `Update the store's plugin to refund part of ${lines.find((line) => line.id === missingSoldFigures.orderLineId)!.name}.`
     : shippingMinor > refundableShippingMinor ? `Shipping can be at most ${fmt(refundableShippingMinor)}.`
     : priced.lines.length === 0 && shippingMinor === 0 && adjustmentMinor === 0 ? 'Choose something to refund.'
     : totalMinor! <= 0 ? 'The refund total must be more than 0.'

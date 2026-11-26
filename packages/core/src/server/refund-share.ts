@@ -7,7 +7,7 @@ import type { StoreOrderLine } from '../types/orders'
 import { roundRatio } from './round-ratio'
 
 /** The fields of an order line this needs; a StoreOrderLine fits. */
-export type RefundableOrderLine = Pick<StoreOrderLine, 'id' | 'quantity' | 'totalMinor' | 'taxMinor'>;
+export type RefundableOrderLine = Pick<StoreOrderLine, 'id' | 'quantity' | 'totalMinor' | 'taxMinor' | 'soldTotalMinor' | 'soldTaxMinor'>;
 /** Earlier refund lines; negative quantities count by magnitude. */
 export interface EarlierRefund { lines: ReadonlyArray<Pick<OrderRefundLine, 'orderLineId' | 'quantity'>> }
 
@@ -37,6 +37,15 @@ export interface PricedRefund {
   netMinor: number; taxMinor: number; totalMinor: number;
 }
 
+// Sold figures win when present: a store whose live line totals shrink on return still prices from the sale (medusapos#636).
+function pricingBase({ totalMinor, taxMinor, soldTotalMinor, soldTaxMinor }: RefundableOrderLine): [number, number] {
+  if (soldTotalMinor === undefined && soldTaxMinor === undefined) return [totalMinor, taxMinor];
+  if (soldTotalMinor === undefined || soldTaxMinor === undefined || !Number.isSafeInteger(soldTotalMinor) || !Number.isSafeInteger(soldTaxMinor)) {
+    throw new RangeError('A line carries both sold figures or neither, as safe integers');
+  }
+  return [soldTotalMinor, soldTaxMinor];
+}
+
 /** Returns the quantities and amounts still refundable, in order-line order. */
 export function refundableLines(
   lines: readonly RefundableOrderLine[], refunds: readonly EarlierRefund[],
@@ -52,7 +61,7 @@ export function refundableLines(
     }
     const refundedQuantity = earlier.reduce((sum, refund) => refund.orderLineId === line.id
       ? Math.min(line.quantity, sum + Math.abs(refund.quantity)) : sum, 0);
-    const [netMinor, taxMinor] = [line.totalMinor, line.taxMinor].map((total) => line.quantity === 0 ? 0
+    const [netMinor, taxMinor] = pricingBase(line).map((total) => line.quantity === 0 ? 0
       : total - Number(roundRatio(BigInt(refundedQuantity) * BigInt(total), BigInt(line.quantity), 'half_up')));
     return {
       orderLineId: line.id, refundedQuantity, refundableQuantity: line.quantity - refundedQuantity, netMinor, taxMinor,
@@ -78,7 +87,7 @@ export function priceRefund(
     if (quantity < 1) continue;
     const line = lines[index];
     const refundedQuantity = available[index].refundedQuantity;
-    const [netMinor, taxMinor] = [line.totalMinor, line.taxMinor].map((total) =>
+    const [netMinor, taxMinor] = pricingBase(line).map((total) =>
       Number(roundRatio(BigInt(refundedQuantity + quantity) * BigInt(total), BigInt(line.quantity), 'half_up'))
       - Number(roundRatio(BigInt(refundedQuantity) * BigInt(total), BigInt(line.quantity), 'half_up')));
     const totalMinor = netMinor + taxMinor;

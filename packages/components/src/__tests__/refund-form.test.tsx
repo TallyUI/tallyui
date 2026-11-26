@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
-import { formatMoney, MoneyFormatProvider } from '@tallyui/core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ConnectorProvider, formatMoney, MoneyFormatProvider, type TallyConnector } from '@tallyui/core';
 import { priceRefund, refundPayloadErrors } from '@tallyui/core/server';
 import { PortalHost } from '@tallyui/primitives';
 import { RefundForm, type RefundFormProps, type RefundFormValue } from '../order/refund-form';
@@ -25,6 +25,61 @@ function renderForm(overrides: Partial<RefundFormProps> = {}) {
   const props = { ...fixture, onConfirm, onCancel, ...overrides };
   return { ...render(<RefundForm {...props} />), props, onConfirm, onCancel };
 }
+
+describe('refunds when live line totals shrink on return', () => {
+  const connector = { lineTotalsShrinkOnReturn: true } as unknown as TallyConnector;
+  const shirt = fixture.lines[0]!;
+  function select(quantity: number, active: TallyConnector | null, overrides: Partial<RefundFormProps> = {}) {
+    const onConfirm = vi.fn<(value: RefundFormValue) => void>();
+    const form = <RefundForm {...fixture} lines={[shirt]} refunds={[]} refundedMinor={0} onConfirm={onConfirm} onCancel={vi.fn()} {...overrides} />;
+    const { unmount } = render(active ? <ConnectorProvider connector={active}>{form}</ConnectorProvider> : form);
+    for (let count = 0; count < quantity; count++) plus(shirt.id);
+    fireEvent.change(screen.getByTestId('refund-reason'), { target: { value: 'Damaged' } });
+    return { onConfirm, unmount };
+  }
+
+  async function confirm() {
+    expect(screen.queryByTestId('refund-invalid')).toBeNull();
+    fireEvent.click(screen.getByTestId('refund-submit'));
+    await act(async () => { fireEvent.click(screen.getByTestId('refund-confirm')); });
+  }
+
+  it.each([
+    { selection: 'the first unit', quantity: 1, refunds: [] },
+    { selection: 'the remaining two units', quantity: 2, refunds: fixture.refunds },
+  ])('refuses $selection without sold figures', ({ quantity, refunds }) => {
+    select(quantity, connector, { refunds });
+    expect(screen.getByTestId('refund-invalid').textContent).toBe("Update the store's plugin to refund part of Shirt.");
+    expect((screen.getByTestId('refund-submit') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('confirms a whole line with no earlier refunds at its live price', async () => {
+    const { onConfirm } = select(3, connector);
+    await confirm();
+    const priced = priceRefund([shirt], [], [{ orderLineId: shirt.id, quantity: 3, restock: true }]);
+    expect(onConfirm.mock.calls).toStrictEqual([[{
+      lines: priced.lines, totalMinor: priced.totalMinor, adjustmentMinor: 0, shippingMinor: 0, reason: 'Damaged', destination: 'cash',
+    }]]);
+  });
+
+  it('confirms the second unit at its sold price', async () => {
+    const { onConfirm } = select(1, connector, {
+      lines: [{ ...shirt, quantity: 2, totalMinor: 200, taxMinor: 50, soldTotalMinor: 400, soldTaxMinor: 100 }], refunds: fixture.refunds,
+    });
+    await confirm();
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ totalMinor: 250 }));
+  });
+
+  it('confirms the identical partial refund without the flag or without a provider', async () => {
+    const without = select(1, null);
+    await confirm();
+    expect(without.onConfirm).toHaveBeenCalledOnce();
+    without.unmount();
+    const unflagged = select(1, {} as unknown as TallyConnector);
+    await confirm();
+    expect(unflagged.onConfirm.mock.calls).toStrictEqual(without.onConfirm.mock.calls);
+  });
+});
 
 it("shows each line's refundable quantity and clamps the stepper at it", () => {
   const { rerender, props } = renderForm();

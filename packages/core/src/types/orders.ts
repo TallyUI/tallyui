@@ -20,6 +20,12 @@ export interface StoreOrderLine {
   /** After discounts, excluding tax. */
   totalMinor: number;
   taxMinor: number;
+  /** The line's total after discounts, excluding tax, as sold, before any return; set by a connector whose live totals shrink on return (connector-medusa at plugin contract 7), absent otherwise. */
+  soldTotalMinor?: number;
+  /** The tax beside `soldTotalMinor`, as sold. Present exactly when it is. */
+  soldTaxMinor?: number;
+  /** The store's returned quantity for the line (requested, received or dismissed returns); absent when the store does not say. Refund pricing does not read it. */
+  returnedQuantity?: number;
 }
 
 /** A fee or shipping line: excluding tax, the tax beside it. A fee may be negative.

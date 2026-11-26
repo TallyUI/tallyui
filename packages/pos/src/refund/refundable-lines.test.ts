@@ -4,6 +4,34 @@ import { refundableLines, priceRefund } from './refundable-lines';
 const A = { id: 'line-a', quantity: 3, totalMinor: 1000, taxMinor: 200 };
 const requestA = { orderLineId: 'line-a', quantity: 1, restock: true };
 
+describe('as-sold refund pricing', () => {
+  const line = { ...A, quantity: 2, totalMinor: 840, taxMinor: 159, soldTotalMinor: 1681, soldTaxMinor: 319 };
+  const earlier = [{ lines: [requestA] }];
+
+  it.each([
+    { selection: 'last unit', refunds: earlier, quantity: 1, netMinor: 840, taxMinor: 159, totalMinor: 999 },
+    { selection: 'whole sale', refunds: [], quantity: 2, netMinor: 1681, taxMinor: 319, totalMinor: 2000 },
+    { selection: 'first unit', refunds: [], quantity: 1, netMinor: 841, taxMinor: 160, totalMinor: 1001 },
+  ])('prices the $selection from sold figures', ({ refunds, quantity, netMinor, taxMinor, totalMinor }) => {
+    expect(priceRefund([line], refunds, [{ ...requestA, quantity }])).toMatchObject({ netMinor, taxMinor, totalMinor });
+  });
+
+  it('reports the refundable remainder of the sold figures', () => {
+    expect(refundableLines([line], earlier)).toStrictEqual([
+      { orderLineId: line.id, refundedQuantity: 1, refundableQuantity: 1, netMinor: 840, taxMinor: 159 },
+    ]);
+  });
+
+  it.each([
+    { soldTotalMinor: 100 }, { soldTaxMinor: 0 },
+    { soldTotalMinor: 1.5, soldTaxMinor: 0 }, { soldTotalMinor: 100, soldTaxMinor: Number.MAX_SAFE_INTEGER + 1 },
+  ])('rejects invalid sold figures %j', (figures) => {
+    const lines = [{ ...A, ...figures }];
+    expect(() => refundableLines(lines, [])).toThrow(RangeError);
+    expect(() => priceRefund(lines, [], [requestA])).toThrow(RangeError);
+  });
+});
+
 describe('refundable lines and refund pricing', () => {
   it('full refund', () => {
     const result = priceRefund([A], [], [{ ...requestA, quantity: 3 }]);

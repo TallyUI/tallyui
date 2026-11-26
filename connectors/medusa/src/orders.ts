@@ -131,6 +131,8 @@ export const MEDUSA_ORDERS_PLUGIN_CONTRACT = 3;
 export const MEDUSA_ALL_CHANNELS_PLUGIN_CONTRACT = 4;
 /** The MedusaPOS plugin contract whose GET /tally/v1/orders takes `ids=` and returns `refunds[].lines` (#1324). */
 const REFUND_LINES_PLUGIN_CONTRACT = 6;
+/** The MedusaPOS plugin contract whose GET /tally/v1/orders lines carry soldTotalMinor, soldTaxMinor and returnedQuantity (medusapos/app#636). */
+const SOLD_FIGURES_PLUGIN_CONTRACT = 7;
 /** The plugin's cap on `ids=` per request, its ORDERS_MAX_PER_PAGE (#1324). */
 const REFUND_LINES_IDS_MAX = 100;
 
@@ -216,13 +218,40 @@ function withRefundLines(orders: StoreOrder[], byOrder: Map<string, Map<string, 
   });
 }
 
-/**
- * At contract 6, the refunded lines from the plugin's orders route, asked for the orders with refunds in chunks of
- * REFUND_LINES_IDS_MAX, one request at a time. A failed chunk leaves its refunds without lines, unless the read was cancelled.
- */
+function soldFiguresByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]) {
+  const quantities = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
+  type SoldFigures = Required<Pick<StoreOrderLine, 'soldTotalMinor' | 'soldTaxMinor' | 'returnedQuantity'>>;
+  const byOrder = new Map<string, Map<string, SoldFigures>>();
+  for (const raw of rows(raws)) {
+    if (typeof raw.id !== 'string') continue;
+    const known = quantities.get(raw.id);
+    if (!known) continue;
+    for (const { id, soldTotalMinor, soldTaxMinor, returnedQuantity } of rows(raw.lines)) {
+      if (typeof id !== 'string') continue;
+      const quantity = known.get(id);
+      if (quantity === undefined || !isCount(soldTotalMinor, 0) || !isCount(soldTaxMinor, 0) || !isCount(returnedQuantity, 0) || returnedQuantity > quantity) continue;
+      const figures = byOrder.get(raw.id) ?? new Map<string, SoldFigures>();
+      figures.set(id, { soldTotalMinor, soldTaxMinor, returnedQuantity });
+      byOrder.set(raw.id, figures);
+    }
+  }
+  return byOrder;
+}
+
+function withSoldFigures(orders: StoreOrder[], byOrder: ReturnType<typeof soldFiguresByOrder>): StoreOrder[] {
+  return orders.map((order) => {
+    const figures = byOrder.get(order.id);
+    if (!figures) return order;
+    return { ...order, lines: order.lines.map((line) => figures.has(line.id) ? { ...line, ...figures.get(line.id) } : line) };
+  });
+}
+
+/** Reads refund lines for orders with refunds at contract 6, and also sold figures for every order from contract 7.
+ * Reads one chunk of REFUND_LINES_IDS_MAX at a time; a failed chunk adds neither, unless the read was cancelled. */
 async function readRefundLines(context: SyncContext, orders: StoreOrder[]): Promise<StoreOrder[]> {
-  if ((context.capabilities?.pluginContract ?? 0) < REFUND_LINES_PLUGIN_CONTRACT) return orders;
-  const ids = orders.filter((order) => order.refunds.length > 0).map((order) => order.id);
+  const contract = context.capabilities?.pluginContract ?? 0;
+  if (contract < REFUND_LINES_PLUGIN_CONTRACT) return orders;
+  const ids = orders.filter((order) => contract >= SOLD_FIGURES_PLUGIN_CONTRACT || order.refunds.length > 0).map((order) => order.id);
   const raws: unknown[] = [];
   for (let start = 0; start < ids.length; start += REFUND_LINES_IDS_MAX) {
     const chunk = ids.slice(start, start + REFUND_LINES_IDS_MAX);
@@ -235,7 +264,9 @@ async function readRefundLines(context: SyncContext, orders: StoreOrder[]): Prom
       if (context.signal?.aborted) throw error;
     }
   }
-  return raws.length > 0 ? withRefundLines(orders, refundLinesByOrder(raws, orders)) : orders;
+  if (!raws.length) return orders;
+  const refunded = withRefundLines(orders, refundLinesByOrder(raws, orders));
+  return contract >= SOLD_FIGURES_PLUGIN_CONTRACT ? withSoldFigures(refunded, soldFiguresByOrder(raws, orders)) : refunded;
 }
 
 // An all-digits search the plugin's route matches against display_id (medusapos orders/list.ts:78-84); the admin API has no number search.
@@ -243,6 +274,7 @@ const DISPLAY_NUMBER = new RegExp(`^\\d{1,${MEDUSA_DISPLAY_NUMBER_MAX_DIGITS}}$`
 
 /**
  * The plugin's `GET /tally/v1/orders` picks the page's ids; the admin API reads those rows, so every order maps the same way.
+ * The hits also supply refund lines from contract 6 and sold figures from contract 7 without another request.
  * The route takes only page, perPage, search, status, customerId, registerId, after and before (plus allChannels from contract 4); any other key is a 400 (list.ts:18, 30-34).
  */
 async function listThroughPlugin(context: SyncContext, params: URLSearchParams): Promise<StoreOrderPage> {
@@ -261,8 +293,9 @@ async function listThroughPlugin(context: SyncContext, params: URLSearchParams):
   const byId = new Map(rows(body.orders).map((row) => [row.id, row]));
   const picked = ids.flatMap((id) => byId.get(id) ?? []);
   const { orders: read, unreadable } = readOrders(picked);
-  // At contract 6 the route's own hits carry refunds[].lines, so no further request (#1324).
-  const orders = (context.capabilities?.pluginContract ?? 0) >= REFUND_LINES_PLUGIN_CONTRACT ? withRefundLines(read, refundLinesByOrder(hits, read)) : read;
+  const contract = context.capabilities?.pluginContract ?? 0;
+  const refunded = contract >= REFUND_LINES_PLUGIN_CONTRACT ? withRefundLines(read, refundLinesByOrder(hits, read)) : read;
+  const orders = contract >= SOLD_FIGURES_PLUGIN_CONTRACT ? withSoldFigures(refunded, soldFiguresByOrder(hits, read)) : refunded;
   // An id the admin answer lacks is left out and counted like a row the mapper cannot read.
   const left = unreadable + ids.length - picked.length;
   return { orders, hasMore, ...(left ? { unreadable: left } : {}), ...counted };
