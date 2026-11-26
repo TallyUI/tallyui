@@ -2,6 +2,7 @@ import { storeOrderLeft } from './store-order-left';
 import type { PosOrder } from './types';
 
 type LeftOrder = Pick<PosOrder, 'syncStatus' | 'storeOrderId' | 'error' | 'payments' | 'storeSettlement'>;
+export const TILL_SESSION_CLOSED = 'till_session_closed';
 
 /**
  * Whether the store order a refused sale left behind is settled on the store (#1101): its settlement is done, or gone
@@ -21,6 +22,7 @@ export function settledOnStore(order: LeftOrder | Pick<PosOrder, 'storeSettlemen
  * cancel (whose `sending` attempt a repeat finishes), or one the store changed or refused.
  */
 export function canCancelOnStore(order: LeftOrder): boolean {
+  if (order.storeSettlement?.code === TILL_SESSION_CLOSED) return false;
   const left = storeOrderLeft(order);
   if (!left || left.recordedMinor !== 0 || settledOnStore(order)) return false;
   const settlement = order.storeSettlement;
@@ -45,6 +47,7 @@ export function unrecordedLegs(order: Pick<PosOrder, 'error' | 'payments'>): Pos
 
 /** Whether the till can take its recorded legs off the store order and cancel it (#1101 slice 4). */
 export function canReverseOnStore(order: LeftOrder): boolean {
+  if (order.storeSettlement?.code === TILL_SESSION_CLOSED) return false;
   const left = storeOrderLeft(order), stored = order.storeSettlement;
   if (!left || left.recordedMinor <= 0 || settledOnStore(order)) return false;
   const legs = recordedLegs(order);
@@ -60,6 +63,7 @@ export function canReverseOnStore(order: LeftOrder): boolean {
  * pay (whose `sending` attempt a repeat finishes), or one the store changed or refused without a reverse leg taken off.
  */
 export function canPayRestOnStore(order: LeftOrder): boolean {
+  if (order.storeSettlement?.code === TILL_SESSION_CLOSED) return false;
   const left = storeOrderLeft(order);
   if (!left || left.recordedMinor <= 0 || settledOnStore(order)) return false;
   const legs = unrecordedLegs(order);

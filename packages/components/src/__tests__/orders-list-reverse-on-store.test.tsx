@@ -17,6 +17,18 @@ const manager = "Taken in a session that has closed: a manager must settle this 
 const eur = (amount: number) => formatMoney({ amount, currency: 'EUR' });
 const done = async (): Promise<SettleOutcome> => ({ kind: 'done', status: 'cancelled' });
 
+it('D1: changing sessions dismisses the reverse confirmation', () => {
+  const reverse = vi.fn(done), tree = (openSessionId: string) => <><OrdersList orders={[order]} openSessionId={openSessionId} onRetry={async () => 0} onReverseOnStore={reverse} /><PortalHost /></>;
+  const view = render(tree('open')); fireEvent.click(screen.getByTestId(id));
+  expect(screen.getByTestId(`${id}-dialog`)).toBeTruthy(); view.rerender(tree('next'));
+  expect([screen.queryByTestId(`${id}-dialog`), screen.queryByTestId(`${id}-dialog-confirm`)]).toEqual([null, null]);
+  expect(screen.getByText(manager)).toBeTruthy(); expect(reverse).not.toHaveBeenCalled();
+});
+it('N1: a late session is not an open session', () => {
+  render(<OrdersList orders={[{ ...order, sessionId: undefined, lateSessionId: 'late' }]} onRetry={async () => 0} onReverseOnStore={done} />);
+  expect(screen.queryByTestId(id)).toBeNull(); expect(screen.getByText(manager)).toBeTruthy();
+});
+
 it('row 14: no reverse handler means no button', () => {
   render(<OrdersList orders={[order]} onRetry={async () => 0} />);
   expect(screen.queryByTestId(id)).toBeNull();

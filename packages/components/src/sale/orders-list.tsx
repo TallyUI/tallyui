@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFormatMoney, knownWarnings, type SettleOutcome } from '@tallyui/core';
-import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, tillPayments, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
+import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, isRequeueableOrder, needsAdminReasonOf, needsAttention, noteDelivery, refundDueOf, REOPENABLE_CODES, settledOnStore, storeOrderLeft, TILL_SESSION_CLOSED, tillPayments, unrecordedLegs, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type OutboxState, type PosOrder } from '@tallyui/pos';
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -39,6 +39,7 @@ const refusalSentence = (code: string | undefined) => REFUSAL_SENTENCES.get(code
 const GIVE_BACK = "If the money was given back, do not record it; a manager must check the order in the store's admin.";
 const GIVE_BACK_INSTEAD = 'If the money was given back, use Give back and cancel instead.';
 const GIVE = 'Give back any of this you have not already given back.';
+const CLOSED_SESSION_NOTICE = "Taken in a session that has closed: a manager must settle this sale in the store's admin.";
 const legLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card');
 const legWording = (method: string, amount: string | undefined) => `${legLabel(method)} ${amount}: ${method === 'cash' ? 'hand it back from the drawer' : 'give it back on the card terminal'}`;
 const methodLabel = (method: string) => (method === 'cash' ? 'Cash' : 'Card terminal');
@@ -122,6 +123,7 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
     else if (settlement.state === 'refused') addedText = `The store did not cancel order #${reference}. Check it in the store's admin.`;
     else settledText = `${subject} changed on the store${paidThere}. Nothing was taken off it or cancelled from this till. Check it in the store's admin.`;
   }
+  if ((kind === 'cancel' || kind === 'reverse') && order.storeSettlement?.code === TILL_SESSION_CLOSED) { settledText = undefined; addedText = CLOSED_SESSION_NOTICE; }
   // A pay gone with money recorded on the store is not settled (`settledOnStore`): it stays a destructive line.
   const settled = !!settlement && settledOnStore(order);
   return <>
@@ -396,7 +398,7 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
               }} className="rounded-md bg-primary px-4 py-2">
                 <Text className="text-center font-semibold text-primary-foreground">{retryLabel}</Text>
               </Pressable> : null}
-            {closedSession ? <Text className="text-muted-foreground">{"Taken in a session that has closed: a manager must settle this sale in the store's admin."}</Text> : null}
+            {closedSession ? <Text className="text-muted-foreground">{CLOSED_SESSION_NOTICE}</Text> : null}
             {cancellable ? <Pressable accessibilityRole="button" testID={`order-${order.id}-cancel-on-store`} disabled={cancelState === 'busy'}
               onPress={() => {
                 if (cancelling.current.has(order.id)) return;

@@ -13,6 +13,8 @@ const noneStuck: readonly string[] = [];
 export { outboxLogger } from './logger';
 
 export interface UseOrderOutboxOptions {
+  /** The open register session's id. Without it, `cancelOnStore` and `reverseOnStore` resolve to `not_offered`. */
+  openSessionId?: () => string | undefined;
   /** Which order store to use (medusapos: the backend's base URL); `null` means no store. A change reopens. */
   storeKey: string | null;
   /** Opens the order store for `storeKey`; `close()` is called when the key or device id changes, or on unmount. */
@@ -158,13 +160,14 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       return opened && opened.storeKey === storeKey ? opened.outbox.discard(orderId) : false;
     },
     async cancelOnStore(orderId) {
+      if (!latest.current.openSessionId) return { kind: 'not_offered' };
       const opened = current.current;
       if (!opened || opened.storeKey !== storeKey) return { kind: 'not_offered' };
       const settlement = latest.current.storeSettlement?.(opened.storeKey);
       const cancel = settlement?.cancel?.bind(settlement);
       if (!cancel) return { kind: 'not_offered' };
       try {
-        return await cancelStoreOrder({ orders: opened.orders, cancel }, orderId);
+        return await cancelStoreOrder({ orders: opened.orders, cancel, openSessionId: () => latest.current.openSessionId?.() }, orderId);
       } finally {
         // A settled row leaves state.rejected: publish it before resolving.
         try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
@@ -184,13 +187,14 @@ export function useOrderOutbox(options: UseOrderOutboxOptions): UseOrderOutboxRe
       }
     },
     async reverseOnStore(orderId) {
+      if (!latest.current.openSessionId) return { kind: 'not_offered' };
       const opened = current.current;
       if (!opened || opened.storeKey !== storeKey) return { kind: 'not_offered' };
       const settlement = latest.current.storeSettlement?.(opened.storeKey);
       const reverse = settlement?.reverse?.bind(settlement);
       if (!reverse) return { kind: 'not_offered' };
       try {
-        return await reverseOnStore({ orders: opened.orders, reverse }, orderId);
+        return await reverseOnStore({ orders: opened.orders, reverse, openSessionId: () => latest.current.openSessionId?.() }, orderId);
       } finally {
         try { await refreshOutboxState(opened.outbox); } catch (cause) { outboxLogger.warn('Failed to refresh the outbox state', { cause }); }
       }

@@ -32,6 +32,26 @@ const button = (id: string) => screen.queryByTestId(`order-${id}-cancel-on-store
 const done: Handler = async () => ({ kind: 'done', status: 'cancelled' });
 
 describe('Cancel order on store', () => {
+  const manager = "Taken in a session that has closed: a manager must settle this sale in the store's admin.";
+  it('D2: changing sessions dismisses the cancel confirmation', () => {
+    const cancel = vi.fn(done), dialog = 'order-o1-cancel-on-store-dialog', order = refused('o1');
+    const tree = (openSessionId: string) => <><OrdersList orders={[order]} openSessionId={openSessionId} onRetry={async () => 0} onCancelOnStore={cancel} /><PortalHost /></>;
+    const view = render(tree('open')); fireEvent.click(button('o1')!);
+    expect(screen.getByTestId(dialog)).toBeTruthy(); view.rerender(tree('next'));
+    expect([screen.queryByTestId(dialog), screen.queryByTestId(`${dialog}-confirm`)]).toEqual([null, null]);
+    expect(screen.getByText(manager)).toBeTruthy(); expect(cancel).not.toHaveBeenCalled();
+  });
+  it('N2: a sale with no session cannot be cancelled', () => {
+    const at = '2026-11-25T10:00:00.000Z';
+    const order: PosOrder = { id: 'o1', commandId: 'command-o1', createdAt: at, updatedAt: at, currency: 'EUR', pricesIncludeTax: false,
+      lines: [{ id: 'line', productId: 'shirt', name: 'Blue shirt', sku: 'BLUE', quantity: 1, unitPriceMinor: 1200, discountMinor: 0, netMinor: 1200, taxLines: [] }],
+      payments: [{ id: 'payment', method: 'cash', amountMinor: 1200 }], customer: null,
+      subtotalMinor: 1200, discountMinor: 0, taxMinor: 0, totalMinor: 1200, syncStatus: 'rejected',
+      error: { code: 'invalid_payload', message: 'created, not paid', data: { orderId: '115', displayId: '1001' } },
+      taxRounding: { granularity: 'per_order', mode: 'half_away_from_zero' } };
+    render(<OrdersList orders={[order]} onRetry={async () => 0} onCancelOnStore={async () => ({ kind: 'done', status: 'cancelled' })} />);
+    expect(button('o1')).toBeNull(); expect(screen.getByText(manager)).toBeTruthy();
+  });
   it('G3: a leg without its own session belongs to the closed order session', () => {
     const order = { ...refused('o1'), sessionId: 'closed' };
     show(<OrdersList openSessionId="open" orders={[order]} onRetry={async () => 0} onCancelOnStore={done} />);

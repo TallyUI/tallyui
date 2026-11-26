@@ -5,7 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { Text } from 'react-native';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatMoney } from '@tallyui/core';
-import { UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
+import { TILL_SESSION_CLOSED, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, type PosOrder } from '@tallyui/pos';
 import { OrderSyncNotices } from '../sale/orders-list';
 
 afterEach(() => cleanup());
@@ -45,6 +45,12 @@ describe('reverse notices', () => {
     render(<OrderSyncNotices order={sale(state, payments, done)} />);
     return screen.getByTestId('order-settlement-reverse').textContent;
   }
+  it.each(['reverse', 'cancel'] as const)('S1: closed-session %s shows only the manager notice', (kind) => {
+    const refused = sale('refused', [cash, card], ['cash'], kind);
+    render(<OrderSyncNotices order={{ ...refused, storeSettlement: { ...refused.storeSettlement!, code: TILL_SESSION_CLOSED } }} />);
+    expect(screen.getByText("Taken in a session that has closed: a manager must settle this sale in the store's admin.")).toBeTruthy();
+    expect(screen.queryAllByText(/give back|did not cancel|taken off/i)).toHaveLength(0);
+  });
   it('row 3: partial refusal names what was taken off and still paid', () => {
     const text = notice('refused', [cash, card], ['cash']);
     expect(text).toBe(`Order #115 was not cancelled on the store. The store has taken off: ${cashText}. ${give} Still paid there: Card ${eur(500)}. Keep that; a manager must check it in the store's admin.`);

@@ -377,7 +377,7 @@ describe('useOrderOutbox options', () => {
     it('cancels with the cancel bound for the open store, then drops the row from state.rejected; not_offered before the store is ready', async () => {
       const keys: string[] = [];
       const settlement = { seen: [] as unknown[], async cancel(request: unknown) { this.seen.push(request); return { kind: 'done' as const, status: 'cancelled' }; } };
-      const order = await refusedOnStore({ storeSettlement: (key) => { keys.push(key); return settlement; } });
+      const order = await refusedOnStore({ openSessionId: () => 's1', storeSettlement: (key) => { keys.push(key); return settlement; } }, { ...sale(), sessionId: 's1' });
       let outcome: unknown;
       await act(async () => { outcome = await outbox.cancelOnStore(order.id); });
       expect(outcome).toEqual({ kind: 'done', status: 'cancelled' });
@@ -387,16 +387,19 @@ describe('useOrderOutbox options', () => {
       expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('done');
     });
 
+    const cancel = vi.fn(async () => ({ kind: 'done' as const, status: 'cancelled' }));
     it.each([['no storeSettlement option', {}], ['a settlement without cancel', { storeSettlement: () => ({}) }],
-      ['an undefined settlement', { storeSettlement: () => undefined }]])('is not offered with %s', async (_name, options) => {
+      ['no openSessionId option', { storeSettlement: () => ({ cancel }) }],
+      ['an undefined settlement', { storeSettlement: () => undefined }]])('H1: is not offered with %s', async (_name, options) => {
       const order = await refusedOnStore(options);
       expect(await outbox.cancelOnStore(order.id)).toEqual({ kind: 'not_offered' });
       expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement).toBeUndefined();
+      expect(cancel).not.toHaveBeenCalled();
     });
 
     it('rejects with the cancel error, still recounting the state, and the row stays sending', async () => {
       const crash = new Error('crash');
-      const order = await refusedOnStore({ storeSettlement: () => ({ cancel: async () => { throw crash; } }) });
+      const order = await refusedOnStore({ openSessionId: () => 's1', storeSettlement: () => ({ cancel: async () => { throw crash; } }) }, { ...sale(), sessionId: 's1' });
       await act(async () => { await expect(outbox.cancelOnStore(order.id)).rejects.toBe(crash); });
       expect((await outbox.orders!.findOne(order.id).exec())?.storeSettlement?.state).toBe('sending');
       expect(outbox.state.rejected).toBe(1);
@@ -422,9 +425,9 @@ describe('useOrderOutbox options', () => {
       });
 
       it('reverses through the open store and refreshes state.rejected', async () => {
-        const order = await refusedOnStore({ storeSettlement: () => ({ reverse: async ({ legs }) => ({
+        const order = await refusedOnStore({ openSessionId: () => 's1', storeSettlement: () => ({ reverse: async ({ legs }) => ({
           outcome: { kind: 'done', status: 'cancelled' }, voided: legs.map(({ paymentId }) => paymentId),
-        }) }) }, twoLegs(), partPaid);
+        }) }) }, { ...twoLegs(), sessionId: 's1' }, partPaid);
         await act(async () => { expect(await outbox.reverseOnStore(order.id)).toEqual({ kind: 'done', status: 'cancelled' }); });
         expect(outbox.state.rejected).toBe(0);
       });
