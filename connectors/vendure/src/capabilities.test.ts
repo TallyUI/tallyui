@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorUnauthorizedError, type SyncContext } from '@tallyui/core';
-import { createVendureConnector, vendureAuth } from './index';
+import { createVendureConnector, vendureAuth, vendureConnector } from './index';
 import { readVendureCapabilities } from './capabilities';
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -138,5 +138,11 @@ describe('Vendure capabilities wiring', () => {
     const context: SyncContext = { connectorId: 'vendure', baseUrl: 'https://vendure.test', headers };
     await expect(createVendureConnector().capabilities!(context)).resolves.toStrictEqual({ orderCreate: 3, taxRounding: rounding });
     expect(spy.mock.calls[0]![1]!.headers).toStrictEqual({ 'vendure-api-key': 'key_1', 'vendure-token': 'ch_1' });
+  });
+
+  it('declares discounted lines as taxed rows (ADR-048)', () => {
+    expect(createVendureConnector().discountsAreTaxedRows).toBe(true);
+    expect(createVendureConnector({ tallyFields: false }).discountsAreTaxedRows).toBe(true);
+    expect(vendureConnector.discountsAreTaxedRows).toBe(true);
   });
 });

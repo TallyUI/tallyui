@@ -1976,7 +1976,7 @@ interface OrderCreatePayload {
     quantity 1 with one rate each. Tax-inclusive channels, quantity above 1,
     and fee and shipping rows were not probed, and a row taxed at two rates
     is outside this bound. A connector that declares `discountsAreTaxedRows`
-    (the vendurepos app's) therefore counts T = ⌈(lines + fees + shipping +
+    (connector-vendure's) therefore counts T = ⌈(lines + fees + shipping +
     discounted lines) / 2⌉. A discounted line is one the `order.create`
     payload sends with `discountMinor` > 0, counted from the stored order as
     a version 4+ payload nets it. The vendurepos plugin counts the same rows
