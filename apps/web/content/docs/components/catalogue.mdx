@@ -59,7 +59,9 @@ Renders a searchable product grid or table with barcode or SKU lookup, variant c
 | `showFilterBar` | `boolean` | `false` | Shows a `ProductFilterBar` under the search box |
 | `filterChips` | `readonly ProductFilterChip[]` | `['inStock']` | Chips the bar shows; Catalogue applies In Stock and On Sale itself, unless `items` is supplied |
 | `inStockKeepsBackorder` | `boolean` | `false` | With the In Stock filter on, keeps backorder products in the grid and drops only out-of-stock ones |
-| `termPills` | `boolean \| readonly string[]` | `false` | With `showFilterBar`, a searchable term pill per term group from `traits.getTerms`: `true` for every group, or the group ids to show in that order; one pick per group, groups combine, not saved; not drawn with `items` |
+| `termPills` | `boolean \| readonly string[]` | `false` | With `showFilterBar`, a searchable term pill per term group from `traits.getTerms`: `true` for every group, or the group ids to show in that order; one pick per group, groups combine; not saved unless controlled through `termPicks`; with `items`, drawn only when `onTermPicksChange` is passed, and the app applies the picks |
+| `termPicks` | `Readonly<Record<string, string>>` | --- | Controlled term pill picks, keyed by term group id with a term id as the value |
+| `onTermPicksChange` | `(picks: Readonly<Record<string, string>>) => void` | --- | Receives the cashier's next term picks, including requested picks in controlled mode |
 | `filters` | `ProductFilters` | --- | Controlled filters; uncontrolled state starts at `DEFAULT_PRODUCT_FILTERS` (In Stock on) |
 | `onFiltersChange` | `(filters: ProductFilters) => void` | --- | Receives the cashier's next filters, including requested filters in controlled mode |
 | `variationsStyle` | `'list' \| 'popover' \| 'drill'` | `'list'` | `'popover'` opens a grid tile's VariationPicker in a popover for a product with option groups; `'drill'` swaps the grid for the product's variant tiles, with its tile first as Back; `'list'` opens the variant list chooser |

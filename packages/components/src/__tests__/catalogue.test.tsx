@@ -1305,4 +1305,77 @@ describe('Catalogue term pills', { timeout: 20_000 }, () => {
     expect(onStateChange).not.toHaveBeenCalled();
     expect(saveViewState).not.toHaveBeenCalled();
   });
+
+  it('reports an uncontrolled Brand pick and filters the tiles', () => {
+    const onTermPicksChange = vi.fn();
+    show({ onTermPicksChange });
+    pick('f2', 'a1');
+    expect(onTermPicksChange).toHaveBeenLastCalledWith({ f2: 'a1' });
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
+  });
+
+  it('reports both groups after a second uncontrolled pick', () => {
+    const onTermPicksChange = vi.fn();
+    show({ onTermPicksChange });
+    pick('f2', 'a1');
+    pick('f1', 'blue');
+    expect(onTermPicksChange).toHaveBeenLastCalledWith({ f2: 'a1', f1: 'blue' });
+    expect(tiles()).toEqual(['Blue Hat']);
+  });
+
+  it('reports empty picks and restores all tiles when Brand is cleared', () => {
+    const onTermPicksChange = vi.fn();
+    show({ onTermPicksChange });
+    pick('f2', 'a1');
+    press('filter-chip-group-f2-remove');
+    expect(onTermPicksChange).toHaveBeenLastCalledWith({});
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+  });
+
+  it('shows the controlled Brand pick on the pill and in the grid', () => {
+    show({ termPicks: { f2: 'z1' } });
+    expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Zest');
+    expect(tiles()).toEqual(['Plain Mug']);
+  });
+
+  it('reports a requested Brand pick without changing the controlled grid', () => {
+    const onTermPicksChange = vi.fn();
+    show({ termPicks: { f2: 'z1' }, onTermPicksChange });
+    pick('f2', 'a1');
+    expect(onTermPicksChange).toHaveBeenLastCalledWith({ f2: 'a1' });
+    expect(tiles()).toEqual(['Plain Mug']);
+  });
+
+  it('updates the grid when the app supplies the requested Brand pick', () => {
+    const props = { products: all, traits: termTraits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null, onTermPicksChange: vi.fn() };
+    const element = (brandId: string) => <><Catalogue {...props} showFilterBar termPills termPicks={{ f2: brandId }} /><PortalHost /></>;
+    const view = render(element('z1'));
+    pick('f2', 'a1');
+    view.rerender(element('a1'));
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
+  });
+
+  it('hides pills beside supplied items without a callback even with controlled picks', () => {
+    show({ items: all, termPicks: { f2: 'z1' } });
+    expect(groupIds()).toEqual([]);
+  });
+
+  it('reports a pick beside supplied items without narrowing the list', () => {
+    const onTermPicksChange = vi.fn();
+    show({ items: all, onTermPicksChange });
+    pick('f2', 'z1');
+    expect(onTermPicksChange).toHaveBeenLastCalledWith({ f2: 'z1' });
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+  });
+
+  it('shows the controlled Brand pill beside the app-filtered list', () => {
+    show({ items: [mug], termPicks: { f2: 'z1' }, onTermPicksChange: vi.fn() });
+    expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Zest');
+    expect(tiles()).toEqual(['Plain Mug']);
+  });
+
+  it('does not apply a controlled pick that no product holds', () => {
+    show({ termPicks: { f2: 'gone' } });
+    expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
+  });
 });
