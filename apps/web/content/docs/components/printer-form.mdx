@@ -56,6 +56,8 @@ The form has no scroll of its own: inside a dialog, wrap it in a `ScrollView` an
 | `onTest` | `(draft: PrinterFormDraft) => void` | Optional; shows Test Print and receives the validated current draft. |
 | `className` | `string` | Additional root styles. |
 
+Paper Width is a preset for Characters per Line (58 mm sets it to 32 and 80 mm sets it to 42); 32 shows as 58 mm, 42 or 48 as 80 mm, and any other value shows no preset. No separate paper width is stored.
+
 ## Validation
 
 Save and Test Print show only the first failure, in this order:
