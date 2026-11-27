@@ -765,8 +765,13 @@ length, prefix and suffix, sound, direct connection, and a test field.
 |---|---|---|
 | ![v2](screens/v2/settings-barcode.jpg) | ![medusapos](screens/medusapos/settings-barcode.jpg) | ![vendurepos](screens/vendurepos/settings-barcode.jpg) |
 
-**Closes it:** PLAN unit 39 (barcode settings section and test panel) is
-not started. The shared scanner rules are merged (#825–#827).
+**Closes it:** PLAN unit 39 is partly done. `BarcodeScanningSettings` draws
+v2's Scanning section (threshold, minimum characters, prefix, suffix; #943)
+and the Barcode Scanning Test verdict over the app's own key capture and
+`analyzeScanTrace` (#1152). Still to build: v2's Sound section (TallyUI has no
+scan-sound player), the input source chooser, and the test panel's key
+capture, timing chart and history. The shared scanner rules are merged
+(#825–#827).
 
 ## Cashier switch and sign-out
 
