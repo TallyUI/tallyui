@@ -26,3 +26,19 @@ export const NEW_TAB_WIDTH = 112; // WCPOS v2 packages/core/src/screens/main/pos
 export const PEEK = 16;
 // WCPOS v2 packages/core/src/screens/main/pos/cart/cells/line-strip.tsx:54 (PEEK_SPRING): the peek's underdamped bounce.
 export const PEEK_SPRING = { mass: 1, stiffness: 380, damping: 12 };
+// WCPOS v2 packages/components/src/lib/motion.ts:16.
+export const BEAT = 220;
+// WCPOS v2 packages/components/src/lib/motion.ts:19.
+export const PANE = 280;
+// WCPOS v2 packages/components/src/lib/motion.ts:30.
+export const EASE_BEAT = Easing.bezier(0.2, 0.9, 0.3, 1.1);
+// WCPOS v2 packages/components/src/lib/motion.ts:245-253 (BEATS.oldTiles): tiles leaving, 10ms apart, eight at most.
+export const OLD_TILES = { duration: 140, step: 10, cap: 8 };
+// WCPOS v2 packages/components/src/lib/motion.ts:255-263 (BEATS.newTiles): tiles landing, 22ms apart, eight at most.
+export const NEW_TILES = { duration: BEAT, step: 22, cap: 8 };
+// WCPOS v2 packages/core/src/screens/main/pos/products/deal-stack.tsx:119: a dealt tile is whole by 80% of its travel.
+export const FADE_IN_BY = 0.8;
+// WCPOS v2 packages/core/src/screens/main/pos/products/deal-stack.tsx:120.
+export const SCALE_FROM = 0.92;
+// WCPOS v2 packages/core/src/screens/main/pos/products/deal-stack.tsx:123: how long a deal waits for a frame.
+export const MEASURE_GRACE = 120;
