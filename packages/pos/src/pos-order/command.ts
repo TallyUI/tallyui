@@ -272,6 +272,7 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       // ADR-094: a rounded sale's entries ride at its content version; finalize refuses them unless the store declares cashRounding.
       ...(order.cashRoundings?.length
         ? { cashRoundings: order.cashRoundings.map(({ paymentId, minor }) => ({ paymentId, minor })) } : {}),
+      ...(order.taxExempt ? { taxExempt: true } : {}),
       ...(base >= 3 ? {
         display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
