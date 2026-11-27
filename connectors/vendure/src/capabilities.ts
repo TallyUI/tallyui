@@ -6,8 +6,8 @@ import { signedOut } from './session-probe';
 export const CAPABILITIES_PATH = '/tally/v1/info';
 
 /**
- * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287) and `chargeTaxMode` with the
- * connector's own headers. A 404 means an old plugin and gives the default; a network failure,
+ * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287), `chargeTaxMode`, `taxExempt`
+ * and `taxExemptCoupons` with the connector's own headers. A 404 means an old plugin and gives the default; a network failure,
  * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
  * `undefined`. The route answers a dead session and a missing
  * `CreateOrder` permission alike with 403, so a 401/403 asks who is signed in (#279): nobody
@@ -50,5 +50,12 @@ export async function readVendureCapabilities(
       && typeof chargeTaxMode.v === 'number' && Number.isSafeInteger(chargeTaxMode.v) && chargeTaxMode.v >= 1) capabilities.chargeTaxMode = true;
     else warn('ignoring a malformed chargeTaxMode');
   }
+  const { taxExempt, taxExemptCoupons } = body as { taxExempt?: unknown; taxExemptCoupons?: unknown };
+  if (taxExempt === true) capabilities.taxExempt = true;
+  else if (taxExempt !== undefined) warn('ignoring a malformed taxExempt');
+  if (taxExemptCoupons === true) {
+    if (taxExempt === true) capabilities.taxExemptCoupons = true;
+    else warn('ignoring taxExemptCoupons without taxExempt');
+  } else if (taxExemptCoupons !== undefined) warn('ignoring a malformed taxExemptCoupons');
   return capabilities;
 }
