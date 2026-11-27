@@ -6,12 +6,13 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings, woocommerceTax } from '@tallyui/core';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
-import { createOrderBuilder, orderDraftSchema, type Order } from '../order';
+import { couponPricingBasis, createOrderBuilder, orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { patchSale } from '../order/tax-exempt';
 import { taxProviderProps } from '../store-settings';
 import { saleTaxContexts, TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
-import { PAYMENT_IN_MOTION, SALE_FINISHED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
+import { COUPONS_NEED_CONNECTION } from './discount-codes';
+import { PAYMENT_IN_MOTION, SALE_FINISHED, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
@@ -219,4 +220,85 @@ it('S15 patchSale patches both views without creating a twin on a plain sale', (
   expect(plain).not.toHaveProperty('exemptedFrom');
   builder.setTaxExempt(true);
   expect(patchSale(builder.getSnapshot(), patch)).toMatchObject({ ...patch, exemptedFrom: patch });
+});
+
+it('S16 refuses exemption on an after-close sale with no payment', async () => {
+  const { result, options } = renderSale();
+  const builder = createOrderBuilder({ currency: 'AUD', taxContext: options.taxContextFor!(null).taxContext,
+    afterClose: { sessionId: 'closed-session', createdAt: '2026-11-20T09:00:00.000Z', registerId: 'register-0', payments: [], taxMinor: 0, fees: [], shipping: [] } });
+  builder.addLine({ productId: 'gift', variantId: 'free', name: 'Gift', unitPrice: { amount: 0, currency: 'AUD' } });
+  await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+  await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+  toggle(result, true, false);
+  expect(result.current.error).toBe(TAX_EXEMPT_LOCKED);
+  expect(result.current.taxExempt).toBe(false);
+});
+
+it('S17 refuses exemption when an unpaid sale carries a coupon', async () => {
+  const { result, options } = renderSale();
+  const builder = createOrderBuilder({ currency: 'AUD', taxContext: options.taxContextFor!(null).taxContext });
+  const lineId = builder.addLine({ productId: '10', name: 'Shirt', unitPrice: { amount: 1000, currency: 'AUD' } });
+  const code = 'refused-save';
+  builder.setCoupons([code], { kind: 'store-priced', carried: true, basis: couponPricingBasis(builder.getSnapshot()),
+    priced: new Map([[code, { couponId: 'promo_1', lines: [{ lineId, amountMinor: 100 }] }]]) });
+  await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+  await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+  toggle(result, true, false);
+  expect(result.current.error).toBe(TAX_EXEMPT_LOCKED);
+});
+
+it('S18 puts the exempt draft back unchanged when a resume without the capability is interrupted', async () => {
+  const { result, rerender, options } = renderSale();
+  add(result); toggle(result, true);
+  const before = result.current.order;
+  await act(async () => { expect(await result.current.park()).toBeNull(); });
+  rerender({ ...options, capabilities: { orderCreate: 12, coupons: true } });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const findOne = db.pos_drafts.findOne.bind(db.pos_drafts);
+  vi.spyOn(db.pos_drafts, 'findOne').mockImplementationOnce(((id: string) => {
+    const query = findOne(id);
+    const exec = query.exec.bind(query);
+    query.exec = (async () => { await gate; return exec(); }) as typeof query.exec;
+    return query;
+  }) as typeof findOne);
+  let resuming!: Promise<string | null>;
+  act(() => { resuming = result.current.resume(before.id); });
+  add(result);
+  await act(async () => {
+    release();
+    expect(await resuming).toBe('The sale changed while it was being resumed; resume it again');
+  });
+  const draft = await db.pos_drafts.findOne(before.id).exec();
+  expect(JSON.parse(draft!.toJSON().data)).toMatchObject({ taxExempt: true, exemptedFrom: expect.any(Object) });
+  expect(JSON.parse(draft!.toJSON().data)).toEqual(JSON.parse(JSON.stringify(before)));
+});
+
+it('S19 restores the same coupon and order tax after a stale park as a never-exempt sale', async () => {
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const figures = [];
+  for (const exempt of [false, true]) {
+    const { result } = renderSale({ discountCodes });
+    add(result);
+    if (exempt) toggle(result, true);
+    await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+    takeCash(result, 500);
+    const id = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+    const find = vi.spyOn(discountCodes, 'find').mockResolvedValue({ refusal: COUPONS_NEED_CONNECTION, transient: true });
+    await act(async () => { expect(result.current.voidTender(result.current.order.payments[0].id)).toBe(true); });
+    expect(find).toHaveBeenCalled();
+    expect(result.current.order.coupons?.length ?? 0).toBe(0);
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    const draft = await db.pos_drafts.findOne(id).exec();
+    const parked: Order = JSON.parse(draft!.toJSON().data);
+    expect(exempt ? parked.exemptedFrom : parked).toMatchObject({ couponPricesStale: true, coupons: [{ code: 'ten', discountTaxMinor: 10 }] });
+    find.mockRestore();
+    await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+    if (exempt) toggle(result, false);
+    figures.push([result.current.order.coupons![0].discountTaxMinor, result.current.order.taxMinor]);
+  }
+  expect(figures[1]).toEqual(figures[0]);
 });

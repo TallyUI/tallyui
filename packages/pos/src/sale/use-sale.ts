@@ -1305,7 +1305,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         }
         await doc.remove();
         if (builderNow.current !== live || live.getSnapshot() !== liveSnapshot) {
-          await writeOrderDraft(opts.drafts, source);
+          await writeOrderDraft(opts.drafts, saved);
           return 'The sale changed while it was being resumed; resume it again';
         }
         resetSale(null, builder, restoredTax);
