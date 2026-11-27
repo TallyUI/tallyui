@@ -117,6 +117,15 @@ export function PrinterForm({ printer, onSave, onCancel, onTest, className }: Pr
         </ToggleGroup>
       </View>
       <View className="gap-1">
+        <Text>Paper Width</Text>
+        <ToggleGroup type="single" variant="outline" value={columns === '32' ? '58' : '80'} aria-label="Paper Width" className="justify-start"
+          onValueChange={(value) => { if (value) setColumns(value === '58' ? '32' : '42'); }}>
+          {['58', '80'].map((value) => (
+            <ToggleGroupItem key={value} value={value} testID={`printer-form-paper-${value}`}><Text>{value} mm</Text></ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </View>
+      <View className="gap-1">
         <Text>Characters per Line</Text>
         <Input><Input.Field testID="printer-form-columns" accessibilityLabel="Characters per Line" keyboardType="number-pad"
           value={columns} onChangeText={(text) => setColumns(text.replace(/\D/g, ''))} /></Input>
