@@ -895,6 +895,56 @@ describe('Catalogue view state', () => {
   });
 });
 
+describe('Catalogue with app-filtered items', () => {
+  const props = { products, items: products, traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null, loading: false };
+
+  it('reports the cleared search when Enter selects a matching code', () => {
+    const onSelect = vi.fn();
+    const onQueryChange = vi.fn();
+    render(<Catalogue {...props} onSelect={onSelect} onQueryChange={onQueryChange} />);
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '111' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onQueryChange).toHaveBeenLastCalledWith('');
+    expect(input.value).toBe('');
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { reason: 'too short', code: '111', minCodeLength: 4 },
+    { reason: 'unmatched', code: 'unknown', minCodeLength: undefined },
+  ])('retains the query when the code is $reason', ({ code, minCodeLength }) => {
+    const onQueryChange = vi.fn();
+    render(<Catalogue {...props} minCodeLength={minCodeLength} onQueryChange={onQueryChange} />);
+    const input = screen.getByPlaceholderText('Search or scan barcode / SKU') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: code } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onQueryChange).toHaveBeenLastCalledWith(code);
+    expect(input.value).toBe(code);
+  });
+
+  it('names the picked filters when only items is empty', () => {
+    render(<Catalogue {...props} items={[]} />);
+    expect(screen.getByText('No products match the picked filters.')).toBeTruthy();
+  });
+
+  it('names the typed query instead of the picked filters', () => {
+    render(<Catalogue {...props} items={[]} />);
+    fireEvent.change(screen.getByPlaceholderText('Search or scan barcode / SKU'), { target: { value: 'hat' } });
+    expect(screen.getByText('No products match "hat".')).toBeTruthy();
+  });
+
+  it('says there are no products yet when products and items are empty', () => {
+    render(<Catalogue {...props} products={[]} items={[]} />);
+    expect(screen.getByText('No products yet.')).toBeTruthy();
+  });
+
+  it('shows the loading state before the picked filters message', () => {
+    render(<Catalogue {...props} items={[]} loading />);
+    expect(screen.getByLabelText('Loading products…')).toBeTruthy();
+  });
+});
+
 describe('Catalogue Any picks (#495)', () => {
   // A Woo variable product whose one variation fixes Colour and leaves the local group Size as "Any".
   const tee = (sizeId?: number) => ({ id: 70, name: 'Tee', type: 'variable', status: 'publish', attributes: [
