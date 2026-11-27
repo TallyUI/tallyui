@@ -1,5 +1,26 @@
 # @tallyui/connector-woocommerce
 
+## 5.5.0
+
+### Minor Changes
+
+- 488a2d9: Catalogue now applies the Featured chip itself, as it does In Stock and On Sale, and draws it only for connectors that implement the new optional `getFeatured` product trait. WooCommerce implements it with product schema version 5, so a till resyncs its products once.
+- 251ab2d: The WooCommerce connector can send a coupon-free tax-exempt sale to a stock, tax-exclusive WCPOS `1.10.N` (N ≥ 20) or `2.0.N` (N ≥ 5) store. The transport reads `/status` and `/site` and sends `is_vat_exempt: 'yes'` exactly when the store declares `taxExempt`, using the same gate with no option to wire. A failed read retries the batch (after sign-in if unauthorized); it never refuses the sale. `precheckCommand` now requires `taxExemptCoupons` as well as `taxExempt` for an exempt sale carrying coupons.
+- 2e49b52: The WooCommerce command transport reads `/site` for coupon sales, `/status` and `/site` for cash rounding, and `/status` for split tender. The `acceptsCoupons`, `acceptsCashRounding` and `acceptsPaymentsList` options are deprecated: `false` still closes the corresponding gate, but `true` no longer opens it without store support. Removing the three options is a breaking change and will only happen in a major release.
+
+### Patch Changes
+
+- a26b6d0: Adds the plumbing for a tax-exempt sale: `ServerCapabilities.taxExempt` and order.create's optional `taxExempt: true`, sent at the order's content version only to a store whose connector declares it. `precheckCommand` refuses it from a server without the capability and on order.update, and an exempt payload must carry no tax. No connector declares it yet, and the WooCommerce transport refuses an exempt sale. Nothing changes for any other sale.
+
+  pos_orders moves to schema version 24 (identity migration).
+
+- fcb0216: Refuse to reopen store orders recorded as tax exempt (`TAX_EXEMPT_REOPEN_REFUSED`), preserve rate codes when resending an exempt sale, and require `taxExemptCoupons` to take a coupon on an exempt sale (`TAX_EXEMPT_COUPONS`).
+- Updated dependencies [488a2d9]
+- Updated dependencies [a26b6d0]
+- Updated dependencies [fcb0216]
+- Updated dependencies [251ab2d]
+  - @tallyui/core@5.5.0
+
 ## 5.4.0
 
 ### Patch Changes
