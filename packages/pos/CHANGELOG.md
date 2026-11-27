@@ -1,5 +1,25 @@
 # @tallyui/pos
 
+## 5.5.0
+
+### Minor Changes
+
+- a26b6d0: Adds the plumbing for a tax-exempt sale: `ServerCapabilities.taxExempt` and order.create's optional `taxExempt: true`, sent at the order's content version only to a store whose connector declares it. `precheckCommand` refuses it from a server without the capability and on order.update, and an exempt payload must carry no tax. No connector declares it yet, and the WooCommerce transport refuses an exempt sale. Nothing changes for any other sale.
+
+  pos_orders moves to schema version 24 (identity migration).
+
+- fcb0216: Refuse to reopen store orders recorded as tax exempt (`TAX_EXEMPT_REOPEN_REFUSED`), preserve rate codes when resending an exempt sale, and require `taxExemptCoupons` to take a coupon on an exempt sale (`TAX_EXEMPT_COUPONS`).
+- baec438: Tax exempt math and sale state, behind the store's `taxExempt` capability. `useSale` gains `taxExempt`, `taxExemptAvailable` and `setTaxExempt(on)`. Exemption is order-level: every line, fee and shipping row keeps its net and carries zero tax, inclusive-priced items included, and the order total is the sum of those nets. It can be turned on only before a payment is captured, and turned off with payments taken (the amount due rises). It is refused while saving, with a payment in motion, on the receipt, on an after-close sale and with a carried coupon (TAX_EXEMPT_UNAVAILABLE, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_LOCKED), and on a sale with a line priced in the other tax mode, where adding such a line to an exempt sale is refused too (TAX_EXEMPT_CONVERTED_LINE). Coupons are priced against the taxed sale. Parking keeps the exemption. A resume on a store that no longer accepts exemption restores the taxed sale and shows TAX_EXEMPT_REMOVED. Reopening a refused exempt sale keeps the exemption and its quoted figures: each line keeps its rate and each fee and shipping row its net, whatever the store's rates are now, and switching exemption off restores each charge's entered gross. On a store that now includes tax in prices, reopening drops the exemption and resume shows TAX_EXEMPT_REMOVED. Finalize refuses an exempt sale on a prices-include-tax store. Nothing changes for a sale that is not exempt.
+
+### Patch Changes
+
+- 93b4b9c: Tell the cashier to finish the order in the store when it is tax exempt on the read after reopening.
+- Updated dependencies [488a2d9]
+- Updated dependencies [a26b6d0]
+- Updated dependencies [fcb0216]
+- Updated dependencies [251ab2d]
+  - @tallyui/core@5.5.0
+
 ## 5.4.0
 
 ### Minor Changes

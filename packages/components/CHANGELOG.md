@@ -1,5 +1,26 @@
 # @tallyui/components
 
+## 5.5.0
+
+### Minor Changes
+
+- ac8af99: Opening a category by its tile deals its products out of the tile, and going back gathers them into it, unless reduced motion is on.
+- f3c5b80: Add 58 mm and 80 mm paper width presets to PrinterForm’s editable Characters per Line field.
+- 488a2d9: Catalogue now applies the Featured chip itself, as it does In Stock and On Sale, and draws it only for connectors that implement the new optional `getFeatured` product trait. WooCommerce implements it with product schema version 5, so a till resyncs its products once.
+
+### Patch Changes
+
+- Updated dependencies [488a2d9]
+- Updated dependencies [93b4b9c]
+- Updated dependencies [a26b6d0]
+- Updated dependencies [fcb0216]
+- Updated dependencies [baec438]
+- Updated dependencies [251ab2d]
+  - @tallyui/core@5.5.0
+  - @tallyui/pos@5.5.0
+  - @tallyui/primitives@5.5.0
+  - @tallyui/theme@5.5.0
+
 ## 5.4.0
 
 ### Minor Changes

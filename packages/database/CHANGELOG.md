@@ -1,5 +1,15 @@
 # @tallyui/database
 
+## 5.5.0
+
+### Patch Changes
+
+- Updated dependencies [488a2d9]
+- Updated dependencies [a26b6d0]
+- Updated dependencies [fcb0216]
+- Updated dependencies [251ab2d]
+  - @tallyui/core@5.5.0
+
 ## 5.4.0
 
 ### Patch Changes
