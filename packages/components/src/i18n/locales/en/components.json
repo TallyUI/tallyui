@@ -49,6 +49,7 @@
 	"customers.error_unauthorized": "Sign in again to continue.",
 	"customers.error_unknown": "Something went wrong. Try again.",
 	"customers.invalid_email": "Enter a valid email address (up to {max} characters)",
+	"customers.loading_customers": "Loading customers…",
 	"customers.no_customers_yet": "No customers yet",
 	"customers.no_customers_yet_description": "Customers you add, and anyone who buys from you, will appear here.",
 	"customers.nothing_matches_search": "No customers match your search",

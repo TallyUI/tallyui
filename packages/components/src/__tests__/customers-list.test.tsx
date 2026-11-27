@@ -74,13 +74,13 @@ describe('CustomersList', () => {
     expect(onQueryChange).toHaveBeenCalledExactlyOnceWith('');
   });
 
-  it('CL6: loading shows the loading row and no empty block', () => {
-    render(<CustomersList {...props({ customers: [], loading: true })} />);
-    expect(screen.getByTestId('customers-list-loading')).toBeDefined();
-    expect(screen.queryByTestId('customers-list-empty')).toBeNull();
-    expect(screen.queryByTestId('customers-list-no-results')).toBeNull();
-    cleanup();
-    render(<CustomersList {...props({ customers: [], query: 'zz', loading: true })} />);
+  it('CL6: loading with no rows and no query draws five skeleton rows, no loading row and no empty block', () => {
+    render(<I18nProvider locale="en"><CustomersList {...props({ customers: [], loading: true })} /></I18nProvider>);
+    const skeleton = screen.getByTestId('customers-list-skeleton');
+    expect(skeleton.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByLabelText('Loading customers…')).toBe(skeleton);
+    expect(within(skeleton).getAllByTestId('customers-list-skeleton-row')).toHaveLength(5);
+    expect(screen.queryByTestId('customers-list-loading')).toBeNull();
     expect(screen.queryByTestId('customers-list-empty')).toBeNull();
     expect(screen.queryByTestId('customers-list-no-results')).toBeNull();
   });
@@ -109,5 +109,26 @@ describe('CustomersList', () => {
   it('CL9: the placeholder is translated', () => {
     render(<I18nProvider locale="fr" resources={{ fr: { 'common.search_customers': 'Rechercher' } }}><CustomersList {...props()} /></I18nProvider>);
     expect(field().getAttribute('placeholder')).toBe('Rechercher');
+  });
+
+  it('CL10: a search in flight shows the loading row instead of skeleton or empty states', () => {
+    render(<CustomersList {...props({ customers: [], query: 'zz', loading: true })} />);
+    expect(screen.getByTestId('customers-list-loading')).toBeDefined();
+    expect(screen.queryByTestId('customers-list-skeleton')).toBeNull();
+    expect(screen.queryByTestId('customers-list-empty')).toBeNull();
+    expect(screen.queryByTestId('customers-list-no-results')).toBeNull();
+  });
+
+  it('CL11: paging keeps the customer rows and shows the loading row', () => {
+    render(<CustomersList {...props({ customers: three, loading: true })} />);
+    expect(screen.getByTestId('customers-list-loading')).toBeDefined();
+    expect(screen.queryByTestId('customers-list-skeleton')).toBeNull();
+    for (const customer of three) expect(row(customer.id)).toBeDefined();
+  });
+
+  it('CL12: an empty list that is not loading shows the empty state instead of skeleton rows', () => {
+    render(<CustomersList {...props({ customers: [], loading: false })} />);
+    expect(screen.getByTestId('customers-list-empty')).toBeDefined();
+    expect(screen.queryByTestId('customers-list-skeleton')).toBeNull();
   });
 });

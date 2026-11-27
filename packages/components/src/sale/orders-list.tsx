@@ -5,6 +5,7 @@ import { canCancelOnStore, canPayRestOnStore, canReverseOnStore, extrasNotSent, 
 import { META_NOT_SENT, NOTE_NOT_SENT, orderReference, TAX_IDS_NOT_SENT } from './order-reference';
 import { sinceText } from './since-text';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { Skeleton } from '../ui/skeleton';
 
 /** One order from the store's own history (ADR-052 amendment 1), mapped by the app from its platform. */
 export type OrderHistoryRow = {
@@ -12,6 +13,8 @@ export type OrderHistoryRow = {
   totalMinor: number; currency: string; itemCount: number; stateLabel: string;
 };
 
+// v2's syncing row count (data-table/index.tsx:204).
+const SYNCING_SKELETON_ROWS = 5;
 const STATUS_LABEL = { pending: 'Waiting to sync', applied: 'Synced', rejected: 'Not accepted' };
 /** `figures_mismatch`'s labels; a field a newer store sends that isn't here is shown by its raw name. */
 const FIGURE_LABELS = new Map([['subtotalMinor', 'Subtotal'], ['taxMinor', 'Tax'], ['discountMinor', 'Discount']]);
@@ -195,10 +198,12 @@ export function OrderSyncNotices({ order, stuck, children }: OrderSyncNoticesPro
  * the store (`canPayRestOnStore`, #1101 slice 3), asked in a confirm dialog naming each leg to record (no money is taken):
  * the app wires `useOrderOutbox`'s `payRestOnStore`. A pay still `sending` is finished with no dialog. With it, a row
  * with money recorded on the store offers no Retry. */
-export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore, onReverseOnStore, openSessionId }: {
+export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, footer, stuck, history, historyLoading = false, onOpen, onReopen, onResume, onCancelOnStore, onPayRestOnStore, onReverseOnStore, openSessionId }: {
   orders: PosOrder[]; onRetry(orderIds: string[]): Promise<number>; formatDate?: (iso: string) => string; footer?: ReactNode;
   stuck?: OutboxState['stuck'];
   history?: OrderHistoryRow[];
+  /** The app is still fetching the store's order history; while Recent is empty it draws skeleton rows instead of the empty line. */
+  historyLoading?: boolean;
   onOpen?: (row: PosOrder | OrderHistoryRow) => void;
   onReopen?: (order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>;
   onResume?: (order: PosOrder) => void;
@@ -320,7 +325,13 @@ export function OrdersList({ orders, onRetry, formatDate = defaultFormatDate, fo
     {[{ title: 'Needs attention', orders: needsAttention(orders, { stuckCommandIds: stuck?.commandIds, discountsAreTaxedRows }) }, { title: 'Recent', orders: recent }].filter((section) => section.title === 'Recent' || section.orders.length > 0).map((section, sectionIndex) => (
       <View key={section.title} className="mb-6 gap-3">
         <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">{section.title}</Text>
-        {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text> : null}
+        {section.title === 'Recent' && orders.length === 0 && shown.length === 0 ? (historyLoading ?
+          <View testID="orders-loading" accessibilityLabel="Loading orders…" aria-busy className="gap-3">
+            {Array.from({ length: SYNCING_SKELETON_ROWS }, (_, index) => <View key={index} testID="orders-loading-row" className="gap-1 rounded-md border border-border bg-card p-3">
+              <Skeleton shape="line" className="w-1/2" />
+              <Skeleton shape="line" className="w-3/4" />
+            </View>)}
+          </View> : <Text testID="orders-empty" className="text-muted-foreground">No sales yet. Completed sales appear here.</Text>) : null}
         {section.orders.map((order) => {
           if ('placedAt' in order) {
             const row = order;
