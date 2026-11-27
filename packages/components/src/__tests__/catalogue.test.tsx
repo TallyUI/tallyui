@@ -1043,6 +1043,13 @@ describe('Catalogue On Sale chip', () => {
   const toggle = () => fireEvent.click(screen.getByTestId('filter-chip-onSale'));
   const tile = (name: string) => screen.queryByTestId(`product-tile-${name}`);
 
+  it('shows both products when On Sale is set but the filter bar is hidden', () => {
+    render(<Catalogue {...props} products={[sale, base]} showFilterBar={false}
+      filters={{ inStock: false, featured: false, onSale: true }} />);
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).not.toBeNull();
+  });
+
   it('keeps a Medusa product with a calculated EUR sale price', () => {
     render(<Catalogue {...props} products={[sale, base]} />);
     toggle();
