@@ -1,0 +1,1119 @@
+{
+  "_source": "TallyUI tax exempt slice 3 Woo probe, 2026-11-27: WooCommerce 11.3.1; ledger = WCPOS 2.0.5, completed = WCPOS 1.10.20. Request bodies are what the probe pushed; documents are trimmed to their tax and total fields.",
+  "ledger": {
+    "E1": {
+      "tillMinor": 1900,
+      "request": {
+        "mutationId": "6dd52140-c79f-4fe6-b679-862a5d636e62",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "5ea6a88a-b3cf-4d18-8976-8fdc5e44d1ec",
+        "baseRevision": null,
+        "payload": {
+          "status": "pending",
+          "currency": "USD",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "5ea6a88a-b3cf-4d18-8976-8fdc5e44d1ec"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 16,
+          "number": "16",
+          "status": "pending",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "19.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "5ea6a88a-b3cf-4d18-8976-8fdc5e44d1ec"
+            }
+          ]
+        },
+        "currentRevision": "sha256:cae2b6aaf88b7aaffca4d48c4c617b8cc8674e74f9236afd38b05e13f4a10444"
+      },
+      "paymentRequest": {
+        "payment": {
+          "id": "0a3e903c-3ab6-4362-a457-03b15984cbf2",
+          "method_id": "pos_cash",
+          "amount": "19.00",
+          "currency": "USD",
+          "tendered": "19.00"
+        },
+        "revision": "sha256:cae2b6aaf88b7aaffca4d48c4c617b8cc8674e74f9236afd38b05e13f4a10444"
+      },
+      "paymentStatus": 200,
+      "paymentResponse": {
+        "payment": {
+          "id": "0a3e903c-3ab6-4362-a457-03b15984cbf2",
+          "order_id": 16,
+          "method_id": "pos_cash",
+          "amount": "19.00",
+          "currency": "USD",
+          "tendered": "19.00",
+          "change": "0.00"
+        },
+        "order": {
+          "status": "completed",
+          "total": "19.00"
+        },
+        "revision": "sha256:2848b3662ab603b8ab6b5555b70970a8820985ddfa20c1e93f892a3807cbb23c"
+      }
+    },
+    "E2": {
+      "tillMinor": 2200,
+      "request": {
+        "mutationId": "94e1f983-ea05-47b4-b792-c0c8d50f55c6",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "804dadd2-c23d-44a7-a35e-cac0cf71fccd",
+        "baseRevision": null,
+        "payload": {
+          "status": "pending",
+          "currency": "USD",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            },
+            {
+              "product_id": 0,
+              "name": "Gift",
+              "quantity": 1,
+              "subtotal": "3.00",
+              "total": "3.00",
+              "tax_class": "",
+              "meta_data": [
+                {
+                  "key": "_woocommerce_pos_data",
+                  "value": "{\"price\":\"3.00\",\"regular_price\":\"3.00\",\"tax_status\":\"taxable\"}"
+                }
+              ]
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": "reduced-rate"
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "804dadd2-c23d-44a7-a35e-cac0cf71fccd"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 17,
+          "number": "17",
+          "status": "pending",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "22.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            },
+            {
+              "name": "Gift",
+              "product_id": 0,
+              "quantity": 1,
+              "subtotal": "3.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "3.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "reduced-rate",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "804dadd2-c23d-44a7-a35e-cac0cf71fccd"
+            }
+          ]
+        },
+        "currentRevision": "sha256:ed9be1803a10e5888d098fc05cfe9f36fb020832df68cca4dd2303667329f230"
+      },
+      "paymentRequest": {
+        "payment": {
+          "id": "1f0a1ed6-ac26-4f59-92a7-97fc8f66302f",
+          "method_id": "pos_cash",
+          "amount": "22.00",
+          "currency": "USD",
+          "tendered": "22.00"
+        },
+        "revision": "sha256:ed9be1803a10e5888d098fc05cfe9f36fb020832df68cca4dd2303667329f230"
+      },
+      "paymentStatus": 200,
+      "paymentResponse": {
+        "payment": {
+          "id": "1f0a1ed6-ac26-4f59-92a7-97fc8f66302f",
+          "order_id": 17,
+          "method_id": "pos_cash",
+          "amount": "22.00",
+          "currency": "USD",
+          "tendered": "22.00",
+          "change": "0.00"
+        },
+        "order": {
+          "status": "completed",
+          "total": "22.00"
+        },
+        "revision": "sha256:0b10299fba561ef9f4f1d94cdc679cbbaa7ff5a8f4ba05bc5f2908f626642859"
+      }
+    },
+    "E3": {
+      "tillMinor": 1900,
+      "request": {
+        "mutationId": "3d5c4fe9-a559-4ce3-b6ae-83dc57f42dd2",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "89654375-f9c9-4066-bf8d-6ec1a97d7b11",
+        "baseRevision": null,
+        "payload": {
+          "status": "pending",
+          "currency": "USD",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "89654375-f9c9-4066-bf8d-6ec1a97d7b11"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_tax_based_on",
+              "value": "billing"
+            }
+          ],
+          "billing": {
+            "first_name": "Probe",
+            "last_name": "Customer",
+            "address_1": "1 Test St",
+            "city": "New York",
+            "state": "NY",
+            "postcode": "10001",
+            "country": "US"
+          }
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 18,
+          "number": "18",
+          "status": "pending",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "19.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_tax_based_on",
+              "value": "billing"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "89654375-f9c9-4066-bf8d-6ec1a97d7b11"
+            }
+          ]
+        },
+        "currentRevision": "sha256:e40b8325155d349777499a5df27f2b4a9524e50d59542fd05aaaac5e48d7809a"
+      },
+      "paymentRequest": {
+        "payment": {
+          "id": "5482ad40-c433-4fd9-a470-b1585958c8bf",
+          "method_id": "pos_cash",
+          "amount": "19.00",
+          "currency": "USD",
+          "tendered": "19.00"
+        },
+        "revision": "sha256:e40b8325155d349777499a5df27f2b4a9524e50d59542fd05aaaac5e48d7809a"
+      },
+      "paymentStatus": 200,
+      "paymentResponse": {
+        "payment": {
+          "id": "5482ad40-c433-4fd9-a470-b1585958c8bf",
+          "order_id": 18,
+          "method_id": "pos_cash",
+          "amount": "19.00",
+          "currency": "USD",
+          "tendered": "19.00",
+          "change": "0.00"
+        },
+        "order": {
+          "status": "completed",
+          "total": "19.00"
+        },
+        "revision": "sha256:daada6bb6bd065eb3cac2156e25949d2715d91846ef19a7aaea51c7e4efa3edd"
+      }
+    },
+    "C1": {
+      "tillMinor": 2090,
+      "request": {
+        "mutationId": "dcd5f2a4-aad8-45a1-9c0e-c5b6e6f2f485",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "ca47103f-8423-4970-b7c1-19a66938ef17",
+        "baseRevision": null,
+        "payload": {
+          "status": "pending",
+          "currency": "USD",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "ca47103f-8423-4970-b7c1-19a66938ef17"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 19,
+          "number": "19",
+          "status": "pending",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.400000",
+          "cart_tax": "1.500000",
+          "total": "20.900000",
+          "total_tax": "1.900000",
+          "tax_lines": [
+            {
+              "id": 28,
+              "rate_code": "US-US TAX-1",
+              "rate_id": 4,
+              "label": "US Tax",
+              "compound": false,
+              "tax_total": "1.500000",
+              "shipping_tax_total": "0.400000",
+              "rate_percent": 10,
+              "meta_data": []
+            }
+          ],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "1.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "1.000000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "1.000000",
+                  "subtotal": "1.000000"
+                }
+              ]
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.500000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "0.500000",
+                  "subtotal": ""
+                }
+              ]
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.400000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "0.400000",
+                  "subtotal": ""
+                }
+              ]
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "ca47103f-8423-4970-b7c1-19a66938ef17"
+            }
+          ]
+        },
+        "currentRevision": "sha256:ffdf556ed2d3775115a2c1a26f7c62bb738066c4259022f8b5884fb32d7e7713"
+      },
+      "paymentRequest": {
+        "payment": {
+          "id": "81fa040d-3078-4627-a058-2f75551b3913",
+          "method_id": "pos_cash",
+          "amount": "20.90",
+          "currency": "USD",
+          "tendered": "20.90"
+        },
+        "revision": "sha256:ffdf556ed2d3775115a2c1a26f7c62bb738066c4259022f8b5884fb32d7e7713"
+      },
+      "paymentStatus": 200,
+      "paymentResponse": {
+        "payment": {
+          "id": "81fa040d-3078-4627-a058-2f75551b3913",
+          "order_id": 19,
+          "method_id": "pos_cash",
+          "amount": "20.90",
+          "currency": "USD",
+          "tendered": "20.90",
+          "change": "0.00"
+        },
+        "order": {
+          "status": "completed",
+          "total": "20.90"
+        },
+        "revision": "sha256:4742b099c5ccfd713da56813b6961762a7bf449f597d4fb435813f1f3e65c743"
+      }
+    }
+  },
+  "completed": {
+    "E1": {
+      "tillMinor": 1900,
+      "request": {
+        "mutationId": "1d01c8f0-612c-4c09-be96-94d5f9f3d958",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "0af1dfaa-24e8-4d12-8109-6e0f5e04ffd6",
+        "baseRevision": null,
+        "payload": {
+          "status": "completed",
+          "set_paid": true,
+          "currency": "USD",
+          "payment_method": "pos_cash",
+          "payment_method_title": "Cash",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "0af1dfaa-24e8-4d12-8109-6e0f5e04ffd6"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 16,
+          "number": "16",
+          "status": "completed",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "19.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "0af1dfaa-24e8-4d12-8109-6e0f5e04ffd6"
+            }
+          ]
+        },
+        "currentRevision": "sha256:4f8ba77c110ca78dfa76c1d06135c04836824504c23af6e45eb388436f2336a5"
+      }
+    },
+    "E2": {
+      "tillMinor": 2200,
+      "request": {
+        "mutationId": "744bfb58-08d1-496d-8d90-c4ddbbf35259",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "84051cd7-eac8-4a36-a96a-999428fef95e",
+        "baseRevision": null,
+        "payload": {
+          "status": "completed",
+          "set_paid": true,
+          "currency": "USD",
+          "payment_method": "pos_cash",
+          "payment_method_title": "Cash",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            },
+            {
+              "product_id": 0,
+              "name": "Gift",
+              "quantity": 1,
+              "subtotal": "3.00",
+              "total": "3.00",
+              "tax_class": "",
+              "meta_data": [
+                {
+                  "key": "_woocommerce_pos_data",
+                  "value": "{\"price\":\"3.00\",\"regular_price\":\"3.00\",\"tax_status\":\"taxable\"}"
+                }
+              ]
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": "reduced-rate"
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "84051cd7-eac8-4a36-a96a-999428fef95e"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 17,
+          "number": "17",
+          "status": "completed",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "22.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            },
+            {
+              "name": "Gift",
+              "product_id": 0,
+              "quantity": 1,
+              "subtotal": "3.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "3.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "reduced-rate",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "84051cd7-eac8-4a36-a96a-999428fef95e"
+            }
+          ]
+        },
+        "currentRevision": "sha256:85551c414d440bf0ee5ad4b5b4dc7a1d77a5614aa3046ac98bd273a6fefc5abf"
+      }
+    },
+    "E3": {
+      "tillMinor": 1900,
+      "request": {
+        "mutationId": "e866fbdd-e15f-4223-a885-39905f35aa24",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "fc2abf1f-1480-4171-a946-0e3271a32768",
+        "baseRevision": null,
+        "payload": {
+          "status": "completed",
+          "set_paid": true,
+          "currency": "USD",
+          "payment_method": "pos_cash",
+          "payment_method_title": "Cash",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "fc2abf1f-1480-4171-a946-0e3271a32768"
+            },
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_tax_based_on",
+              "value": "billing"
+            }
+          ],
+          "billing": {
+            "first_name": "Probe",
+            "last_name": "Customer",
+            "address_1": "1 Test St",
+            "city": "New York",
+            "state": "NY",
+            "postcode": "10001",
+            "country": "US"
+          }
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 18,
+          "number": "18",
+          "status": "completed",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.000000",
+          "cart_tax": "0.000000",
+          "total": "19.000000",
+          "total_tax": "0.000000",
+          "tax_lines": [],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "0.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.000000",
+              "taxes": []
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "is_vat_exempt",
+              "value": "yes"
+            },
+            {
+              "key": "_woocommerce_pos_tax_based_on",
+              "value": "billing"
+            },
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "fc2abf1f-1480-4171-a946-0e3271a32768"
+            }
+          ]
+        },
+        "currentRevision": "sha256:4bcdfa267dc4f87ed82cfacdfed785fbe2dd5fb799cb8bd3cc5bc053a0acb923"
+      }
+    },
+    "C1": {
+      "tillMinor": 2090,
+      "request": {
+        "mutationId": "93f8f481-06e0-4508-a709-e666b6c59376",
+        "operation": "create",
+        "collection": "orders",
+        "recordId": "a2ce2e61-17e0-41ab-92b6-7aa8ed39161a",
+        "baseRevision": null,
+        "payload": {
+          "status": "completed",
+          "set_paid": true,
+          "currency": "USD",
+          "payment_method": "pos_cash",
+          "payment_method_title": "Cash",
+          "line_items": [
+            {
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.00",
+              "total": "10.00"
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "total": "5.00",
+              "tax_status": "taxable",
+              "tax_class": ""
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.00"
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "a2ce2e61-17e0-41ab-92b6-7aa8ed39161a"
+            }
+          ]
+        }
+      },
+      "pushStatus": 201,
+      "pushResponse": {
+        "document": {
+          "id": 19,
+          "number": "19",
+          "status": "completed",
+          "currency": "USD",
+          "prices_include_tax": false,
+          "discount_total": "0.000000",
+          "discount_tax": "0.000000",
+          "shipping_total": "4.000000",
+          "shipping_tax": "0.400000",
+          "cart_tax": "1.500000",
+          "total": "20.900000",
+          "total_tax": "1.900000",
+          "tax_lines": [
+            {
+              "id": 28,
+              "rate_code": "US-US TAX-1",
+              "rate_id": 4,
+              "label": "US Tax",
+              "compound": false,
+              "tax_total": "1.500000",
+              "shipping_tax_total": "0.400000",
+              "rate_percent": 10,
+              "meta_data": []
+            }
+          ],
+          "line_items": [
+            {
+              "name": "Probe P",
+              "product_id": 15,
+              "quantity": 1,
+              "subtotal": "10.000000",
+              "subtotal_tax": "1.000000",
+              "tax_class": "",
+              "total": "10.000000",
+              "total_tax": "1.000000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "1.000000",
+                  "subtotal": "1.000000"
+                }
+              ]
+            }
+          ],
+          "fee_lines": [
+            {
+              "name": "Bag",
+              "tax_class": "",
+              "tax_status": "taxable",
+              "total": "5.000000",
+              "total_tax": "0.500000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "0.500000",
+                  "subtotal": ""
+                }
+              ]
+            }
+          ],
+          "shipping_lines": [
+            {
+              "method_id": "pos",
+              "method_title": "Post",
+              "total": "4.000000",
+              "total_tax": "0.400000",
+              "taxes": [
+                {
+                  "id": 4,
+                  "total": "0.400000",
+                  "subtotal": ""
+                }
+              ]
+            }
+          ],
+          "meta_data": [
+            {
+              "key": "_woocommerce_pos_uuid",
+              "value": "a2ce2e61-17e0-41ab-92b6-7aa8ed39161a"
+            }
+          ]
+        },
+        "currentRevision": "sha256:7a419b79e93570ff1661cf0a31c20b6d181600cf604ba207d120f25b32abd28f"
+      }
+    }
+  }
+}
