@@ -5,6 +5,15 @@ import fixtureProducts from './fixtures/wcpos-1.10.20-products.json';
 import fixtureVariations from './fixtures/wcpos-1.10.20-variations.json';
 import taxProducts from './fixtures/taxes-1.10.20/products-tax-fields.json';
 
+describe('WooCommerce getFeatured', () => {
+  it('only treats boolean true as featured', () => {
+    expect(wooProductTraits.getFeatured!({ featured: true })).toBe(true);
+    expect(wooProductTraits.getFeatured!({ featured: false })).toBe(false);
+    expect(wooProductTraits.getFeatured!({})).toBe(false);
+    expect(wooProductTraits.getFeatured!({ featured: 'yes' })).toBe(false);
+  });
+});
+
 describe('WooCommerce tax traits', () => {
   it.each([
     { id: 80, taxClass: undefined, taxStatus: 'taxable' },

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRxDatabase, type JsonSchema } from 'rxdb';
+import { createRxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { connectorCollection } from '@tallyui/database';
@@ -17,6 +17,14 @@ async function setup(size: number, { total = true, filter = true, utcOffset = 0,
 }
 
 describe('WooCommerce product pass cursor in the real RxDB replication loop', () => {
+  it('stores the featured flag from the product feed', async () => {
+    const store = createFakeStore(1);
+    Object.assign(store.rows[0], { featured: true });
+    const { sync, local } = await startTill(store);
+    await sync();
+    expect((await local()).get('u1')?.featured).toBe(true);
+  });
+
   it('keeps every product and keeps syncing when already-read products are trashed during the pass', async () => {
     // The reviewer's u6 case: the lowest-id product, already read, is trashed after each of the first four handler calls.
     const { rows, poll, sync, local } = await setup(10, { afterCall: (call, rows) => { if (call <= 4) rows.shift(); } });
@@ -111,30 +119,26 @@ describe('WooCommerce product pass cursor in the real RxDB replication loop', ()
   });
 });
 
-/** The version 3 product schema: version 4 without low_stock_amount. */
+/** The version 4 product schema: version 5 without featured. */
 function previousProductSchema(): typeof wooProductSchema {
-  const variationDocs = wooProductSchema.properties.variation_docs;
-  const items = variationDocs.items as JsonSchema;
-  const variationProperties = { ...items.properties };
-  delete variationProperties.low_stock_amount;
-  const properties: typeof wooProductSchema.properties = { ...wooProductSchema.properties, variation_docs: { ...variationDocs, items: { ...items, properties: variationProperties } } };
-  delete properties.low_stock_amount;
-  return { ...wooProductSchema, version: 3, properties };
+  const properties = { ...wooProductSchema.properties };
+  delete properties.featured;
+  return { ...wooProductSchema, version: 4, properties };
 }
 
 describe('WooCommerce product schema upgrade', () => {
-  it('drops a version 3 product cache on open under schema version 4 and resyncs it', async () => {
-    const v3Schema = previousProductSchema();
+  it('drops a version 4 product cache on open under schema version 5 and resyncs it', async () => {
+    const v4Schema = previousProductSchema();
     const options = { name: `woo${Math.random().toString(36).slice(2)}`, storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false };
     let db = await createRxDatabase(options);
     try {
-      await db.addCollections({ products: connectorCollection(v3Schema) });
+      await db.addCollections({ products: connectorCollection(v4Schema) });
       await db.products.insert({ uuid: 'stale', id: 999, name: 'Stale', status: 'publish', date_modified_gmt: '2026-01-01T00:00:00' });
       expect(await db.products.count().exec()).toBe(1);
       await db.close();
       db = await createRxDatabase(options);
       await db.addCollections({ products: connectorCollection(wooProductSchema) });
-      expect(db.products.schema.version).toBe(4);
+      expect(db.products.schema.version).toBe(5);
       expect(await db.products.count().exec()).toBe(0);
       const { sync, local } = await startTill(createFakeStore(3), { db });
       await sync();
