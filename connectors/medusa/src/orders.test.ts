@@ -636,6 +636,16 @@ describe('refund lines (#1324)', () => {
     expect(order!.refunds).toStrictEqual([{ ...tillOrder.refunds[0], lines: [fixtureLine] }, tillOrder.refunds[1]]);
   });
 
+  it.each([{ lines: [] }, {}])('getOrders drops all refund lines when a refund id repeats (%j)', async (entry) => {
+    const body = pluginBody();
+    const refunds = body.orders[0]!.refunds;
+    refunds.push({ id: refunds[0]!.id, ...entry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const orders = await getOrders(ctx6, [L[0].id]);
+    expect(orders).toStrictEqual([tillOrder]);
+    for (const refund of orders[0]!.refunds) expect(refund).not.toHaveProperty('lines');
+  });
+
   it('getOrders drops all refund lines when siblings over-count even with an empty refund', async () => {
     const body = pluginBody();
     const line = { ...fixtureLine, quantity: 2 };
