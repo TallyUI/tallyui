@@ -878,7 +878,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (locked()) return false;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       const snapshot = builderNow.current.getSnapshot();
-      if (on === snapshot.taxExempt) return true;
+      if (on === (snapshot.taxExempt === true)) return true;
       if (on && (opts.capabilities?.taxExempt !== true || taxNow.current.taxContext.pricesIncludeTax || snapshot.storeOrder)) { setError(TAX_EXEMPT_UNAVAILABLE); return false; }
       if (snapshot.payments.some(isInMotion)) { setError(PAYMENT_IN_MOTION); return false; }
       if (on && capturedMinor(snapshot.payments) > 0) { setError(TAX_EXEMPT_PAYMENT_TAKEN); return false; }

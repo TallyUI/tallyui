@@ -12,7 +12,7 @@ import { taxProviderProps } from '../store-settings';
 import { saleTaxContexts, TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import { COUPONS_NEED_CONNECTION } from './discount-codes';
-import { PAYMENT_IN_MOTION, SALE_FINISHED, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
+import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
@@ -301,4 +301,32 @@ it('S19 restores the same coupon and order tax after a stale park as a never-exe
     figures.push([result.current.order.coupons![0].discountTaxMinor, result.current.order.taxMinor]);
   }
   expect(figures[1]).toEqual(figures[0]);
+});
+
+it('S20 turning exemption off is a no-op on a non-exempt sale carrying a coupon', async () => {
+  const { result, options } = renderSale();
+  const builder = createOrderBuilder({ currency: 'AUD', taxContext: options.taxContextFor!(null).taxContext });
+  const lineId = builder.addLine({ productId: '10', name: 'Shirt', unitPrice: { amount: 1000, currency: 'AUD' } });
+  const code = 'refused-save';
+  builder.setCoupons([code], { kind: 'store-priced', carried: true, basis: couponPricingBasis(builder.getSnapshot()),
+    priced: new Map([[code, { couponId: 'promo_1', lines: [{ lineId, amountMinor: 100 }] }]]) });
+  await writeOrderDraft(db.pos_drafts, builder.getSnapshot());
+  await act(async () => { expect(await result.current.resume(builder.getSnapshot().id)).toBeNull(); });
+  const before = result.current.order;
+  toggle(result, false);
+  expect(result.current.error).toBeNull();
+  expect(result.current.order).toBe(before);
+});
+
+it('S21 refuses to turn exemption off while a save is in flight', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const { result } = renderSale({ onSaleCompleted: () => gate });
+  add(result); toggle(result, true); takeCash(result, result.current.order.totalMinor);
+  let completion!: Promise<void>;
+  act(() => { completion = result.current.complete(); });
+  toggle(result, false, false);
+  expect(result.current.error).toBe(SALE_SAVING);
+  expect(result.current.taxExempt).toBe(true);
+  await act(async () => { release(); await completion; });
 });
