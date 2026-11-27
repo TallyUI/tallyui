@@ -299,7 +299,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   - **The server's own check:** a server's batch guard (`precheckCommand`)
     refuses the field when its own `supported` list does not declare the
     capability (`batch.ts:138-142`). It refuses the field on
-    `order.update` outright (`batch.ts:118`). So a plugin builds its
+    `order.update` outright (`batch.ts:118`). So a plugin should build its
     `/tally/v1/info` declaration and that `supported` list from one
     constant.
   - **How a store declares it:**
@@ -310,8 +310,9 @@ must equal the order's tax mode when charges are present; subtotal excludes char
     - The Vendure connector counts only the literal `true`, and
       `taxExemptCoupons` only beside `taxExempt`
       (`connectors/vendure/src/capabilities.ts`).
-    - The Woo connector derives `taxExempt` from the store's version
-      (`wooTaxExemptGate`) and never declares `taxExemptCoupons`.
+    - The Woo connector derives `taxExempt` from the store's WCPOS
+      version, whether the store is the fork, and its price mode
+      (`wooTaxExemptGate`). It never declares `taxExemptCoupons`.
     - Medusa declares neither.
   - **The meaning is fixed for good** (front desk ruling, 2026-11-27):
     `taxExempt: true` means "an accepted exempt order carries zero tax".
