@@ -9,7 +9,7 @@ import { createOrderBuilder, orderDraftSchema, type Order } from '../order';
 import { chargeOrderModeMinor } from '../order/order-builder';
 import { registerSessionCreator } from '../register/schemas';
 import type { RegisterSessionCollection } from '../register/session-store';
-import { useSale } from '../sale/use-sale';
+import { TAX_EXEMPT_REMOVED, useSale } from '../sale/use-sale';
 import { taxProviderProps } from '../store-settings';
 import { createTaxContext, TaxProvider } from '../tax';
 import { finalizeOrder } from './finalize';
@@ -33,12 +33,11 @@ beforeEach(async () => {
 });
 afterEach(async () => { cleanup(); await db.remove(); });
 
-async function reopen(settings: StoreSettings, reopenSettings = settings, gross?: number) {
+async function reopen(settings: StoreSettings, reopenSettings = settings, feeGross?: number, shippingGross = feeGross) {
   const builder = createOrderBuilder({ currency: settings.currency, taxContext: createTaxContext(taxProviderProps(settings)) });
   builder.addLine({ productId: '10', name: 'Shirt', taxClass: 'standard', unitPrice: { amount: 1000, currency: settings.currency } });
-  const mode = gross === undefined ? {} : { amountIncludesTax: true };
-  builder.addFee({ ...mode, name: 'Bag', amountMinor: gross ?? 200, taxClass: settings === woo ? 'standard' : 'fee' });
-  builder.addShipping({ ...mode, name: 'Post', amountMinor: gross ?? 103, taxClass: settings === woo ? 'standard' : 'post' });
+  builder.addFee({ ...(feeGross === undefined ? {} : { amountIncludesTax: true }), name: 'Bag', amountMinor: feeGross ?? 200, taxClass: settings === woo ? 'standard' : 'fee' });
+  builder.addShipping({ ...(shippingGross === undefined ? {} : { amountIncludesTax: true }), name: 'Post', amountMinor: shippingGross ?? 103, taxClass: settings === woo ? 'standard' : 'post' });
   const taxed = builder.getSnapshot();
   builder.setTaxExempt(true);
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
@@ -96,4 +95,42 @@ it('G7 reopens the original inclusive charges without exemption in a now-inclusi
   const { draft } = await reopen(generic, { ...generic, pricesIncludeTax: true }, 902);
   expect(draft).not.toHaveProperty('taxExempt');
   for (const key of ['fees', 'shipping'] as const) expect(draft[key]).toMatchObject([{ amountMinor: 902, amountIncludesTax: true }]);
+});
+
+it.each([['G10 generic', generic, 1000, 999, 3189], ['G11 Woo', woo, 500, 500, 2100]] as const)(
+  '%s restores the literal gross fee, shipping and sale total after switch-off', async (_, settings, fee, shipping, total) => {
+    const { draft } = await reopen(settings, settings, fee, shipping);
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(settings), children });
+    const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+    await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+    expect(result.current.taxExempt).toBe(true);
+    act(() => { expect(result.current.setTaxExempt(false)).toBe(true); });
+    expect(result.current.order.totalMinor).toBe(total);
+    expect(result.current.order.fees).toMatchObject([{ amountMinor: fee, amountIncludesTax: true }]);
+    expect(result.current.order.shipping).toMatchObject([{ amountMinor: shipping, amountIncludesTax: true }]);
+  });
+
+it('R4 warns once when reopen drops exemption in a now-inclusive store', async () => {
+  const settings = { ...generic, pricesIncludeTax: true };
+  const { draft } = await reopen(generic, settings);
+  expect(draft).not.toHaveProperty('taxExempt');
+  expect(draft.taxExemptDropped).toBe(true);
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(settings), children });
+  const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+  await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+  expect(result.current.error).toContain(TAX_EXEMPT_REMOVED);
+  expect(result.current.order).not.toHaveProperty('taxExemptDropped');
+  await act(async () => { expect(await result.current.park()).toBeNull(); });
+  await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+  expect(result.current.error).toBeNull();
+});
+
+it('R5 resumes without a warning when reopen keeps exemption', async () => {
+  const { draft } = await reopen(generic);
+  expect(draft).not.toHaveProperty('taxExemptDropped');
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(generic), children });
+  const { result } = renderHook(() => useSale(generic, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+  await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+  expect(result.current.taxExempt).toBe(true);
+  expect(result.current.error).toBeNull();
 });

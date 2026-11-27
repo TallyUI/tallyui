@@ -45,6 +45,8 @@ export interface Order {
   cashRoundings?: CashRounding[];
   /** Present only on a tax-exempt sale, with every tax figure zero; finalize requires the store's `taxExempt` capability. */
   taxExempt?: true;
+  /** Set by reopenRefusedOrder on the draft of a refused exempt sale reopened where exemption is not available; resume shows TAX_EXEMPT_REMOVED once and never carries it on. */
+  taxExemptDropped?: true;
   /** The same sale without exemption, used only to restore and turn exemption off; never stored by finalize. */
   exemptedFrom?: Order;
   customer: CustomerSummary | null;

@@ -8,11 +8,12 @@ import type { StoreSettings, woocommerceTax } from '@tallyui/core';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import { couponPricingBasis, createOrderBuilder, orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { patchSale } from '../order/tax-exempt';
+import { receiptRounding } from '../receipt/build-receipt-data';
 import { taxProviderProps } from '../store-settings';
 import { saleTaxContexts, TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import { COUPONS_NEED_CONNECTION } from './discount-codes';
-import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
+import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
@@ -114,14 +115,17 @@ it('S5 captured cash prevents turning exemption on', () => {
 it('S6 turning exemption off after a cash leg raises the due and keeps the tender open', async () => {
   const { result } = renderSale();
   add(result, true);
-  const { totalMinor, taxMinor } = result.current.order;
+  // Exempt: 1000 + 200 + 103 = 1303. GST: 100 + 20 + 10 = 130, so taxed = 1433.
+  // After 500 cash the due is 1303 - 500 = 803 exempt, or 1433 - 500 = 933 taxed.
+  expect(result.current.order.totalMinor).toBe(1433);
   toggle(result, true);
   act(() => result.current.startTender('cash'));
   takeCash(result, 500);
-  const due = result.current.order.balanceDueMinor;
+  expect(result.current.order.totalMinor).toBe(1303);
+  expect(result.current.order.balanceDueMinor).toBe(803);
   toggle(result, false);
-  expect(result.current.order.balanceDueMinor).toBe(totalMinor - 500);
-  expect(result.current.order.balanceDueMinor - due).toBe(taxMinor);
+  expect(result.current.order.totalMinor).toBe(1433);
+  expect(result.current.order.balanceDueMinor).toBe(933);
   await act(() => result.current.complete());
   expect(result.current.error).toBe('finalize: underpaid');
   expect(result.current.stage).toEqual({ kind: 'tender', method: 'cash' });
@@ -329,4 +333,58 @@ it('S21 refuses to turn exemption off while a save is in flight', async () => {
   expect(result.current.error).toBe(SALE_SAVING);
   expect(result.current.taxExempt).toBe(true);
   await act(async () => { release(); await completion; });
+});
+
+// Net 502 + 501 = 1003; line GST rounds to 50 + 50, so taxed total = 1103.
+// Exempt pick: 502 rounds to 500; first entry = 500 - 502 = -2.
+// After off: due = 1103 - 2 - 500 = 601; removing the prior entry gives 603 unrounded.
+// Settle: 603 rounds to 605; second entry = 605 - 601 = +4.
+// Receipt: -2 + 4 = +2; total = 1105, the same as rounding 1103 once.
+it('S22 sums opposite per-leg roundings on the receipt after exemption is turned off', () => {
+  const options = { capabilities: { orderCreate: 12, taxExempt: true, cashRounding: true } };
+  const { result } = renderSale(options), plain = renderSale(options).result;
+  const items = catalogueEntries([{ id: 1, name: 'First', price: '5.02' }, { id: 2, name: 'Second', price: '5.01' }], traits, { currency: 'AUD' });
+  for (const sale of [result, plain]) act(() => { for (const item of items) sale.current.add(item, traits); });
+  const rounding = { incrementMinor: 5, mode: 'nearest' } as const;
+  expect(result.current.order.totalMinor).toBe(1103);
+  toggle(result, true);
+  act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 502, tenderedMinor: 500,
+    units: { [result.current.order.lineItems[0].id]: 1 }, rounding })).not.toBeNull(); });
+  expect(result.current.order.cashRoundings?.map(entry => entry.minor)).toEqual([-2]);
+  toggle(result, false);
+  act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 605, rounding })).not.toBeNull(); });
+  const { order } = result.current;
+  expect(order.payments.map(leg => leg.amountMinor)).toEqual([500, 605]);
+  expect(order.cashRoundings?.map(entry => entry.minor)).toEqual([-2, 4]);
+  expect(order.totalMinor).toBe(1105);
+  expect(order.balanceDueMinor).toBe(0);
+  expect(receiptRounding(order)).toEqual({ rounding: { name: 'Rounding', amountMinor: 2 } });
+  act(() => { expect(plain.current.addTender({ method: 'cash', amountMinor: 1105, rounding })).not.toBeNull(); });
+  expect(plain.current.order.payments.map(leg => leg.amountMinor)).toEqual([1105]);
+  expect(plain.current.order.totalMinor).toBe(order.totalMinor);
+});
+
+const converted = { ...entries[0], variant: { ...entries[0].variant,
+  prices: entries[0].variant.prices.map(price => ({ ...price, taxInclusive: true })) } };
+
+it('S23 refuses exemption without changing an order containing a converted line', () => {
+  const { result } = renderSale();
+  act(() => { result.current.add(converted, traits); });
+  const before = result.current.order;
+  expect(before.lineItems[0].priceTaxModeConverted).toBe('inclusive-to-exclusive');
+  toggle(result, true, false);
+  expect(result.current.error).toBe(TAX_EXEMPT_CONVERTED_LINE);
+  expect(result.current.taxExempt).toBe(false);
+  expect(result.current.order).toBe(before);
+});
+
+it('S24 refuses a converted catalogue line without changing an exempt order', () => {
+  const { result } = renderSale();
+  toggle(result, true);
+  const before = result.current.order;
+  act(() => { expect(result.current.add(converted, traits)).toBe(TAX_EXEMPT_CONVERTED_LINE); });
+  expect(result.current.error).toBe(TAX_EXEMPT_CONVERTED_LINE);
+  expect(result.current.order).toBe(before);
+  toggle(result, false);
+  expect(result.current.error).toBeNull();
 });

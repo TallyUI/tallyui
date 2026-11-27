@@ -151,6 +151,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     // on this refused row (`error`), the till's record of it; the draft's id is this row's id.
     if (order.note) builder.setNote(order.note);
     if (order.taxExempt && !deps.taxContext.pricesIncludeTax) builder.setTaxExempt(true);
+    const notice = order.taxExempt && deps.taxContext.pricesIncludeTax ? { taxExemptDropped: true as const } : {};
     const dropped = builder.getSnapshot();
     if (carry) {
       const coupons = order.coupons!;
@@ -177,9 +178,9 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       builder.setCoupons(coupons.map((coupon) => coupon.code), { kind: 'store-priced', carried: true, priced, basis: couponPricingBasis(dropped) });
       const carried = builder.getSnapshot();
       if (!sameFigures(carried, order)) throw inexact();
-      await writeOrderDraft(deps.drafts, carried);
+      await writeOrderDraft(deps.drafts, { ...carried, ...notice });
     } else {
-      await writeOrderDraft(deps.drafts, dropped);
+      await writeOrderDraft(deps.drafts, { ...dropped, ...notice });
     }
   }
   const document = await deps.orders.findOne(orderId).exec();

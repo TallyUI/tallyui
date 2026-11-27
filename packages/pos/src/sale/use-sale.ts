@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, PaymentRounding, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf, resolvePrice } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus, takenLeg } from '../tender/payment-legs';
 import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
@@ -88,6 +88,7 @@ export { TAX_IDS_INVALID } from '../order/tax-ids';
 export const TAX_EXEMPT_UNAVAILABLE = 'This store does not accept tax exempt sales.';
 export const TAX_EXEMPT_PAYMENT_TAKEN = 'Tax exemption can only be turned on before a payment is taken.';
 export const TAX_EXEMPT_LOCKED = 'Tax exemption cannot change on this sale.';
+export const TAX_EXEMPT_CONVERTED_LINE = 'Tax exemption is not available on a sale with a line priced in the other tax mode.';
 export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no longer accepts tax exempt sales, so tax is charged again.';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
@@ -624,6 +625,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const held = editRefusal(); if (held) return held;
       const builder = builderNow.current;
       try {
+        if (builder.getSnapshot().taxExempt) {
+          const inclusive = resolvePrice(entry.variant.prices, madeWith.current.currency)?.current.taxInclusive;
+          if (inclusive !== undefined && inclusive !== builder.getSnapshot().pricesIncludeTax) {
+            setError(TAX_EXEMPT_CONVERTED_LINE); return TAX_EXEMPT_CONVERTED_LINE;
+          }
+        }
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
         const productId = Number(traits.getId(entry.product));
         if (Number.isSafeInteger(productId) && productId >= 0) {
@@ -880,12 +887,13 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const snapshot = builderNow.current.getSnapshot();
       if (on === (snapshot.taxExempt === true)) return true;
       if (on && (opts.capabilities?.taxExempt !== true || taxNow.current.taxContext.pricesIncludeTax || snapshot.storeOrder)) { setError(TAX_EXEMPT_UNAVAILABLE); return false; }
+      if (on && snapshot.lineItems.some((line) => line.priceTaxModeConverted)) { setError(TAX_EXEMPT_CONVERTED_LINE); return false; }
       if (snapshot.payments.some(isInMotion)) { setError(PAYMENT_IN_MOTION); return false; }
       if (on && capturedMinor(snapshot.payments) > 0) { setError(TAX_EXEMPT_PAYMENT_TAKEN); return false; }
       if (snapshot.afterClose || carriedCoupon()) { setError(TAX_EXEMPT_LOCKED); return false; }
       builderNow.current.setTaxExempt(on);
       removalEpoch.current++;
-      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED ? null : current);
+      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
       return true;
     },
     /**
@@ -1282,7 +1290,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           }
         }
         const kept = new Map<string, unknown>(), messages: string[] = [];
-        if (removed) messages.push(TAX_EXEMPT_REMOVED);
+        if (removed || saved.taxExemptDropped === true) messages.push(TAX_EXEMPT_REMOVED);
         const codes = !carriedDraft && source.coupons?.length ? codesFor() : null;
         if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
         if (!carriedDraft && source.coupons?.length) {
