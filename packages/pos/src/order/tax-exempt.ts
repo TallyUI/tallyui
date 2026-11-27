@@ -1,6 +1,10 @@
 import { MICROS_PER_MINOR } from '../tax/exact';
 import type { ChargeLine, Order } from './types';
 
+export function patchSale(order: Order, patch: Partial<Order>): Order {
+  return { ...order, ...patch, ...(order.exemptedFrom ? { exemptedFrom: { ...order.exemptedFrom, ...patch } } : {}) };
+}
+
 export function exemptOrder(taxed: Order, ownRows: ReadonlyMap<string, number>): Order {
   const woo = taxed.taxRounding?.granularity === 'woocommerce';
   const taxLines = (code?: string) => woo ? [] : [{ ...(code !== undefined ? { code } : {}), ratePpm: 0, taxMicros: '0' }];

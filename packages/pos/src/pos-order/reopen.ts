@@ -93,7 +93,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
         ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
         ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
         quantity: line.quantity,
-        taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
+        ...(!order.taxExempt ? { taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })) } : {}),
         ...(line.custom ? { custom: true, taxClass: line.custom.taxClass, taxStatus: line.custom.taxStatus }
           : { taxClass: deps.taxClassOf?.(line.productId, line.variantId) ?? 'standard', taxStatus: line.taxStatus }),
         // Stored lines stay distinct for a coupon sale, so the carry maps by index and the drop is the rebuild it previews.
@@ -148,6 +148,7 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     // ADR-083 condition 1: the note holds only the cashier's own note, since order.create 7 sends it. The refusal stays
     // on this refused row (`error`), the till's record of it; the draft's id is this row's id.
     if (order.note) builder.setNote(order.note);
+    if (order.taxExempt && !deps.taxContext.pricesIncludeTax) builder.setTaxExempt(true);
     const dropped = builder.getSnapshot();
     if (carry) {
       const coupons = order.coupons!;
