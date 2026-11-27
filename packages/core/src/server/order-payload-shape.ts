@@ -85,6 +85,14 @@ export function payloadShapeErrors(payload: unknown): string[] {
       })
     }
     if (object(payload.display) && payload.display.taxMinor !== undefined) check(payload.display.taxMinor === 0, 'display.taxMinor', expected)
+    if (Array.isArray(payload.coupons)) payload.coupons.forEach((coupon, index) => {
+      if (!object(coupon)) return
+      const path = `coupons[${index}]`
+      if (coupon.discountTaxMinor !== undefined) check(coupon.discountTaxMinor === 0, `${path}.discountTaxMinor`, expected)
+      if (Array.isArray(coupon.lines)) coupon.lines.forEach((line, lineIndex) => {
+        if (object(line) && line.discountTaxMinor !== undefined) check(line.discountTaxMinor === 0, `${path}.lines[${lineIndex}].discountTaxMinor`, expected)
+      })
+    })
   }
   if (payload.customer !== undefined && payload.customer !== null) {
     check(object(payload.customer), 'customer', 'an object')

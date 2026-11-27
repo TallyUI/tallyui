@@ -49,6 +49,25 @@ it('X7 refuses exemption on a reopened sale', () => {
     .toThrow('finalize: a reopened store order cannot be made tax exempt');
 });
 
+it('X15 refuses an exempt sale with tax on the coupon alone', () => {
+  const coupons = [{ code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 3 }];
+  expect(() => finalizeOrder({ ...sale(), taxExempt: true, coupons }, { capabilities: carries })).toThrow('finalize: a tax-exempt sale must carry no tax');
+});
+
+it('X16 refuses an exempt sale with tax on a coupon line alone', () => {
+  const snapshot = sale();
+  const coupons = [{ code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 0,
+    lines: [{ lineId: snapshot.lineItems[0].id, discountMinor: 10, discountTaxMinor: 3 }] }];
+  expect(() => finalizeOrder({ ...snapshot, taxExempt: true, coupons }, { capabilities: carries })).toThrow('finalize: a tax-exempt sale must carry no tax');
+});
+
+it('X17 refuses an exempt sale with sub-cent line tax even when order tax is zero', () => {
+  const snapshot = sale();
+  const lineItems = [{ ...snapshot.lineItems[0], taxMicros: '4000' }];
+  expect(snapshot.taxMinor).toBe(0);
+  expect(() => finalizeOrder({ ...snapshot, taxExempt: true, lineItems }, { capabilities: carries })).toThrow('finalize: a tax-exempt sale must carry no tax');
+});
+
 describe('from version 23 on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 23 }));
 
 it('X14 preserves pending and applied v23 orders and their metadata, then round-trips an exempt order', async () => {

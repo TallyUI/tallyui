@@ -296,6 +296,12 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
       const cashRounding = batch.some((envelope) => envelope.payload.cashRoundings !== undefined) && await capability(options.acceptsCashRounding);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
+        // Refuse exemption first so an exempt sale is never refused with a reopenable code.
+        if (envelope.payload.taxExempt !== undefined) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
+            message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
+          continue;
+        }
         if (envelope.payload.coupons?.length && !coupons) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid',
             message: "This store's WooCommerce POS plugin does not accept coupons (1.9.0 or later is needed). Remove the coupon and complete the sale again.",
@@ -308,12 +314,6 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
             ? 'WooCommerce POS 2.0 does not carry cash rounding; complete the sale without it.'
             : "This store's WooCommerce connector does not carry cash rounding; complete the sale without it.",
           data: { storeCode: 'cash_rounding_unsupported' } } });
-          continue;
-        }
-        // Slice 3 opens tax exemption only after the store is proven.
-        if (envelope.payload.taxExempt !== undefined) {
-          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
-            message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
           continue;
         }
         const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList, ledger });

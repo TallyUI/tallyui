@@ -40,3 +40,17 @@ it('X10 refuses taxExempt on order.update even with the capability', () => {
     { ...supported, orderUpdate: [1], taxExempt: true })).toMatchObject({ status: 'rejected', error: { code: 'invalid_payload',
     message: 'taxExempt is not accepted on order.update' } })
 })
+
+const coupon = { code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 3 }
+
+it('X18 rejects coupon tax on an exempt payload without coupon lines', () => {
+  expect(payloadShapeErrors({ ...payload, coupons: [coupon] })).toEqual(['coupons[0].discountTaxMinor: expected 0 on a tax-exempt order'])
+})
+
+it('X19 rejects both coupon and line tax on an exempt payload even when the amounts agree', () => {
+  const lines = [{ clientLineId: 'line', discountMinor: 10, discountTaxMinor: 3 }]
+  expect(payloadShapeErrors({ ...payload, coupons: [{ ...coupon, lines }] })).toEqual([
+    'coupons[0].discountTaxMinor: expected 0 on a tax-exempt order',
+    'coupons[0].lines[0].discountTaxMinor: expected 0 on a tax-exempt order',
+  ])
+})

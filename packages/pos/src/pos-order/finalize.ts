@@ -228,7 +228,9 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.taxExempt) {
     if (order.storeOrder) throw new Error('finalize: a reopened store order cannot be made tax exempt');
     if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
-    if (order.taxMinor !== 0 || order.display.taxMinor !== 0 || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))) {
+    if (order.taxMinor !== 0 || order.display.taxMinor !== 0
+      || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))
+      || order.coupons?.some(coupon => coupon.discountTaxMinor !== 0 || coupon.lines?.some(line => line.discountTaxMinor !== 0))) {
       throw new Error('finalize: a tax-exempt sale must carry no tax');
     }
   }
