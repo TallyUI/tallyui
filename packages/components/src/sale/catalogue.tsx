@@ -483,7 +483,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
-    : activeTerms.length > 0 && items === undefined ? 'No products match the picked filters.'
+    : (activeTerms.length > 0 || (saleFiltered && shown.length > 0)) && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
     : isLoading ? 'Loading products…' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay

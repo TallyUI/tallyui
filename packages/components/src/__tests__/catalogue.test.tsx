@@ -1057,6 +1057,23 @@ describe('Catalogue On Sale chip', () => {
     expect(tile(base.title)).toBeNull();
   });
 
+  it('shows the picked filters message when On Sale hides all products with In Stock on', () => {
+    render(<Catalogue {...props} products={[base]} />);
+    toggle();
+    expect(screen.getByTestId('grid').textContent).toBe('No products match the picked filters.');
+  });
+
+  it('shows the picked filters message when On Sale hides all products with In Stock off', () => {
+    render(<Catalogue {...props} products={[base]} loading={false} filters={{ inStock: false, featured: false, onSale: true }} />);
+    expect(screen.getByTestId('grid').textContent).toBe('No products match the picked filters.');
+  });
+
+  it('keeps the empty catalogue message when On Sale is on', () => {
+    render(<Catalogue {...props} products={[]} loading={false} />);
+    toggle();
+    expect(screen.getByTestId('grid').textContent).toBe('No products yet.');
+  });
+
   it('keeps a Medusa product when only its second variant is on sale', () => {
     render(<Catalogue {...props} products={[{ ...sale, variants: [baseVariant, saleVariant] }, base]} />);
     toggle();
