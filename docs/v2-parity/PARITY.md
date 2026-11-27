@@ -894,7 +894,7 @@ sheet slides from the right, and Escape closes it.
 - syncing table rows (`components/data-table/index.tsx:405`);
 - the checkout title (`checkout-column.tsx:46`).
 
-**TallyUI progress:** Skeletons are in place for products (#940, #1148), the customers and orders lists (#1408), and the register column's loading rows (this PR). The checkout title skeleton waits on a checkout header that shows the order number; the tender pane has no title row. The column crossfade and the category deal have not started.
+**TallyUI progress:** Skeletons are in place for products (#940, #1148), the customers and orders lists (#1408), and the register column's loading rows (#1410). The checkout title skeleton waits on a checkout header that shows the order number; the tender pane has no title row. The column crossfade and the category deal have not started.
 
 The products and checkout columns roll or crossfade
 (`pos/columns/pos-columns.tsx:123`), and categories drill with a "deal"

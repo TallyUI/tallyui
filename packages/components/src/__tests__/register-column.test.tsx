@@ -34,7 +34,7 @@ it('renders the picker when unbound', () => {
   expect(onPick).toHaveBeenCalledWith('register');
 });
 
-it('renders the open card when bound with no session', () => {
+it('renders the open card when bound with no session', async () => {
   render(
     <RegisterHarness db={db}>
       {(register) => (
@@ -44,7 +44,7 @@ it('renders the open card when bound with no session', () => {
       )}
     </RegisterHarness>,
   );
-  return (async () => expect(await screen.findByTestId('open-register-card')).toBeTruthy())();
+  expect(await screen.findByTestId('open-register-card')).toBeTruthy();
 });
 
 it.each([true, false])('shows three skeletons instead of the open card while loading (open session: %s)', async (open) => {
