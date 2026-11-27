@@ -264,7 +264,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         fees={money(fees.reduce((sum, row) => sum + row.amountMinor, 0))}
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
-        taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
+        taxLines={taxRows} taxInclusive={order.taxExempt === true ? undefined : totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
       {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} afterVoid={tenderLedger.afterVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => onNoteOpenChange(true) }, ...(checkout.actions ?? [])] : checkout.actions}
@@ -272,7 +272,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
           label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable ? {
             checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
-            error: taxExemptRefused ? sale.error : null,
+            error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
           } : undefined} /> : null}</> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>

@@ -50,11 +50,13 @@ it('S2 turning exemption on replaces all itemized tax rows', { timeout: 20_000 }
   expect(sale.taxExempt).toBe(true);
   // Exempt tax = 1000 × 0% = 0; total = 1000 + 0 = 1000.
   expect(sale.order.totalMinor).toBe(1000);
+  expect(screen.getByTestId('cart-checkout').textContent).toBe(`Checkout ${money(1000)}`);
   expect(screen.getAllByTestId(/^cart-total-tax-/)).toHaveLength(1);
   const row = within(screen.getByTestId('cart-total-tax-0'));
   expect(row.getByText('Tax exempt')).toBeTruthy();
   expect(row.getByText(money(0))).toBeTruthy();
   expect(screen.queryByText('Tax 19%')).toBeNull();
+  expect(screen.queryByText('Excluding tax')).toBeNull();
 });
 
 it('S3 turning exemption off restores the itemized tax and taxed total', { timeout: 20_000 }, () => {
@@ -66,6 +68,7 @@ it('S3 turning exemption off restores the itemized tax and taxed total', { timeo
   expect(row.getByText('Tax 19%')).toBeTruthy();
   expect(row.getByText(money(190))).toBeTruthy();
   expect(footer.queryByText('Tax exempt')).toBeNull();
+  expect(footer.getByText('Excluding tax')).toBeTruthy();
 });
 
 it('S4 replaces Total Tax with the exemption in single display mode', { timeout: 20_000 }, () => {
@@ -76,6 +79,7 @@ it('S4 replaces Total Tax with the exemption in single display mode', { timeout:
   // Single exempt tax = 1000 × 0% = 0.
   expect(row.getByText(money(0))).toBeTruthy();
   expect(screen.queryByText('Total Tax')).toBeNull();
+  expect(screen.queryByText('Excluding tax')).toBeNull();
 });
 
 it('S5 hides the switch without the taxExempt capability', { timeout: 20_000 }, () => {
@@ -102,4 +106,28 @@ it('S8 clears the refusal when Order details is reopened', { timeout: 20_000 }, 
   expect(sheet.getByTestId('order-tax-exempt-error')).toBeTruthy();
   fireEvent.click(sheet.getByTestId('order-note-close'));
   expect(openDetails().queryByRole('alert')).toBeNull();
+});
+
+it('S10 allows exemption after the refused cash leg is voided', { timeout: 20_000 }, () => {
+  const sheet = refuseAfterPayment();
+  expect(sheet.getByTestId('order-tax-exempt-error')).toBeTruthy();
+  act(() => { expect(sale.voidTender(sale.order.payments[0].id)).toBe(true); });
+  toggle();
+  expect(sheet.queryByTestId('order-tax-exempt-error')).toBeNull();
+  expect(sale.taxExempt).toBe(true);
+  expect(sale.order.totalMinor).toBe(1000);
+});
+
+it('S11 restores the taxed total and footer tax after a partial cash payment', { timeout: 20_000 }, () => {
+  seed(); openDetails(); toggle();
+  expect(sale.taxExempt).toBe(true);
+  expect(sale.order.totalMinor).toBe(1000);
+  act(() => { expect(sale.addTender({ method: 'cash', amountMinor: 500 })).not.toBeNull(); });
+  toggle();
+  expect(sale.taxExempt).toBe(false);
+  expect(sale.order.totalMinor).toBe(1190);
+  const footer = within(screen.getByTestId('cart-footer'));
+  const row = within(footer.getByTestId('cart-total-tax-0'));
+  expect(row.getByText('Tax 19%')).toBeTruthy();
+  expect(row.getByText(money(190))).toBeTruthy();
 });
