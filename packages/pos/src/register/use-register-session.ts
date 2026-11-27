@@ -268,11 +268,18 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
   tender.current = tenderInProgress;
   const closing = useSyncExternalStore(subscribeClosing, () => closingByRegister.has(registerId ?? ''));
   const [observed, setObserved] = useState<{ source: typeof source; snapshot: Snapshot } | null>(null);
+  const [failedSource, setFailedSource] = useState<typeof source>(null);
   useEffect(() => {
     if (!source) return;
-    const subscription = source.subscribe((snapshot) => setObserved({ source, snapshot }));
+    const subscription = source.subscribe({
+      next: (snapshot) => setObserved({ source, snapshot }),
+      error: (error) => {
+        registerFactsLogger.error('Register session snapshot failed', { context: { type: 'register.snapshot-failed', registerId, error: safeErrorString(error) } });
+        setFailedSource(source);
+      },
+    });
     return () => subscription.unsubscribe();
-  }, [source]);
+  }, [source, registerId]);
   // WCPOS re-evaluates `overdue` each minute.
   const [, setMinute] = useState(0);
   useEffect(() => {
@@ -430,8 +437,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     closureApprovalStatus: Object.fromEntries((data?.closureRows ?? []).map((closure) => [closure.id, closureApprovalStatus(closure,
       commandRows.find((row) => row.key === `closure.submit:${closure.id}`), options.capabilities)])) as Record<string, ClosureApprovalStatus>,
     enabled,
-    /** True while an enabled, bound register is waiting for its first snapshot. */
-    loading: !!enabled && registerId != null && data === null,
+    /** True while an enabled, bound register waits for its first snapshot; ends if the snapshot fails (logged as `register.snapshot-failed`). */
+    loading: !!enabled && !!registerId && data === null && !(source !== null && failedSource === source),
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
     saleSession: session && sessions && (session.status === 'open' || session.status === 'counting') ? { id: session.id, sessions } : undefined,
