@@ -168,6 +168,27 @@ it('loads again on the render that changes the bound register', async () => {
   expect(result.current.session).toBeNull();
 });
 
+it('does not load when the register id is empty', () => {
+  expect(render({ registerId: '' }).result.current.loading).toBe(false);
+});
+
+it('logs a failed snapshot and stops loading until the register changes', async () => {
+  await seed('7', 'other');
+  const query = vi.spyOn(db.closures.storageInstance, 'query').mockRejectedValue(new Error('closure read failed'));
+  const { result, rerender } = render();
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.session).toBeNull();
+  expect(logs.filter((entry) => entry.level === 'error')).toMatchObject([{
+    message: 'Register session snapshot failed',
+    data: { context: { type: 'register.snapshot-failed', registerId: 'register', error: 'Error: closure read failed' } },
+  }]);
+  query.mockRestore();
+  rerender(options({ registerId: 'other' }));
+  expect(result.current.loading).toBe(true);
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.session?.register_id).toBe('other');
+});
+
 it('a register holding a session whose status this build does not know needs upgrade: no current or sellable session', async () => {
   await db.register_sessions.insert({
     id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
