@@ -93,6 +93,8 @@ export interface StoreOrder {
   paidAt?: string;
   currency: string;
   pricesIncludeTax: boolean;
+  /** True when the store records the order as tax exempt (WooCommerce: `is_vat_exempt` = `yes`). The till does not reopen such an order. Absent otherwise. */
+  taxExempt?: true;
   customer: { id?: string; name?: string; email?: string } | null;
   lines: StoreOrderLine[];
   fees: StoreOrderCharge[];

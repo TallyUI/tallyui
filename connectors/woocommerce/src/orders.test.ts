@@ -15,6 +15,15 @@ const request = { method: 'GET', headers: context.headers, signal: context.signa
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('WooCommerce orders', () => {
+  it('A1 carries the recorded VAT exemption', () => {
+    expect(toWooStoreOrder({ ...list[0], meta_data: [{ key: 'is_vat_exempt', value: 'yes' }] }).taxExempt).toBe(true);
+  });
+
+  it.each(['no', '', true, 1, undefined])('A2 omits the exemption for %j', value => {
+    const meta_data = value === undefined ? [] : [{ key: 'is_vat_exempt', value }];
+    expect('taxExempt' in toWooStoreOrder({ ...list[0], meta_data })).toBe(false);
+  });
+
   it('maps the recorded WCPOS order', () => {
     const order = toWooStoreOrder(list[0]);
     expect(order).toMatchObject({

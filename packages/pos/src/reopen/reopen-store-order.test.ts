@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { OrderReopenEnvelope, StoreOrder, StoreOrderLine } from '@tallyui/core';
 import { STORE_ORDER_REBUILD_REFUSALS } from '../order/from-store-order';
 import type { CommandTransport } from '../outbox/types';
+import { TAX_EXEMPT_REOPEN_REFUSED } from './reopen-entry';
 import { reopenStoreOrder, REOPENED_NOT_LOADED, STORE_ORDER_OPEN_HERE } from './reopen-store-order';
 
 const taxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
@@ -37,6 +38,19 @@ function fixture(status: 'applied' | 'duplicate' = 'applied') {
 }
 
 describe('reopenStoreOrder', () => {
+  it('A4 refuses an exempt order without sending or rereading', async () => {
+    const { read, send, getOrders, deps } = fixture();
+    expect(await reopenStoreOrder({ ...read, taxExempt: true }, deps)).toEqual({ kind: 'refused', reason: 'tax_exempt', message: TAX_EXEMPT_REOPEN_REFUSED });
+    expect(send).not.toHaveBeenCalled();
+    expect(getOrders).not.toHaveBeenCalled();
+  });
+
+  it('A5 cannot load an order that is exempt on the reread', async () => {
+    const { read, reread, deps } = fixture();
+    reread.taxExempt = true;
+    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'reopened_unloadable', reason: 'tax_exempt' });
+  });
+
   it('builds the reopened cart from the reread with locked payments', async () => {
     const { read, reread, deps } = fixture();
     const outcome = await reopenStoreOrder(read, deps);

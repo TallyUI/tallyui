@@ -96,6 +96,8 @@ export interface ServerCapabilities {
   chargeTaxMode?: boolean;
   /** True only when the store's connector honours order.create's `taxExempt` (tax exempt per sale): the store charges no tax on the order's lines, fees or shipping. Absent: the app offers no exemption, and finalize refuses an exempt order. */
   taxExempt?: boolean;
+  /** True only when the store charges no tax on a coupon's discount on a tax-exempt order (order.create `taxExempt` with `coupons`). Absent: the till refuses a coupon on an exempt sale, and finalize refuses an exempt order that carries one. */
+  taxExemptCoupons?: boolean;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */

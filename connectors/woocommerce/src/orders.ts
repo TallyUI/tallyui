@@ -133,6 +133,7 @@ export function toWooStoreOrder(raw: unknown): StoreOrder {
     ...(paidAt ? { paidAt } : {}),
     currency,
     pricesIncludeTax: raw.prices_include_tax === true,
+    ...(metaText(raw.meta_data, 'is_vat_exempt') === 'yes' ? { taxExempt: true as const } : {}),
     customer,
     lines: rows(raw.line_items).map((line): StoreOrderLine => {
       const clientLineId = posUuid(line.meta_data);

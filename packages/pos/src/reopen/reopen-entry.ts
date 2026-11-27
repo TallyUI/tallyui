@@ -6,8 +6,9 @@ import { orderBuilderFromStoreOrder, StoreOrderRebuildError, type StoreOrderRebu
 // WooCommerce's status words, the only platform that offers order.reopen (ADR-090 decision 7).
 // The store reopens any status, but the till refuses these three before sending (carryover item 23).
 export const REOPEN_REFUSED_STATUSES: readonly string[] = ['cancelled', 'failed', 'trash'];
+export const TAX_EXEMPT_REOPEN_REFUSED = 'This order was sold tax exempt, so it cannot be reopened here.';
 
-export type ReopenEntryReason = StoreOrderRebuildReason | 'status' | 'catalogue' | 'overpaid';
+export type ReopenEntryReason = StoreOrderRebuildReason | 'status' | 'tax_exempt' | 'catalogue' | 'overpaid';
 
 export class ReopenEntryError extends Error {
   constructor(readonly reason: ReopenEntryReason, message: string) {
@@ -25,6 +26,7 @@ export function storeOrderForReopen(read: StoreOrder, options: {
   if (REOPEN_REFUSED_STATUSES.includes(read.status.toLowerCase())) {
     throw new ReopenEntryError('status', `An order that is ${read.status.toLowerCase()} cannot be reopened`);
   }
+  if (read.taxExempt) throw new ReopenEntryError('tax_exempt', TAX_EXEMPT_REOPEN_REFUSED);
   const lineTaxes = new Map<StoreOrderLine, { taxClass?: string; taxStatus?: 'taxable' | 'none' }>();
   for (const line of read.lines) {
     if (!line.productId) continue;

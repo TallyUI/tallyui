@@ -9,7 +9,7 @@ export function exemptOrder(taxed: Order, ownRows: ReadonlyMap<string, number>):
   const woo = taxed.taxRounding?.granularity === 'woocommerce';
   const taxLines = (code?: string) => woo ? [] : [{ ...(code !== undefined ? { code } : {}), ratePpm: 0, taxMicros: '0' }];
   const lineItems = taxed.lineItems.map(line => ({ ...line, taxMicros: '0',
-    taxLines: taxLines(line.taxFromClass ? line.taxLines[0]?.code : undefined),
+    taxLines: taxLines(line.taxLines[0]?.code),
     ...(line.totalMinor !== undefined && !line.priceTaxModeConverted ? { totalMinor: line.netMinor } : {}) }));
   const charge = <C extends ChargeLine>(item: C) => {
     const amountMinor = ownRows.get(item.id)!;
