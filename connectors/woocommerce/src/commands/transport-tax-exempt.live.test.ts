@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+import { woocommerceConnector } from '../index';
 import { probeCases, probeEnvelope } from './tax-exempt-probe-envelopes';
 import { createWooCommandTransport } from './transport';
 
@@ -10,7 +11,7 @@ describe.skipIf(!process.env.WOO_EXEMPT_BASE_URL || !process.env.WOO_EXEMPT_TOKE
     const token = (await readFile(process.env.WOO_EXEMPT_TOKEN_FILE!, 'utf8')).trim();
     const pushes: Response[] = [];
     const transport = createWooCommandTransport({ baseUrl: process.env.WOO_EXEMPT_BASE_URL!,
-      getHeaders: () => ({ Authorization: `Bearer ${token}`, 'X-WCPOS': '1' }),
+      getHeaders: () => woocommerceConnector.auth.getHeaders({ token }),
       fetch: async (input, init) => {
         const response = await fetch(input, init);
         if (String(input).endsWith('/push/orders')) pushes.push(response.clone());
