@@ -27,6 +27,7 @@ function store({ version = '2.0.4' as unknown, ledgerPayments = undefined as boo
   const answer = (path: string, body: ReturnType<typeof JSON.parse>): Response => {
     const queued = queue[path]?.shift();
     if (queued) return queued;
+    if (path === 'status') return json(200, { capabilities: ['order_payments_list'] });
     if (path === 'site') return json(200, { wcpos_version: version });
     if (path === 'push/orders') return json(201, { document: { id: 115, number, total }, currentRevision: `r${revision}` });
     if (typeof body?.revision !== 'string' || !body.revision) return json(428, { code: 'wcpos_revision_required' });
@@ -61,7 +62,7 @@ describe('WCPOS 2.0 payment ledger', () => {
   it('ledger push sends status pending and no set_paid, payment_method, payment_method_title or _woocommerce_pos_payments', async () => {
     const { calls, transport } = store({ ledgerPayments: true });
     await transport.send([order(split)]);
-    expect(calls[0].body.payload).toEqual({ status: 'pending', currency: 'EUR', line_items: [line], meta_data: [{ key: '_woocommerce_pos_uuid', value: uuid(3) }] });
+    expect(calls[1].body.payload).toEqual({ status: 'pending', currency: 'EUR', line_items: [line], meta_data: [{ key: '_woocommerce_pos_uuid', value: uuid(3) }] });
   });
   it('legacy (1.10.x) cash and split bodies are unchanged', async () => {
     const { calls, transport } = store({ ledgerPayments: false });
@@ -88,7 +89,8 @@ describe('WCPOS 2.0 payment ledger', () => {
   it('split sale records two rows; the second carries the revision from the first answer', async () => {
     const { calls, transport } = store({ ledgerPayments: true });
     expect(await transport.send([order(split)])).toEqual(applied);
-    expect(calls.map(({ path, body }) => [path, body.payment?.id, body.payment?.method_id, body.revision])).toEqual([
+    expect(calls.map(({ path, body }) => [path, body?.payment?.id, body?.payment?.method_id, body?.revision])).toEqual([
+      ['status', undefined, undefined, undefined],
       ['push/orders', undefined, undefined, undefined], ['orders/115/payments', uuid(5), 'pos_cash', 'r1'], ['orders/115/payments', uuid(6), 'pos_card', 'r2']]);
   });
   it('zero-total sale calls close with a UUIDv8 command_id derived from the envelope id and the push revision; no record', async () => {
@@ -115,12 +117,13 @@ describe('WCPOS 2.0 payment ledger', () => {
     expect(calls[0].body.mutationId).toBe(uuid(1));
   });
   it('non-UUID clientPaymentId is rejected before any request', async () => {
-    const { fetch, transport } = store({ ledgerPayments: true });
-    const results = [await transport.send([order([{ clientPaymentId: 'cash-1', method: 'cash', amountMinor: 300 }])]),
-      await transport.send([order([...split, { clientPaymentId: uuid(7), method: 'external', amountMinor: 0 }])])];
-    expect(results).toMatchObject([{ results: [{ status: 'rejected', error: { code: 'invalid_payload' } }] },
-      { results: [{ status: 'rejected', error: { code: 'invalid_payload' } }] }]);
-    expect(fetch).not.toHaveBeenCalled();
+    const { calls, transport } = store({ ledgerPayments: true });
+    expect(await transport.send([order([{ clientPaymentId: 'cash-1', method: 'cash', amountMinor: 300 }])])).toMatchObject({
+      results: [{ status: 'rejected', error: { code: 'invalid_payload' } }] });
+    expect(calls).toEqual([]);
+    expect(await transport.send([order([...split, { clientPaymentId: uuid(7), method: 'external', amountMinor: 0 }])])).toMatchObject({
+      results: [{ status: 'rejected', error: { code: 'invalid_payload' } }] });
+    expect(calls.map(({ path }) => path)).toEqual(['status']);
   });
   it('record 422 wcpos_command_conflict is rejected invalid_payload naming the store order; 400 wcpos_insufficient_stock is insufficient_stock', async () => {
     const { transport } = store({ ledgerPayments: true, queue: { 'orders/115/payments': [

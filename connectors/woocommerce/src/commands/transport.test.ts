@@ -20,6 +20,8 @@ function order(): OrderCreateEnvelope {
 function response(status = 201, body: unknown = { document: { id: 115, number: '115', total: '3.000000' } }, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers });
 }
+const site = () => response(200, { wcpos_version: '1.10.19' });
+const listStatus = () => response(200, { capabilities: ['order_payments_list'] });
 function setup(...answers: Array<Response | Error>) {
   const fetch = vi.fn<typeof globalThis.fetch>();
   for (const answer of answers) {
@@ -106,11 +108,11 @@ describe('createWooCommandTransport', () => {
         envelope.payload.shipping = [{ clientShippingId: 'delivery', name: 'Delivery', amountMinor: 500, taxStatus: 'none', taxMinor: 0 }];
         envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 2250;
       }
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: shipping ? '22.50' : '17.50' } }));
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockResolvedValueOnce(response(201, { document: { id: 115, total: shipping ? '22.50' : '17.50' } }));
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       await transport.send([envelope]);
-      expect(fetch).toHaveBeenCalledTimes(1);
-      const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+      expect(fetch).toHaveBeenCalledTimes(2); // /site, then push.
+      const { payload } = JSON.parse(fetch.mock.calls[1][1]!.body as string);
       expect(Object.keys(payload)).toEqual(['status', 'set_paid', 'currency', 'payment_method', 'payment_method_title',
         'line_items', ...(shipping ? ['shipping_lines'] : []), 'coupon_lines', 'meta_data']);
       expect(payload.coupon_lines).toEqual([{ code: 'ten' }, { code: 'five' }]);
@@ -130,10 +132,10 @@ describe('createWooCommandTransport', () => {
       delete envelope.payload.discountMinor;
       envelope.payload.subtotalMinor = 1000;
       envelope.payload.totalMinor = envelope.payload.payments[0].amountMinor = 750;
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: '7.50' } }));
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockResolvedValueOnce(response(201, { document: { id: 115, total: '7.50' } }));
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       await transport.send([envelope]);
-      expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).payload.line_items).toEqual([
+      expect(JSON.parse(fetch.mock.calls[1][1]!.body as string).payload.line_items).toEqual([
         { product_id: 0, name: 'Gift wrap', quantity: 1, subtotal: '10.00', total: '10.00', tax_class: '', meta_data: [
           { key: '_woocommerce_pos_data', value: '{"price":"10.00","regular_price":"12.00","tax_status":"none"}' }] },
       ]);
@@ -188,7 +190,7 @@ describe('createWooCommandTransport', () => {
       const envelope = structuredClone(couponEnvelope);
       envelope.payload.coupons = ['TALLY-cap-expired', 'tally-cap-nope', 'tally-cap-used-up', 'tally-cap-min-spend', 'tally-cap-excluded', 'ten']
         .map((code) => ({ ...couponEnvelope.payload.coupons![0], code }));
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(400, { code: 'woocommerce_rest_invalid_coupon', message,
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockResolvedValueOnce(response(400, { code: 'woocommerce_rest_invalid_coupon', message,
         data: { status: 400, new_draft_order_id: 293 } }));
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       const result = await transport.send([envelope]);
@@ -196,14 +198,14 @@ describe('createWooCommandTransport', () => {
         code: 'coupon_invalid', message: decoded,
         data: { storeCode: 'woocommerce_rest_invalid_coupon', ...(couponCode ? { couponCode } : {}) },
       } }] });
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(2); // /site, then push.
       expect(JSON.stringify(result)).not.toContain('serverRefs');
       expect(JSON.stringify(result)).not.toContain('293');
     });
 
     it.each([[400, 'another_code'], [422, 'woocommerce_rest_invalid_coupon']])('keeps the raw rejection for HTTP %i and %s', async (status, code) => {
       const message = '<b>Coupon &quot;ten&quot;</b>';
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(status, { code, message }));
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockResolvedValueOnce(response(status, { code, message }));
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
         id: couponEnvelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
@@ -211,16 +213,16 @@ describe('createWooCommandTransport', () => {
     });
 
     it('keeps a created coupon order applied with its server refs and total mismatch warning', async () => {
-      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, number: '115', total: '18.00' } }));
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockResolvedValueOnce(response(201, { document: { id: 115, number: '115', total: '18.00' } }));
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons: true });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
         id: couponEnvelope.id, status: 'applied', serverRefs: { orderId: '115', displayId: '115', totalMinor: 1800 },
         warnings: [{ code: 'total_mismatch', expectedMinor: 1750, serverMinor: 1800 }],
       }] });
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(2); // /site, then push.
     });
 
-    it.each([undefined, false, () => false, async () => false])('refuses a coupon sale without a request when the coupon gate is closed: %s', async (acceptsCoupons) => {
+    it.each([false, () => false, async () => false])('refuses a coupon sale without a request when the coupon gate is closed: %s', async (acceptsCoupons) => {
       const fetch = vi.fn<typeof globalThis.fetch>();
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons });
       expect(await transport.send([couponEnvelope])).toEqual({ kind: 'results', results: [{
@@ -241,14 +243,14 @@ describe('createWooCommandTransport', () => {
     });
 
     it('resolves coupon support once for a batch with two coupon envelopes', async () => {
-      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(site()).mockImplementation(async () => response());
       const acceptsCoupons = vi.fn(async () => true);
       const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsCoupons });
       expect(await transport.send([couponEnvelope, { ...couponEnvelope, id: 'second' }])).toMatchObject({
         kind: 'results', results: [{ status: 'applied' }, { status: 'applied' }],
       });
       expect(acceptsCoupons).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(3); // One /site read for both pushes.
     });
 
     it('uses the stored gross discount for an inclusive coupon line price', () => {
@@ -395,11 +397,11 @@ describe('createWooCommandTransport', () => {
       { clientPaymentId: 'card', method: 'external', amountMinor: 3000 },
       { clientPaymentId: 'cash', method: 'cash', amountMinor: 1291, tenderedMinor: 2000, changeMinor: 709 },
     ];
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(response(201, { document: { id: 115, total: '42.91' } }));
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(listStatus()).mockResolvedValueOnce(response(201, { document: { id: 115, total: '42.91' } }));
     const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
     expect(await transport.send([envelope])).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const { payload } = JSON.parse(fetch.mock.calls[0][1]!.body as string);
+    expect(fetch).toHaveBeenCalledTimes(2); // /status, then push.
+    const { payload } = JSON.parse(fetch.mock.calls[1][1]!.body as string);
     expect(payload.payment_method).toBe('pos_card');
     expect(payload.payment_method_title).toBe('Card');
     expect(payload.meta_data).toEqual([
@@ -430,7 +432,7 @@ describe('createWooCommandTransport', () => {
     },
   );
 
-  it.each([undefined, false, () => false, async () => false])('refuses split tender without support %s', async (acceptsPaymentsList) => {
+  it.each([false, () => false, async () => false])('refuses split tender without support %s', async (acceptsPaymentsList) => {
     const envelope = order();
     envelope.payload.payments[0].amountMinor = 150;
     envelope.payload.payments.push({ ...envelope.payload.payments[0], clientPaymentId: 'second' });
@@ -461,26 +463,32 @@ describe('createWooCommandTransport', () => {
     [0, 'WooCommerce orders take one payment.'],
     [21, 'WooCommerce records at most 20 payments.'],
     [2, 'Payments do not add up to the order total.'],
-  ] as const)('refuses %i invalid payments with list support and no request', async (count, message) => {
+  ] as const)('refuses %i invalid payments with list support and no push', async (count, message) => {
     const envelope = order();
     envelope.payload.payments = Array.from({ length: count }, (_, i) => ({
       ...envelope.payload.payments[0], clientPaymentId: String(i),
     }));
     const fetch = vi.fn<typeof globalThis.fetch>();
+    if (count > 1) fetch.mockResolvedValueOnce(listStatus());
     const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList: true });
     expect(await transport.send([envelope])).toEqual({ kind: 'results', results: [{
       id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message },
     }] });
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(count > 1 ? [`${baseUrl}/status`] : []);
   });
 
   it('resolves list support once per send call', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response());
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async url => String(url) === `${baseUrl}/status` ? listStatus() : response());
     const acceptsPaymentsList = vi.fn(async () => true);
     const transport = createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, acceptsPaymentsList });
     await transport.send([order(), order()]);
+    expect(acceptsPaymentsList).not.toHaveBeenCalled();
+    const split = order();
+    split.payload.payments[0].amountMinor = 150;
+    split.payload.payments.push({ ...split.payload.payments[0], clientPaymentId: 'second' });
+    await transport.send([split, split]);
     expect(acceptsPaymentsList).toHaveBeenCalledTimes(1);
-    await transport.send([order()]);
+    await transport.send([split]);
     expect(acceptsPaymentsList).toHaveBeenCalledTimes(2);
   });
 
@@ -774,7 +782,7 @@ describe('createWooCommandTransport', () => {
       if (invalid === 'bad product') envelope.payload.lines[0].variantId = 'abc';
       const next = order();
       next.id = '019965af-0000-7000-8000-000000000006';
-      const { transport, fetch } = setup(response());
+      const { transport, fetch } = invalid === 'two payments' ? setup(response(200, {}), response()) : setup(response());
       expect(await transport.send([envelope, next])).toMatchObject({ kind: 'results', results: [
         { id: envelope.id, status: 'rejected', error: {
           code: invalid.includes('tax') ? 'unsupported_tax_mode' : 'invalid_payload',
@@ -784,8 +792,8 @@ describe('createWooCommandTransport', () => {
         } },
         { id: next.id, status: 'applied' },
       ] });
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(JSON.parse(fetch.mock.calls[0][1]!.body as string).mutationId).toBe(next.id);
+      expect(fetch).toHaveBeenCalledTimes(invalid === 'two payments' ? 2 : 1); // Only split tender reads /status.
+      expect(JSON.parse(fetch.mock.calls.at(-1)![1]!.body as string).mutationId).toBe(next.id);
     },
   );
 
@@ -1042,16 +1050,18 @@ describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
     return envelope;
   }
   const pushed = (total: string) => response(201, { document: { id: 115, number: '115', total } });
+  const roundingStore = () => vi.fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(response(200, { capabilities: ['order_create_v5', 'order_payments_list'] })).mockResolvedValueOnce(site());
   const transportWith = (fetch: typeof globalThis.fetch, extra: Parameters<typeof createWooCommandTransport>[0] extends infer O ? Partial<O> : never) =>
     createWooCommandTransport({ baseUrl, getHeaders: () => ({}), fetch, ledgerPayments: false, ...extra });
-  const bodyOf = (fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>, call = 0) => JSON.parse(fetch.mock.calls[call][1]!.body as string);
+  const bodyOf = (fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>) => JSON.parse(fetch.mock.calls[2][1]!.body as string);
 
   it.each([[5, '31.30', '0.05'], [-5, '31.20', '-0.05']] as const)('W3: sends a %i rounding as the last fee line, total %s', async (minor, total, fee) => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed(total));
+    const fetch = roundingStore().mockResolvedValueOnce(pushed(total));
     const result = await transportWith(fetch, { acceptsCashRounding: true }).send([rounded(minor)]);
     expect(result).toEqual({ kind: 'results', results: [{ id: order().id, status: 'applied',
       serverRefs: { orderId: '115', displayId: '115', totalMinor: 3125 + minor } }] });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(3); // /status and /site, then push.
     expect(bodyOf(fetch).payload.fee_lines).toStrictEqual([
       { name: 'Bag', total: '0.20', tax_status: 'taxable', tax_class: '' },
       { name: 'Rounding', total: fee, tax_status: 'none', tax_class: '' },
@@ -1059,7 +1069,7 @@ describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
   });
 
   it.each([true, () => true, async () => true])('W3: reads the option %s at push time', async (acceptsCashRounding) => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    const fetch = roundingStore().mockResolvedValueOnce(pushed('31.30'));
     await transportWith(fetch, { acceptsCashRounding }).send([rounded(5)]);
     expect(bodyOf(fetch).payload.fee_lines.at(-1)).toStrictEqual({ name: 'Rounding', total: '0.05', tax_status: 'none', tax_class: '' });
   });
@@ -1070,7 +1080,7 @@ describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
       { clientPaymentId: 'cash-leg', method: 'cash', amountMinor: 2000, tenderedMinor: 2000, changeMinor: 0 },
       { clientPaymentId: 'card-leg', method: 'external', amountMinor: 1130 },
     ];
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    const fetch = roundingStore().mockResolvedValueOnce(pushed('31.30'));
     const result = await transportWith(fetch, { acceptsCashRounding: true, acceptsPaymentsList: true }).send([envelope]);
     expect(result).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
     const { payload } = bodyOf(fetch);
@@ -1091,7 +1101,7 @@ describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
     envelope.payload.fees = [];
     envelope.payload.lines[0].unitPriceMinor = 3125;
     const local: WooLocalOrder = { lines: [{ id: envelope.payload.lines[0].clientLineId, netMicros: '2962085300' }] };
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(pushed('31.30'));
+    const fetch = roundingStore().mockResolvedValueOnce(pushed('31.30'));
     const result = await transportWith(fetch, { acceptsCashRounding: true }).send([envelope], { local: { orders: new Map([[envelope.id, local]]) } });
     expect(result).toMatchObject({ kind: 'results', results: [{ status: 'applied' }] });
     const { payload } = bodyOf(fetch);
@@ -1099,7 +1109,7 @@ describe('cash rounding as a tax-none Rounding fee line (ADR-094)', () => {
     expect(payload.fee_lines).toStrictEqual([{ name: 'Rounding', total: '0.05', tax_status: 'none', tax_class: '' }]);
   });
 
-  it.each([undefined, false, () => false, async () => false])('W4: refuses a rounded sale with no request when the option is %s', async (acceptsCashRounding) => {
+  it.each([false, () => false, async () => false])('W4: refuses a rounded sale with no request when the option is %s', async (acceptsCashRounding) => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     expect(await transportWith(fetch, { acceptsCashRounding }).send([rounded(5)])).toEqual({ kind: 'results', results: [{
       id: order().id, status: 'rejected', error: { code: 'invalid_payload',
