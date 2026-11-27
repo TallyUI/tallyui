@@ -126,7 +126,7 @@ it('G1 retries a failed status read and reads again on the next send', async () 
 });
 
 it('B5 places exemption after uuid and before split payments', async () => {
-  const fetch = store();
+  const fetch = store('1.10.20', () => Response.json({ capabilities: ['order_payments_list'] }));
   const transport = createWooCommandTransport({ baseUrl, fetch, ledgerPayments: false, acceptsPaymentsList: true, getHeaders: () => ({}) });
   const sale = exemptSale();
   sale.payload.payments = [{ clientPaymentId: 'cash', method: 'cash', amountMinor: 1000 }, { clientPaymentId: 'card', method: 'external', amountMinor: 900 }];

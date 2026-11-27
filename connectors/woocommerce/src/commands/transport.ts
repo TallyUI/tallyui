@@ -1,7 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
-import { wooLedgerVersion, wooTaxExemptGate } from '../store-settings';
+import { wooCashRoundingGate, wooLedgerVersion, wooMultiplePaymentsGate, wooPluginSupportsCoupons, wooTaxExemptGate } from '../store-settings';
 import { createWooCall, type Answer } from './http';
 import { paymentRecordBody } from './money-body';
 
@@ -16,17 +16,11 @@ export interface WooCommandTransportOptions {
   getHeaders: () => Record<string, string> | Promise<Record<string, string>>;
   fetch?: typeof fetch;
   timeoutMs?: number;
-  /** True when the store's `/status` lists `order_payments_list` (`ServerCapabilities.multiplePayments`): an order may
-   * then carry several payments, recorded in `_woocommerce_pos_payments`. */
+  /** @deprecated The transport reads the store for split tender. `false` still closes the gate; `true` does not open it. */
   acceptsPaymentsList?: boolean | (() => boolean | Promise<boolean>);
-  /** True when the store passes the coupons gate (`ServerCapabilities.coupons`, ADR-077 R2/R3). Read at push time;
-   * absent means closed, so a sale still carrying coupons is refused with `coupon_invalid` and no request is made. */
+  /** @deprecated The transport reads the store for coupons. `false` still closes the gate; `true` does not open it. */
   acceptsCoupons?: boolean | (() => boolean | Promise<boolean>);
-  /** True when the store carries cash rounding (`ServerCapabilities.cashRounding`, ADR-094): the fork's `order_create_v5` stores
-   * declare it; stock stores do not, as nothing has been proven there. Pass it from `cashRounding` as `acceptsCoupons` is passed
-   * from `coupons`. Read at push time; absent means closed, so a sale carrying `cashRoundings` is refused as `invalid_payload`
-   * with `cash_rounding_unsupported` and no request is made. On a WCPOS 2.0 (ledger) store the transport refuses it whatever
-   * this says. */
+  /** @deprecated The transport reads the store for cash rounding. `false` still closes the gate; `true` does not open it. */
   acceptsCashRounding?: boolean | (() => boolean | Promise<boolean>);
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
    * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
@@ -282,26 +276,26 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     }
     return siteLedger;
   };
-  const taxExemptGate = async (): Promise<boolean | WooTransportOutcome> => {
-    const failed = (answer: Answer, reason: string): WooTransportOutcome => answer.status === 401 || (answer.status === 403 && answer.body?.code === 'rest_forbidden')
-      ? { kind: 'unauthorized' } : retry(answer, reason);
+  const failed = (answer: Answer, reason: string): WooTransportOutcome => answer.status === 401 || (answer.status === 403 && answer.body?.code === 'rest_forbidden')
+    ? { kind: 'unauthorized' } : retry(answer, reason);
+  const readStatus = async () => {
     const status = await call('status', { method: 'GET' });
     if (status.status < 200 || status.status >= 300 || status.body === undefined) return failed(status, 'store_status_unknown');
-    const flagged = Array.isArray(status.body?.capabilities), fork = flagged && status.body.capabilities.includes('order_create_v5');
+    const flagged = Array.isArray(status.body?.capabilities), capabilities: unknown[] = flagged ? status.body.capabilities : [];
+    return { flagged, capabilities, fork: capabilities.includes('order_create_v5') };
+  };
+  const readSite = async () => {
     const site = await call('site', { method: 'GET' });
     const wcposVersion = site.body?.wcpos_version;
     if (site.status < 200 || site.status >= 300 || wooLedgerVersion(wcposVersion) === undefined) return failed(site, 'store_version_unknown');
-    // Inclusive sales are refused before the gate is read.
-    return wooTaxExemptGate({ flagged, fork, pricesIncludeTax: false, wcposVersion });
+    return { wcposVersion };
   };
   return {
     async send(batch, context) {
       if (batch.length === 0) return { kind: 'results', results: [] };
       let ledger: boolean | Answer | undefined;
-      let taxExempt: boolean | WooTransportOutcome | undefined;
-      const paymentsList = await capability(options.acceptsPaymentsList);
-      const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
-      const cashRounding = batch.some((envelope) => envelope.payload.cashRoundings !== undefined) && await capability(options.acceptsCashRounding);
+      let statusRead: Awaited<ReturnType<typeof readStatus>> | undefined, siteRead: Awaited<ReturnType<typeof readSite>> | undefined;
+      let coupons: boolean | undefined, cashRounding: boolean | undefined, split: boolean | undefined;
       const results: CommandResult[] = [];
       for (const envelope of batch) {
         // Every exemption refusal uses an exemption-specific, non-reopenable code.
@@ -316,9 +310,11 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
           continue;
         }
         if (envelope.payload.taxExempt !== undefined) {
-          taxExempt ??= await taxExemptGate();
-          if (typeof taxExempt !== 'boolean') return results.length ? { kind: 'results', results } : taxExempt;
-          if (!taxExempt) {
+          statusRead ??= await readStatus();
+          if ('kind' in statusRead) return results.length ? { kind: 'results', results } : statusRead;
+          siteRead ??= await readSite();
+          if ('kind' in siteRead) return results.length ? { kind: 'results', results } : siteRead;
+          if (!wooTaxExemptGate({ ...statusRead, ...siteRead, pricesIncludeTax: false })) {
             results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
               message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
             continue;
@@ -332,6 +328,11 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
           return ledger.status >= 200 && ledger.status < 300
             ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
         }
+        if (envelope.payload.coupons?.length && (coupons ??= await capability(options.acceptsCoupons ?? true))) {
+          siteRead ??= await readSite();
+          if ('kind' in siteRead) return results.length ? { kind: 'results', results } : siteRead;
+          coupons = wooPluginSupportsCoupons(siteRead.wcposVersion);
+        }
         if (envelope.payload.coupons?.length && !coupons) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid',
             message: "This store's WooCommerce POS plugin does not accept coupons (1.9.0 or later is needed). Remove the coupon and complete the sale again.",
@@ -339,12 +340,25 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
           continue;
         }
         // ADR-094: never dropped, which would push a wrong total; nothing is proven on a WCPOS 2.0 (ledger) store.
+        if (envelope.payload.cashRoundings !== undefined && !ledger && (cashRounding ??= await capability(options.acceptsCashRounding ?? true))) {
+          statusRead ??= await readStatus();
+          if ('kind' in statusRead) return results.length ? { kind: 'results', results } : statusRead;
+          siteRead ??= await readSite();
+          if ('kind' in siteRead) return results.length ? { kind: 'results', results } : siteRead;
+          cashRounding = wooCashRoundingGate({ ...statusRead, ...siteRead });
+        }
         if (envelope.payload.cashRoundings !== undefined && (!cashRounding || ledger)) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', message: ledger
             ? 'WooCommerce POS 2.0 does not carry cash rounding; complete the sale without it.'
             : "This store's WooCommerce connector does not carry cash rounding; complete the sale without it.",
           data: { storeCode: 'cash_rounding_unsupported' } } });
           continue;
+        }
+        let paymentsList = false;
+        if (envelope.payload.payments.length > 1 && (split ??= await capability(options.acceptsPaymentsList ?? true))) {
+          statusRead ??= await readStatus();
+          if ('kind' in statusRead) return results.length ? { kind: 'results', results } : statusRead;
+          paymentsList = wooMultiplePaymentsGate(statusRead.capabilities);
         }
         const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList, ledger });
         if ('error' in mapped) {

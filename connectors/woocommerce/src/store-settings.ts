@@ -68,6 +68,14 @@ export function wooTaxExemptGate({ flagged, fork, pricesIncludeTax, wcposVersion
     || (wooOnOrderLines20Line(wcposVersion) && atLeast(wcposVersion, WOO_TAX_EXEMPT_20_FLOOR)));
 }
 
+export function wooCashRoundingGate({ fork, wcposVersion }: { fork: boolean; wcposVersion: unknown }): boolean {
+  return fork && wooLedgerVersion(wcposVersion) === false;
+}
+
+export function wooMultiplePaymentsGate(capabilities: readonly unknown[]): boolean {
+  return capabilities.includes('order_payments_list');
+}
+
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
     const init = { method: 'GET', headers: context.headers, signal: context.signal };
@@ -212,7 +220,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
         const body = await status.json();
         flagged = Array.isArray(body?.capabilities);
         capabilities = flagged ? body.capabilities : [];
-        multiplePayments = capabilities.includes('order_payments_list');
+        multiplePayments = wooMultiplePaymentsGate(capabilities);
       }
     } catch (error) {
       if (error instanceof ConnectorUnauthorizedError) throw error;
@@ -249,7 +257,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       // ADR-094: only the fork's order_create_v5 store was shown to take a tax-none ±0.05 Rounding fee line, tax off and on, exclusive
       // and inclusive (22 Nov fork proofs). Stock stores declare nothing: their code was read, not tested.
       // Only on a version that reads as pre-2.0: a 2.0+ (ledger) store's transport refuses cashRoundings, and an unreadable one cannot be classified (desk, 2026-11-24).
-      ...(fork && wooLedgerVersion(wcposVersion) === false ? { cashRounding: true } : {}),
+      ...(wooCashRoundingGate({ fork, wcposVersion }) ? { cashRounding: true } : {}),
       ...(thresholdMinor !== undefined ? { registerApproval: { thresholdMinor } } : {}),
       // WCPOS 2.0's per-store register_sessions setting: the register transport sends to sessions, movements and closures.
       ...(stores[0].register_sessions === true ? { register: 3 } : {}),
