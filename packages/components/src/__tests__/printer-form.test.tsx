@@ -81,11 +81,12 @@ describe('PrinterForm', () => {
     expect(screen.getByTestId('printer-form-paper-58').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('P8: typing 30 after choosing 58 mm selects 80 mm and saves 30', () => {
+  it('P8: typing 30 after choosing 58 mm clears the preset and saves 30', () => {
     const { onSave } = setup();
     press('paper-58');
     type('columns', '30');
-    expect(screen.getByTestId('printer-form-paper-80').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('printer-form-paper-58').getAttribute('aria-pressed')).not.toBe('true');
+    expect(screen.getByTestId('printer-form-paper-80').getAttribute('aria-pressed')).not.toBe('true');
     validFields();
     press('save');
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...expectedDraft, columns: 30 });
@@ -95,6 +96,34 @@ describe('PrinterForm', () => {
     setup();
     press('connection-system');
     expect(screen.getByRole('group', { name: 'Paper Width' })).toBeTruthy();
+  });
+
+  it('P10: shows no preset for a 40-character profile and saves 40', () => {
+    const { onSave } = setup({ printer: { ...printer, columns: 40 } });
+    expect(screen.getByTestId('printer-form-paper-58').getAttribute('aria-pressed')).not.toBe('true');
+    expect(screen.getByTestId('printer-form-paper-80').getAttribute('aria-pressed')).not.toBe('true');
+    press('save');
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...expectedDraft, columns: 40 });
+  });
+
+  it('P11: pressing 58 mm twice keeps it selected and saves 32', () => {
+    const { onSave } = setup({ printer });
+    press('paper-58');
+    press('paper-58');
+    expect(screen.getByTestId('printer-form-paper-58').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('printer-form-paper-80').getAttribute('aria-pressed')).not.toBe('true');
+    press('save');
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...expectedDraft, columns: 32 });
+  });
+
+  it('P12: choosing 80 mm after typing 30 selects it and saves 42', () => {
+    const { onSave } = setup({ printer });
+    type('columns', '30');
+    press('paper-80');
+    expect(screen.getByTestId('printer-form-paper-58').getAttribute('aria-pressed')).not.toBe('true');
+    expect(screen.getByTestId('printer-form-paper-80').getAttribute('aria-pressed')).toBe('true');
+    press('save');
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expectedDraft);
   });
 
   it('F1: refuses a blank name', () => {

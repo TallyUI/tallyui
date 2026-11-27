@@ -118,7 +118,8 @@ export function PrinterForm({ printer, onSave, onCancel, onTest, className }: Pr
       </View>
       <View className="gap-1">
         <Text>Paper Width</Text>
-        <ToggleGroup type="single" variant="outline" value={columns === '32' ? '58' : '80'} aria-label="Paper Width" className="justify-start"
+        {/* Match the 32 / 42 / 48 values in resolve-printer.ts's templateColumns. */}
+        <ToggleGroup type="single" variant="outline" value={columns === '32' ? '58' : columns === '42' || columns === '48' ? '80' : ''} aria-label="Paper Width" className="justify-start"
           onValueChange={(value) => { if (value) setColumns(value === '58' ? '32' : '42'); }}>
           {['58', '80'].map((value) => (
             <ToggleGroupItem key={value} value={value} testID={`printer-form-paper-${value}`}><Text>{value} mm</Text></ToggleGroupItem>
