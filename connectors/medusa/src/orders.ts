@@ -179,7 +179,9 @@ function readOrders(raws: readonly unknown[]): { orders: StoreOrder[]; unreadabl
 
 const isCount = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 
-/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); an order whose refunds together name more of a line than was ordered gets none; never throws. */
+/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324).
+ * An empty array is kept as a refund with no lines (shipping or adjustment only, medusapos#648); missing or non-array `lines` stays unknown.
+ * An order whose refunds together name more of a line than was ordered gets none; never throws. */
 function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
   const lineIds = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
   const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
@@ -189,7 +191,7 @@ function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrde
     const linesById = byOrder.get(raw.id) ?? new Map<string, StoreOrderRefundLine[]>();
     byOrder.set(raw.id, linesById);
     for (const { id, lines } of rows(raw.refunds)) {
-      if (typeof id !== 'string' || !Array.isArray(lines) || lines.length === 0) continue;
+      if (typeof id !== 'string' || !Array.isArray(lines)) continue;
       // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId; a quantity above the ordered one is malformed.
       const kept = rows(lines).flatMap(({ orderLineId, quantity, netMinor, taxMinor }) => (
         typeof orderLineId === 'string' && known.has(orderLineId) && isCount(quantity, 1) && quantity <= known.get(orderLineId)! && isCount(netMinor, 0) && isCount(taxMinor, 0)

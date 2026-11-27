@@ -597,4 +597,62 @@ describe('refund lines (#1324)', () => {
     expect(page.orders[0]!.refunds[0]!.lines).toStrictEqual([fixtureLine]);
     expect(page.orders[0]!.refunds[1]).not.toHaveProperty('lines');
   });
+
+  const orderWithEmptyLines = {
+    ...tillOrder,
+    refunds: [{ ...tillOrder.refunds[0], lines: [fixtureLine] }, { ...tillOrder.refunds[1], lines: [] }],
+  };
+
+  it('getOrders keeps empty lines alongside a refund with a line at contract 6', async () => {
+    const body = pluginBody();
+    body.orders[0]!.refunds[1]!.lines = [];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    expect(await getOrders(ctx6, [L[0].id])).toStrictEqual([orderWithEmptyLines]);
+  });
+
+  it('the plugin listOrders route keeps empty lines at contract 6', async () => {
+    const body = pluginBody();
+    body.orders[0]!.refunds[1]!.lines = [];
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(plugin(body)).mockResolvedValueOnce(listOf([L[0]]));
+    const page = await listOrders(ctx6, { registerId: 'reg-1' });
+    expect(url(spy, 0).pathname).toBe('/tally/v1/orders');
+    expect(page.orders[0]).toStrictEqual(orderWithEmptyLines);
+  });
+
+  it('the admin listOrders path keeps empty lines at contract 6', async () => {
+    const body = pluginBody();
+    body.orders[0]!.refunds[1]!.lines = [];
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(listOf([L[0]])).mockResolvedValueOnce(plugin(body));
+    const page = await listOrders(ctx6, {});
+    expect(url(spy, 0).pathname).toBe('/admin/orders');
+    expect(page.orders[0]).toStrictEqual(orderWithEmptyLines);
+  });
+
+  it.each([{ lines: null }, { lines: {} }])('getOrders leaves non-array refund lines unknown (%j)', async ({ lines }) => {
+    const body = pluginBody();
+    Object.assign(body.orders[0]!.refunds[1]!, { lines });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const [order] = await getOrders(ctx6, [L[0].id]);
+    expect(order!.refunds).toStrictEqual([{ ...tillOrder.refunds[0], lines: [fixtureLine] }, tillOrder.refunds[1]]);
+  });
+
+  it('getOrders drops all refund lines when siblings over-count even with an empty refund', async () => {
+    const body = pluginBody();
+    const line = { ...fixtureLine, quantity: 2 };
+    body.orders[0]!.refunds[0]!.lines = [line];
+    body.orders[0]!.refunds[1]!.lines = [{ ...line }];
+    body.orders[0]!.refunds.push({ id: 'refund_empty', lines: [] });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
+    const orders = await getOrders(ctx6, [L[0].id]);
+    expect(orders).toStrictEqual([tillOrder]);
+    for (const refund of orders[0]!.refunds) expect(refund).not.toHaveProperty('lines');
+  });
+
+  it('the plugin listOrders route leaves empty lines unknown at contract 5', async () => {
+    const body = pluginBody();
+    body.orders[0]!.refunds = [{ id: body.orders[0]!.refunds[1]!.id, lines: [] }];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(plugin(body)).mockResolvedValueOnce(listOf([L[0]]));
+    const page = await listOrders(ctx5, { registerId: 'reg-1' });
+    expect(page.orders[0]).toStrictEqual(tillOrder);
+  });
 });
