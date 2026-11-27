@@ -43,7 +43,7 @@ describe('WCPOS 1.10.20 variation documents', () => {
     expect(toVariationDocument({ id: 1 })).not.toHaveProperty('low_stock_amount');
   });
 
-  it('the stored product passes the version 4 schema', async () => {
+  it('the stored product passes the version 5 schema', async () => {
     const db = await createRxDatabase({ name: `woo${Math.random().toString(36).slice(2)}`,
       storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
     try {
@@ -79,8 +79,8 @@ describe('WCPOS 1.10.20 variation documents', () => {
 });
 
 describe('WCPOS 1.10.20 variations pull', () => {
-  it('uses product schema version 4 and retains replicated variation tax fields', async () => {
-    expect(wooProductSchema.version).toBe(4);
+  it('uses product schema version 5 and retains replicated variation tax fields', async () => {
+    expect(wooProductSchema.version).toBe(5);
     const store = createFakeStore(1);
     Object.assign(store.rows[0], { id: 102, type: 'variable', variations: [104, 105, 106] });
     store.respond = (url) => url.pathname === '/wp-json/wcpos/v2/variations'

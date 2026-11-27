@@ -147,7 +147,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   cartLines?: readonly (CartQuantityLine & { variantId?: string })[];
   /** Show v2's filter chips under the search box. Default false. */
   showFilterBar?: boolean;
-  /** Which chips the bar shows. Default ['inStock']; Catalogue applies In Stock and On Sale itself. */
+  /** Which chips the bar shows. Default ['inStock']; Catalogue applies In Stock, Featured and On Sale itself.
+   * The Featured chip is drawn only when the connector's traits have getFeatured. */
   filterChips?: readonly ProductFilterChip[];
   /** With the In Stock pill on, keep 'backorder' products in the grid (only 'out_of_stock' is dropped). Default false: WCPOS v2's pill is stock_status 'instock' and drops backorders too. */
   inStockKeepsBackorder?: boolean;
@@ -314,6 +315,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
   const saleFiltered = showFilterBar && filters.onSale;
+  const featuredFiltered = showFilterBar && filters.featured && traits.getFeatured !== undefined;
   // Term picks are local unless controlled and reported through onTermPicksChange. A pick is kept but not applied
   // while no drawn group holds its term.
   const [internalTermPicks, setInternalTermPicks] = useState<Readonly<Record<string, string>>>({});
@@ -339,10 +341,12 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     const stocked = stockFiltered
       ? matched.filter((doc) => !(inStockKeepsBackorder ? ['out_of_stock'] : ['out_of_stock', 'backorder']).includes(traits.getStock(doc).status)) : matched;
     const priced = saleFiltered ? stocked.filter((doc) => isOnSale(doc, traits, currency)) : stocked;
+    const getFeatured = traits.getFeatured;
+    const featured = featuredFiltered && getFeatured ? priced.filter((doc) => getFeatured(doc)) : priced;
     const filtered = activeTerms.length > 0
-      ? priced.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : priced;
+      ? featured.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : featured;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, saleFiltered, activeTerms]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, saleFiltered, featuredFiltered, activeTerms]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -491,7 +495,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
-    : (activeTerms.length > 0 || (saleFiltered && shown.length > 0)) && items === undefined ? 'No products match the picked filters.'
+    : (activeTerms.length > 0 || ((saleFiltered || featuredFiltered) && shown.length > 0)) && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
     : isLoading ? 'Loading products…' : items !== undefined && shown.length > 0 ? 'No products match the picked filters.' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay
@@ -537,7 +541,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
             {draws(searchAccessory) ? searchAccessory : null}
           </View>
         ) : searchInput}
-        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters} chips={filterChips}
+        {showFilterBar ? <ProductFilterBar value={filters} onChange={changeFilters}
+          chips={traits.getFeatured === undefined ? filterChips.filter((chip) => chip !== 'featured') : filterChips}
           termGroups={termGroups.length > 0 ? termGroups.map((group) => ({
             id: group.id, label: group.name, options: group.terms.map((term) => ({ value: term.id, label: term.name })),
             value: activeTerms.find(([id]) => id === group.id)?.[1], onChange: (term: string | undefined) => pickTerm(group.id, term),

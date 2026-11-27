@@ -7,7 +7,7 @@ import type { RxJsonSchema } from 'rxdb';
  */
 export const wooProductSchema: RxJsonSchema<any> = {
   title: 'WooCommerce Product',
-  version: 4, // 3: backorders (A16); 4: low_stock_amount; a till resyncs its products once
+  version: 5, // 3: backorders (A16); 4: low_stock_amount; 5: featured; a till resyncs its products once
   type: 'object',
   primaryKey: 'uuid',
   properties: {
@@ -62,6 +62,7 @@ export const wooProductSchema: RxJsonSchema<any> = {
     on_sale: {
       type: 'boolean',
     },
+    featured: { type: 'boolean' },
     description: {
       type: 'string',
     },

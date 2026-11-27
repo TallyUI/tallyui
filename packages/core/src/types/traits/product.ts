@@ -167,6 +167,11 @@ export interface ProductTraits<Doc = any> {
    */
   getTerms?: (doc: Doc) => ProductTerm[];
 
+  /**
+   * Whether the store marks the product as featured. Optional: without it, Catalogue draws no Featured chip.
+   */
+  getFeatured?: (doc: Doc) => boolean;
+
   /** The connector-specific unique ID (as string for consistency) */
   getId: (doc: Doc) => string;
 }

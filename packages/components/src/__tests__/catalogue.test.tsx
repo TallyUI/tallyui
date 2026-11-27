@@ -1192,6 +1192,58 @@ describe('Catalogue On Sale chip', () => {
   });
 });
 
+describe('Catalogue Featured chip', () => {
+  const featured = { id: 11, name: 'Featured', type: 'simple', status: 'publish', stock_status: 'instock', featured: true };
+  const regular = { ...featured, id: 12, name: 'Regular', featured: false };
+  const props = { products: [featured, regular], traits: wooProductTraits, currency: 'EUR', onSelect: vi.fn(),
+    lastSyncedAt: null, showFilterBar: true, filterChips: ['inStock', 'featured'] as const };
+  const filters = { inStock: false, featured: true, onSale: false };
+  const tile = (name: string) => screen.queryByTestId(`product-tile-${name}`);
+
+  it('keeps only featured products when pressed', () => {
+    render(<Catalogue {...props} />);
+    expect(tile(regular.name)).not.toBeNull();
+    fireEvent.click(screen.getByTestId('filter-chip-featured'));
+    expect(tile(featured.name)).not.toBeNull();
+    expect(tile(regular.name)).toBeNull();
+  });
+
+  it('does not filter when the bar is hidden', () => {
+    render(<Catalogue {...props} showFilterBar={false} filters={filters} />);
+    expect(tile(featured.name)).not.toBeNull();
+    expect(tile(regular.name)).not.toBeNull();
+  });
+
+  it('omits the Featured chip but keeps In Stock for Medusa', () => {
+    render(<Catalogue {...props} products={products} traits={traits} />);
+    expect(screen.queryByTestId('filter-chip-featured')).toBeNull();
+    expect(screen.getByTestId('filter-chip-inStock')).not.toBeNull();
+  });
+
+  it('does not filter Medusa products when Featured is on', () => {
+    render(<Catalogue {...props} products={products} traits={traits} filters={filters} />);
+    for (const product of products) expect(tile(product.title)).not.toBeNull();
+  });
+
+  it('keeps the in-stock message for Medusa when Featured is on and nothing is in stock', () => {
+    const soldOut = products.map((product) => ({ ...product,
+      variants: product.variants.map((variant) => ({ ...variant, manage_inventory: true, inventory_quantity: 0 })),
+    }));
+    render(<Catalogue {...props} products={soldOut} traits={traits} filters={{ inStock: true, featured: true, onSale: false }} />);
+    expect(screen.getByTestId('grid').textContent).toBe('No products in stock.');
+  });
+
+  it('shows supplied items in their given order when Featured is on', () => {
+    render(<Catalogue {...props} items={[regular, featured]} filters={filters} />);
+    expect(screen.getAllByTestId(/^product-tile-/)).toEqual([tile(regular.name), tile(featured.name)]);
+  });
+
+  it('shows the picked filters message when Featured hides every product', () => {
+    render(<Catalogue {...props} products={[regular]} filters={filters} />);
+    expect(screen.getByTestId('grid').textContent).toBe('No products match the picked filters.');
+  });
+});
+
 describe('Catalogue term pills', { timeout: 20_000 }, () => {
   const mug = { id: 'mug', title: 'Plain Mug', status: 'published', variants: [
     { id: 'mug-one', title: 'One size', sku: 'MUG', barcode: '555', prices: [{ amount: 8, currency_code: 'eur' }], manage_inventory: false },

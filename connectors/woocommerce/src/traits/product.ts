@@ -63,6 +63,7 @@ export const wooProductTraits: ProductTraits = {
   getSalePrice: (doc) => doc.sale_price || undefined,
 
   isOnSale: (doc) => doc.on_sale === true,
+  getFeatured: (doc) => doc.featured === true,
 
   getImageUrl: (doc) => doc.images?.[0]?.src || undefined,
 
