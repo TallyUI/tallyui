@@ -264,6 +264,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.coupons[].lines[].clientLineId` | informational (#790) | 9 |
 | `payload.coupons[].lines[].discountMinor` | informational, amount-bearing (#790) | 9 |
 | `payload.coupons[].lines[].discountTaxMinor` | informational, amount-bearing (#790) | 9 |
+| `payload.taxExempt` | instruction (tax exempt per sale): `true` when present; needs the server's `taxExempt` capability, and `taxExemptCoupons` too when the order carries coupons; never on `order.update` | the order's content version (capability, no version of its own) |
 
 - A discount, on the order or a line, is the cashier's price decision:
   the server honours it by applying or recording it, or refuses it.
@@ -287,6 +288,38 @@ must equal the order's tax mode when charges are present; subtotal excludes char
   characters) travel with it at 8 and later.
 - `payload.customer.billing` / `.shipping` without `taxAddress` (version 11) are the customer's addresses on a sale not taxed by address: informational, stored on the order, never used to tax it (`docs/contract/order-create-v11.md`). Below 11 they are dropped, and at 9 and 10 an address without `taxAddress` is `invalid_payload`.
 - `payload.coupons[].lines` (version 9) is each coupon's share of each line it reduced, apportioned so the shares sum exactly to the coupon's figures (`docs/contract/order-create-v9.md`). A server may ignore it and allocate the coupon itself, as at version 6. A server that writes per-line adjustments uses it as sent. At 9 every coupon carries it; below 9 none does.
+- `payload.taxExempt` (tax exempt per sale) is an instruction.
+  - **What it asks:** the store charges no tax on any line, fee or
+    shipping. Every tax figure on such a payload is 0;
+    `order-payload-shape.ts:77-96` refuses any other figure as
+    `invalid_payload`.
+  - **When it is sent:** at the order's content version, only to a store
+    whose connector declares the `taxExempt` capability (ADR-094's
+    capability pattern). With coupons it also needs `taxExemptCoupons`.
+  - **The server's own check:** a server's batch guard (`precheckCommand`)
+    refuses the field when its own `supported` list does not declare the
+    capability (`batch.ts:138-142`). It refuses the field on
+    `order.update` outright (`batch.ts:118`). So a plugin should build its
+    `/tally/v1/info` declaration and that `supported` list from one
+    constant.
+  - **How a store declares it:**
+    - A Vendure plugin's `/tally/v1/info` carries top-level
+      `taxExempt: true`, a sibling of `contracts`. It adds
+      `taxExemptCoupons: true` when a coupon's discount on an exempt
+      order also carries no tax.
+    - The Vendure connector counts only the literal `true`, and
+      `taxExemptCoupons` only beside `taxExempt`
+      (`connectors/vendure/src/capabilities.ts`).
+    - The Woo connector derives `taxExempt` from the store's WCPOS
+      version, whether the store is the fork, and its price mode
+      (`wooTaxExemptGate`). It never declares `taxExemptCoupons`.
+    - Medusa declares neither.
+  - **The meaning is fixed for good** (front desk ruling, 2026-11-27):
+    `taxExempt: true` means "an accepted exempt order carries zero tax".
+    - Both fields stay bare booleans.
+    - Any change of meaning gets a new field name, never a
+      reinterpretation of this one. Published tills open on `true`, and a
+      revert does not recall them.
 - `payload.payments[].methodId` (version 10) is the payment method's own id on the platform, 1–64 characters, no NUL; `method` still decides cash. At 10 a leg may carry it; below 10 none does.
 - `payload.customer.taxIds`, a catalogue line's `payload.lines[].sku` and `payload.meta` (version 12, ADR-092) are the sale's tax ids, an edited SKU and the order's custom fields: informational, stored on the order (`docs/contract/order-create-v12.md`). Below 12 they are dropped, and a payload below 12 that carries one is `invalid_payload` (`<field> requires version 12`).
 - `payload.sessionId` is the session the server's register figures count
