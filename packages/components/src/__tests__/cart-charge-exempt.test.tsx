@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { StoreSettings } from '@tallyui/core';
+import type { ServerCapabilities, StoreSettings } from '@tallyui/core';
 import { Cart } from '../sale/cart';
 import { click, SaleHarness, sale } from './sale-harness';
 
@@ -9,11 +9,14 @@ const settings: StoreSettings = { currency: 'EUR', pricesIncludeTax: false,
   taxRateCodes: { standard: 'standard', fee: 'fee', post: 'post' },
   taxRounding: { granularity: 'per_line_items', mode: 'half_up' } };
 const capabilities = { orderCreate: 12, taxExempt: true };
+const lineTaxCapabilities = { ...capabilities, lineTax: { none: true, classes: true } };
+const taxClasses = [{ id: 'standard', label: 'Standard' }, { id: 'fee', label: 'FeeClass' }];
 
 afterEach(cleanup);
 
-function seed() {
-  render(<SaleHarness settings={settings} capabilities={capabilities}>{(sale) => <Cart sale={sale} />}</SaleHarness>);
+function seed(caps: ServerCapabilities = capabilities, withTaxClasses = false) {
+  render(<SaleHarness settings={settings} capabilities={caps}>
+    {(sale) => withTaxClasses ? <Cart sale={sale} taxClasses={taxClasses} /> : <Cart sale={sale} />}</SaleHarness>);
   act(() => {
     sale.addCustomLine({ name: 'Item', priceMinor: 1000, taxClass: 'standard' });
     sale.addFee({ name: 'Bag', amountMinor: 1000, amountIncludesTax: true, taxClass: 'fee' });
@@ -113,4 +116,56 @@ it('C7 renames a percent fee without sending the form’s placeholder price', ()
   expect(sale.order.fees!.find((charge) => charge.id === fee.id)).toMatchObject({
     name: 'Handling', percent: 10, amountMinor: fee.amountMinor,
   });
+});
+
+it('C8 changes only the exempt fee’s tax class and keeps its entered gross', () => {
+  seed(lineTaxCapabilities, true);
+  act(() => { expect(sale.setTaxExempt(true)).toBe(true); });
+  const id = sale.order.fees![0].id;
+  fireEvent.click(edit('Bag').getByRole('button', { name: 'Standard' }));
+  const updateFee = vi.spyOn(sale, 'updateFee');
+  click('Save');
+  expect(updateFee.mock.calls).toStrictEqual([[id, { taxClass: 'standard' }]]);
+  act(() => { expect(sale.setTaxExempt(false)).toBe(true); });
+  expect(sale.order.totalMinor).toBe(3189);
+  expect(sale.order.fees).toMatchObject([{ amountMinor: 1000, amountIncludesTax: true }]);
+});
+
+it('C9 sets and clears only the fee’s no-tax status across exemption', { timeout: 20_000 }, () => {
+  seed(lineTaxCapabilities, true);
+  act(() => { expect(sale.setTaxExempt(true)).toBe(true); });
+  const id = sale.order.fees![0].id;
+  fireEvent.click(edit('Bag').getByRole('switch', { name: 'No tax' }));
+  const setNoTax = vi.spyOn(sale, 'updateFee');
+  click('Save');
+  expect(setNoTax.mock.calls).toStrictEqual([[id, { taxStatus: 'none' }]]);
+  act(() => { expect(sale.setTaxExempt(false)).toBe(true); });
+  fireEvent.click(edit('Bag').getByRole('switch', { name: 'No tax' }));
+  const clearNoTax = vi.spyOn(sale, 'updateFee');
+  click('Save');
+  expect(clearNoTax.mock.calls).toStrictEqual([[id, { taxStatus: undefined }]]);
+  expect(sale.order.totalMinor).toBe(3189);
+  expect(sale.order.fees).toMatchObject([{ amountMinor: 1000, amountIncludesTax: true }]);
+});
+
+it('C10 converts a percent fee to a fixed amount and back', { timeout: 20_000 }, () => {
+  seed();
+  act(() => { sale.addFee({ name: 'Service', amountMinor: 0, percent: 10, taxClass: 'fee' }); });
+  const id = sale.order.fees!.find((charge) => charge.name === 'Service')!.id;
+  const fixedForm = edit('Service');
+  fireEvent.click(fixedForm.getByTestId('charge-form-unit-amount'));
+  fireEvent.change(fixedForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '5.00' } });
+  const setFixed = vi.spyOn(sale, 'updateFee');
+  click('Save');
+  expect(setFixed.mock.calls).toStrictEqual([[id, { amountMinor: 500, amountIncludesTax: undefined, percent: undefined }]]);
+  const fixedFee = sale.order.fees!.find((charge) => charge.id === id)!;
+  expect(fixedFee.amountMinor).toBe(500);
+  expect(fixedFee.percent).toBeUndefined();
+  const percentForm = edit('Service');
+  fireEvent.click(percentForm.getByTestId('charge-form-unit-percent'));
+  fireEvent.change(percentForm.getByRole('textbox', { name: 'Amount' }), { target: { value: '10' } });
+  const setPercent = vi.spyOn(sale, 'updateFee');
+  click('Save');
+  expect(setPercent.mock.calls).toStrictEqual([[id, { amountMinor: 0, amountIncludesTax: undefined, percent: 10 }]]);
+  expect(sale.order.fees!.find((charge) => charge.id === id)).toMatchObject({ percent: 10, amountMinor: 100 });
 });
