@@ -179,17 +179,26 @@ function readOrders(raws: readonly unknown[]): { orders: StoreOrder[]; unreadabl
 
 const isCount = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 
-/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324); an order whose refunds together name more of a line than was ordered gets none; never throws. */
+/** Each order's refund lines (order id, then refund id) from the plugin's `orders[]` rows, kept only when every line is valid for that order (#1324).
+ * An empty array is kept as a refund with no lines (shipping or adjustment only, medusapos#648); missing or non-array `lines` stays unknown.
+ * An order whose refund ids repeat or whose refunds together name more of a line than was ordered gets none; never throws. */
 function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrder[]): Map<string, Map<string, StoreOrderRefundLine[]>> {
   const lineIds = new Map(orders.map((order) => [order.id, new Map(order.lines.map((line) => [line.id, line.quantity]))]));
   const byOrder = new Map<string, Map<string, StoreOrderRefundLine[]>>();
+  const seenByOrder = new Map<string, Set<string>>();
+  const ordersWithRepeat = new Set<string>();
   for (const raw of rows(raws)) {
     const known = typeof raw.id === 'string' ? lineIds.get(raw.id) : undefined;
     if (!known || typeof raw.id !== 'string') continue;
     const linesById = byOrder.get(raw.id) ?? new Map<string, StoreOrderRefundLine[]>();
     byOrder.set(raw.id, linesById);
+    const seen = seenByOrder.get(raw.id) ?? new Set<string>();
+    seenByOrder.set(raw.id, seen);
     for (const { id, lines } of rows(raw.refunds)) {
-      if (typeof id !== 'string' || !Array.isArray(lines) || lines.length === 0) continue;
+      if (typeof id !== 'string') continue;
+      if (seen.has(id)) ordersWithRepeat.add(raw.id);
+      seen.add(id);
+      if (!Array.isArray(lines)) continue;
       // An order's line ids are never empty, so `known.has` also refuses an empty orderLineId; a quantity above the ordered one is malformed.
       const kept = rows(lines).flatMap(({ orderLineId, quantity, netMinor, taxMinor }) => (
         typeof orderLineId === 'string' && known.has(orderLineId) && isCount(quantity, 1) && quantity <= known.get(orderLineId)! && isCount(netMinor, 0) && isCount(taxMinor, 0)
@@ -203,7 +212,7 @@ function refundLinesByOrder(raws: readonly unknown[], orders: readonly StoreOrde
     const ordered = lineIds.get(orderId)!;
     const refunded = new Map<string, number>();
     for (const line of [...linesById.values()].flat()) refunded.set(line.orderLineId, (refunded.get(line.orderLineId) ?? 0) + line.quantity);
-    if ([...refunded].some(([lineId, quantity]) => quantity > ordered.get(lineId)!)) byOrder.delete(orderId);
+    if (ordersWithRepeat.has(orderId) || [...refunded].some(([lineId, quantity]) => quantity > ordered.get(lineId)!)) byOrder.delete(orderId);
   }
   return byOrder;
 }
