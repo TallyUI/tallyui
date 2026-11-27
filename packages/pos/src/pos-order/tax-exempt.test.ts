@@ -137,8 +137,8 @@ import { payloadShapeErrors } from '@tallyui/core/server';
 import type { TaxContext } from '../tax/types';
 import { withSentForm } from './finalize';
 
-function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E5') {
-  const woo = fixture === 'E3' || fixture === 'E4w';
+function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E4x' | 'E5') {
+  const woo = fixture === 'E3' || fixture === 'E4w' || fixture === 'E4x';
   const taxContext: TaxContext = woo ? { pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
     getTaxRatePpm: () => { throw new Error('WooCommerce must use the rate list'); }, shippingTaxClass: 'inherit',
     getTaxRates: () => [{ id: 1, code: 'rate-1', label: 'Rate 1', rate: '10.0000', priority: 1, compound: false, shipping: true }] }
@@ -186,5 +186,15 @@ it.each(['E1', 'E3', 'E4w', 'E4a'] as const)('E12 finalizes %s at the displayed 
   for (const key of ['fees', 'shipping'] as const) expect(posOrder[key]?.map(row => row.amountMinor)).toEqual(order.display[key]?.map(row => row.amountMinor));
   const { payload } = toOrderCreateEnvelope(posOrder, 'till', 1, { maxVersion: 12 });
   expect(JSON.stringify(payload)).not.toContain('exemptedFrom');
+  expect(payloadShapeErrors(payload)).toEqual([]);
+});
+
+it('E12x finalizes inclusive Woo fees and shipping at their exempt nets', () => {
+  const order = builderForExemption('E4x'), posOrder = finalizeOrder(order, { capabilities: { ...carries, chargeTaxMode: true } });
+  for (const key of ['fees', 'shipping'] as const) {
+    const net = order.exemptedFrom![key]![0].netMinor;
+    expect(posOrder[key]).toMatchObject([{ totalMinor: net, amountMinor: net }]);
+  }
+  const { payload } = toOrderCreateEnvelope(posOrder, 'till', 1, { maxVersion: 12 });
   expect(payloadShapeErrors(payload)).toEqual([]);
 });

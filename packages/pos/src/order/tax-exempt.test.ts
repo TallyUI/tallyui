@@ -162,6 +162,19 @@ it('E4w leaves free shipping at zero', () => {
   expect(Math.min(...amounts(order.display.lines), ...amounts(order.display.fees), ...amounts(order.display.shipping))).toBe(0);
 });
 
+it('E4x rewrites inclusive Woo fee and shipping totals and micros to their exempt nets', () => {
+  const builder = charges(woo), taxed = builder.getSnapshot();
+  expect(taxed.fees![0].totalMinor).toBe(999);
+  expect(taxed.fees![0].netMinor).toBeLessThan(999);
+  const order = turnOn(builder);
+  for (const key of ['fees', 'shipping'] as const) {
+    const net = taxed[key]![0].netMinor;
+    expect(order[key]).toMatchObject([{ totalMinor: net, netMinor: net, amountMinor: net, netMicros: String(net * 1_000_000) }]);
+    expect(amounts(order.display[key])).toEqual([net]);
+  }
+  expect(order.totalMinor).toBe(100 + taxed.fees![0].netMinor + taxed.shipping![0].netMinor);
+});
+
 it('E5 shows a converted product at its own net without changing its price mode', () => {
   const order = turnOn(converted());
   expect(amounts(order.display.lines)).toEqual([100, 100]);
