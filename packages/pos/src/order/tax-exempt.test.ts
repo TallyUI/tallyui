@@ -23,6 +23,23 @@ const price = (amount: number) => ({ amount, currency: 'EUR' });
 const make = (taxContext: TaxContext, taxExempt?: true) => createOrderBuilder({ currency: 'EUR', taxContext, taxExempt });
 const captured = { id: 'leg', method: 'cash', status: 'captured', amountMinor: 500 } as const;
 
+it.each([['G1', generic(), 902], ['G2', generic('per_order'), 902], ['G3', woo, 907]] as const)(
+  '%s restores inclusive charges and their displayed figures on switch-off', (_, context, amountMinor) => {
+    const builder = make(context), entry = { amountMinor, amountIncludesTax: true };
+    builder.addLine({ productId: '1', name: 'Item', taxClass: 'standard', unitPrice: price(1000) });
+    builder.addFee({ ...entry, name: 'Fee', taxClass: context === woo ? 'standard' : 'fee' });
+    builder.addShipping({ ...entry, name: 'Post', taxClass: context === woo ? 'standard' : 'post' });
+    const taxed = builder.getSnapshot();
+    builder.setTaxExempt(true);
+    builder.setTaxExempt(false);
+    const restored = builder.getSnapshot();
+    for (const key of ['fees', 'shipping'] as const) {
+      expect(restored[key]).toMatchObject([entry]);
+      expect(restored.display[key]).toEqual(taxed.display[key]);
+    }
+    expect(restored.totalMinor).toBe(taxed.totalMinor);
+  });
+
 function mixed(context: TaxContext, untaxed = false, taxExempt?: true) {
   const builder = make(context, taxExempt);
   const status = untaxed ? { taxStatus: 'none' as const } : {};

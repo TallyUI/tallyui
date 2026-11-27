@@ -137,15 +137,20 @@ import { payloadShapeErrors } from '@tallyui/core/server';
 import type { TaxContext } from '../tax/types';
 import { withSentForm } from './finalize';
 
-function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E4x' | 'E5') {
-  const woo = fixture === 'E3' || fixture === 'E4w' || fixture === 'E4x';
+function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E4x' | 'E5' | 'G4' | 'G5' | 'G8') {
+  const woo = fixture === 'E3' || fixture === 'E4w' || fixture === 'E4x' || fixture === 'G5';
   const taxContext: TaxContext = woo ? { pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
     getTaxRatePpm: () => { throw new Error('WooCommerce must use the rate list'); }, shippingTaxClass: 'inherit',
     getTaxRates: () => [{ id: 1, code: 'rate-1', label: 'Rate 1', rate: '10.0000', priority: 1, compound: false, shipping: true }] }
     : { pricesIncludeTax: false, rounding: { granularity: 'per_line_items', mode: 'half_up' }, getTaxRateCode: taxClass => taxClass,
       getTaxRatePpm: taxClass => taxClass === 'fee' ? 210000 : taxClass === 'post' ? 77000 : 190000 };
   const builder = createOrderBuilder({ currency: 'EUR', taxContext }), price = (amount: number) => ({ amount, currency: 'EUR' });
-  if (fixture === 'E1' || fixture === 'E3') {
+  if (fixture === 'G4' || fixture === 'G5' || fixture === 'G8') {
+    const entry = { amountMinor: woo ? 907 : 902, amountIncludesTax: true };
+    builder.addLine({ productId: '1', name: 'Item', taxClass: 'standard', unitPrice: price(1000) });
+    builder.addFee({ ...entry, name: 'Fee', taxClass: woo ? 'standard' : 'fee' });
+    builder.addShipping({ ...entry, name: 'Post', taxClass: woo ? 'standard' : 'post' });
+  } else if (fixture === 'E1' || fixture === 'E3') {
     const item = { name: 'Item', taxClass: 'standard' };
     const line = builder.addLine({ ...item, productId: '1', unitPrice: price(1000) });
     builder.addLine({ ...item, productId: 'custom', custom: true, unitPrice: price(300) });
@@ -165,7 +170,7 @@ function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E4x' | 'E5'
       builder.addShipping({ name: 'Post', amountMinor: 999, amountIncludesTax: true, taxClass: 'post' });
     }
   }
-  builder.setTaxExempt(true);
+  if (fixture !== 'G8') builder.setTaxExempt(true);
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
   return builder.getSnapshot();
 }
@@ -197,4 +202,32 @@ it('E12x finalizes inclusive Woo fees and shipping at their exempt nets', () => 
   }
   const { payload } = toOrderCreateEnvelope(posOrder, 'till', 1, { maxVersion: 12 });
   expect(payloadShapeErrors(payload)).toEqual([]);
+});
+
+it.each([['G4', 902, 745, 838], ['G5', 907, 825, 825]] as const)(
+  '%s stores inclusive entries beside exempt nets without sending the entries', (fixture, amountMinor, feeNet, shippingNet) => {
+    const stored = finalizeOrder(builderForExemption(fixture), { capabilities: carries });
+    const taxedEntry = { amountMinor, amountIncludesTax: true };
+    expect(stored.fees).toMatchObject([{ amountMinor: feeNet, taxedEntry }]);
+    expect(stored.shipping).toMatchObject([{ amountMinor: shippingNet, taxedEntry }]);
+    const { payload } = toOrderCreateEnvelope(stored, 'till', 1, { maxVersion: 12 });
+    expect(JSON.stringify(payload)).not.toContain('taxedEntry');
+    expect(payloadShapeErrors(payload)).toEqual([]);
+  });
+
+it('G8 keeps entered but not taxedEntry on a non-exempt sale', () => {
+  const stored = finalizeOrder(builderForExemption('G8'), { capabilities: carries });
+  for (const key of ['fees', 'shipping'] as const) {
+    expect(stored[key]![0]).not.toHaveProperty('taxedEntry');
+    expect(stored[key]![0].entered).toEqual({ amountMinor: 902, amountIncludesTax: true });
+  }
+});
+
+it('G9 rejects an explicit false taxExempt in v24', async () => {
+  const db = await createRxDatabase({ name: `exempt${uuidv7().replaceAll('-', '')}`, multiInstance: false,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }) });
+  try {
+    const orders = await addPosOrderCollection(db);
+    await expect(orders.insert({ ...finalizeOrder(sale(), { capabilities: carries }), taxExempt: false } as unknown as PosOrder)).rejects.toMatchObject({ code: 'VD2' });
+  } finally { await db.remove(); }
 });

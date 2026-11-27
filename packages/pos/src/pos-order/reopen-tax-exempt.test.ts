@@ -6,6 +6,7 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
 import { createOrderBuilder, orderDraftSchema, type Order } from '../order';
+import { chargeOrderModeMinor } from '../order/order-builder';
 import { registerSessionCreator } from '../register/schemas';
 import type { RegisterSessionCollection } from '../register/session-store';
 import { useSale } from '../sale/use-sale';
@@ -32,11 +33,13 @@ beforeEach(async () => {
 });
 afterEach(async () => { cleanup(); await db.remove(); });
 
-async function reopen(settings: StoreSettings, reopenSettings = settings) {
+async function reopen(settings: StoreSettings, reopenSettings = settings, gross?: number) {
   const builder = createOrderBuilder({ currency: settings.currency, taxContext: createTaxContext(taxProviderProps(settings)) });
   builder.addLine({ productId: '10', name: 'Shirt', taxClass: 'standard', unitPrice: { amount: 1000, currency: settings.currency } });
-  builder.addFee({ name: 'Bag', amountMinor: 200, taxClass: settings === generic ? 'fee' : 'standard' });
-  builder.addShipping({ name: 'Post', amountMinor: 103, taxClass: settings === generic ? 'post' : 'standard' });
+  const mode = gross === undefined ? {} : { amountIncludesTax: true };
+  builder.addFee({ ...mode, name: 'Bag', amountMinor: gross ?? 200, taxClass: settings === woo ? 'standard' : 'fee' });
+  builder.addShipping({ ...mode, name: 'Post', amountMinor: gross ?? 103, taxClass: settings === woo ? 'standard' : 'post' });
+  const taxed = builder.getSnapshot();
   builder.setTaxExempt(true);
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
   const stored = finalizeOrder(builder.getSnapshot(), { capabilities });
@@ -45,7 +48,7 @@ async function reopen(settings: StoreSettings, reopenSettings = settings) {
     taxContext: createTaxContext(taxProviderProps(reopenSettings)), capabilities });
   const row = await db.order_drafts.findOne(id).exec();
   const draft: Order = JSON.parse(row!.data);
-  return { stored, draft };
+  return { stored, draft, taxed };
 }
 
 it.each([['R1 generic', generic, '190000000'], ['R2 Woo', woo, '100000000']] as const)('%s reopens exempt and restores the line class tax on switch-off', async (_, settings, taxMicros) => {
@@ -65,4 +68,32 @@ it.each([['R1 generic', generic, '190000000'], ['R2 Woo', woo, '100000000']] as 
 it('R3 reopens taxed when prices now include tax', async () => {
   const { draft } = await reopen(generic, { ...generic, pricesIncludeTax: true });
   expect(draft).not.toHaveProperty('taxExempt');
+});
+
+const perOrder: StoreSettings = { ...generic, taxRounding: { granularity: 'per_order', mode: 'half_up' } };
+it.each([['per_line_items', generic, 902], ['per_order', perOrder, 902], ['woocommerce', woo, 907]] as const)(
+  'G6 reopens exempt then restores the quoted inclusive charges (%s)', async (_, settings, amountMinor) => {
+    const { stored, draft, taxed } = await reopen(settings, settings, amountMinor);
+    expect(draft.taxExempt).toBe(true);
+    expect(draft.totalMinor).toBe(stored.totalMinor);
+    for (const key of ['fees', 'shipping'] as const) expect(draft[key]![0].amountMinor).toBe(stored[key]![0].amountMinor);
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(settings), children });
+    const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+    await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+    expect(result.current.taxExempt).toBe(true);
+    act(() => { expect(result.current.setTaxExempt(false)).toBe(true); });
+    const restored = result.current.order;
+    expect([restored.fees![0], restored.shipping![0]].map(row => chargeOrderModeMinor({ ...row,
+      amountIncludesTax: row.amountIncludesTax ?? restored.pricesIncludeTax }, true))).toEqual([amountMinor, amountMinor]);
+    expect(restored.totalMinor).toBe(taxed.totalMinor);
+    for (const key of ['fees', 'shipping'] as const) {
+      expect(restored[key]).toMatchObject([{ amountMinor, amountIncludesTax: true }]);
+      expect(restored.display[key]).toEqual([{ ...taxed.display[key]![0], id: restored[key]![0].id }]);
+    }
+  });
+
+it('G7 reopens the original inclusive charges without exemption in a now-inclusive store', async () => {
+  const { draft } = await reopen(generic, { ...generic, pricesIncludeTax: true }, 902);
+  expect(draft).not.toHaveProperty('taxExempt');
+  for (const key of ['fees', 'shipping'] as const) expect(draft[key]).toMatchObject([{ amountMinor: 902, amountIncludesTax: true }]);
 });
