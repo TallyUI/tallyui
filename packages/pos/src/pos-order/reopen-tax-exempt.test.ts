@@ -5,13 +5,15 @@ import { createRxDatabase, type RxCollection, type RxDatabase } from 'rxdb';
 import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import type { StoreSettings } from '@tallyui/core';
-import { createOrderBuilder, orderDraftSchema, type Order } from '../order';
+import { payloadShapeErrors } from '@tallyui/core/server';
+import { createOrderBuilder, orderDraftSchema, restoreOrderDraft, type Order } from '../order';
 import { chargeOrderModeMinor } from '../order/order-builder';
 import { registerSessionCreator } from '../register/schemas';
 import type { RegisterSessionCollection } from '../register/session-store';
 import { TAX_EXEMPT_REMOVED, useSale } from '../sale/use-sale';
 import { taxProviderProps } from '../store-settings';
 import { createTaxContext, TaxProvider } from '../tax';
+import { toOrderCreateEnvelope } from './command';
 import { finalizeOrder } from './finalize';
 import { reopenRefusedOrder } from './reopen';
 import { posOrderCollection } from './schema';
@@ -70,6 +72,50 @@ it('R3 reopens taxed when prices now include tax', async () => {
 });
 
 const perOrder: StoreSettings = { ...generic, taxRounding: { granularity: 'per_order', mode: 'half_up' } };
+const moved: StoreSettings = { ...generic, taxRatesPpm: { ...generic.taxRatesPpm, fee: 250000, post: 100000 } };
+// G16–G18/G21: 1000 / 1.21 = 826.45 → 826; 999 / 1.077 = 927.58 → 928; exempt total = 1000 + 826 + 928 = 2754.
+// Moved rates: 1000 / 1.25 = 800; 999 / 1.10 = 908.18 → 908. Repricing the nets would give 2708.
+// Switched off: 1190 (Shirt keeps 19% through taxedRates) + 1000 + 999 = 3189; 3189 − 2754 = 435.
+it.each([['G16', generic, moved, 1000, 999, 3189], ['G17', generic, moved, 1000, 999, 3189], ['G19', woo, woo, 500, 500, 2100]] as const)(
+  '%s keeps the exempt quote until the sale switches back to entered gross', async (row, original, settings, fee, shipping, total) => {
+    const { draft, stored } = await reopen(original, settings, fee, shipping);
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(settings), children });
+    const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+    await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+    if (row === 'G17') {
+      await act(async () => { expect(await result.current.park()).toBeNull(); });
+      await act(async () => { expect(await result.current.resume(draft.id)).toBeNull(); });
+    }
+    expect(result.current.taxExempt).toBe(true);
+    expect(result.current.order.totalMinor).toBe(stored.totalMinor);
+    if (row !== 'G19') {
+      expect(result.current.order).toMatchObject({ totalMinor: 2754, changeDueMinor: 0, balanceDueMinor: 0,
+        display: { fees: [{ amountMinor: 826 }], shipping: [{ amountMinor: 928 }] } });
+    }
+    act(() => { expect(result.current.setTaxExempt(false)).toBe(true); });
+    expect(result.current.order).toMatchObject({ totalMinor: total, fees: [{ amountMinor: fee, amountIncludesTax: true }],
+      shipping: [{ amountMinor: shipping, amountIncludesTax: true }] });
+    if (row !== 'G19') expect(result.current.order.balanceDueMinor).toBe(435);
+  });
+
+it('G18 keeps the stored net on a second switch to exemption', async () => {
+  const { draft } = await reopen(generic, moved, 1000, 999);
+  const builder = restoreOrderDraft(draft, { currency: moved.currency, taxContext: createTaxContext(taxProviderProps(moved)) });
+  builder.setTaxExempt(false);
+  expect(builder.getSnapshot().totalMinor).toBe(3189);
+  builder.setTaxExempt(true);
+  expect(builder.getSnapshot().totalMinor).toBe(2754);
+});
+
+it('G21 finalizes the reopened charge nets without storing the draft override', async () => {
+  const { draft } = await reopen(generic, moved, 1000, 999);
+  const builder = restoreOrderDraft(draft, { currency: moved.currency, taxContext: createTaxContext(taxProviderProps(moved)) });
+  const order = finalizeOrder(builder.getSnapshot(), { capabilities });
+  expect(order).toMatchObject({ totalMinor: 2754, fees: [{ amountMinor: 826 }], shipping: [{ amountMinor: 928 }] });
+  for (const key of ['fees', 'shipping'] as const) expect(order[key]![0]).not.toHaveProperty('exemptMinor');
+  expect(payloadShapeErrors(toOrderCreateEnvelope(order, 'till', 1, { maxVersion: 12 }).payload)).toEqual([]);
+});
+
 it.each([['per_line_items', generic, 902], ['per_order', perOrder, 902], ['woocommerce', woo, 907]] as const)(
   'G6 reopens exempt then restores the quoted inclusive charges (%s)', async (_, settings, amountMinor) => {
     const { stored, draft, taxed } = await reopen(settings, settings, amountMinor);

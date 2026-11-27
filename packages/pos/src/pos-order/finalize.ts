@@ -60,8 +60,8 @@ function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean
   if (twin?.amountIncludesTax !== undefined && twin.amountIncludesTax !== pricesIncludeTax) {
     charge = { ...charge, taxedEntry: { amountMinor: twin.amountMinor, amountIncludesTax: twin.amountIncludesTax } };
   }
-  if (charge.amountIncludesTax === undefined && charge.percent === undefined) return charge;
-  const { amountIncludesTax, percent: _percent, ...rest } = charge;
+  const { amountIncludesTax, percent: _percent, exemptMinor: _exemptMinor, ...rest } = charge;
+  if (amountIncludesTax === undefined && _percent === undefined) return rest as C;
   const amountMinor = charge.totalMinor === undefined && displayMinor !== undefined ? displayMinor : chargeOrderModeMinor(charge, pricesIncludeTax);
   return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}),
     ...(amountIncludesTax !== undefined && amountIncludesTax !== pricesIncludeTax && keep.granularity !== 'woocommerce'

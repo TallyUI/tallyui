@@ -23,6 +23,18 @@ const price = (amount: number) => ({ amount, currency: 'EUR' });
 const make = (taxContext: TaxContext, taxExempt?: true) => createOrderBuilder({ currency: 'EUR', taxContext, taxExempt });
 const captured = { id: 'leg', method: 'cash', status: 'captured', amountMinor: 500 } as const;
 
+it('G20 keeps the quoted fee net on rename and drops it on a price edit', () => {
+  const builder = make(generic());
+  const id = builder.addFee({ name: 'Bag', amountMinor: 1000, amountIncludesTax: true, taxClass: 'fee', exemptMinor: 826 });
+  builder.setTaxExempt(true);
+  expect(builder.getSnapshot().display.fees![0].amountMinor).toBe(826);
+  builder.updateFee(id, { name: 'Tote' });
+  expect(builder.getSnapshot().fees![0]).toMatchObject({ name: 'Tote', amountMinor: 826, exemptMinor: 826 });
+  builder.updateFee(id, { amountMinor: 1210 });
+  expect(builder.getSnapshot().display.fees![0].amountMinor).toBe(1000);
+  expect(builder.getSnapshot().fees![0]).not.toHaveProperty('exemptMinor');
+});
+
 it.each([['G1', generic(), 902], ['G2', generic('per_order'), 902], ['G3', woo, 907]] as const)(
   '%s restores inclusive charges and their displayed figures on switch-off', (_, context, amountMinor) => {
     const builder = make(context), entry = { amountMinor, amountIncludesTax: true };

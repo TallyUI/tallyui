@@ -117,12 +117,14 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     for (const fee of order.fees ?? []) builder.addFee({
       name: fee.name, amountMinor: fee.taxedEntry?.amountMinor ?? fee.entered?.amountMinor ?? fee.amountMinor,
       amountIncludesTax: fee.taxedEntry?.amountIncludesTax ?? fee.entered?.amountIncludesTax,
+      ...(fee.taxedEntry && order.taxExempt && !deps.taxContext.pricesIncludeTax ? { exemptMinor: fee.amountMinor } : {}),
       ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
       ...(fee.taxStatus !== undefined ? { taxStatus: fee.taxStatus } : {}),
     });
     for (const shipping of order.shipping ?? []) builder.addShipping({
       name: shipping.name, amountMinor: shipping.taxedEntry?.amountMinor ?? shipping.entered?.amountMinor ?? shipping.amountMinor,
       amountIncludesTax: shipping.taxedEntry?.amountIncludesTax ?? shipping.entered?.amountIncludesTax,
+      ...(shipping.taxedEntry && order.taxExempt && !deps.taxContext.pricesIncludeTax ? { exemptMinor: shipping.amountMinor } : {}),
       ...(shipping.taxClass !== undefined ? { taxClass: shipping.taxClass } : {}),
       ...(shipping.taxStatus !== undefined ? { taxStatus: shipping.taxStatus } : {}),
       ...(shipping.methodId !== undefined ? { methodId: shipping.methodId } : {}),

@@ -452,7 +452,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     let displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
       - [...displayFees, ...displayShipping].reduce((sum, charge) => sum + charge.amountMinor, 0);
     const ownRows = taxExempt ? new Map([...displayLines.map(({ lineId, amountMinor }) => [lineId, amountMinor] as const),
-      ...[...displayFees, ...displayShipping].map(({ id, amountMinor }) => [id, amountMinor] as const)]) : undefined;
+      ...[...displayFees, ...displayShipping].map(({ id, amountMinor }, index) => [id, charges[index].exemptMinor ?? amountMinor] as const)]) : undefined;
     let residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
     if (woo) {
       // ADR-076: the last shipping row, else fee, else product takes either sign of residue.
@@ -567,6 +567,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   function recalculateCharge(id: string, input: ChargeInput, shipping = false): ChargeLine {
     if (!Number.isInteger(input.amountMinor)) throw new RangeError('Amount must be integer minor units');
     if (input.amountMinor < 0) throw new RangeError('Amount must be >= 0');
+    if (input.exemptMinor !== undefined && !Number.isInteger(input.exemptMinor)) throw new RangeError('Exempt amount must be integer minor units');
+    if (input.exemptMinor !== undefined && input.exemptMinor < 0) throw new RangeError('Exempt amount must be >= 0');
     if (!input.name.trim()) throw new RangeError('Name must not be empty');
     if (input.amountIncludesTax !== undefined && typeof input.amountIncludesTax !== 'boolean') throw new RangeError('amountIncludesTax must be a boolean');
     if (shipping && input.percent !== undefined) throw new RangeError('Shipping cannot be a percentage');
@@ -575,6 +577,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const taxStatus = input.taxStatus ?? 'taxable';
     const inclusive = input.amountIncludesTax ?? taxContext.pricesIncludeTax;
     const mode = { ...(input.amountIncludesTax !== undefined ? { amountIncludesTax: input.amountIncludesTax } : {}),
+      ...(input.exemptMinor !== undefined ? { exemptMinor: input.exemptMinor } : {}),
       ...(input.percent !== undefined ? { percent: input.percent } : {}) };
     if (woo) {
       const taxClass = shipping
@@ -692,8 +695,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     updateFee(id, patch) {
       const fee = fees.find((entry) => entry.id === id);
       if (!fee) throw new Error(`Unknown fee ${id}`);
-      const { storeLineId: _storeLineId, ...changes } = patch;
-      const updated = recalculateCharge(id, { ...fee, ...changes });
+      const { storeLineId: _storeLineId, exemptMinor: _exemptMinor, ...changes } = patch;
+      const input = { ...fee, ...changes };
+      if ('amountMinor' in changes || 'amountIncludesTax' in changes || 'percent' in changes) delete input.exemptMinor;
+      const updated = recalculateCharge(id, input);
       fees = fees.map((entry) => entry.id === id ? updated : entry); emit();
     },
     removeFee(id) {
@@ -707,8 +712,9 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     updateShipping(id, patch) {
       const charge = shipping.find((entry) => entry.id === id);
       if (!charge) throw new Error(`Unknown shipping ${id}`);
-      const { storeLineId: _storeLineId, ...changes } = patch;
+      const { storeLineId: _storeLineId, exemptMinor: _exemptMinor, ...changes } = patch;
       const input = { ...charge, ...changes };
+      if ('amountMinor' in changes || 'amountIncludesTax' in changes || 'percent' in changes) delete input.exemptMinor;
       const updated = { ...recalculateCharge(id, input, true), methodId: input.methodId };
       shipping = shipping.map((entry) => entry.id === id ? updated : entry); emit();
     },

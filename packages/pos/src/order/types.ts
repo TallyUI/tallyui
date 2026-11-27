@@ -146,6 +146,8 @@ export interface ChargeLine {
   totalMinor?: number;
   name: string;
   amountMinor: number; // integer >= 0, as entered, in the charge's own mode (amountIncludesTax, else the order's; ADR-075)
+  /** A reopened exempt sale's stored net for this charge: while the sale is exempt, the charge's own row is this amount whatever today's rate; switching exemption off prices the charge from its entered amount (the original gross). The quoted price stands. */
+  exemptMinor?: number;
   taxClass?: string;
   taxStatus: 'taxable' | 'none';
   /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order; a `chargeTaxMode` store keeps it in the stored charge's `entered`. */
@@ -158,7 +160,10 @@ export interface ChargeLine {
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
+export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number;
+  /** A reopened exempt sale's stored net for this charge: while the sale is exempt, the charge's own row is this amount whatever today's rate; switching exemption off prices the charge from its entered amount (the original gross). The quoted price stands. */
+  exemptMinor?: number;
+}
 
 export interface LineTaxLine {
   code?: string;
