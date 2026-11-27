@@ -702,11 +702,15 @@ parked sales.
     2026-10-06);
   - Vendure: the Vendure connector reads `taxExempt` and `taxExemptCoupons`
     from `/tally/v1/info` (#1441). The vendurepos plugin is to declare them.
-    Before slice 4 shows the switch on Vendure, and before the connector
-    is published with this read, vendurepos/app#540 must show two things.
-    First, that `/info` and its `precheckCommand` `supported` come from one
-    constant. Second, with an e2e and its figures, that an accepted exempt
-    order carries zero tax. The wire rule is in
+    vendurepos/app#540 gates the two things that can open the switch:
+    slice 4 showing it on Vendure, and the plugin sending
+    `taxExempt: true` in a published `/info`. Both stay blocked until #540
+    shows two things. First, that `/info` and its `precheckCommand`
+    `supported` come from one constant. Second, with an e2e and its
+    figures, that an accepted exempt order carries zero tax. The
+    connector's read itself may be published before then: it moves no
+    money and opens nothing until the plugin declares the fields (front
+    desk, 2026-11-27). The wire rule is in
     `docs/contract/field-kinds.md` (`order.create`).
 
 **Size and dependencies.** M, as several S units.
