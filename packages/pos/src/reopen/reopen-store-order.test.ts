@@ -48,7 +48,13 @@ describe('reopenStoreOrder', () => {
   it('A5 cannot load an order that is exempt on the reread', async () => {
     const { read, reread, deps } = fixture();
     reread.taxExempt = true;
-    expect(await reopenStoreOrder(read, deps)).toMatchObject({ kind: 'reopened_unloadable', reason: 'tax_exempt' });
+    const outcome = await reopenStoreOrder(read, deps);
+    expect(outcome).toEqual({
+      kind: 'reopened_unloadable', reason: 'tax_exempt',
+      message: `${REOPENED_NOT_LOADED} The order is now tax exempt in the store, so finish it there.`,
+    });
+    if (outcome.kind !== 'reopened_unloadable') throw new Error('Expected reopened_unloadable');
+    expect(outcome.message).not.toContain(TAX_EXEMPT_REOPEN_REFUSED);
   });
 
   it('builds the reopened cart from the reread with locked payments', async () => {

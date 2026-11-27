@@ -9,6 +9,7 @@ import { sendOrderReopen, type OrderReopenOutcome } from './send-order-reopen';
 
 export const REOPENED_NOT_LOADED = 'The store has reopened this order, but the till could not load it. Check the order in the store before trying again.';
 export const STORE_ORDER_OPEN_HERE = 'This order is already open on this till. Find it in the current sale or the parked sales.';
+const TAX_EXEMPT_ON_REREAD = 'The order is now tax exempt in the store, so finish it there.';
 
 export type ReopenStoreOrderOutcome =
   /** The store reopened the order and the till rebuilt it from the read taken after the reopen. */
@@ -72,7 +73,10 @@ export async function reopenStoreOrder(read: StoreOrder, deps: {
     const builder = storeOrderForReopen(reread, { ...options, taxContext: deps.taxContextFor ? deps.taxContextFor(storeOrderCustomer(reread)).taxContext : deps.taxContext });
     return { kind: 'reopened', order: builder.getSnapshot(), duplicate: outcome.duplicate };
   } catch (error) {
-    if (error instanceof ReopenEntryError) return { kind: 'reopened_unloadable', reason: error.reason, message: `${REOPENED_NOT_LOADED} ${error.message}` };
+    if (error instanceof ReopenEntryError) {
+      const detail = error.reason === 'tax_exempt' ? TAX_EXEMPT_ON_REREAD : error.message;
+      return { kind: 'reopened_unloadable', reason: error.reason, message: `${REOPENED_NOT_LOADED} ${detail}` };
+    }
     throw error;
   }
 }
