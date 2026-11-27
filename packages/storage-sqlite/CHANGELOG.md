@@ -1,5 +1,11 @@
 # @tallyui/storage-sqlite
 
+## 5.4.0
+
+### Patch Changes
+
+- @tallyui/core@5.4.0
+
 ## 5.3.0
 
 ### Patch Changes
