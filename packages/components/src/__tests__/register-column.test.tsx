@@ -34,7 +34,7 @@ it('renders the picker when unbound', () => {
   expect(onPick).toHaveBeenCalledWith('register');
 });
 
-it('renders the open card when bound with no session', () => {
+it('renders the open card when bound with no session', async () => {
   render(
     <RegisterHarness db={db}>
       {(register) => (
@@ -44,7 +44,42 @@ it('renders the open card when bound with no session', () => {
       )}
     </RegisterHarness>,
   );
-  expect(screen.getByTestId('open-register-card')).toBeTruthy();
+  expect(await screen.findByTestId('open-register-card')).toBeTruthy();
+});
+
+it.each([true, false])('shows three skeletons instead of the open card while loading (open session: %s)', async (open) => {
+  if (open) await seedSession(db);
+  render(
+    <RegisterHarness db={db}>
+      {(register) => (
+        <RegisterColumn register={register} registerId="register" registers={registers} onPick={vi.fn()} currency="EUR">
+          <div>Cart</div>
+        </RegisterColumn>
+      )}
+    </RegisterHarness>,
+  );
+  const loading = screen.getByTestId('register-column-loading');
+  expect(loading.children).toHaveLength(3);
+  for (const row of Array.from(loading.children)) expect(row.getAttribute('aria-busy')).toBe('true');
+  expect(screen.queryByTestId('open-register-card')).toBeNull();
+  expect(screen.queryByText('Cart')).toBeNull();
+  if (open) expect(await screen.findByText('Cart')).toBeTruthy();
+  else expect(await screen.findByTestId('open-register-card')).toBeTruthy();
+  expect(screen.queryByTestId('register-column-loading')).toBeNull();
+});
+
+it('shows the picker instead of skeletons when unbound even if the hook reports loading', () => {
+  render(
+    <RegisterHarness db={db} overrides={{ registerId: null }}>
+      {(register) => (
+        <RegisterColumn register={{ ...register, loading: true }} registerId={null} registers={registers} onPick={vi.fn()} currency="EUR">
+          <div>Cart</div>
+        </RegisterColumn>
+      )}
+    </RegisterHarness>,
+  );
+  expect(screen.getByTestId('register-picker')).toBeTruthy();
+  expect(screen.queryByTestId('register-column-loading')).toBeNull();
 });
 
 it('renders the count slot while counting, and children once selling', async () => {

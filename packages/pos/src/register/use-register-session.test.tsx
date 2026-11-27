@@ -139,6 +139,35 @@ function seed(openedBy = '7', registerId = 'register') {
   });
 }
 
+it.each([false, true])('loads until the bound register emits its first snapshot (open session: %s)', async (open) => {
+  if (open) await seed();
+  const { result } = render();
+  expect(result.current.loading).toBe(true);
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.session?.status).toBe(open ? 'open' : undefined);
+});
+
+it.each([{ enabled: false }, { registerId: null }])('does not load when disabled or unbound: %j', (overrides) => {
+  expect(render(overrides).result.current.loading).toBe(false);
+});
+
+it('keeps loading while the sessions collection is opening', async () => {
+  const { result } = render({ sessions: null });
+  expect(result.current.loading).toBe(true);
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  expect(result.current.loading).toBe(true);
+});
+
+it('loads again on the render that changes the bound register', async () => {
+  await seed();
+  const { result, rerender } = render();
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  rerender(options({ registerId: 'other' }));
+  expect(result.current.loading).toBe(true);
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(result.current.session).toBeNull();
+});
+
 it('a register holding a session whose status this build does not know needs upgrade: no current or sellable session', async () => {
   await db.register_sessions.insert({
     id: 'unknown-status', register_id: 'register', status: 'abandoned-by-till' as unknown as RegisterSession['status'],
