@@ -94,3 +94,16 @@ it('B5 places exemption after uuid and before split payments', async () => {
     ]) },
   ]);
 });
+
+it('B6 preserves an earlier exempt refusal when the ordinary sale’s /site read returns 401', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(Response.json({ code: 'rest_forbidden' }, { status: 401 }));
+  const transport = createWooCommandTransport({ baseUrl, fetch, getHeaders: () => ({}) });
+  const exempt = exemptSale();
+  const ordinary = probeEnvelope('C1', fixture.completed.C1.request, fixture.ledger.C1.paymentRequest.payment.id);
+  expect(await transport.send([exempt, ordinary])).toStrictEqual({ kind: 'results', results: [
+    { id: exempt.id, status: 'rejected', error: { code: 'invalid_payload', data: { storeCode: 'tax_exempt_unsupported' },
+      message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it." } },
+  ] });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledWith(`${baseUrl}/site`, expect.objectContaining({ method: 'GET' }));
+});
