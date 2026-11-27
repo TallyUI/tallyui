@@ -84,7 +84,8 @@ function draws(node: ReactNode): boolean {
 
 export function Catalogue<Doc>({ products, traits, currency, onSelect, statusText, statusAccessory, searchAccessory, lastSyncedAt, loading, pullError, lastStockCheckAt, hour12, minCodeLength,
   viewState, defaultViewState, loadViewState, saveViewState, onViewStateError, onStateChange, showViewToggle = false, items, onQueryChange, showCategoryNav = false, categoryBrowse = 'chips', categories, pickAnyOptions = false,
-  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, termPills = false, filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot, tileFields }: {
+  cartLines, showFilterBar = false, filterChips = ['inStock'], inStockKeepsBackorder = false, termPills = false, termPicks: termPicksProp, onTermPicksChange,
+  filters: filtersProp, onFiltersChange, variationsStyle = 'list', cameraScan = false, cameraScanner, tableRow, rowsSlot, tileFields }: {
   products: Doc[];
   traits: ProductTraits<Doc>;
   currency: string;
@@ -152,8 +153,14 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   inStockKeepsBackorder?: boolean;
   /** With showFilterBar, a term pill per term group (traits.getTerms) after the chips: `true` for every group the listed
    *  products carry, in listTermGroups order, or the group ids to show, in this order (a group with no terms is not drawn).
-   *  Single select per group; groups AND together; local only, never persisted. Not drawn with `items`. Default off. */
+   *  Single select per group; groups AND together. With `items`, drawn only when onTermPicksChange is passed. Default off. */
   termPills?: boolean | readonly string[];
+  /** Controlled term pill picks (term group id to term id); changes are reported through onTermPicksChange. */
+  termPicks?: Readonly<Record<string, string>>;
+  /** The cashier's next term picks (requested picks when controlled). With `items`, the pills are drawn only when this is
+   *  passed, and the app applies the picks to its own list. Apply only picks whose term `listTermGroups(products, traits)`
+   *  still holds; Catalogue keeps a vanished term's pick but does not apply it. */
+  onTermPicksChange?: (picks: Readonly<Record<string, string>>) => void;
   /** Controlled filters; changes are reported through onFiltersChange. */
   filters?: ProductFilters;
   /** The cashier's next filters (requested filters when controlled). */
@@ -307,22 +314,23 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
   const saleFiltered = showFilterBar && filters.onSale;
-  // The term pills: local picks (group id to term id), never saved or reported. A pick whose term no drawn group still
-  // holds is not applied but kept, and applies again when the term returns, as a stored category does.
-  const [termPicks, setTermPicks] = useState<Readonly<Record<string, string>>>({});
-  const allTermGroups = useMemo(() => (showFilterBar && termPills && items === undefined ? listTermGroups(shown, traits) : []),
-    [showFilterBar, termPills, items, shown, traits]);
+  // Term picks are local unless controlled and reported through onTermPicksChange. A pick is kept but not applied
+  // while no drawn group holds its term.
+  const [internalTermPicks, setInternalTermPicks] = useState<Readonly<Record<string, string>>>({});
+  const termPicks = termPicksProp ?? internalTermPicks;
+  const reportsTermPicks = onTermPicksChange !== undefined;
+  const allTermGroups = useMemo(() => (showFilterBar && termPills && (items === undefined || reportsTermPicks) ? listTermGroups(shown, traits) : []),
+    [showFilterBar, termPills, items, reportsTermPicks, shown, traits]);
   const termGroups = useMemo(() => (termPills === true ? allTermGroups
     : termPills ? termPills.flatMap((id) => allTermGroups.filter((group) => group.id === id)) : []), [allTermGroups, termPills]);
   const activeTerms = useMemo(() => termGroups
     .filter((group) => group.terms.some((term) => term.id === termPicks[group.id]))
     .map((group) => [group.id, termPicks[group.id]] as const), [termGroups, termPicks]);
   function pickTerm(group: string, term: string | undefined) {
-    setTermPicks((current) => {
-      const next = { ...current };
-      if (term === undefined) delete next[group]; else next[group] = term;
-      return next;
-    });
+    const next = { ...termPicks };
+    if (term === undefined) delete next[group]; else next[group] = term;
+    if (termPicksProp === undefined) setInternalTermPicks(next);
+    onTermPicksChange?.(next);
   }
   const results = useMemo(() => {
     if (items !== undefined) return suppliedItems;
