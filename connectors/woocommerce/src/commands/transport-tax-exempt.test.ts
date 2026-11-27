@@ -164,6 +164,25 @@ it('G3 retries a failed site read', async () => {
   expect(routes(fetch)).toEqual(['status', 'site']);
 });
 
+it('G2b returns unauthorized for /status 403 rest_forbidden', async () => {
+  const fetch = store().mockResolvedValueOnce(Response.json({ code: 'rest_forbidden' }, { status: 403 }));
+  expect(await createWooCommandTransport({ baseUrl, fetch, getHeaders }).send([exemptSale()])).toStrictEqual({ kind: 'unauthorized' });
+  expect(routes(fetch)).toEqual(['status']);
+});
+
+it('G3b returns unauthorized for /site 403 rest_forbidden', async () => {
+  const fetch = store().mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({ code: 'rest_forbidden' }, { status: 403 }));
+  expect(await createWooCommandTransport({ baseUrl, fetch, getHeaders }).send([exemptSale()])).toStrictEqual({ kind: 'unauthorized' });
+  expect(routes(fetch)).toEqual(['status', 'site']);
+});
+
+it('G2c retries /status 403 woocommerce_rest_cannot_view', async () => {
+  const fetch = store().mockResolvedValueOnce(Response.json({ code: 'woocommerce_rest_cannot_view' }, { status: 403 }));
+  expect(await createWooCommandTransport({ baseUrl, fetch, getHeaders }).send([exemptSale()])).toStrictEqual({ kind: 'retry', reason: 'store_status_unknown' });
+  expect(routes(fetch)).toEqual(['status']);
+});
+
 it('G6 reads the gate once per send, not once per exempt sale', async () => {
   const fetch = store();
   const transport = createWooCommandTransport({ baseUrl, fetch, getHeaders, ledgerPayments: false });
