@@ -1030,6 +1030,94 @@ describe('v2 tile details', () => {
   });
 });
 
+describe('Catalogue On Sale chip', () => {
+  const props = { traits, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null,
+    showFilterBar: true, filterChips: ['inStock', 'onSale'] as const };
+  const baseVariant = { id: 'base', manage_inventory: false, prices: [{ amount: 12, currency_code: 'eur' }] };
+  const saleVariant = { ...baseVariant, id: 'sale', calculated_price: { currency_code: 'eur',
+    calculated_amount: 8, original_amount: 12, calculated_price: { price_list_type: 'sale' } } };
+  const base = { id: 'regular', title: 'Regular', status: 'published', variants: [baseVariant] };
+  const sale = { ...base, id: 'discounted', title: 'Discounted', variants: [saleVariant] };
+  const simple = { id: 11, name: 'Simple', type: 'simple', status: 'publish', stock_status: 'instock',
+    on_sale: false, regular_price: '20' };
+  const toggle = () => fireEvent.click(screen.getByTestId('filter-chip-onSale'));
+  const tile = (name: string) => screen.queryByTestId(`product-tile-${name}`);
+
+  it('keeps a Medusa product with a calculated EUR sale price', () => {
+    render(<Catalogue {...props} products={[sale, base]} />);
+    toggle();
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).toBeNull();
+  });
+
+  it('hides a Medusa product with only a base price', () => {
+    render(<Catalogue {...props} products={[base]} />);
+    expect(tile(base.title)).not.toBeNull();
+    toggle();
+    expect(tile(base.title)).toBeNull();
+  });
+
+  it('keeps a Medusa product when only its second variant is on sale', () => {
+    render(<Catalogue {...props} products={[{ ...sale, variants: [baseVariant, saleVariant] }, base]} />);
+    toggle();
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).toBeNull();
+  });
+
+  it('hides a product whose only sale price is in USD', () => {
+    const usd = { ...saleVariant, calculated_price: { ...saleVariant.calculated_price, currency_code: 'usd' } };
+    render(<Catalogue {...props} products={[{ ...sale, variants: [usd] }]} />);
+    expect(tile(sale.title)).not.toBeNull();
+    toggle();
+    expect(tile(sale.title)).toBeNull();
+  });
+
+  it('keeps a Woo variable parent with a sale price only on its published variation', () => {
+    const parent = { ...simple, id: 12, name: 'Variable', type: 'variable', on_sale: true,
+      variation_docs: [{ id: 13, status: 'publish', on_sale: true, regular_price: '20', sale_price: '15' }] };
+    render(<Catalogue {...props} traits={wooProductTraits} products={[parent, simple]} />);
+    toggle();
+    expect(tile(parent.name)).not.toBeNull();
+    expect(tile(simple.name)).toBeNull();
+  });
+
+  it('hides a Woo simple product at its regular price', () => {
+    render(<Catalogue {...props} traits={wooProductTraits} products={[simple]} />);
+    expect(tile(simple.name)).not.toBeNull();
+    toggle();
+    expect(tile(simple.name)).toBeNull();
+  });
+
+  it('shows both products by default and restores them when On Sale is turned off', () => {
+    render(<Catalogue {...props} products={[sale, base]} />);
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).not.toBeNull();
+    toggle();
+    expect(tile(base.title)).toBeNull();
+    toggle();
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).not.toBeNull();
+  });
+
+  it('requires both In Stock and On Sale when both chips are on', () => {
+    const soldOut = { ...sale, variants: [{ ...saleVariant, manage_inventory: true, inventory_quantity: 0 }] };
+    render(<Catalogue {...props} products={[soldOut, base]} />);
+    toggle();
+    expect(tile(soldOut.title)).toBeNull();
+    expect(tile(base.title)).toBeNull();
+  });
+
+  it('leaves supplied items untouched even with On Sale on', () => {
+    const both = [sale, base];
+    const { rerender } = render(<Catalogue {...props} products={both} items={both} />);
+    toggle();
+    expect(tile(sale.title)).not.toBeNull();
+    expect(tile(base.title)).not.toBeNull();
+    rerender(<Catalogue {...props} products={both} />);
+    expect(tile(base.title)).toBeNull();
+  });
+});
+
 describe('Catalogue term pills', { timeout: 20_000 }, () => {
   const mug = { id: 'mug', title: 'Plain Mug', status: 'published', variants: [
     { id: 'mug-one', title: 'One size', sku: 'MUG', barcode: '555', prices: [{ amount: 8, currency_code: 'eur' }], manage_inventory: false },
