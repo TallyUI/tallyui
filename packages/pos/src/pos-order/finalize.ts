@@ -71,7 +71,8 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   const keep = { granularity: order.taxRounding?.granularity };
   if (customer && posOrder.customer?.email === undefined) delete customer.email;
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
-  return { ...order, customer, note: posOrder.note ?? order.note,
+  const { exemptedFrom: _exemptedFrom, ...sent } = order;
+  return { ...sent, customer, note: posOrder.note ?? order.note,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
     ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...storedCharge(fee, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep), name: posOrder.fees![i].name })) } : {}),
     ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep),
@@ -227,6 +228,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
    * - nothing is dropped or re-taxed silently. */
   if (order.taxExempt) {
     if (order.storeOrder) throw new Error('finalize: a reopened store order cannot be made tax exempt');
+    if (order.pricesIncludeTax) throw new Error('finalize: tax exemption is not available on a prices-include-tax store');
+    if (order.lineItems.some(line => line.priceTaxModeConverted)) throw new Error('finalize: a tax-exempt sale cannot carry a line priced in the other tax mode');
     if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
     if (order.taxMinor !== 0 || order.display.taxMinor !== 0
       || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))

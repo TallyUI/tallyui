@@ -5,6 +5,7 @@ import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } fro
 import { taxLogger } from '../tax/tax-provider';
 import { capturedMinor, canMoveLeg, countsTowardPaid, isInMotion, legStatus, type PaymentLegStatus } from '../tender/payment-legs';
 import { allocateOrderDiscount } from './allocate-order-discount';
+import { exemptOrder } from './tax-exempt';
 import { apportionLargestRemainders } from './apportion';
 import { woocommerceLine, woocommerceTotals, woocommerceCouponReplay } from './woocommerce-tax';
 import type {
@@ -137,7 +138,9 @@ export function isLiveLeg(payment: Payment): boolean {
 }
 
 /** What a store-priced coupon's amounts depend on (TallyUI#709). A price is good only while this is unchanged. */
-export function couponPricingBasis(order: Pick<Order, 'currency' | 'customer' | 'lineItems' | 'discounts'>): string {
+export function couponPricingBasis(snapshot: Pick<Order, 'currency' | 'customer' | 'lineItems' | 'discounts' | 'exemptedFrom'>): string {
+  // The exempt view has no rates; store pricing still depends on the taxed sale's inputs.
+  const order = snapshot.exemptedFrom ?? snapshot;
   // Inputs only, never a computed figure, so applying or removing coupons can't change it; tax rates are inputs, so a re-tax moves it (#742).
   return JSON.stringify([order.currency, order.customer?.id ?? null,
     order.lineItems.map((li) => [li.id, li.productId, li.variantId ?? null, li.quantity, li.unitPriceMinor, li.taxInclusive,
@@ -148,6 +151,7 @@ export function couponPricingBasis(order: Pick<Order, 'currency' | 'customer' | 
 export interface OrderBuilderOptions {
   currency: string;
   taxContext: TaxContext;
+  taxExempt?: true;
   id?: string;
   createdAt?: string; // a restored order's own (#742); absent is now
   storeOrder?: StoreOrderRef;
@@ -202,6 +206,7 @@ export interface OrderBuilder {
   setPaymentStatus(paymentId: string, status: PaymentLegStatus, takenAt?: string, sessionId?: string): boolean;
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
+  setTaxExempt(on: boolean): void;
   setNote(note: string): void;
   /** Replaces the order meta as given (`[]` removes it); `useSale().setMeta` checks keys before it calls this. */
   setMeta(meta: OrderCreateMeta[]): void;
@@ -213,6 +218,9 @@ export interface OrderBuilder {
 
 export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
+  const unavailable = 'order builder: tax exemption is not available on a prices-include-tax store';
+  let taxExempt = options.taxExempt === true;
+  if (taxExempt && taxContext.pricesIncludeTax) throw new Error(unavailable);
   let storeOrder = options.storeOrder;
   let afterClose = options.afterClose;
   let couponContext: OrderCouponContext | StorePricedCouponContext | KeptCouponContext | undefined = options.couponContext;
@@ -443,6 +451,8 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     const displayFees = chargeRows(fees), displayShipping = chargeRows(shipping);
     let displaySubtotal = (taxInclusive ? totalMinor : totalMinor - taxMinor) + displayDiscount
       - [...displayFees, ...displayShipping].reduce((sum, charge) => sum + charge.amountMinor, 0);
+    const ownRows = taxExempt ? new Map([...displayLines.map(({ lineId, amountMinor }) => [lineId, amountMinor] as const),
+      ...[...displayFees, ...displayShipping].map(({ id, amountMinor }) => [id, amountMinor] as const)]) : undefined;
     let residue = displaySubtotal - displayLines.reduce((sum, line) => sum + line.amountMinor, 0);
     if (woo) {
       // ADR-076: the last shipping row, else fee, else product takes either sign of residue.
@@ -547,7 +557,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // #709: the store's amounts still apply while stale, so the cart shows the last known prices; finalize refuses it.
     if (store && couponCodes.length && couponPricingBasis(order) !== store.basis) order.couponPricesStale = true;
     if (kept && couponCodes.length && (!keptOn || couponPricingBasis(order) !== kept.basis)) order.couponPricesStale = true;
-    return order;
+    return ownRows ? exemptOrder(order, ownRows) : order;
   }
 
   function emit() {
@@ -878,6 +888,12 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
       emit();
     },
 
+    setTaxExempt(on) {
+      if (on && taxContext.pricesIncludeTax) throw new Error(unavailable);
+      taxExempt = on;
+      emit();
+    },
+
     setNote(n) {
       note = n;
       emit();
@@ -921,6 +937,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     },
 
     clear() {
+      taxExempt = false;
       storeOrder = undefined;
       afterClose = undefined;
       lineItems = [];
