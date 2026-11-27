@@ -430,6 +430,8 @@ export function useRegisterSession(options: UseRegisterSessionOptions) {
     closureApprovalStatus: Object.fromEntries((data?.closureRows ?? []).map((closure) => [closure.id, closureApprovalStatus(closure,
       commandRows.find((row) => row.key === `closure.submit:${closure.id}`), options.capabilities)])) as Record<string, ClosureApprovalStatus>,
     enabled,
+    /** True while an enabled, bound register is waiting for its first snapshot. */
+    loading: !!enabled && registerId != null && data === null,
     blind: options.blind ?? false,
     /** Pass straight to useSale's `session` option: `complete()` then stamps through `stampSession`. */
     saleSession: session && sessions && (session.status === 'open' || session.status === 'counting') ? { id: session.id, sessions } : undefined,

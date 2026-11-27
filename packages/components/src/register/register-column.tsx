@@ -4,6 +4,7 @@ import type { useRegisterSession } from '@tallyui/pos';
 
 import { errorText } from '../lib/error-text';
 import { Button } from '../ui/button';
+import { Skeleton } from '../ui/skeleton';
 import { Text } from '../ui/text';
 import { OpenRegisterCard } from './open-register-card';
 import { RegisterPicker, type RegisterPickerRegister } from './register-picker';
@@ -35,6 +36,7 @@ export interface RegisterColumnProps {
  * needs it, offering Close register when an open session runs overdue with nothing left to
  * sell. Port provenance (ADR-032 amendment 1): WCPOS `next` `3b5331b5c`'s cart-column register
  * swap (LEDGER 53), composed here as one small component rather than inline cart-screen logic.
+ * A bound register shows three row skeletons while its session loads.
  */
 export function RegisterColumn({
   register,
@@ -50,6 +52,13 @@ export function RegisterColumn({
   const [finishing, setFinishing] = useState(false); // Lifted, so the card stays up through its own close.
   if (registerId === null) {
     return <RegisterPicker registers={registers} onPick={onPick} className="flex-1" />;
+  }
+  if (register.loading) {
+    return (
+      <View testID="register-column-loading" className="gap-2 p-2">
+        {[0, 1, 2].map((row) => <Skeleton key={row} shape="row" />)}
+      </View>
+    );
   }
   if (register.session?.status === 'closed') {
     // A close in flight stores the session closed before its closure lands: unless the card started it, not an unfinished close.
