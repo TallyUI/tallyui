@@ -152,6 +152,18 @@ const settled = async (page: Page, id: string) => {
   }
   throw new Error(`${id} never held still`);
 };
+// The root can hold a transient first layout for a while (#1426), so E1 reads a tile's box until two reads 500 ms
+// apart agree to half a pixel on every edge.
+const atRest = async (page: Page, id: string) => {
+  let box = await page.getByTestId(id).boundingBox();
+  for (let i = 0; i < 20; i += 1) {
+    await page.waitForTimeout(500);
+    const next = await page.getByTestId(id).boundingBox();
+    if (box && next && (['x', 'y', 'width', 'height'] as const).every((k) => Math.abs(box![k] - next[k]) <= 0.5)) return next;
+    box = next;
+  }
+  throw new Error(`${id} never came to rest`);
+};
 const trace = (frames: Box[]) => frames.map((f) => `${f.t}:${Math.round(f.x)},${Math.round(f.y)}@${f.opacity.toFixed(2)}`).join(' ');
 
 test.describe('category deal at 1280x800', () => {
@@ -162,20 +174,17 @@ test.describe('category deal at 1280x800', () => {
   });
 
   test('E1: the parent walks from the tapped tile to slot 0', async ({ page }) => {
-    const from = await settled(page, 'category-tile-pcat_ceramics');
     // Slot 0 is read from a load with no motion, so a parent that stops short of it fails here.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.reload();
-    await settled(page, 'category-tile-pcat_ceramics');
+    const still = await atRest(page, 'category-tile-pcat_ceramics');
     await page.getByTestId('category-tile-pcat_ceramics').click();
     const slot0 = await settled(page, 'category-level-parent');
-    // Motion on again in a fresh load. Its root can hold a first layout past `settled`, so the tile is read until it
-    // is back on `from`, and then held still as before.
+    // Motion on again in a fresh load, whose root rests where the first one did.
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.reload();
-    await expect.poll(async () => near((await page.getByTestId('category-tile-pcat_ceramics').boundingBox())!, from),
-      { message: 'the root is laid out as before' }).toBe(true);
-    await settled(page, 'category-tile-pcat_ceramics');
+    const from = await atRest(page, 'category-tile-pcat_ceramics');
+    expect(near(from, still), 'the root rests at the same box in both loads').toBe(true);
     const frames = shown(await film(page, 'category-level-parent', 'category-tile-pcat_ceramics'));
     console.log(`E1 from ${JSON.stringify(from)} slot 0 ${JSON.stringify(slot0)} visible ${frames.length} `
       + `distinct ${distinct(frames)} frames ${trace(frames)}`);
