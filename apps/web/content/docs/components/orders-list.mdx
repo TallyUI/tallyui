@@ -58,7 +58,7 @@ const history: OrderHistoryRow[] = storeOrders.map((order) => ({
 - **Newest first.** Recent merges outbox orders (by `createdAt`) and history rows (by `placedAt`). At equal times the outbox order comes first. A time that does not parse goes last.
 - **Read-only.** A history row shows `Order <reference> · <n> items` and `<date> · <total> · <stateLabel>`, with `reference`, `itemCount` and `stateLabel` as given. It has no detail, no Retry and no warnings, and never appears under Needs attention.
 
-Without `history`, the list renders exactly as before, with `orders` in the given order.
+Without `history`, the list renders exactly as before, with `orders` in the given order. Pass `historyLoading` while the first fetch is in flight.
 
 ## Props
 
@@ -70,6 +70,7 @@ Without `history`, the list renders exactly as before, with `orders` in the give
 | `footer` | `ReactNode` | --- | App content rendered after the order sections |
 | `stuck` | `OutboxState['stuck']` | --- | Outbox entries that make pending orders need attention and supply each order's waiting-since time |
 | `history` | `OrderHistoryRow[]` | --- | The store's orders, shown read-only in Recent; a row is hidden while an outbox order has its `clientOrderId` as `id` |
+| `historyLoading` | `boolean` | `false` | While Recent is empty, shows five skeleton rows in place of "No sales yet" |
 | `onOpen` | `(row: PosOrder \| OrderHistoryRow) => void` | --- | Adds an Open button to each row, outbox order or history row, that passes it to the app |
 | `onReopen` | `(order: PosOrder, options?: { withoutCoupons: true }) => Promise<void>` | --- | Adds Reopen to a Needs attention row the store refused with a reopenable code; the app wires `reopenRefusedOrder` |
 | `onResume` | `(order: PosOrder) => void` | --- | Adds Resume to a reopened row in Needs attention; the app resumes the parked sale |

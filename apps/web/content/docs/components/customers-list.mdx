@@ -22,7 +22,7 @@ The app owns the search call, the paging, the route and opening the editor; the 
 | `query` / `onQueryChange` | `string` / `(query: string) => void` | required | The search field's text, and every edit of it (`''` from Clear search) |
 | `onOpen` | `(customer: Customer) => void` | --- | Pressing a row; absent, rows are not pressable and show no chevron |
 | `onEndReached` | `() => void` | --- | The list scrolled within a tenth of its visible height of the end |
-| `loading` | `boolean` | `false` | A loading row under the rows; hides the empty states |
+| `loading` | `boolean` | `false` | With no rows and a blank query, five skeleton rows; otherwise a loading row under the rows; hides the empty states |
 | `error` | `string` | --- | A sentence shown as an alert above the rows |
 | `actions` | `ReactNode` | --- | Before the search field, such as an Add button |
 | `className` | `string` | --- | The outer view's classes |

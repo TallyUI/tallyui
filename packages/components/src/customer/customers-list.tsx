@@ -10,7 +10,11 @@ import { ChevronRightIcon } from '../ui/icon/chevron-right-icon';
 import { Input } from '../ui/input';
 import { ListRow } from '../ui/list-row';
 import { Loader } from '../ui/loader';
+import { Skeleton } from '../ui/skeleton';
 import { Text } from '../ui/text';
+
+// v2's syncing row count (data-table/index.tsx:204).
+const SYNCING_SKELETON_ROWS = 5;
 
 export interface CustomersListProps {
   /** The rows, in the order the app's search returned them. */
@@ -23,7 +27,7 @@ export interface CustomersListProps {
   onOpen?: (customer: Customer) => void;
   /** Called when the list scrolls within a tenth of its visible height of the end, as CustomerDropdown does. */
   onEndReached?: () => void;
-  /** A search or page is in flight: a loading row under the rows. */
+  /** With no rows and a blank query, draws skeleton rows; otherwise a loading row under the rows. */
   loading?: boolean;
   /** A sentence the app wants shown above the rows (a failed search). */
   error?: string;
@@ -67,7 +71,10 @@ export function CustomersList({ customers, query, onQueryChange, onOpen, onEndRe
           {customer.email ? <Text numberOfLines={1} className="text-sm text-muted-foreground">{customer.email}</Text> : null}
         </ListRow>;
       })}
-      {loading ? <View testID={`${testID}-loading`} className="items-center py-4"><Loader /></View> : null}
+      {loading && customers.length === 0 && blank ? <View testID={`${testID}-skeleton`}
+        accessibilityLabel={t('customers.loading_customers')} aria-busy className="gap-1 px-3">
+        {Array.from({ length: SYNCING_SKELETON_ROWS }, (_, index) => <Skeleton key={index} shape="row" testID={`${testID}-skeleton-row`} />)}
+      </View> : loading ? <View testID={`${testID}-loading`} className="items-center py-4"><Loader /></View> : null}
       {empty && blank ? <View testID={`${testID}-empty`} className="items-center gap-1 p-6">
         <Text role="heading" className="font-medium">{t('customers.no_customers_yet')}</Text>
         <Text className="text-center text-sm text-muted-foreground">{t('customers.no_customers_yet_description')}</Text>

@@ -667,6 +667,38 @@ describe('OrdersList', () => {
   });
 });
 
+describe('OrdersList history loading', () => {
+  it('HL1: an empty Recent draws five skeleton rows while history loads', () => {
+    render(<OrdersList orders={[]} historyLoading onRetry={async () => 0} />);
+    const loading = screen.getByTestId('orders-loading');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByLabelText('Loading orders…')).toBe(loading);
+    expect(within(loading).getAllByTestId('orders-loading-row')).toHaveLength(5);
+    expect(screen.queryByTestId('orders-empty')).toBeNull();
+  });
+
+  it('HL2: an outbox order is shown instead of skeleton rows', () => {
+    render(<OrdersList orders={[order('a')]} historyLoading onRetry={async () => 0} />);
+    expect(screen.queryByTestId('orders-loading')).toBeNull();
+    expect(screen.getByTestId('order-row-a')).toBeTruthy();
+  });
+
+  it('HL3: a history row is shown instead of skeleton rows', () => {
+    render(<OrdersList orders={[]} history={[historyRow('h1')]} historyLoading onRetry={async () => 0} />);
+    expect(screen.queryByTestId('orders-loading')).toBeNull();
+    expect(screen.getByTestId('history-row-h1')).toBeTruthy();
+  });
+
+  it('HL4: an empty Recent shows the empty line when historyLoading is absent or false', () => {
+    const { rerender } = render(<OrdersList orders={[]} onRetry={async () => 0} />);
+    expect(screen.getByTestId('orders-empty')).toBeTruthy();
+    expect(screen.queryByTestId('orders-loading')).toBeNull();
+    rerender(<OrdersList orders={[]} historyLoading={false} onRetry={async () => 0} />);
+    expect(screen.getByTestId('orders-empty')).toBeTruthy();
+    expect(screen.queryByTestId('orders-loading')).toBeNull();
+  });
+});
+
 describe('OrdersList history rows (ADR-052 amendment 1)', () => {
   it('shows a history row read-only with its reference, item count, date, total and state label as given', () => {
     render(<OrdersList orders={[]} history={[historyRow('h1')]} onRetry={async () => 0} formatDate={formatDate} />);
