@@ -1,7 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
-import { wooLedgerVersion } from '../store-settings';
+import { wooLedgerVersion, wooTaxExemptGate } from '../store-settings';
 import { createWooCall, type Answer } from './http';
 import { paymentRecordBody } from './money-body';
 
@@ -28,9 +28,6 @@ export interface WooCommandTransportOptions {
    * with `cash_rounding_unsupported` and no request is made. On a WCPOS 2.0 (ledger) store the transport refuses it whatever
    * this says. */
   acceptsCashRounding?: boolean | (() => boolean | Promise<boolean>);
-  /** Pass `ServerCapabilities.taxExempt` for stock stores that carry exclusive, coupon-free exempt sales.
-   * Read at push time; absent means closed (`invalid_payload` with `tax_exempt_unsupported`, no request). */
-  acceptsTaxExempt?: boolean | (() => boolean | Promise<boolean>);
   /** True for a WCPOS 2.0.x store, whose push carries no money: the sale is pushed `pending`, then paid through the
    * payment ledger. Read at push time; absent, the transport reads `/site` once and decides from `wcpos_version`; until
    * it can, `send` retries with what `/site` answered: `network` or `timeout` with no answer, `status_<n>` for a non-2xx
@@ -285,22 +282,29 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     }
     return siteLedger;
   };
+  const taxExemptGate = async (): Promise<boolean | WooTransportOutcome> => {
+    const failed = (answer: Answer, reason: string): WooTransportOutcome => answer.status === 401 || (answer.status === 403 && answer.body?.code === 'rest_forbidden')
+      ? { kind: 'unauthorized' } : retry(answer, reason);
+    const status = await call('status', { method: 'GET' });
+    if (status.status < 200 || status.status >= 300 || status.body === undefined) return failed(status, 'store_status_unknown');
+    const flagged = Array.isArray(status.body?.capabilities), fork = flagged && status.body.capabilities.includes('order_create_v5');
+    const site = await call('site', { method: 'GET' });
+    const wcposVersion = site.body?.wcpos_version;
+    if (site.status < 200 || site.status >= 300 || wooLedgerVersion(wcposVersion) === undefined) return failed(site, 'store_version_unknown');
+    // Inclusive sales are refused before the gate is read.
+    return wooTaxExemptGate({ flagged, fork, pricesIncludeTax: false, wcposVersion });
+  };
   return {
     async send(batch, context) {
       if (batch.length === 0) return { kind: 'results', results: [] };
       let ledger: boolean | Answer | undefined;
-      const taxExempt = batch.some((envelope) => envelope.payload.taxExempt !== undefined) && await capability(options.acceptsTaxExempt);
+      let taxExempt: boolean | WooTransportOutcome | undefined;
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const cashRounding = batch.some((envelope) => envelope.payload.cashRoundings !== undefined) && await capability(options.acceptsCashRounding);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
-        // Refuse exemption first so an exempt sale is never refused with a reopenable code.
-        if (envelope.payload.taxExempt !== undefined && !taxExempt) {
-          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
-            message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
-          continue;
-        }
+        // Every exemption refusal uses an exemption-specific, non-reopenable code.
         if (envelope.payload.taxExempt && envelope.payload.pricesIncludeTax) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', data: { storeCode: 'tax_exempt_inclusive' },
             message: "This store's prices include tax; WooCommerce tax exemption is only carried where prices exclude it. Complete the sale without it." } });
@@ -310,6 +314,15 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', data: { storeCode: 'tax_exempt_coupons' },
             message: 'WooCommerce tax exemption is not carried with coupons on this store. Remove the coupons, or complete the sale without exemption.' } });
           continue;
+        }
+        if (envelope.payload.taxExempt !== undefined) {
+          taxExempt ??= await taxExemptGate();
+          if (typeof taxExempt !== 'boolean') return results.length ? { kind: 'results', results } : taxExempt;
+          if (!taxExempt) {
+            results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
+              message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
+            continue;
+          }
         }
         ledger ??= await ledgerStore();
         if (typeof ledger !== 'boolean') {

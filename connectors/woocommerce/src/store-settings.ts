@@ -62,6 +62,12 @@ export function wooOnOrderLines20Line(version: unknown): boolean {
   return typeof version === 'string' && /^2\.0\.\d+$/.test(version.trim()) && atLeast(version, WOO_ORDER_LINES_20_FLOOR);
 }
 
+// 2026-11-27: is_vat_exempt zeroed product, fee and shipping tax on exclusive stock 1.10.20 and 2.0.5; 2.0.4 and the fork were not probed.
+export function wooTaxExemptGate({ flagged, fork, pricesIncludeTax, wcposVersion }: { flagged: boolean | undefined; fork: boolean; pricesIncludeTax: boolean; wcposVersion: unknown }): boolean {
+  return flagged !== undefined && !fork && !pricesIncludeTax && (wooOnOrderLinesLine(wcposVersion)
+    || (wooOnOrderLines20Line(wcposVersion) && atLeast(wcposVersion, WOO_TAX_EXEMPT_20_FLOOR)));
+}
+
 export async function wooStoreSettings(context: SyncContext): Promise<StoreSettings> {
   try {
     const init = { method: 'GET', headers: context.headers, signal: context.signal };
@@ -237,9 +243,7 @@ export async function readWooCapabilities(context: SyncContext): Promise<ServerC
       taxRounding: { granularity: 'woocommerce', roundAtSubtotal: stores[0].tax_round_at_subtotal === 'yes' },
       multiplePayments,
       coupons,
-      // 2026-11-27: is_vat_exempt zeroed product, fee and shipping tax on exclusive stock 1.10.20 and 2.0.5; 2.0.4 and the fork were not probed.
-      ...(flagged !== undefined && !fork && stores[0].prices_include_tax !== 'yes' && (wooOnOrderLinesLine(wcposVersion)
-        || (wooOnOrderLines20Line(wcposVersion) && atLeast(wcposVersion, WOO_TAX_EXEMPT_20_FLOOR))) ? { taxExempt: true } : {}),
+      ...(wooTaxExemptGate({ flagged, fork, pricesIncludeTax: stores[0].prices_include_tax === 'yes', wcposVersion }) ? { taxExempt: true } : {}),
       // WCPOS v5 takes a fee's, shipping line's and custom line's tax_status and tax_class (orders #146, #161); it has no /tally/v1/info.
       lineTax: { none: true, classes: true },
       // ADR-094: only the fork's order_create_v5 store was shown to take a tax-none ±0.05 Rounding fee line, tax off and on, exclusive

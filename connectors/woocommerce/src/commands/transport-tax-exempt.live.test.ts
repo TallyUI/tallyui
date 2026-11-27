@@ -9,7 +9,7 @@ describe.skipIf(!process.env.WOO_EXEMPT_BASE_URL || !process.env.WOO_EXEMPT_TOKE
   it('pushes E1–E3 without tax and C1 with tax', async () => {
     const token = (await readFile(process.env.WOO_EXEMPT_TOKEN_FILE!, 'utf8')).trim();
     const pushes: Response[] = [];
-    const transport = createWooCommandTransport({ baseUrl: process.env.WOO_EXEMPT_BASE_URL!, acceptsTaxExempt: true,
+    const transport = createWooCommandTransport({ baseUrl: process.env.WOO_EXEMPT_BASE_URL!,
       getHeaders: () => ({ Authorization: `Bearer ${token}`, 'X-WCPOS': '1' }),
       fetch: async (input, init) => {
         const response = await fetch(input, init);
