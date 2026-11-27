@@ -35,6 +35,73 @@ describe('readVendureCapabilities', () => {
     }
   });
 
+  it('V1 omits both exempt capabilities when neither is declared', async () => {
+    stubFetch(() => json({}));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V2 reads taxExempt without implying taxExemptCoupons', async () => {
+    stubFetch(() => json({ taxExempt: true }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1, taxExempt: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V3 reads both exempt capabilities when both are true', async () => {
+    stubFetch(() => json({ taxExempt: true, taxExemptCoupons: true }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1, taxExempt: true, taxExemptCoupons: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V4 warns and ignores taxExemptCoupons without taxExempt', async () => {
+    stubFetch(() => json({ taxExemptCoupons: true }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+    expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring taxExemptCoupons without taxExempt');
+  });
+
+  it('V5 keeps taxExempt but warns for malformed taxExemptCoupons', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExemptCoupons of [false, 1, 'true', { v: 1 }, null]) {
+      stubFetch(() => json({ taxExempt: true, taxExemptCoupons }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1, taxExempt: true });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring a malformed taxExemptCoupons');
+      warn.mockClear();
+    }
+  });
+
+  it('V6 warns and ignores malformed taxExempt', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExempt of [false, 1, 'true', { v: 1 }, null, []]) {
+      stubFetch(() => json({ taxExempt }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring a malformed taxExempt');
+      warn.mockClear();
+    }
+  });
+
+  it('V7 warns for malformed taxExempt and for the unsupported coupon declaration', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExempt of [false, 1, 'true', { v: 1 }, null, []]) {
+      stubFetch(() => json({ taxExempt, taxExemptCoupons: true }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenNthCalledWith(1, '@tallyui/connector-vendure: ignoring a malformed taxExempt');
+      expect(warn).toHaveBeenNthCalledWith(2, '@tallyui/connector-vendure: ignoring taxExemptCoupons without taxExempt');
+      warn.mockClear();
+    }
+  });
+
+  it('V8 preserves chargeTaxMode and coupons alongside both exempt capabilities', async () => {
+    stubFetch(() => json({ taxExempt: true, taxExemptCoupons: true, chargeTaxMode: { v: 1 }, coupons: true }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1, taxExempt: true, taxExemptCoupons: true, chargeTaxMode: true, coupons: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   // The plugin's exact bodies (vendurepos/app#60): it always sends taxRounding.
   it.each([
     '{"contracts":{"order.create":[1,2,3]},"taxRounding":{"granularity":"per_line_items","mode":"half_up"}}',

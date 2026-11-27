@@ -701,9 +701,8 @@ parked sales.
   - Medusa: capability absent. Its tax refresh re-taxes a `taxStatus:
     'none'` line, so customer group tax rules do not carry it (finding of
     2026-10-06);
-  - Vendure: the vendurepos plugin owns the server half and will declare
-    `taxExempt` in `/tally/v1/info`. TallyUI does not read that field yet
-    (#1441), so until then the Vendure till keeps the switch hidden.
+  - Vendure: the vendurepos plugin declares `taxExempt` and `taxExemptCoupons`
+    in `/tally/v1/info`, and the Vendure connector reads both (#1441).
 
 **Size and dependencies.** M, as several S units.
 
@@ -768,8 +767,7 @@ the same as adopted: several merged units have not reached a demo yet.
   - 28: #609 has no refund, Z or report defaults;
   - 34a: #636.
 - **Tax exempt:** slices 1–3 merged (#1420, #1422, #1425, #1430). Still to
-  do: slice 4, the Order details switch and the receipt line, and reading
-  `taxExempt` from `/tally/v1/info` for Vendure (#1441).
+  do: slice 4, the Order details switch and the receipt line.
 - **Not started:** 18, 24, 26, 27, 32, 34b, 34c, 39 and 40+.
 - **Connector units:**
   - Medusa `listOrders` and `emailReceipt` are not started.
