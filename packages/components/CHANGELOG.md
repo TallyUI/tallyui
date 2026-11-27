@@ -1,5 +1,24 @@
 # @tallyui/components
 
+## 5.4.0
+
+### Minor Changes
+
+- 286840c: `Catalogue` supports controlled `termPicks` and reports changes through `onTermPicksChange`; with `items`, term pills are drawn only when that callback is passed, and the app applies the picks.
+- f9e82d9: `Catalogue` applies the On Sale chip itself: it keeps products whose price, or a variant's price, is a sale price in `currency`.
+- 72c8f14: CustomersList and OrdersList draw v2's skeleton rows while their data first loads (`historyLoading` on OrdersList).
+- ce68841: `useRegisterSession` returns `loading` while a bound register waits for its first session snapshot. `RegisterColumn` shows row skeletons instead of the open card while `loading` is true.
+
+### Patch Changes
+
+- 10685ce: `Catalogue` reports the cleared search through `onQueryChange` when Enter selects a matching code and says "No products match the picked filters." when app-filtered `items` are empty but products are available.
+- Updated dependencies [246c3eb]
+- Updated dependencies [ce68841]
+  - @tallyui/pos@5.4.0
+  - @tallyui/core@5.4.0
+  - @tallyui/primitives@5.4.0
+  - @tallyui/theme@5.4.0
+
 ## 5.3.0
 
 ### Minor Changes

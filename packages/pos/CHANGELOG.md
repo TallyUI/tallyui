@@ -1,5 +1,16 @@
 # @tallyui/pos
 
+## 5.4.0
+
+### Minor Changes
+
+- ce68841: `useRegisterSession` returns `loading` while a bound register waits for its first session snapshot. `RegisterColumn` shows row skeletons instead of the open card while `loading` is true.
+
+### Patch Changes
+
+- 246c3eb: `useRegisterSession`'s `loading` ends when the session snapshot fails (logged) or `registerId` is empty.
+  - @tallyui/core@5.4.0
+
 ## 5.3.0
 
 ### Minor Changes
