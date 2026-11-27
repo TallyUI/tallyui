@@ -409,9 +409,48 @@ describe('readWooCapabilities', () => {
     statusBody = body;
     expect(await readWooCapabilities(context)).toStrictEqual({
       orderCreate: 3, taxRounding: { granularity: 'woocommerce', roundAtSubtotal: false }, multiplePayments,
-      coupons: true,
+      coupons: true, taxExempt: true,
       lineTax: { none: true, classes: true },
     });
+  });
+
+  it.each([
+    ['K1', '1.10.20', {}], ['K2', '2.0.5', {}], ['K2', '2.0.5', { capabilities: ['products_id_fast_path'] }],
+    ['K2', '2.0.6', {}], ['K2', '2.0.6', { capabilities: ['products_id_fast_path'] }],
+  ])('%s declares tax exemption without coupons for %s, status %j', async (_row, wcpos_version, status) => {
+    statusBody = status;
+    siteBody = { wcpos_version };
+    const caps = await readWooCapabilities(context);
+    expect(caps).toHaveProperty('taxExempt', true);
+    expect(caps).not.toHaveProperty('taxExemptCoupons');
+  });
+
+  it.each(['2.0.4', '1.10.19', '1.10.20-beta.1', '2.1.0', 'unreadable'])('K3 omits tax exemption on %s', async wcpos_version => {
+    statusBody = {};
+    siteBody = { wcpos_version };
+    expect(await readWooCapabilities(context)).not.toHaveProperty('taxExempt');
+  });
+
+  it('K3 omits tax exemption when /site answers 404', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(storesBody)).mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect(await readWooCapabilities(context)).not.toHaveProperty('taxExempt');
+  });
+
+  it('K4 omits tax exemption for inclusive prices', async () => {
+    statusBody = {};
+    storesBody = [{ ...stores[0], prices_include_tax: 'yes' }];
+    expect(await readWooCapabilities(context)).not.toHaveProperty('taxExempt');
+  });
+
+  it('K5 omits tax exemption on the fork', async () => {
+    statusBody = { capabilities: ['order_create_v5'] };
+    expect(await readWooCapabilities(context)).not.toHaveProperty('taxExempt');
+  });
+
+  it('K6 omits tax exemption when /status answers 500', async () => {
+    fetchMock.mockResolvedValueOnce(Response.json(storesBody)).mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await readWooCapabilities(context)).not.toHaveProperty('taxExempt');
   });
 
   it.each([

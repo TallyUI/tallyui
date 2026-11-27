@@ -43,6 +43,15 @@ it('X10 refuses taxExempt on order.update even with the capability', () => {
 
 const coupon = { code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 3 }
 
+it('X21 requires taxExemptCoupons only with a non-empty coupon list on an exempt sale', () => {
+  const caps = { ...supported, orderCreate: [6], taxExempt: true }
+  const sale = { ...command, version: 6, payload: { ...payload, coupons: [{ ...coupon, discountMinor: 0, discountTaxMinor: 0 }] } }
+  expect(precheckCommand(sale, caps)).toMatchObject({ status: 'rejected', error: { code: 'invalid_payload',
+    message: 'taxExempt with coupons requires the taxExemptCoupons capability, which this server does not declare' } })
+  expect(precheckCommand(sale, { ...caps, taxExemptCoupons: true })).toBeUndefined()
+  expect(precheckCommand({ ...sale, payload: { ...payload, coupons: [] } }, caps)).toBeUndefined()
+})
+
 it('X18 rejects coupon tax on an exempt payload without coupon lines', () => {
   expect(payloadShapeErrors({ ...payload, coupons: [coupon] })).toEqual(['coupons[0].discountTaxMinor: expected 0 on a tax-exempt order'])
 })

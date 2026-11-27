@@ -1,7 +1,7 @@
 // ADR-073; M3-spike-paid-push.md proves paid order pushes against WCPOS 1.10.20.
 import { minorUnitDigits, moneyFromDecimalString, moneyFromMajor, woocommerceTax, type CommandResult, type OrderAddress, type OrderCreateEnvelope } from '@tallyui/core';
 import { WCPOS_UUID_META_KEY } from '../replication/products';
-import { wooLedgerVersion } from '../store-settings';
+import { wooLedgerVersion, wooTaxExemptGate } from '../store-settings';
 import { createWooCall, type Answer } from './http';
 import { paymentRecordBody } from './money-body';
 
@@ -220,6 +220,7 @@ export function toWooOrderPayload(envelope: OrderCreateEnvelope, local?: WooLoca
   const primary = p.payments.reduce((largest, payment) => payment.amountMinor > largest.amountMinor ? payment : largest);
   const cash = primary.method === 'cash';
   const meta_data = [{ key: WCPOS_UUID_META_KEY, value: p.clientOrderId }];
+  if (p.taxExempt === true) meta_data.push({ key: 'is_vat_exempt', value: 'yes' });
   if (p.payments.length > 1 && !ledger) {
     meta_data.push({ key: '_woocommerce_pos_payments', value: JSON.stringify(p.payments.map((payment) => ({
       method: payment.method === 'cash' ? 'pos_cash' : 'pos_card',
@@ -281,26 +282,55 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
     }
     return siteLedger;
   };
+  const taxExemptGate = async (): Promise<boolean | WooTransportOutcome> => {
+    const failed = (answer: Answer, reason: string): WooTransportOutcome => answer.status === 401 || (answer.status === 403 && answer.body?.code === 'rest_forbidden')
+      ? { kind: 'unauthorized' } : retry(answer, reason);
+    const status = await call('status', { method: 'GET' });
+    if (status.status < 200 || status.status >= 300 || status.body === undefined) return failed(status, 'store_status_unknown');
+    const flagged = Array.isArray(status.body?.capabilities), fork = flagged && status.body.capabilities.includes('order_create_v5');
+    const site = await call('site', { method: 'GET' });
+    const wcposVersion = site.body?.wcpos_version;
+    if (site.status < 200 || site.status >= 300 || wooLedgerVersion(wcposVersion) === undefined) return failed(site, 'store_version_unknown');
+    // Inclusive sales are refused before the gate is read.
+    return wooTaxExemptGate({ flagged, fork, pricesIncludeTax: false, wcposVersion });
+  };
   return {
     async send(batch, context) {
       if (batch.length === 0) return { kind: 'results', results: [] };
-      const ledger = await ledgerStore();
-      if (typeof ledger !== 'boolean') {
-        // As the register transport's shared() does: an expired or refused token asks for sign-in.
-        if (ledger.status === 401 || (ledger.status === 403 && ledger.body?.code === 'rest_forbidden')) return { kind: 'unauthorized' };
-        return ledger.status >= 200 && ledger.status < 300
-          ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
-      }
+      let ledger: boolean | Answer | undefined;
+      let taxExempt: boolean | WooTransportOutcome | undefined;
       const paymentsList = await capability(options.acceptsPaymentsList);
       const coupons = batch.some((envelope) => envelope.payload.coupons?.length) && await capability(options.acceptsCoupons);
       const cashRounding = batch.some((envelope) => envelope.payload.cashRoundings !== undefined) && await capability(options.acceptsCashRounding);
       const results: CommandResult[] = [];
       for (const envelope of batch) {
-        // Refuse exemption first so an exempt sale is never refused with a reopenable code.
-        if (envelope.payload.taxExempt !== undefined) {
-          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
-            message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
+        // Every exemption refusal uses an exemption-specific, non-reopenable code.
+        if (envelope.payload.taxExempt && envelope.payload.pricesIncludeTax) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', data: { storeCode: 'tax_exempt_inclusive' },
+            message: "This store's prices include tax; WooCommerce tax exemption is only carried where prices exclude it. Complete the sale without it." } });
           continue;
+        }
+        if (envelope.payload.taxExempt && envelope.payload.coupons?.length) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload', data: { storeCode: 'tax_exempt_coupons' },
+            message: 'WooCommerce tax exemption is not carried with coupons on this store. Remove the coupons, or complete the sale without exemption.' } });
+          continue;
+        }
+        if (envelope.payload.taxExempt !== undefined) {
+          taxExempt ??= await taxExemptGate();
+          if (typeof taxExempt !== 'boolean') return results.length ? { kind: 'results', results } : taxExempt;
+          if (!taxExempt) {
+            results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
+              message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
+            continue;
+          }
+        }
+        ledger ??= await ledgerStore();
+        if (typeof ledger !== 'boolean') {
+          if (results.length) return { kind: 'results', results };
+          // As the register transport's shared() does: an expired or refused token asks for sign-in.
+          if (ledger.status === 401 || (ledger.status === 403 && ledger.body?.code === 'rest_forbidden')) return { kind: 'unauthorized' };
+          return ledger.status >= 200 && ledger.status < 300
+            ? { kind: 'retry', reason: 'store_version_unknown' } : retry(ledger, `status_${ledger.status}`);
         }
         if (envelope.payload.coupons?.length && !coupons) {
           results.push({ id: envelope.id, status: 'rejected', error: { code: 'coupon_invalid',
