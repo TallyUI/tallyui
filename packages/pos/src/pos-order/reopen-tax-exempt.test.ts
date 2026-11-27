@@ -19,7 +19,7 @@ import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
 const generic: StoreSettings = { currency: 'AUD', pricesIncludeTax: false,
-  taxRatesPpm: { default: 190000, standard: 190000, fee: 210000, post: 77000 }, taxRateCodes: { standard: 'standard', fee: 'fee', post: 'post' },
+  taxRatesPpm: { default: 190000, standard: 190000, reduced: 70000, fee: 210000, post: 77000 }, taxRateCodes: { standard: 'standard', reduced: 'reduced', fee: 'fee', post: 'post' },
   taxRounding: { granularity: 'per_line_items', mode: 'half_up' } };
 const woo: StoreSettings = { currency: 'AUD', pricesIncludeTax: false, taxRatesPpm: { default: 100000 },
   taxRates: { standard: [{ id: 1, code: 'AU-GST-1', label: 'GST', rate: '10.0000', priority: 1, compound: false, shipping: true }] },
@@ -108,6 +108,36 @@ it.each([['G10 generic', generic, 1000, 999, 3189], ['G11 Woo', woo, 500, 500, 2
     expect(result.current.order.totalMinor).toBe(total);
     expect(result.current.order.fees).toMatchObject([{ amountMinor: fee, amountIncludesTax: true }]);
     expect(result.current.order.shipping).toMatchObject([{ amountMinor: shipping, amountIncludesTax: true }]);
+  });
+
+// G12/G13 reduced line: 1000 × 7% = 70 tax; 1000 + 70 = 1070.
+// G12/G13 standard line: 1000 × 19% = 190 tax; 1000 + 190 = 1190.
+// G12/G13 exempt total: 1000 + 1000 = 2000.
+// G12/G13 restored total: 1070 + 1190 = 2260 under either rounding mode.
+// G14 given-rate line: 500 × 0% = 0 tax; gross stays 500.
+// G14 exempt total: 1000 + 500 = 1500.
+// G14 restored total: 1070 + 500 = 1570.
+it.each([['G12', generic], ['G13', perOrder], ['G14', generic]] as const)(
+  '%s restores the quoted line rates when exemption is removed', async (row, settings) => {
+    const taxContext = createTaxContext(taxProviderProps(settings));
+    const builder = createOrderBuilder({ currency: settings.currency, taxContext });
+    const unitPrice = { amount: 1000, currency: settings.currency };
+    builder.addLine({ productId: 'A', name: 'A', taxClass: 'reduced', unitPrice });
+    if (row === 'G14') builder.addLine({ productId: 'B', name: 'B', taxRates: [{ code: 'zero', ratePpm: 0 }], unitPrice: { ...unitPrice, amount: 500 } });
+    else builder.addLine({ productId: 'B', name: 'B', taxClass: 'standard', unitPrice });
+    builder.setTaxExempt(true);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const stored = finalizeOrder(builder.getSnapshot(), { capabilities });
+    await db.pos_orders.insert({ ...stored, syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'Total mismatch' } });
+    const id = await reopenRefusedOrder(stored.id, { orders: db.pos_orders, drafts: db.order_drafts, sessions: db.register_sessions, taxContext, capabilities });
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(TaxProvider, { ...taxProviderProps(settings), children });
+    const { result } = renderHook(() => useSale(settings, { registerId: 'register-1', cashierRef: 'cashier@store.test', drafts: db.order_drafts, capabilities }), { wrapper });
+    await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+    expect(result.current.taxExempt).toBe(true);
+    expect(result.current.order.totalMinor).toBe(row === 'G14' ? 1500 : 2000);
+    act(() => { expect(result.current.setTaxExempt(false)).toBe(true); });
+    expect(result.current.order.lineItems.map(line => line.taxMicros)).toEqual(['70000000', row === 'G14' ? '0' : '190000000']);
+    expect(result.current.order.totalMinor).toBe(row === 'G14' ? 1570 : 2260);
   });
 
 it('R4 warns once when reopen drops exemption in a now-inclusive store', async () => {

@@ -44,7 +44,7 @@ import type { PosOrder } from './types';
  * identity migration, one-way like version 21.
  * Version 23 adds a fee's and shipping line's optional `entered`, the cashier's own-mode amount for a `chargeTaxMode` store (vendurepos 2.10b); identity migration, one-way like version 22.
  * `entered` is kept whenever the mode differs, and `sent` marks one sent to a `chargeTaxMode` store (#1391).
- * Version 24 adds the order's optional `taxExempt` and the taxed twin's `taxedEntry` on fees and shipping for reopen; identity migration, one-way like version 23.
+ * Version 24 adds the order's optional `taxExempt` and the taxed twin's `taxedRates` on lines and `taxedEntry` on fees and shipping for reopen; identity migration, one-way like version 23.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -116,6 +116,9 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
           type: 'object', properties: { code: { type: 'string' }, ratePpm: { type: 'integer' }, taxMicros: { type: 'string' } },
           required: ['ratePpm', 'taxMicros'],
         } },
+        taxedRates: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+          code: { type: 'string' }, ratePpm: { type: 'integer', minimum: 0 },
+        }, required: ['ratePpm'] } },
       },
       required: ['id', 'productId', 'name', 'sku', 'quantity', 'unitPriceMinor', 'discountMinor', 'netMinor', 'taxLines'],
     } },

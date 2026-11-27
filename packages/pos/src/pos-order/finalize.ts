@@ -311,7 +311,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   }
   const newId = options.newId ?? uuidv7;
   const id = newId();
-  const lines: PosOrder['lines'] = order.lineItems.map((line) => ({
+  const twin = order.taxExempt === true ? order.exemptedFrom : undefined;
+  const lines: PosOrder['lines'] = order.lineItems.map((line, index) => ({
     id: newId(), ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
     ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
@@ -325,10 +326,12 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
+    ...(twin && order.taxRounding?.granularity !== 'woocommerce' ? {
+      taxedRates: twin.lineItems[index].taxLines.map(({ code, ratePpm }) => ({ ...(code !== undefined ? { code } : {}), ratePpm })),
+    } : {}),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
   const keep = { chargeTaxMode: options.capabilities?.chargeTaxMode, granularity: order.taxRounding?.granularity };
-  const twin = order.taxExempt === true ? order.exemptedFrom : undefined;
   const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep, twin?.fees?.[i]), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep, twin?.shipping?.[i]), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({

@@ -231,3 +231,23 @@ it('G9 rejects an explicit false taxExempt in v24', async () => {
     await expect(orders.insert({ ...finalizeOrder(sale(), { capabilities: carries }), taxExempt: false } as unknown as PosOrder)).rejects.toMatchObject({ code: 'VD2' });
   } finally { await db.remove(); }
 });
+
+it('G15 keeps the taxed twin’s generic line rates locally on exempt sales only', () => {
+  const builder = createOrderBuilder({ currency: 'AUD', taxContext: { pricesIncludeTax: false,
+    rounding: { granularity: 'per_line_items', mode: 'half_up' }, getTaxRateCode: taxClass => taxClass,
+    getTaxRatePpm: taxClass => taxClass === 'reduced' ? 70000 : 190000 } });
+  const unitPrice = { amount: 1000, currency: 'AUD' };
+  builder.addLine({ productId: 'A', name: 'A', taxClass: 'reduced', unitPrice });
+  builder.addLine({ productId: 'B', name: 'B', taxClass: 'standard', unitPrice });
+  builder.setTaxExempt(true);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const stored = finalizeOrder(builder.getSnapshot(), { capabilities: carries });
+  expect(stored.lines.map(line => line.taxedRates)).toEqual([[{ code: 'reduced', ratePpm: 70000 }], [{ code: 'standard', ratePpm: 190000 }]]);
+  const { payload } = toOrderCreateEnvelope(stored, 'till', 1, { maxVersion: 12 });
+  expect(JSON.stringify(payload)).not.toContain('taxedRates');
+  expect(payloadShapeErrors(payload)).toEqual([]);
+  for (const fixture of ['G8', 'G5'] as const) {
+    const order = finalizeOrder(builderForExemption(fixture), { capabilities: carries });
+    for (const line of order.lines) expect(line).not.toHaveProperty('taxedRates');
+  }
+});

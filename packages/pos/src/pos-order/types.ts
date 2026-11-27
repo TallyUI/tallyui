@@ -59,6 +59,8 @@ export interface PosOrderLine {
   netMinor: number;
   netMicros?: string;
   taxLines: Array<{ code?: string; ratePpm: number; taxMicros: string }>;
+  /** An exempt sale's line rates from its taxed twin; only reopen reads it. */
+  taxedRates?: Array<{ code?: string; ratePpm: number }>;
   /** This line's own tax mode; set only when it was converted from the store's (ADR-038 amendment). */
   taxInclusive?: boolean;
 }
