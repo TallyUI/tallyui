@@ -137,7 +137,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   categories?: ProductCategory[];
   /** App-filtered, sorted list shown as given; products still drives scanning and variant choices. */
   items?: Doc[];
-  /** Search text on every input change, for apps that filter items themselves. */
+  /** Search text on every input change, and `''` when Enter selects a matching code, for apps that filter items themselves. */
   onQueryChange?: (query: string) => void;
   /** Ask for a value for each of a variant's local "Any" option groups before onSelect (#495); set it only when the store accepts order.create version 6. */
   pickAnyOptions?: boolean;
@@ -485,7 +485,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
     : (activeTerms.length > 0 || (saleFiltered && shown.length > 0)) && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
-    : isLoading ? 'Loading products…' : 'No products yet.';
+    : isLoading ? 'Loading products…' : items !== undefined && shown.length > 0 ? 'No products match the picked filters.' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay
   // as the accessible label.
   const showLoading = emptyText === 'Loading products…';
@@ -515,7 +515,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
     onSubmitEditing={() => {
       if (minCodeLength && query.trim().length < minCodeLength) return;
       const entry = findEntryByCode(entries, query);
-      if (entry) { select(entry); setQuery(''); }
+      if (entry) { select(entry); setQuery(''); onQueryChange?.(''); }
     }} />;
 
   return (
