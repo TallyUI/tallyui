@@ -158,7 +158,8 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   /** Controlled term pill picks (term group id to term id); changes are reported through onTermPicksChange. */
   termPicks?: Readonly<Record<string, string>>;
   /** The cashier's next term picks (requested picks when controlled). With `items`, the pills are drawn only when this is
-   *  passed, and the app applies the picks to its own list. */
+   *  passed, and the app applies the picks to its own list. Apply only picks whose term `listTermGroups(products, traits)`
+   *  still holds; Catalogue keeps a vanished term's pick but does not apply it. */
   onTermPicksChange?: (picks: Readonly<Record<string, string>>) => void;
   /** Controlled filters; changes are reported through onFiltersChange. */
   filters?: ProductFilters;

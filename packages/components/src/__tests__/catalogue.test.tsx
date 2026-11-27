@@ -1351,6 +1351,8 @@ describe('Catalogue term pills', { timeout: 20_000 }, () => {
     const element = (brandId: string) => <><Catalogue {...props} showFilterBar termPills termPicks={{ f2: brandId }} /><PortalHost /></>;
     const view = render(element('z1'));
     pick('f2', 'a1');
+    expect(props.onTermPicksChange).toHaveBeenLastCalledWith({ f2: 'a1' });
+    expect(tiles()).toEqual(['Plain Mug']);
     view.rerender(element('a1'));
     expect(tiles()).toEqual(['Blue Hat', 'Red Shirt']);
   });
