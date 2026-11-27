@@ -166,6 +166,11 @@ function Cell({ stage, index, count, children }: { stage: Stage; index: number; 
   const turnLate = useRef(false);
   const armed = useRef(false);
   const homing = useRef(false);
+  const dealtNow = useRef(dealt);
+  dealtNow.current = dealt;
+  // The start frame outlives a new index (a reorder): it is cancelled only when the cell goes.
+  const startFrame = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(startFrame.current), []);
   useLayoutEffect(() => enter(), [enter]);
   useLayoutEffect(() => {
     if (!joins) return;
@@ -179,7 +184,8 @@ function Cell({ stage, index, count, children }: { stage: Stage; index: number; 
     if (!joins || armed.current || frame === undefined || origin === undefined) return;
     armed.current = true;
     const { t, offset, shown } = motion;
-    if (frame && origin) {
+    // A cell armed once the gather began is shown where it is, with no start pose and no out.
+    if (frame && origin && dealt) {
       from.current = { x: origin.x - frame.x, y: origin.y - frame.y };
       offset.setValue(from.current);
       t.setValue(0);
@@ -190,10 +196,9 @@ function Cell({ stage, index, count, children }: { stage: Stage; index: number; 
     const out = Animated.timing(t, parent
       ? { toValue: 1, duration: PANE, delay: 0, easing: EASE, useNativeDriver }
       : { toValue: 1, duration: NEW_TILES.duration, delay: Math.min(turn, NEW_TILES.cap - 1) * NEW_TILES.step, easing: EASE_BEAT, useNativeDriver });
-    // Started on the next frame, so the first frame painted is the one on the tapped tile.
-    const raf = requestAnimationFrame(() => out.start());
-    return () => cancelAnimationFrame(raf);
-  }, [joins, frame, origin, index, parent, motion]);
+    // Started on the next frame, so the first frame painted is the one on the tapped tile; not once the gather began.
+    startFrame.current = requestAnimationFrame(() => { if (!homing.current && dealtNow.current) out.start(); });
+  }, [joins, frame, origin, dealt, index, parent, motion]);
   useEffect(() => {
     if (dealt || !origin) { homing.current = false; return; }
     if (homing.current) return;

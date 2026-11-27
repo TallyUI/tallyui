@@ -16,6 +16,11 @@ vi.mock('../product', () => ({
   ProductTitle: ({ doc }: { doc: { title?: ReactNode } }) => <span>{doc.title}</span>,
   ProductPrice: () => null,
   ProductStockBadge: () => null,
+  // D12/D13 only: a toggle that switches to the table, and the table as a marker.
+  ViewToggle: ({ value, onChange }: { value: string; onChange: (view: string) => void }) => (
+    <button data-testid="view-toggle" data-value={value} onClick={() => onChange('table')} />
+  ),
+  ProductTable: () => <div data-testid="table" />,
 }));
 vi.mock('../input', () => ({
   SearchInput: ({ value, onChangeText, placeholder }: { value: string; onChangeText: (text: string) => void; placeholder?: string }) => (
@@ -45,6 +50,9 @@ const show = async (products: unknown[], extra: Partial<ComponentProps<typeof Ca
 };
 const tap = (id: string) => act(() => { fireEvent.click(screen.getByTestId(`category-tile-${id}`)); });
 const crumb = () => act(() => { fireEvent.click(screen.getByTestId('category-crumb-root')); });
+// The `start` of each out timing (toValue 1), read from the spy's results.
+const outStarts = () => vi.mocked(Animated.timing).mock.calls.flatMap(([, config], i) => ((config as Animated.TimingAnimationConfig).toValue === 1
+  ? [(vi.mocked(Animated.timing).mock.results[i].value as { start: ReturnType<typeof vi.fn> }).start] : []));
 
 beforeEach(() => {
   vi.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
@@ -171,5 +179,66 @@ describe('category deal', () => {
     expect(screen.getByTestId('category-tile-pcat_mugs').parentElement!.style.opacity).not.toBe('0');
     expect(screen.getByTestId('category-tile-pcat_hats').parentElement!.style.opacity).toBe('0');
     expect(screen.getByTestId('category-tile-all').parentElement!.style.opacity).toBe('0');
+  });
+
+  it('D12: a view switched in the gather is kept when the root returns', async () => {
+    vi.useFakeTimers();
+    const changed = vi.fn();
+    await show(make(3), { showViewToggle: true, onStateChange: changed });
+    tap('pcat_mugs');
+    crumb();
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { fireEvent.click(screen.getByTestId('view-toggle')); });
+    expect(screen.getByTestId('table')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(180); });
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'table', categoryId: null }));
+    expect(screen.getByTestId('view-toggle').dataset.value).toBe('table');
+  });
+
+  it('D13: a controlled view changed in the gather is kept when the root returns', async () => {
+    vi.useFakeTimers();
+    const changed = vi.fn();
+    const at = (categoryId: string | null, view: 'grid' | 'table' = 'grid') => <Catalogue {...props} products={make(3)}
+      onStateChange={changed} viewState={{ ...DEFAULT_CATALOGUE_VIEW_STATE, view, categoryId }} />;
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(at(null)); });
+    tap('pcat_mugs');
+    view.rerender(at('pcat_mugs'));
+    crumb();
+    act(() => { vi.advanceTimersByTime(100); });
+    view.rerender(at('pcat_mugs', 'table'));
+    act(() => { vi.advanceTimersByTime(180); });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ view: 'table', categoryId: null }));
+  });
+
+  it('D14: a cell whose index moves before its start frame still starts', async () => {
+    // Fake timers fake requestAnimationFrame too (vitest 4 fakes every timer but nextTick and queueMicrotask).
+    vi.useFakeTimers();
+    // With no sort the level keeps the products' order, so one put first moves every existing tile's index.
+    const [one] = make(1);
+    const ahead = { ...one, id: 'mug-ahead', title: 'Mugs ahead', variants: [{ ...one.variants[0], id: 'mug-ahead-v' }] };
+    const at = (products: unknown[]) => <Catalogue {...props} products={products} />;
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(at(make(3))); });
+    tap('pcat_mugs');
+    act(() => { view.rerender(at([ahead, ...make(3)])); });
+    expect(screen.getByTestId('category-level-parent')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(16); });
+    expect(outStarts().length).toBeGreaterThanOrEqual(5);
+    for (const start of outStarts()) expect(start).toHaveBeenCalled();
+  });
+
+  it('D15: a back before the start frame starts no out, and the root returns at 280ms', async () => {
+    vi.useFakeTimers();
+    await show(make(3));
+    tap('pcat_mugs');
+    crumb();
+    expect(homes()).toHaveLength(4);
+    act(() => { vi.advanceTimersByTime(279); });
+    for (const start of outStarts()) expect(start).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('category-browse')).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByTestId('category-browse')).toBeTruthy();
   });
 });

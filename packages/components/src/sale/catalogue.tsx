@@ -279,6 +279,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   const browsing = showCategoryNav && categoryBrowse === 'tiles';
   const level = browsing && (activeCategory || allOpen);
   const back = () => { setCrumbFocus(false); setAllOpen(false); changeState({ type: 'setCategory', categoryId: null }); };
+  // The deal runs a back after its gather: the latest one, so a change made in the gather (the view) is kept.
+  const latestBack = useRef(back);
+  latestBack.current = back;
   const atRoot = browsing && !activeCategory && !allOpen && !query.trim()
     && categoryList.some((category) => (counts.get(category.id) ?? 0) > 0);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -595,9 +598,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       </View>
       {draws(rowsSlot) ? <View testID="catalogue-rows" className="gap-4 p-4">{rowsSlot}</View> : null}
       <DealStage>{(deal) => atRoot ? <CategoryBrowseGrid categories={categoryList} counts={counts} total={shown.length} columns={columns}
-        onOpen={(id, node) => deal.open(node, () => { setCrumbFocus(true); if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }, id)} /> : <LevelWrap level={!!level} onBack={() => deal.back(back)}>
+        onOpen={(id, node) => deal.open(node, () => { setCrumbFocus(true); if (id === null) setAllOpen(true); else changeState({ type: 'setCategory', categoryId: id }); }, id)} /> : <LevelWrap level={!!level} onBack={() => deal.back(() => latestBack.current())}>
       {level && drillEntries.length === 0 ? <Breadcrumb testID="category-crumb" phone={phone} autoFocus={crumbFocus}
-        parents={[{ label: 'Categories', testID: 'category-crumb-root', onPress: () => deal.back(back) }]} here={activeCategory?.name ?? 'All products'} /> : null}
+        parents={[{ label: 'Categories', testID: 'category-crumb-root', onPress: () => deal.back(() => latestBack.current()) }]} here={activeCategory?.name ?? 'All products'} /> : null}
       {state.view === 'table' ? (
         <ProductTable items={results} sort={state.sort} onSortChange={(sort) => changeState({ type: 'setSort', sort })}
           sortItems={false} onSelect={selectProduct} emptyState={emptyState} loading={showLoading}
@@ -624,7 +627,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
         renderItem={dealt((product: Doc) => {
           if (product === LEVEL_PARENT) return <CategoryTile testID="category-level-parent" back stacked accessibilityLabel={t('common.back')}
             name={activeCategory?.name ?? 'All products'} imageUrl={activeCategory?.imageUrl}
-            mark={activeCategory ? 'folder' : 'all'} count={results.length} onPress={() => deal.back(back)} />;
+            mark={activeCategory ? 'folder' : 'all'} count={results.length} onPress={() => deal.back(() => latestBack.current())} />;
           const id = traits.getId(product);
           const groups = variationsStyle === 'popover' ? popoverGroupsOf(product) : [];
           const tileTestID = `product-tile-${traits.getName(product)}`;

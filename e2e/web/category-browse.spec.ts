@@ -85,7 +85,7 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 // with the back badge top-right, ahead of the products; tapping it goes back to the tiles.
 for (const [width, height] of [[390, 844], [1280, 800]] as const) {
   test(`category level back poster at ${width}x${height}`, async ({ page }) => {
-    // Layout at rest: the deal (category-deal.tsx) is checked by E1–E3.
+    // Layout at rest: the deal (category-deal.tsx) is checked by E1–E4.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
     await page.goto('/pos/category-browse');
@@ -163,12 +163,24 @@ test.describe('category deal at 1280x800', () => {
 
   test('E1: the parent walks from the tapped tile to slot 0', async ({ page }) => {
     const from = await settled(page, 'category-tile-pcat_ceramics');
+    // Slot 0 is read from a load with no motion, so a parent that stops short of it fails here.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.reload();
+    await settled(page, 'category-tile-pcat_ceramics');
+    await page.getByTestId('category-tile-pcat_ceramics').click();
+    const slot0 = await settled(page, 'category-level-parent');
+    // Motion on again in a fresh load. Its root can hold a first layout past `settled`, so the tile is read until it
+    // is back on `from`, and then held still as before.
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.reload();
+    await expect.poll(async () => near((await page.getByTestId('category-tile-pcat_ceramics').boundingBox())!, from),
+      { message: 'the root is laid out as before' }).toBe(true);
+    await settled(page, 'category-tile-pcat_ceramics');
     const frames = shown(await film(page, 'category-level-parent', 'category-tile-pcat_ceramics'));
-    const rest = await settled(page, 'category-level-parent');
-    console.log(`E1 from ${JSON.stringify(from)} rest ${JSON.stringify(rest)} visible ${frames.length} `
+    console.log(`E1 from ${JSON.stringify(from)} slot 0 ${JSON.stringify(slot0)} visible ${frames.length} `
       + `distinct ${distinct(frames)} frames ${trace(frames)}`);
     expect(near(frames[0], from), 'the first visible frame is on the tapped tile').toBe(true);
-    expect(near(frames.at(-1)!, rest), 'it ends on slot 0').toBe(true);
+    expect(near(frames.at(-1)!, slot0), 'it ends on slot 0').toBe(true);
     expect(distinct(frames), 'it moves through the frames between').toBeGreaterThanOrEqual(7);
   });
 
@@ -186,6 +198,23 @@ test.describe('category deal at 1280x800', () => {
     expect(gap(walk.at(-1)!), 'it moves toward the tapped tile').toBeLessThan(gap(rest) / 2);
     expect(back, 'the root grid is back by 800ms').toBeLessThan(800);
     // The root lays its columns out again after it mounts, so its tile is read until it comes to rest.
+    await expect.poll(async () => near((await page.getByTestId('category-tile-pcat_ceramics').boundingBox())!, home),
+      { message: 'the tile ends on its own box' }).toBe(true);
+  });
+
+  test('E4: back by the level parent gathers it home and the root returns', async ({ page }) => {
+    const home = await settled(page, 'category-tile-pcat_ceramics');
+    const rest = shown(await film(page, 'category-level-parent', 'category-tile-pcat_ceramics', 600)).at(-1)!;
+    const frames = await film(page, 'category-level-parent', 'category-level-parent', 800);
+    const walk = shown(frames);
+    const back = frames.find((f) => f.root)?.t ?? Infinity;
+    const gap = (f: { x: number; y: number }) => Math.hypot(f.x - home.x, f.y - home.y);
+    console.log(`E4 rest ${JSON.stringify(rest)} home ${JSON.stringify(home)} root at ${back}ms `
+      + `gaps ${walk.map((f) => `${f.t}:${Math.round(gap(f))}`).join(' ')}`);
+    expect(walk.length, 'the parent is filmed on its way home').toBeGreaterThanOrEqual(5);
+    for (let i = 1; i < walk.length; i += 1) expect(gap(walk[i]), 'every frame is as near home as the last').toBeLessThanOrEqual(gap(walk[i - 1]) + 0.5);
+    expect(gap(walk.at(-1)!), 'it moves toward the tapped tile').toBeLessThan(gap(rest) / 2);
+    expect(back, 'the root grid is back by 800ms').toBeLessThan(800);
     await expect.poll(async () => near((await page.getByTestId('category-tile-pcat_ceramics').boundingBox())!, home),
       { message: 'the tile ends on its own box' }).toBe(true);
   });
