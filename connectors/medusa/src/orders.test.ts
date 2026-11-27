@@ -628,7 +628,7 @@ describe('refund lines (#1324)', () => {
     expect(page.orders[0]).toStrictEqual(orderWithEmptyLines);
   });
 
-  it.each([{ lines: null }, { lines: {} }])('getOrders leaves non-array refund lines unknown (%j)', async ({ lines }) => {
+  it.each([{ lines: null }, { lines: {} }, { lines: '' }])('getOrders leaves non-array refund lines unknown (%j)', async ({ lines }) => {
     const body = pluginBody();
     Object.assign(body.orders[0]!.refunds[1]!, { lines });
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(adminOf(L[0])).mockResolvedValueOnce(plugin(body));
