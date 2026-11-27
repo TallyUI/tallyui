@@ -317,8 +317,9 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   // while no drawn group holds its term.
   const [internalTermPicks, setInternalTermPicks] = useState<Readonly<Record<string, string>>>({});
   const termPicks = termPicksProp ?? internalTermPicks;
-  const allTermGroups = useMemo(() => (showFilterBar && termPills && (items === undefined || onTermPicksChange !== undefined) ? listTermGroups(shown, traits) : []),
-    [showFilterBar, termPills, items, onTermPicksChange, shown, traits]);
+  const reportsTermPicks = onTermPicksChange !== undefined;
+  const allTermGroups = useMemo(() => (showFilterBar && termPills && (items === undefined || reportsTermPicks) ? listTermGroups(shown, traits) : []),
+    [showFilterBar, termPills, items, reportsTermPicks, shown, traits]);
   const termGroups = useMemo(() => (termPills === true ? allTermGroups
     : termPills ? termPills.flatMap((id) => allTermGroups.filter((group) => group.id === id)) : []), [allTermGroups, termPills]);
   const activeTerms = useMemo(() => termGroups

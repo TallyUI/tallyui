@@ -1368,6 +1368,17 @@ describe('Catalogue term pills', { timeout: 20_000 }, () => {
     expect(tiles()).toEqual(['Blue Hat', 'Red Shirt', 'Plain Mug']);
   });
 
+  it('does not rescan terms when only the pick callback changes', () => {
+    const getTerms = vi.fn(termTraits.getTerms);
+    const props = { products: all, items: all, traits: { ...termTraits, getTerms }, currency: 'EUR', onSelect: vi.fn(), lastSyncedAt: null };
+    const element = () => <Catalogue {...props} showFilterBar termPills onTermPicksChange={() => undefined} />;
+    const view = render(element());
+    const initialCalls = getTerms.mock.calls.length;
+    expect(initialCalls).toBeGreaterThan(0);
+    view.rerender(element());
+    expect(getTerms).toHaveBeenCalledTimes(initialCalls);
+  });
+
   it('shows the controlled Brand pill beside the app-filtered list', () => {
     show({ items: [mug], termPicks: { f2: 'z1' }, onTermPicksChange: vi.fn() });
     expect(screen.getByTestId('filter-chip-group-f2').textContent).toBe('Zest');
