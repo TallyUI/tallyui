@@ -183,6 +183,19 @@ it('G2c retries /status 403 woocommerce_rest_cannot_view', async () => {
   expect(routes(fetch)).toEqual(['status']);
 });
 
+it('G2d retries a bodiless /status 403', async () => {
+  const fetch = store().mockResolvedValueOnce(new Response(null, { status: 403 }));
+  expect(await createWooCommandTransport({ baseUrl, fetch, getHeaders }).send([exemptSale()])).toStrictEqual({ kind: 'retry', reason: 'store_status_unknown' });
+  expect(routes(fetch)).toEqual(['status']);
+});
+
+it('G3c retries /site 403 woocommerce_rest_cannot_view', async () => {
+  const fetch = store().mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({ code: 'woocommerce_rest_cannot_view' }, { status: 403 }));
+  expect(await createWooCommandTransport({ baseUrl, fetch, getHeaders }).send([exemptSale()])).toStrictEqual({ kind: 'retry', reason: 'store_version_unknown' });
+  expect(routes(fetch)).toEqual(['status', 'site']);
+});
+
 it('G6 reads the gate once per send, not once per exempt sale', async () => {
   const fetch = store();
   const transport = createWooCommandTransport({ baseUrl, fetch, getHeaders, ledgerPayments: false });
