@@ -90,10 +90,11 @@ function unsupportedOptional(envelope: { id: string; type: string; version: numb
  * `cashRounding` is the server's own word too (ADR-094): without `true`, an order.create (or an order.update's create part)
  * carrying `cashRoundings` is refused as `invalid_payload`, never sent on with the field dropped, which would be a wrong total.
  * `taxExempt` likewise requires the server's `taxExempt` capability on order.create and is always refused on order.update.
+ * A tax-exempt order.create carrying coupons also requires `taxExemptCoupons`.
  * Likewise, a fee or shipping charge carrying `amountIncludesTax` is refused unless the server declares `chargeTaxMode: true`.
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean; chargeTaxMode?: boolean; taxExempt?: boolean }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean; chargeTaxMode?: boolean; taxExempt?: boolean; taxExemptCoupons?: boolean }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
@@ -136,6 +137,9 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   }
   if (command.payload.taxExempt !== undefined && supported.taxExempt !== true) {
     return rejected(command.id, 'invalid_payload', 'taxExempt requires the taxExempt capability, which this server does not declare')
+  }
+  if (command.payload.taxExempt && command.payload.coupons?.length && supported.taxExemptCoupons !== true) {
+    return rejected(command.id, 'invalid_payload', 'taxExempt with coupons requires the taxExemptCoupons capability, which this server does not declare')
   }
   if (supported.chargeTaxMode !== true && [command.payload.fees, command.payload.shipping].some(items =>
     Array.isArray(items) && items.some(entry => entry?.amountIncludesTax !== undefined))) {
