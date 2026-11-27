@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { cn } from '@tallyui/theme';
-import { useProductStock, useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
+import { resolvePrice, useProductStock, useStockOverlaid, useStockOverlayAsOf, type ProductTraits, type ProductCategory, type VariantSummary } from '@tallyui/core';
 import { catalogueEntries, findEntryByCode, searchProducts, variantPriceLabel, sortProducts, productSortValue,
   catalogueViewReducer, normalizeCatalogueViewState, resolveGridColumns, DEFAULT_CATALOGUE_VIEW_STATE,
   listCategories, inCategory, productCategories, cartQuantities, listTermGroups, hasTerm, DEFAULT_TILE_FIELDS,
@@ -70,6 +70,11 @@ function laterOf(a: Date | null | undefined, b: Date | null | undefined): Date |
   if (!a) return b ?? null;
   if (!b) return a;
   return a.getTime() >= b.getTime() ? a : b;
+}
+
+function isOnSale<Doc>(doc: Doc, traits: ProductTraits<Doc>, currency: string): boolean {
+  if (resolvePrice(traits.getPrices(doc, { currency }), currency)?.was) return true;
+  return traits.getVariants?.(doc, { currency }).some((variant) => !!resolvePrice(variant.prices, currency)?.was) ?? false;
 }
 
 // Only when React would draw it: `!open && <Notice />` passes false, which must not leave a blank band.
@@ -141,7 +146,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   cartLines?: readonly (CartQuantityLine & { variantId?: string })[];
   /** Show v2's filter chips under the search box. Default false. */
   showFilterBar?: boolean;
-  /** Which chips the bar shows. Default ['inStock'], the one Catalogue applies itself. */
+  /** Which chips the bar shows. Default ['inStock']; Catalogue applies In Stock and On Sale itself. */
   filterChips?: readonly ProductFilterChip[];
   /** With the In Stock pill on, keep 'backorder' products in the grid (only 'out_of_stock' is dropped). Default false: WCPOS v2's pill is stock_status 'instock' and drops backorders too. */
   inStockKeepsBackorder?: boolean;
@@ -301,6 +306,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }, [entries, traits]);
   // v2's In Stock pill drops backorders unless inStockKeepsBackorder is set; a stock the backend did not report stays.
   const stockFiltered = showFilterBar && filters.inStock;
+  const saleFiltered = showFilterBar && filters.onSale;
   // The term pills: local picks (group id to term id), never saved or reported. A pick whose term no drawn group still
   // holds is not applied but kept, and applies again when the term returns, as a stored category does.
   const [termPicks, setTermPicks] = useState<Readonly<Record<string, string>>>({});
@@ -324,10 +330,11 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
       ? shown.filter((doc) => inCategory(doc, activeCategory.id, traits)) : shown, query, traits);
     const stocked = stockFiltered
       ? matched.filter((doc) => !(inStockKeepsBackorder ? ['out_of_stock'] : ['out_of_stock', 'backorder']).includes(traits.getStock(doc).status)) : matched;
+    const priced = saleFiltered ? stocked.filter((doc) => isOnSale(doc, traits, currency)) : stocked;
     const filtered = activeTerms.length > 0
-      ? stocked.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : stocked;
+      ? priced.filter((doc) => activeTerms.every(([group, term]) => hasTerm(doc, group, term, traits))) : priced;
     return state.sort ? sortProducts(filtered, state.sort, (doc, field) => productSortValue(doc, field, traits, { currency })) : filtered;
-  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, activeTerms]);
+  }, [items, suppliedItems, shown, query, traits, state.sort, currency, showCategoryNav, activeCategory, stockFiltered, inStockKeepsBackorder, saleFiltered, activeTerms]);
   const choices = useMemo(() => (chooserId === null ? []
     : entries.filter((entry) => traits.getId(entry.product) === chooserId)), [entries, chooserId, traits]);
   // A product that leaves the catalogue (a resync, or no longer sellable) closes its chooser.
@@ -476,7 +483,7 @@ export function Catalogue<Doc>({ products, traits, currency, onSelect, statusTex
   }
 
   const emptyText = query.trim() ? `No products match "${query.trim()}".` : activeCategory ? `No products in ${activeCategory.name}.`
-    : activeTerms.length > 0 && items === undefined ? 'No products match the picked filters.'
+    : (activeTerms.length > 0 || (saleFiltered && shown.length > 0)) && items === undefined ? 'No products match the picked filters.'
     : stockFiltered && items === undefined && shown.length > 0 ? 'No products in stock.'
     : isLoading ? 'Loading products…' : 'No products yet.';
   // Where the text would say "Loading products…", v2 holds the screen in the shape of what is coming; the words stay

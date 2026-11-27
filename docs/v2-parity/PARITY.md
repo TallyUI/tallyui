@@ -158,8 +158,9 @@ Shared rows first: one fix reaches both apps.
     `@tallyui/components`). Both apps have only the read-only table on the
     sale screen.
 12. **Filter pills** ([Product search and scan](#product-search-and-scan);
-    feature; `@tallyui/components`). There is no Featured, On Sale, Category,
-    Tag or Brand pill.
+    feature; `@tallyui/components`). `ProductFilterBar` has every v2 pill.
+    `Catalogue` applies In Stock and On Sale (#1352); Featured needs a connector
+    field, and the apps adopt the pills.
 
 Rows only one app has:
 
