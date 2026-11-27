@@ -1225,6 +1225,14 @@ describe('Catalogue Featured chip', () => {
     for (const product of products) expect(tile(product.title)).not.toBeNull();
   });
 
+  it('keeps the in-stock message for Medusa when Featured is on and nothing is in stock', () => {
+    const soldOut = products.map((product) => ({ ...product,
+      variants: product.variants.map((variant) => ({ ...variant, manage_inventory: true, inventory_quantity: 0 })),
+    }));
+    render(<Catalogue {...props} products={soldOut} traits={traits} filters={{ inStock: true, featured: true, onSale: false }} />);
+    expect(screen.getByTestId('grid').textContent).toBe('No products in stock.');
+  });
+
   it('shows supplied items in their given order when Featured is on', () => {
     render(<Catalogue {...props} items={[regular, featured]} filters={filters} />);
     expect(screen.getAllByTestId(/^product-tile-/)).toEqual([tile(regular.name), tile(featured.name)]);
