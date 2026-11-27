@@ -217,9 +217,20 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
             kind={kind === 'fees' ? 'fee' : 'shipping'} initial={charge} currency={order.currency} lineTax={sale.capabilities?.lineTax}
             allowPercent pricesIncludeTax={chargeTaxSwitch ? order.pricesIncludeTax : undefined}
             taxClasses={taxClasses} shippingTaxFromStore={sale.capabilities?.taxRounding?.granularity === 'woocommerce'}
-            shippingNoTax={shippingNoTax} onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => kind === 'fees'
-              ? sale.updateFee(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent })
-              : sale.updateShipping(charge.id, { name, amountMinor, taxStatus, taxClass, amountIncludesTax })} /> : null}
+            shippingNoTax={shippingNoTax} onClose={() => setForm(null)} onApply={({ name, amountMinor, taxStatus, taxClass, amountIncludesTax, percent }) => {
+              const patch: Parameters<typeof sale.updateFee>[1] = {};
+              if (name !== charge.name) patch.name = name;
+              if ((taxStatus ?? 'taxable') !== (charge.taxStatus ?? 'taxable')) patch.taxStatus = taxStatus;
+              if (taxClass !== charge.taxClass) patch.taxClass = taxClass;
+              if (percent !== charge.percent || (percent === undefined && amountMinor !== charge.amountMinor)
+                || (amountIncludesTax ?? order.pricesIncludeTax) !== (charge.amountIncludesTax ?? order.pricesIncludeTax)) {
+                patch.amountMinor = amountMinor;
+                patch.amountIncludesTax = amountIncludesTax;
+                if (kind === 'fees') patch.percent = percent;
+              }
+              if (!Object.keys(patch).length) return null;
+              return kind === 'fees' ? sale.updateFee(charge.id, patch) : sale.updateShipping(charge.id, patch);
+            }} /> : null}
         </View>} />)}
       {showOrderDiscount || showCharge ? <View className="gap-3 px-3 py-2">
       {showOrderDiscount ? <>
