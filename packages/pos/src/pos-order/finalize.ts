@@ -223,6 +223,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   }
   /** Before the sale is committed:
    * - finalize refuses with the capability message;
+   * - an exempt sale with a coupon also requires the taxExemptCoupons capability;
    * - `useSale` stops saving and shows it as `saleError` (existing path, `packages/pos/src/sale/use-sale.ts` around line 1100);
    * - the sale stays open on screen with its taken payments, and nothing is written.
    * After commit, a refused push (the capability dropped between sale and push):
@@ -235,6 +236,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     if (order.pricesIncludeTax) throw new Error('finalize: tax exemption is not available on a prices-include-tax store');
     if (order.lineItems.some(line => line.priceTaxModeConverted)) throw new Error('finalize: a tax-exempt sale cannot carry a line priced in the other tax mode');
     if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
+    if (order.coupons?.length && options.capabilities?.taxExemptCoupons !== true) throw new Error('finalize: a tax-exempt sale with a coupon needs a store whose connector declares the taxExemptCoupons capability');
     if (order.taxMinor !== 0 || order.display.taxMinor !== 0
       || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))
       || order.coupons?.some(coupon => coupon.discountTaxMinor !== 0 || coupon.lines?.some(line => line.discountTaxMinor !== 0))) {

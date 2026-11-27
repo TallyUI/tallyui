@@ -13,7 +13,7 @@ import { taxProviderProps } from '../store-settings';
 import { saleTaxContexts, TaxProvider } from '../tax';
 import { catalogueEntries } from './catalogue';
 import { COUPONS_NEED_CONNECTION } from './discount-codes';
-import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
+import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_COUPONS, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
@@ -194,7 +194,7 @@ it('S13 Woo prices the code against the taxed twin and only hides its tax while 
   const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
     productCategories: async () => new Map() });
   const apply = vi.spyOn(discountCodes, 'apply');
-  const { result } = renderSale({ discountCodes }), plain = renderSale({ discountCodes }).result;
+  const { result } = renderSale({ discountCodes, capabilities: { orderCreate: 12, taxExempt: true, coupons: true, taxExemptCoupons: true } }), plain = renderSale({ discountCodes }).result;
   add(result); add(plain); toggle(result, true);
   const twin = result.current.order.exemptedFrom;
   await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
@@ -283,7 +283,7 @@ it('S19 restores the same coupon and order tax after a stale park as a never-exe
     productCategories: async () => new Map() });
   const figures = [];
   for (const exempt of [false, true]) {
-    const { result } = renderSale({ discountCodes });
+    const { result } = renderSale({ discountCodes, ...(exempt ? { capabilities: { orderCreate: 12, taxExempt: true, coupons: true, taxExemptCoupons: true } } : {}) });
     add(result);
     if (exempt) toggle(result, true);
     await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
@@ -305,6 +305,51 @@ it('S19 restores the same coupon and order tax after a stale park as a never-exe
     figures.push([result.current.order.coupons![0].discountTaxMinor, result.current.order.taxMinor]);
   }
   expect(figures[1]).toEqual(figures[0]);
+});
+
+it.each(['C1', 'C2', 'C3', 'C4'])('%s gates coupons at the switch and before lookup', async row => {
+  const supported = row === 'C2' || row === 'C4';
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const find = vi.spyOn(discountCodes, 'find');
+  const { result } = renderSale({ discountCodes, ...(supported ? { capabilities: { orderCreate: 12, taxExempt: true, coupons: true, taxExemptCoupons: true } } : {}) });
+  add(result);
+  if (row === 'C1' || row === 'C2') {
+    await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+    toggle(result, true, supported);
+    expect(result.current.taxExempt).toBe(supported);
+    expect(result.current.error).toBe(supported ? null : TAX_EXEMPT_COUPONS);
+  } else {
+    toggle(result, true);
+    await act(async () => { expect(await result.current.applyCoupon('ten')).toBe(supported ? null : TAX_EXEMPT_COUPONS); });
+    if (!supported) {
+      expect(find).not.toHaveBeenCalled();
+      expect(result.current.order.coupons ?? []).toEqual([]);
+    }
+  }
+  if (supported) expect(result.current.order.coupons).toMatchObject([{ code: 'ten', discountTaxMinor: 0 }]);
+});
+
+it.each(['C5', 'C9'])('%s keeps the exempt coupon sale open if the capability drops', async row => {
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const onSaleCompleted = vi.fn(), capabilities = { orderCreate: 12, taxExempt: true, coupons: true };
+  const { result, rerender, options } = renderSale({ discountCodes, onSaleCompleted, capabilities: { ...capabilities, taxExemptCoupons: true } });
+  add(result); toggle(result, true);
+  await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+  const id = result.current.order.id;
+  if (row === 'C9') await act(async () => { expect(await result.current.park()).toBeNull(); });
+  rerender({ ...options, capabilities });
+  if (row === 'C9') await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+  expect(result.current.taxExempt).toBe(true);
+  expect(result.current.order.coupons).toMatchObject([{ code: 'ten', discountTaxMinor: 0 }]);
+  takeCash(result, result.current.order.totalMinor);
+  const order = result.current.order, stage = result.current.stage;
+  await act(() => result.current.complete());
+  expect(result.current.error).toBe('finalize: a tax-exempt sale with a coupon needs a store whose connector declares the taxExemptCoupons capability');
+  expect(result.current.stage).toBe(stage);
+  expect(result.current.order).toBe(order);
+  expect(onSaleCompleted).not.toHaveBeenCalled();
 });
 
 it('S20 turning exemption off is a no-op on a non-exempt sale carrying a coupon', async () => {

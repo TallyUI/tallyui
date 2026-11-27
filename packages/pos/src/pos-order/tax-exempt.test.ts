@@ -51,14 +51,23 @@ it('X7 refuses exemption on a reopened sale', () => {
 
 it('X15 refuses an exempt sale with tax on the coupon alone', () => {
   const coupons = [{ code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 3 }];
-  expect(() => finalizeOrder({ ...sale(), taxExempt: true, coupons }, { capabilities: carries })).toThrow('finalize: a tax-exempt sale must carry no tax');
+  expect(() => finalizeOrder({ ...sale(), taxExempt: true, coupons }, { capabilities: { ...carries, taxExemptCoupons: true } })).toThrow('finalize: a tax-exempt sale must carry no tax');
 });
 
 it('X16 refuses an exempt sale with tax on a coupon line alone', () => {
   const snapshot = sale();
   const coupons = [{ code: 'ten', couponId: '1', discountMinor: 10, discountTaxMinor: 0,
     lines: [{ lineId: snapshot.lineItems[0].id, discountMinor: 10, discountTaxMinor: 3 }] }];
-  expect(() => finalizeOrder({ ...snapshot, taxExempt: true, coupons }, { capabilities: carries })).toThrow('finalize: a tax-exempt sale must carry no tax');
+  expect(() => finalizeOrder({ ...snapshot, taxExempt: true, coupons }, { capabilities: { ...carries, taxExemptCoupons: true } })).toThrow('finalize: a tax-exempt sale must carry no tax');
+});
+
+it.each(['C5', 'C6', 'C7', 'C8'])('%s requires taxExemptCoupons only for an exempt sale with coupons', row => {
+  const capabilities = { ...carries, ...(row === 'C6' ? { taxExemptCoupons: true } : {}) };
+  const snapshot = { ...sale(), ...(row !== 'C7' ? { taxExempt: true as const } : {}),
+    ...(row !== 'C8' ? { coupons: [{ code: 'ten', couponId: '1', discountMinor: 0, discountTaxMinor: 0 }] } : {}) };
+  const finalize = () => finalizeOrder(snapshot, { capabilities });
+  if (row === 'C5') expect(finalize).toThrow('finalize: a tax-exempt sale with a coupon needs a store whose connector declares the taxExemptCoupons capability');
+  else expect(finalize()).toMatchObject({ totalMinor: snapshot.totalMinor });
 });
 
 it('X17 refuses an exempt sale with sub-cent line tax even when order tax is zero', () => {

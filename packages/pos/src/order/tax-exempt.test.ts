@@ -157,7 +157,9 @@ it.each([['E1', generic()], ['E2', generic('per_order')], ['E3', woo]] as const)
   expect(order.totalMinor).toBe(twin.totalMinor);
   expect(order.subtotalMinor).toBe(twin.subtotalMinor);
   expect(order.display).toEqual(twin.display);
-  expect(order.lineItems.map(({ netMinor, taxLines }) => ({ netMinor, taxLines }))).toEqual(twin.lineItems.map(({ netMinor, taxLines }) => ({ netMinor, taxLines })));
+  expect(order.lineItems.map(line => line.netMinor)).toEqual(twin.lineItems.map(line => line.netMinor));
+  expect(order.lineItems.map(line => line.taxLines)).toStrictEqual(taxed.lineItems.map(({ taxLines }) => context.rounding?.granularity === 'woocommerce' ? [] :
+    [{ ...(taxLines[0]?.code !== undefined ? { code: taxLines[0].code } : {}), ratePpm: 0, taxMicros: '0' }]));
   for (const key of ['fees', 'shipping'] as const) {
     expect(amounts(order[key])).toEqual(amounts(twin[key]));
     expect(order[key]!.map(row => row.taxLines)).toEqual(twin[key]!.map(row => row.taxLines));

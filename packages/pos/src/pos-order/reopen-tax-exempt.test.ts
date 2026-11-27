@@ -52,6 +52,49 @@ async function reopen(settings: StoreSettings, reopenSettings = settings, feeGro
   return { stored, draft, taxed };
 }
 
+it.each(['B1', 'B2'])('%s preserves both quoted rate codes through a refused exempt sale', async row => {
+  const taxContext = createTaxContext(taxProviderProps(generic));
+  const options = { currency: generic.currency, taxContext }, builder = createOrderBuilder(options);
+  for (const [taxClass, amount] of [['reduced', 1005], ['standard', 1002]] as const) {
+    builder.addLine({ productId: taxClass, name: taxClass, taxClass, unitPrice: { amount, currency: generic.currency } });
+  }
+  const taxed = builder.getSnapshot();
+  builder.setTaxExempt(true);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const stored = finalizeOrder(builder.getSnapshot(), { capabilities });
+  await db.pos_orders.insert({ ...stored, syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'Total mismatch' } });
+  const id = await reopenRefusedOrder(stored.id, { orders: db.pos_orders, drafts: db.order_drafts, sessions: db.register_sessions, taxContext, capabilities });
+  const draft = await db.order_drafts.findOne(id).exec();
+  const reopened = restoreOrderDraft(JSON.parse(draft!.data), options);
+  if (row === 'B2') {
+    reopened.setTaxExempt(false);
+    expect(taxed).toMatchObject({ taxMinor: 260, totalMinor: 2267 });
+    expect(reopened.getSnapshot()).toMatchObject({ taxMinor: taxed.taxMinor, totalMinor: taxed.totalMinor });
+    return;
+  }
+  const first = toOrderCreateEnvelope(stored, 'till', 1, { maxVersion: 12 }).payload;
+  const second = toOrderCreateEnvelope(finalizeOrder(reopened.getSnapshot(), { capabilities }), 'till', 1, { maxVersion: 12 }).payload;
+  expect(first.taxByRate).toMatchObject([{ code: 'reduced', netMinor: 1005 }, { code: 'standard', netMinor: 1002 }]);
+  expect(second.taxByRate).toEqual(first.taxByRate);
+  for (const payload of [first, second]) {
+    expect(payload.totalMinor).toBe(2007);
+    expect(payloadShapeErrors(payload)).toEqual([]);
+  }
+});
+
+it('B3 leaves an uncoded given-rate line uncoded when exempt', () => {
+  const builder = createOrderBuilder({ currency: generic.currency, taxContext: createTaxContext(taxProviderProps(generic)) });
+  builder.addLine({ productId: '1', name: 'Item', taxRates: [{ ratePpm: 70000 }], unitPrice: { amount: 1005, currency: generic.currency } });
+  builder.setTaxExempt(true);
+  expect(builder.getSnapshot().lineItems[0].taxLines).toStrictEqual([{ ratePpm: 0, taxMicros: '0' }]);
+});
+
+it('B4 keeps Woo exempt line tax rows empty before and after reopen', async () => {
+  const { stored, draft } = await reopen(woo);
+  expect(stored.lines.map(line => line.taxLines)).toEqual([[]]);
+  expect(draft.lineItems.map(line => line.taxLines)).toEqual([[]]);
+});
+
 it.each([['R1 generic', generic, '190000000'], ['R2 Woo', woo, '100000000']] as const)('%s reopens exempt and restores the line class tax on switch-off', async (_, settings, taxMicros) => {
   const { stored, draft } = await reopen(settings);
   expect(draft.taxExempt).toBe(true);

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StoreOrder, StoreOrderLine } from '@tallyui/core';
 import { STORE_ORDER_REBUILD_REFUSALS, type StoreOrderRebuildReason } from '../order/from-store-order';
-import { ReopenEntryError, storeOrderForReopen } from './reopen-entry';
+import { ReopenEntryError, storeOrderForReopen, TAX_EXEMPT_REOPEN_REFUSED } from './reopen-entry';
 
 const taxContext = { getTaxRatePpm: () => 100000, pricesIncludeTax: false };
 const options = { currency: 'EUR', taxContext, catalogue: () => ({}) };
@@ -27,6 +27,17 @@ function storeOrder(): StoreOrder {
 }
 
 describe('storeOrderForReopen', () => {
+  it.each([['A3', 'completed', false], ['A6', 'cancelled', false], ['A7', 'completed', true]] as const)(
+    '%s checks status, then exemption, before the catalogue', (_, status, missing) => {
+      const read = { ...storeOrder(), status, taxExempt: true as const };
+      const catalogue = vi.fn(() => missing ? null : {});
+      let refusal: unknown;
+      try { storeOrderForReopen(read, { ...options, catalogue }); } catch (error) { refusal = error; }
+      expect(refusal).toBeInstanceOf(ReopenEntryError);
+      expect(refusal).toMatchObject(status === 'cancelled' ? { reason: 'status' } : { reason: 'tax_exempt', message: TAX_EXEMPT_REOPEN_REFUSED });
+      expect(catalogue).not.toHaveBeenCalled();
+    });
+
   it('builds the base order with store ids, totals and a locked payment', () => {
     const read = storeOrder();
     const snapshot = storeOrderForReopen(read, options).getSnapshot();

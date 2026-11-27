@@ -88,6 +88,7 @@ export { TAX_IDS_INVALID } from '../order/tax-ids';
 export const TAX_EXEMPT_UNAVAILABLE = 'This store does not accept tax exempt sales.';
 export const TAX_EXEMPT_PAYMENT_TAKEN = 'Tax exemption can only be turned on before a payment is taken.';
 export const TAX_EXEMPT_LOCKED = 'Tax exemption cannot change on this sale.';
+export const TAX_EXEMPT_COUPONS = 'This store cannot take a coupon on a tax exempt sale.';
 export const TAX_EXEMPT_CONVERTED_LINE = 'Tax exemption is not available on a sale with a line priced in the other tax mode.';
 export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no longer accepts tax exempt sales, so tax is charged again.';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
@@ -769,6 +770,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     /** ADR-077: looks up, checks and applies a discount code through the platform's discount codes; resolves to the refusal to show, or null once applied. */
     async applyCoupon(code: string): Promise<string | null> {
       const held = editRefusal(); if (held) return held;
+      if (builderNow.current.getSnapshot().taxExempt && opts.capabilities?.taxExemptCoupons !== true) return TAX_EXEMPT_COUPONS;
       if (carriedCoupon()) return COUPON_CARRIED;
       if (keptCodes()) return COUPONS_REPRICING;
       const codes = codesFor();
@@ -891,9 +893,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (snapshot.payments.some(isInMotion)) { setError(PAYMENT_IN_MOTION); return false; }
       if (on && capturedMinor(snapshot.payments) > 0) { setError(TAX_EXEMPT_PAYMENT_TAKEN); return false; }
       if (snapshot.afterClose || carriedCoupon()) { setError(TAX_EXEMPT_LOCKED); return false; }
+      if (on && snapshot.coupons?.length && opts.capabilities?.taxExemptCoupons !== true) { setError(TAX_EXEMPT_COUPONS); return false; }
       builderNow.current.setTaxExempt(on);
       removalEpoch.current++;
-      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
+      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_COUPONS || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
       return true;
     },
     /**
