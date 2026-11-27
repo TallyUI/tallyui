@@ -680,8 +680,7 @@ for products that aren't resident is optional:
 - customer edit (#521);
 - variation attributes on the line (#495, needs-paul);
 - coupons (#501);
-- tax exempt (left: slice 4, the switch and the receipt line, and the info
-  read for Vendure, #1441);
+- tax exempt (left: slice 4, the switch and the receipt line);
 - line split;
 - open orders shown as tabs;
 - server order history in the orders panel (#540).
@@ -701,8 +700,14 @@ parked sales.
   - Medusa: capability absent. Its tax refresh re-taxes a `taxStatus:
     'none'` line, so customer group tax rules do not carry it (finding of
     2026-10-06);
-  - Vendure: the vendurepos plugin declares `taxExempt` and `taxExemptCoupons`
-    in `/tally/v1/info`, and the Vendure connector reads both (#1441).
+  - Vendure: the Vendure connector reads `taxExempt` and `taxExemptCoupons`
+    from `/tally/v1/info` (#1441). The vendurepos plugin is to declare them.
+    Before slice 4 shows the switch on Vendure, and before the connector
+    is published with this read, vendurepos/app#540 must show two things.
+    First, that `/info` and its `precheckCommand` `supported` come from one
+    constant. Second, with an e2e and its figures, that an accepted exempt
+    order carries zero tax. The wire rule is in
+    `docs/contract/field-kinds.md` (`order.create`).
 
 **Size and dependencies.** M, as several S units.
 
