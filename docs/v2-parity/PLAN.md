@@ -680,7 +680,8 @@ for products that aren't resident is optional:
 - customer edit (#521);
 - variation attributes on the line (#495, needs-paul);
 - coupons (#501);
-- tax exempt (slice 4, the switch and the receipt line, is left);
+- tax exempt (left: slice 4, the switch and the receipt line, and the info
+  read for Vendure, #1441);
 - line split;
 - open orders shown as tabs;
 - server order history in the orders panel (#540).
@@ -693,12 +694,16 @@ parked sales.
   `addNoteToOrder`.
 - **Tax exempt** (order-level only, hidden on prices-include-tax stores;
   the capabilities are `taxExempt` and `taxExemptCoupons`):
-  - Woo: `is_vat_exempt` order meta, which needs no plugin change (#1430);
+  - Woo: `is_vat_exempt` order meta, which needs no plugin change (#1430).
+    The capability is declared only on stock, non-fork, exclusive stores
+    on 1.10.20+ or 2.0.5+ (`wooTaxExemptGate`), and never with
+    `taxExemptCoupons`, so the till refuses a coupon on an exempt Woo sale;
   - Medusa: capability absent. Its tax refresh re-taxes a `taxStatus:
     'none'` line, so customer group tax rules do not carry it (finding of
     2026-10-06);
-  - Vendure: the vendurepos plugin owns the server half and declares
-    `taxExempt` in `/tally/v1/info`.
+  - Vendure: the vendurepos plugin owns the server half and will declare
+    `taxExempt` in `/tally/v1/info`. TallyUI does not read that field yet
+    (#1441), so until then the Vendure till keeps the switch hidden.
 
 **Size and dependencies.** M, as several S units.
 
@@ -762,8 +767,9 @@ the same as adopted: several merged units have not reached a demo yet.
 - **Partly done:**
   - 28: #609 has no refund, Z or report defaults;
   - 34a: #636.
-- **Tax exempt:** slices 1–3 merged (#1420, #1422, #1425, #1430), and
-  slice 4, the Order details switch and the receipt line, is still to do.
+- **Tax exempt:** slices 1–3 merged (#1420, #1422, #1425, #1430). Still to
+  do: slice 4, the Order details switch and the receipt line, and reading
+  `taxExempt` from `/tally/v1/info` for Vendure (#1441).
 - **Not started:** 18, 24, 26, 27, 32, 34b, 34c, 39 and 40+.
 - **Connector units:**
   - Medusa `listOrders` and `emailReceipt` are not started.
