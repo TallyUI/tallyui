@@ -330,6 +330,25 @@ it.each(['C1', 'C2', 'C3', 'C4'])('%s gates coupons at the switch and before loo
   if (supported) expect(result.current.order.coupons).toMatchObject([{ code: 'ten', discountTaxMinor: 0 }]);
 });
 
+it.each(['C10', 'C11'])('%s checks exemption again after coupon lookup', async row => {
+  const supported = row === 'C11';
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const discountCodes = createDiscountCodes({ find: async code => {
+    await gate;
+    return { id: 101, code, discount_type: 'percent', amount: '10' };
+  }, productCategories: async () => new Map() });
+  const { result } = renderSale({ discountCodes, ...(supported ? { capabilities: { orderCreate: 12, taxExempt: true, coupons: true, taxExemptCoupons: true } } : {}) });
+  add(result);
+  let applying!: Promise<string | null>;
+  act(() => { applying = result.current.applyCoupon('ten'); });
+  toggle(result, true);
+  await act(async () => { release(); expect(await applying).toBe(supported ? null : TAX_EXEMPT_COUPONS); });
+  expect(result.current.taxExempt).toBe(true);
+  if (supported) expect(result.current.order.coupons).toMatchObject([{ code: 'ten', discountTaxMinor: 0 }]);
+  else expect(result.current.order.coupons ?? []).toEqual([]);
+});
+
 it.each(['C5', 'C9'])('%s keeps the exempt coupon sale open if the capability drops', async row => {
   const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
     productCategories: async () => new Map() });

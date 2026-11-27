@@ -780,6 +780,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const result = await codes.find(normalized, discountState(builder.getSnapshot(), applied.current));
       if ('refusal' in result) return result.refusal;
       const heldNow = editRefusal(); if (heldNow) return heldNow;
+      if (builderNow.current.getSnapshot().taxExempt && opts.capabilities?.taxExemptCoupons !== true) return TAX_EXEMPT_COUPONS;
       if (builderNow.current !== builder || stageNow.current.kind === 'receipt') return 'The sale changed while the coupon was being checked; apply it again';
       const refusal = codes.check(normalized, result.found, discountState(builder.getSnapshot(), applied.current));
       if (refusal !== null) return refusal;
