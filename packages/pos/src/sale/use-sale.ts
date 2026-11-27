@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RxCollection } from 'rxdb';
 import type { CustomerAddress, CustomerTaxId, PaymentRounding, ProductTraits, ServerCapabilities, StoreSettings, woocommerceTax } from '@tallyui/core';
-import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf } from '@tallyui/core';
+import { ORDER_META_KEY_MAX, ORDER_META_MAX, paymentMethodOf, resolvePrice } from '@tallyui/core';
 import { canVoidLeg, capturedMinor, countsTowardPaid, inMotionMinor, isInMotion, legStatus, takenLeg } from '../tender/payment-legs';
 import { heldUnitsByLine, unpaidUnitsByLine } from '../tender/split-units';
 import { createOrderBuilder, writeOrderDraft, restoreOrderDraft, type ChargeInput, type ChargeLine, type LineItem, type OrderBuilder, type CustomerSummary, type Discount, type Order, type SentOrder } from '../order';
@@ -10,6 +10,7 @@ import { isLiveLeg } from '../order/order-builder';
 import { sessionTakenLegs } from '../order/order-drafts';
 import type { CashRounding, Payment } from '../order/types';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
+import { patchSale } from '../order/tax-exempt';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
 import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
@@ -84,6 +85,11 @@ export const ADDRESS_CHANGE_REFUSED = 'The address can only change in the cart. 
 /** ADR-092 6a: setTaxIds' refusal once the sale left the cart or money is live; the tax ids change only in the cart. */
 export const TAX_IDS_CHANGE_REFUSED = 'Tax ids can only change in the cart. Cancel the payment to change them, or start a new order.';
 export { TAX_IDS_INVALID } from '../order/tax-ids';
+export const TAX_EXEMPT_UNAVAILABLE = 'This store does not accept tax exempt sales.';
+export const TAX_EXEMPT_PAYMENT_TAKEN = 'Tax exemption can only be turned on before a payment is taken.';
+export const TAX_EXEMPT_LOCKED = 'Tax exemption cannot change on this sale.';
+export const TAX_EXEMPT_CONVERTED_LINE = 'Tax exemption is not available on a sale with a line priced in the other tax mode.';
+export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no longer accepts tax exempt sales, so tax is charged again.';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
@@ -203,7 +209,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   const appliedWith = useRef<SaleDiscountCodes<any> | null>(null);
   const categories = useRef(new Map<number, { id: number }[]>());
   function discountState(order: Order, accepted: ReadonlyMap<string, unknown>): SaleDiscountState<unknown> {
-    return { order, accepted: new Map(accepted), categories: categories.current, settings: { calcDiscountsSequentially: settings.calcDiscountsSequentially } };
+    return { order: order.exemptedFrom ?? order, accepted: new Map(accepted), categories: categories.current, settings: { calcDiscountsSequentially: settings.calcDiscountsSequentially } };
   }
   function codesFor(): SaleDiscountCodes<any> | null {
     return opts.capabilities?.coupons === true && (opts.capabilities?.orderCreate ?? 1) >= 6 && opts.discountCodes
@@ -408,7 +414,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
    * ones go stale and price again, as the basis has the customer). `applied`, the error and the stage are kept.
    */
   function retax(customer: CustomerSummary | null, next: SaleTax) {
-    const snapshot = { ...builderNow.current.getSnapshot(), customer, ...(carriedCoupon() ? { couponPricesStale: true as const } : {}) };
+    const snapshot = patchSale(builderNow.current.getSnapshot(), { customer, ...(carriedCoupon() ? { couponPricesStale: true } : {}) });
     const rebuilt = restoreOrderDraft(snapshot, { currency: snapshot.currency, taxContext: next.taxContext });
     if (appliedWith.current && applied.current.size) appliedWith.current.apply(rebuilt, discountState(rebuilt.getSnapshot(), applied.current));
     builderNow.current = rebuilt;
@@ -597,7 +603,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
   async function writeParked(drafts: NonNullable<typeof opts.drafts>, snapshot: Order): Promise<string | null> {
     const stale = keptCodes() && !snapshot.coupons?.length;
     if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
-    return writeOrderDraft(drafts, stale ? { ...snapshot, coupons: keptCoupons.current, couponPricesStale: true } : snapshot).then(() => null);
+    return writeOrderDraft(drafts, stale ? patchSale(snapshot, { coupons: keptCoupons.current, couponPricesStale: true }) : snapshot).then(() => null);
   }
   const result = {
     order, stage, error, idle,
@@ -619,6 +625,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       const held = editRefusal(); if (held) return held;
       const builder = builderNow.current;
       try {
+        if (builder.getSnapshot().taxExempt) {
+          const inclusive = resolvePrice(entry.variant.prices, madeWith.current.currency)?.current.taxInclusive;
+          if (inclusive !== undefined && inclusive !== builder.getSnapshot().pricesIncludeTax) {
+            setError(TAX_EXEMPT_CONVERTED_LINE); return TAX_EXEMPT_CONVERTED_LINE;
+          }
+        }
         const known = new Set(builder.getSnapshot().lineItems.map((line) => line.id));
         const productId = Number(traits.getId(entry.product));
         if (Number.isSafeInteger(productId) && productId >= 0) {
@@ -865,6 +877,23 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       builderNow.current.setCustomer(cleaned.length ? { ...rest, taxIds: cleaned } : rest);
       removalEpoch.current++;
       setError((current) => current === TAX_IDS_CHANGE_REFUSED || current === TAX_IDS_INVALID ? null : current); // any other error stays
+      return true;
+    },
+    taxExempt: order.taxExempt === true,
+    taxExemptAvailable: opts.capabilities?.taxExempt === true && !taxNow.current.taxContext.pricesIncludeTax && !order.storeOrder,
+    setTaxExempt(on: boolean): boolean {
+      if (locked()) return false;
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
+      const snapshot = builderNow.current.getSnapshot();
+      if (on === (snapshot.taxExempt === true)) return true;
+      if (on && (opts.capabilities?.taxExempt !== true || taxNow.current.taxContext.pricesIncludeTax || snapshot.storeOrder)) { setError(TAX_EXEMPT_UNAVAILABLE); return false; }
+      if (on && snapshot.lineItems.some((line) => line.priceTaxModeConverted)) { setError(TAX_EXEMPT_CONVERTED_LINE); return false; }
+      if (snapshot.payments.some(isInMotion)) { setError(PAYMENT_IN_MOTION); return false; }
+      if (on && capturedMinor(snapshot.payments) > 0) { setError(TAX_EXEMPT_PAYMENT_TAKEN); return false; }
+      if (snapshot.afterClose || carriedCoupon()) { setError(TAX_EXEMPT_LOCKED); return false; }
+      builderNow.current.setTaxExempt(on);
+      removalEpoch.current++;
+      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
       return true;
     },
     /**
@@ -1239,16 +1268,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
         // Taxed for the customer the draft restores (a refused one isn't).
         const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
+        const removed = saved.taxExempt && (opts.capabilities?.taxExempt !== true || restoredTax.taxContext.pricesIncludeTax);
+        const source = removed ? saved.exemptedFrom! : saved;
         // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
         // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
-        const carriedDraft = !!saved.coupons?.length && saved.coupons.every((coupon) => coupon.carried);
-        const keep = !carriedDraft && !!saved.coupons?.length && saved.display.coupons?.length === saved.coupons.length && (saved.payments ?? []).some(isLiveLeg);
-        const builder = restoreOrderDraft(saved, { currency: settings.currency, taxContext: restoredTax.taxContext,
-          keepTaxRates: keep || capturedMinor(saved.payments ?? []) !== 0, keepCoupons: keep });
+        const carriedDraft = !!source.coupons?.length && source.coupons.every((coupon) => coupon.carried);
+        const keep = !carriedDraft && !!source.coupons?.length && source.display.coupons?.length === source.coupons.length && (source.payments ?? []).some(isLiveLeg);
+        const builder = restoreOrderDraft(source, { currency: settings.currency, taxContext: restoredTax.taxContext,
+          keepTaxRates: keep || capturedMinor(source.payments ?? []) !== 0, keepCoupons: keep });
         let n = 0;
         // A draft whose legs took money keeps the prices it was paid against (u19), as does one kept for its coupons.
         // A reopened store order keeps the store's prices (ADR-090 decision 3, carryover item 22).
-        if (opts.currentPrice && !options?.keepParkedPrices && !carriedDraft && !keep && capturedMinor(saved.payments ?? []) === 0 && !saved.storeOrder) {
+        if (opts.currentPrice && !options?.keepParkedPrices && !carriedDraft && !keep && capturedMinor(source.payments ?? []) === 0 && !source.storeOrder) {
           for (const line of builder.getSnapshot().lineItems) {
             if (!line.variantId) continue;
             const price = opts.currentPrice(line.variantId);
@@ -1259,13 +1290,14 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
           }
         }
         const kept = new Map<string, unknown>(), messages: string[] = [];
-        const codes = !carriedDraft && saved.coupons?.length ? codesFor() : null;
+        if (removed || saved.taxExemptDropped === true) messages.push(TAX_EXEMPT_REMOVED);
+        const codes = !carriedDraft && source.coupons?.length ? codesFor() : null;
         if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
-        if (!carriedDraft && saved.coupons?.length) {
+        if (!carriedDraft && source.coupons?.length) {
           const supported = codes !== null;
           if (supported) await codes.beforeResume?.(discountState(builder.getSnapshot(), new Map()));
-          if (keep) for (const { code } of saved.coupons) kept.set(code, KEPT);
-          else for (const { code } of saved.coupons) {
+          if (keep) for (const { code } of source.coupons) kept.set(code, KEPT);
+          else for (const { code } of source.coupons) {
             let reason: string | null = supported ? null : COUPONS_UNSUPPORTED;
             if (supported) {
               const result = await codes.find(code, discountState(builder.getSnapshot(), kept));
@@ -1287,10 +1319,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         resetSale(null, builder, restoredTax);
         if (builderNow.current === builder) {
           applied.current = kept;
-          resumedLegIds.current = (saved.payments ?? []).filter(isLiveLeg).map((p) => p.id);
+          resumedLegIds.current = (source.payments ?? []).filter(isLiveLeg).map((p) => p.id);
           // A pre-4.2 leg voided before the park carries no takenAt and holds no money the till still has: it is dropped (desk, 23 Nov).
           resumedTakenIds.current = builder.getSnapshot().payments.filter((p) => !p.locked && legStatus(p) === 'captured' && p.takenAt === undefined).map((p) => p.id);
-          if (keep) { keptCoupons.current = saved.coupons; keptLegIds.current = saved.payments.filter(isLiveLeg).map((p) => p.id); }
+          if (keep) { keptCoupons.current = (source.exemptedFrom ?? source).coupons; keptLegIds.current = source.payments.filter(isLiveLeg).map((p) => p.id); }
           appliedWith.current = kept.size ? codes : null;
           generation.current++;
         }

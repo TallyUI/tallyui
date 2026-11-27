@@ -104,6 +104,12 @@ export async function writeOrderDraft(drafts: RxCollection, snapshot: Order): Pr
  * Carried coupons always restore their priced amounts against the saved basis, keeping stale figures stale.
  */
 export function restoreOrderDraft(saved: Order, options: { currency: string; taxContext: TaxContext; keepTaxRates?: boolean; keepCoupons?: boolean }): OrderBuilder {
+  if (saved.taxExempt) {
+    if (!saved.exemptedFrom) throw new Error('restoreOrderDraft: an exempt draft must carry exemptedFrom');
+    const builder = restoreOrderDraft(saved.exemptedFrom, options);
+    builder.setTaxExempt(true);
+    return builder;
+  }
   const { currency, taxContext } = options;
   const wooNow = taxContext.rounding?.granularity === 'woocommerce' && !!taxContext.getTaxRates;
   const items = [...saved.lineItems, ...saved.fees ?? [], ...saved.shipping ?? []];

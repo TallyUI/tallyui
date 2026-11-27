@@ -43,8 +43,12 @@ export interface Order {
   payments: Payment[];
   /** ADR-094: a cash leg that settles the sale at a rounded due records the signed difference here, counted in totalMinor; only entries whose leg counts toward paid are built in. Absent when empty. */
   cashRoundings?: CashRounding[];
-  /** Tax exempt per sale: present only on an exempt sale, every tax figure 0; finalize refuses it unless the store declares `taxExempt`. Nothing sets it yet (the sale switch is a later slice). */
+  /** Present only on a tax-exempt sale, with every tax figure zero; finalize requires the store's `taxExempt` capability. */
   taxExempt?: true;
+  /** Set by reopenRefusedOrder on the draft of a refused exempt sale reopened where exemption is not available; resume shows TAX_EXEMPT_REMOVED once and never carries it on. */
+  taxExemptDropped?: true;
+  /** The same sale without exemption, used only to restore and turn exemption off; never stored by finalize. */
+  exemptedFrom?: Order;
   customer: CustomerSummary | null;
   note: string;
   /** The sale's order meta, WooCommerce's custom fields (ADR-092 6d). Set with `useSale().setMeta`, parked with the draft,
@@ -142,6 +146,8 @@ export interface ChargeLine {
   totalMinor?: number;
   name: string;
   amountMinor: number; // integer >= 0, as entered, in the charge's own mode (amountIncludesTax, else the order's; ADR-075)
+  /** A reopened exempt sale's stored net for this charge: while the sale is exempt, the charge's own row is this amount whatever today's rate; switching exemption off prices the charge from its entered amount (the original gross). The quoted price stands. */
+  exemptMinor?: number;
   taxClass?: string;
   taxStatus: 'taxable' | 'none';
   /** The cashier's mode for this charge (v2 "Amount includes tax"); absent means the order's. Never stored on a finalized order; a `chargeTaxMode` store keeps it in the stored charge's `entered`. */
@@ -154,7 +160,10 @@ export interface ChargeLine {
 }
 export interface FeeLine extends ChargeLine {}
 export interface ShippingLine extends ChargeLine { methodId?: string }
-export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number }
+export interface ChargeInput { id?: string; name: string; amountMinor: number; taxClass?: string; taxStatus?: 'taxable' | 'none'; storeLineId?: string; amountIncludesTax?: boolean; percent?: number;
+  /** A reopened exempt sale's stored net for this charge: while the sale is exempt, the charge's own row is this amount whatever today's rate; switching exemption off prices the charge from its entered amount (the original gross). The quoted price stands. */
+  exemptMinor?: number;
+}
 
 export interface LineTaxLine {
   code?: string;

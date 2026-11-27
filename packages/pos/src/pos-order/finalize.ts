@@ -56,9 +56,12 @@ export const MESSAGE_NAME_MAX = 61;
 /** A charge as stored: in the order's mode, with the cashier's differing mode kept separately outside WooCommerce rounding.
  *  A converted generic charge keeps its display row, so the payload equals the display (core fiscal-figures.ts). */
 function storedCharge<C extends ChargeLine>(charge: C, pricesIncludeTax: boolean, displayMinor: number | undefined,
-  keep: { chargeTaxMode?: boolean; granularity?: TaxRounding['granularity'] }): C {
-  if (charge.amountIncludesTax === undefined && charge.percent === undefined) return charge;
-  const { amountIncludesTax, percent: _percent, ...rest } = charge;
+  keep: { chargeTaxMode?: boolean; granularity?: TaxRounding['granularity'] }, twin?: ChargeLine): C {
+  if (twin?.amountIncludesTax !== undefined && twin.amountIncludesTax !== pricesIncludeTax) {
+    charge = { ...charge, taxedEntry: { amountMinor: twin.amountMinor, amountIncludesTax: twin.amountIncludesTax } };
+  }
+  const { amountIncludesTax, percent: _percent, exemptMinor: _exemptMinor, ...rest } = charge;
+  if (amountIncludesTax === undefined && _percent === undefined) return rest as C;
   const amountMinor = charge.totalMinor === undefined && displayMinor !== undefined ? displayMinor : chargeOrderModeMinor(charge, pricesIncludeTax);
   return { ...rest, amountMinor, ...(charge.totalMinor === undefined ? { netMinor: amountMinor } : {}),
     ...(amountIncludesTax !== undefined && amountIncludesTax !== pricesIncludeTax && keep.granularity !== 'woocommerce'
@@ -71,10 +74,12 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   const keep = { granularity: order.taxRounding?.granularity };
   if (customer && posOrder.customer?.email === undefined) delete customer.email;
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
-  return { ...order, customer, note: posOrder.note ?? order.note,
+  const { exemptedFrom: _exemptedFrom, ...sent } = order;
+  const twin = order.taxExempt === true ? _exemptedFrom : undefined;
+  return { ...sent, customer, note: posOrder.note ?? order.note,
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
-    ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...storedCharge(fee, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep), name: posOrder.fees![i].name })) } : {}),
-    ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep),
+    ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...storedCharge(fee, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep, twin?.fees?.[i]), name: posOrder.fees![i].name })) } : {}),
+    ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep, twin?.shipping?.[i]),
       name: posOrder.shipping![i].name })) } : {}),
     display: posOrder.display ? { ...order.display,
       ...(order.display.fees ? { fees: order.display.fees.map((row, i) => ({ ...row, name: posOrder.display!.fees![i].name })) } : {}),
@@ -227,6 +232,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
    * - nothing is dropped or re-taxed silently. */
   if (order.taxExempt) {
     if (order.storeOrder) throw new Error('finalize: a reopened store order cannot be made tax exempt');
+    if (order.pricesIncludeTax) throw new Error('finalize: tax exemption is not available on a prices-include-tax store');
+    if (order.lineItems.some(line => line.priceTaxModeConverted)) throw new Error('finalize: a tax-exempt sale cannot carry a line priced in the other tax mode');
     if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
     if (order.taxMinor !== 0 || order.display.taxMinor !== 0
       || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))
@@ -304,7 +311,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   }
   const newId = options.newId ?? uuidv7;
   const id = newId();
-  const lines: PosOrder['lines'] = order.lineItems.map((line) => ({
+  const twin = order.taxExempt === true ? order.exemptedFrom : undefined;
+  const lines: PosOrder['lines'] = order.lineItems.map((line, index) => ({
     id: newId(), ...(line.storeLineId !== undefined ? { storeLineId: line.storeLineId } : {}), productId: line.productId,
     ...(line.variantId !== undefined ? { variantId: line.variantId } : {}),
     ...(line.custom ? { custom: { name: line.name, ...(line.sku ? { sku: line.sku } : {}),
@@ -318,11 +326,14 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     discountMinor: line.discountMinor, netMinor: line.netMinor,
     ...(order.taxRounding?.granularity === 'woocommerce' ? { netMicros: line.netMicros } : {}),
     taxLines: line.taxLines.map((tax) => ({ ...tax })),
+    ...(twin && order.taxRounding?.granularity !== 'woocommerce' ? {
+      taxedRates: twin.lineItems[index].taxLines.map(({ code, ratePpm }) => ({ ...(code !== undefined ? { code } : {}), ratePpm })),
+    } : {}),
     ...(line.priceTaxModeConverted ? { taxInclusive: line.taxInclusive } : {}),
   }));
   const keep = { chargeTaxMode: options.capabilities?.chargeTaxMode, granularity: order.taxRounding?.granularity };
-  const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
-  const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const fees = order.fees?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep, twin?.fees?.[i]), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
+  const shipping = order.shipping?.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep, twin?.shipping?.[i]), id: newId(), taxLines: charge.taxLines.map((tax) => ({ ...tax })) }));
   const payments: PosOrderPayment[] = order.payments.map((payment) => ({
     id: newId(), ...(payment.storePaymentId !== undefined ? { storePaymentId: payment.storePaymentId } : {}),
     method: payment.method as PosOrderPayment['method'],

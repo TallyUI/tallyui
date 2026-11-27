@@ -21,6 +21,10 @@ import { uuidv7 } from './uuidv7';
 export function versionTwentyThree(): RxJsonSchema<PosOrder> {
   const schema = structuredClone(posOrderSchema);
   delete (schema.properties as Record<string, unknown>).taxExempt;
+  delete (schema.properties.lines.items as { properties: Record<string, unknown> }).properties.taxedRates;
+  for (const field of ['fees', 'shipping'] as const) {
+    delete (schema.properties[field].items as { properties: Record<string, unknown> }).properties.taxedEntry;
+  }
   return { ...schema, version: 23 };
 }
 

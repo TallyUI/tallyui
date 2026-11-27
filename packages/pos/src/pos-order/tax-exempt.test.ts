@@ -132,3 +132,122 @@ it.each([5, 8, 12] as const)('X1: an ordinary sale at cap %i is BASE byte for by
     expect('taxExempt' in sent.payload).toBe(false);
   }
 });
+
+import { payloadShapeErrors } from '@tallyui/core/server';
+import type { TaxContext } from '../tax/types';
+import { withSentForm } from './finalize';
+
+function builderForExemption(fixture: 'E1' | 'E3' | 'E4a' | 'E4w' | 'E4x' | 'E5' | 'G4' | 'G5' | 'G8') {
+  const woo = fixture === 'E3' || fixture === 'E4w' || fixture === 'E4x' || fixture === 'G5';
+  const taxContext: TaxContext = woo ? { pricesIncludeTax: false, rounding: { granularity: 'woocommerce', roundAtSubtotal: false },
+    getTaxRatePpm: () => { throw new Error('WooCommerce must use the rate list'); }, shippingTaxClass: 'inherit',
+    getTaxRates: () => [{ id: 1, code: 'rate-1', label: 'Rate 1', rate: '10.0000', priority: 1, compound: false, shipping: true }] }
+    : { pricesIncludeTax: false, rounding: { granularity: 'per_line_items', mode: 'half_up' }, getTaxRateCode: taxClass => taxClass,
+      getTaxRatePpm: taxClass => taxClass === 'fee' ? 210000 : taxClass === 'post' ? 77000 : 190000 };
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext }), price = (amount: number) => ({ amount, currency: 'EUR' });
+  if (fixture === 'G4' || fixture === 'G5' || fixture === 'G8') {
+    const entry = { amountMinor: woo ? 907 : 902, amountIncludesTax: true };
+    builder.addLine({ productId: '1', name: 'Item', taxClass: 'standard', unitPrice: price(1000) });
+    builder.addFee({ ...entry, name: 'Fee', taxClass: woo ? 'standard' : 'fee' });
+    builder.addShipping({ ...entry, name: 'Post', taxClass: woo ? 'standard' : 'post' });
+  } else if (fixture === 'E1' || fixture === 'E3') {
+    const item = { name: 'Item', taxClass: 'standard' };
+    const line = builder.addLine({ ...item, productId: '1', unitPrice: price(1000) });
+    builder.addLine({ ...item, productId: 'custom', custom: true, unitPrice: price(300) });
+    if (!woo) builder.addLine({ ...item, productId: '2', unitPrice: price(500), taxRates: [{ code: 'given', ratePpm: 190000 }] });
+    builder.addFee({ ...item, amountMinor: 200 });
+    builder.addShipping({ ...item, amountMinor: 103 });
+    builder.applyLineDiscount(line, { id: 'discount', type: 'fixed', value: 70 });
+    builder.applyOrderDiscount({ id: 'order-discount', type: 'fixed', value: 30 });
+  } else {
+    builder.addLine({ productId: '1', name: 'Item', unitPrice: price(100) });
+    if (fixture === 'E5') builder.addLine({ productId: '2', name: 'Inclusive', unitPrice: { ...price(119), taxInclusive: true } });
+    else if (fixture === 'E4w') {
+      for (const name of ['A', 'B']) builder.addFee({ name, amountMinor: 5, amountIncludesTax: true });
+      builder.addShipping({ name: 'Free', amountMinor: 0 });
+    } else {
+      builder.addFee({ name: 'Fee', amountMinor: 999, amountIncludesTax: true, taxClass: 'fee' });
+      builder.addShipping({ name: 'Post', amountMinor: 999, amountIncludesTax: true, taxClass: 'post' });
+    }
+  }
+  if (fixture !== 'G8') builder.setTaxExempt(true);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  return builder.getSnapshot();
+}
+
+it('E11 finalize refuses exempt inclusive stores and converted products', () => {
+  const options = { capabilities: carries };
+  expect(() => finalizeOrder({ ...builderForExemption('E1'), pricesIncludeTax: true }, options))
+    .toThrow(new Error('finalize: tax exemption is not available on a prices-include-tax store'));
+  expect(() => finalizeOrder(builderForExemption('E5'), options))
+    .toThrow(new Error('finalize: a tax-exempt sale cannot carry a line priced in the other tax mode'));
+});
+
+it.each(['E1', 'E3', 'E4w', 'E4a'] as const)('E12 finalizes %s at the displayed charge amounts without storing the taxed order', fixture => {
+  const order = builderForExemption(fixture), posOrder = finalizeOrder(order, { capabilities: { ...carries, chargeTaxMode: true } });
+  expect(posOrder.taxExempt).toBe(true);
+  expect(JSON.stringify(posOrder)).not.toContain('exemptedFrom');
+  expect(withSentForm(order, posOrder)).not.toHaveProperty('exemptedFrom');
+  for (const key of ['fees', 'shipping'] as const) expect(posOrder[key]?.map(row => row.amountMinor)).toEqual(order.display[key]?.map(row => row.amountMinor));
+  const { payload } = toOrderCreateEnvelope(posOrder, 'till', 1, { maxVersion: 12 });
+  expect(JSON.stringify(payload)).not.toContain('exemptedFrom');
+  expect(payloadShapeErrors(payload)).toEqual([]);
+});
+
+it('E12x finalizes inclusive Woo fees and shipping at their exempt nets', () => {
+  const order = builderForExemption('E4x'), posOrder = finalizeOrder(order, { capabilities: { ...carries, chargeTaxMode: true } });
+  for (const key of ['fees', 'shipping'] as const) {
+    const net = order.exemptedFrom![key]![0].netMinor;
+    expect(posOrder[key]).toMatchObject([{ totalMinor: net, amountMinor: net }]);
+  }
+  const { payload } = toOrderCreateEnvelope(posOrder, 'till', 1, { maxVersion: 12 });
+  expect(payloadShapeErrors(payload)).toEqual([]);
+});
+
+it.each([['G4', 902, 745, 838], ['G5', 907, 825, 825]] as const)(
+  '%s stores inclusive entries beside exempt nets without sending the entries', (fixture, amountMinor, feeNet, shippingNet) => {
+    const stored = finalizeOrder(builderForExemption(fixture), { capabilities: carries });
+    const taxedEntry = { amountMinor, amountIncludesTax: true };
+    expect(stored.fees).toMatchObject([{ amountMinor: feeNet, taxedEntry }]);
+    expect(stored.shipping).toMatchObject([{ amountMinor: shippingNet, taxedEntry }]);
+    const { payload } = toOrderCreateEnvelope(stored, 'till', 1, { maxVersion: 12 });
+    expect(JSON.stringify(payload)).not.toContain('taxedEntry');
+    expect(payloadShapeErrors(payload)).toEqual([]);
+  });
+
+it('G8 keeps entered but not taxedEntry on a non-exempt sale', () => {
+  const stored = finalizeOrder(builderForExemption('G8'), { capabilities: carries });
+  for (const key of ['fees', 'shipping'] as const) {
+    expect(stored[key]![0]).not.toHaveProperty('taxedEntry');
+    expect(stored[key]![0].entered).toEqual({ amountMinor: 902, amountIncludesTax: true });
+  }
+});
+
+it('G9 rejects an explicit false taxExempt in v24', async () => {
+  const db = await createRxDatabase({ name: `exempt${uuidv7().replaceAll('-', '')}`, multiInstance: false,
+    storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }) });
+  try {
+    const orders = await addPosOrderCollection(db);
+    await expect(orders.insert({ ...finalizeOrder(sale(), { capabilities: carries }), taxExempt: false } as unknown as PosOrder)).rejects.toMatchObject({ code: 'VD2' });
+  } finally { await db.remove(); }
+});
+
+it('G15 keeps the taxed twin’s generic line rates locally on exempt sales only', () => {
+  const builder = createOrderBuilder({ currency: 'AUD', taxContext: { pricesIncludeTax: false,
+    rounding: { granularity: 'per_line_items', mode: 'half_up' }, getTaxRateCode: taxClass => taxClass,
+    getTaxRatePpm: taxClass => taxClass === 'reduced' ? 70000 : 190000 } });
+  const unitPrice = { amount: 1000, currency: 'AUD' };
+  builder.addLine({ productId: 'A', name: 'A', taxClass: 'reduced', unitPrice });
+  builder.addLine({ productId: 'B', name: 'B', taxClass: 'standard', unitPrice });
+  builder.setTaxExempt(true);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  const stored = finalizeOrder(builder.getSnapshot(), { capabilities: carries });
+  expect(stored.lines.map(line => line.taxedRates)).toEqual([[{ code: 'reduced', ratePpm: 70000 }], [{ code: 'standard', ratePpm: 190000 }]]);
+  const { payload } = toOrderCreateEnvelope(stored, 'till', 1, { maxVersion: 12 });
+  expect(JSON.stringify(payload)).not.toContain('taxedRates');
+  expect(payloadShapeErrors(payload)).toEqual([]);
+  for (const fixture of ['G8', 'G5'] as const) {
+    const order = finalizeOrder(builderForExemption(fixture), { capabilities: carries });
+    for (const line of order.lines) expect(line).not.toHaveProperty('taxedRates');
+  }
+});

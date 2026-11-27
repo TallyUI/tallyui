@@ -59,6 +59,8 @@ export interface PosOrderLine {
   netMinor: number;
   netMicros?: string;
   taxLines: Array<{ code?: string; ratePpm: number; taxMicros: string }>;
+  /** An exempt sale's line rates from its taxed twin; only reopen reads it. */
+  taxedRates?: Array<{ code?: string; ratePpm: number }>;
   /** This line's own tax mode; set only when it was converted from the store's (ADR-038 amendment). */
   taxInclusive?: boolean;
 }
@@ -97,12 +99,16 @@ export interface PosOrder {
   fees?: Array<FeeLine & {
     /** vendurepos 2.10b and #1391: the charge as the cashier entered it, kept whenever its mode differs from `pricesIncludeTax` (never under `woocommerce` granularity, #1392). `sent` marks an entry order.create sends as `amountMinor` + `amountIncludesTax`, set only for a store whose connector declared `chargeTaxMode` at finalize. Without `sent`, the charge is sent in the order's mode, as stored. */
     entered?: { amountMinor: number; amountIncludesTax: boolean; sent?: true };
+    /** The differing entry from an exempt sale's taxed twin; only reopen reads it. */
+    taxedEntry?: { amountMinor: number; amountIncludesTax: boolean };
     /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
     storeLineId?: string;
   }>;
   shipping?: Array<ShippingLine & {
     /** vendurepos 2.10b and #1391: the charge as the cashier entered it, kept whenever its mode differs from `pricesIncludeTax` (never under `woocommerce` granularity, #1392). `sent` marks an entry order.create sends as `amountMinor` + `amountIncludesTax`, set only for a store whose connector declared `chargeTaxMode` at finalize. Without `sent`, the charge is sent in the order's mode, as stored. */
     entered?: { amountMinor: number; amountIncludesTax: boolean; sent?: true };
+    /** The differing entry from an exempt sale's taxed twin; only reopen reads it. */
+    taxedEntry?: { amountMinor: number; amountIncludesTax: boolean };
     /** The store's id of a kept fee or shipping line, in the same id space as lines (ADR-090). */
     storeLineId?: string;
   }>;

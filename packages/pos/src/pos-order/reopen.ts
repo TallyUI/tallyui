@@ -93,7 +93,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
         ...(line.attributes !== undefined ? { attributes: line.attributes } : {}),
         ...(line.anyAttributes !== undefined ? { anyAttributes: line.anyAttributes } : {}),
         quantity: line.quantity,
-        taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })),
+        ...(!order.taxExempt ? { taxRates: line.taxLines.map(({ code, ratePpm }) => ({ code, ratePpm })) }
+          : line.taxedRates ? { taxRates: line.taxedRates.map(({ code, ratePpm }) => ({ ...(code !== undefined ? { code } : {}), ratePpm })) } : {}),
         ...(line.custom ? { custom: true, taxClass: line.custom.taxClass, taxStatus: line.custom.taxStatus }
           : { taxClass: deps.taxClassOf?.(line.productId, line.variantId) ?? 'standard', taxStatus: line.taxStatus }),
         // Stored lines stay distinct for a coupon sale, so the carry maps by index and the drop is the rebuild it previews.
@@ -114,12 +115,16 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       builder.applyOrderDiscount({ type: 'fixed', value: display.orderDiscountMinor, label: 'Discount' });
     }
     for (const fee of order.fees ?? []) builder.addFee({
-      name: fee.name, ...(fee.entered ? { amountMinor: fee.entered.amountMinor, amountIncludesTax: fee.entered.amountIncludesTax } : { amountMinor: fee.amountMinor }),
+      name: fee.name, amountMinor: fee.taxedEntry?.amountMinor ?? fee.entered?.amountMinor ?? fee.amountMinor,
+      amountIncludesTax: fee.taxedEntry?.amountIncludesTax ?? fee.entered?.amountIncludesTax,
+      ...(fee.taxedEntry && order.taxExempt && !deps.taxContext.pricesIncludeTax ? { exemptMinor: fee.amountMinor } : {}),
       ...(fee.taxClass !== undefined ? { taxClass: fee.taxClass } : {}),
       ...(fee.taxStatus !== undefined ? { taxStatus: fee.taxStatus } : {}),
     });
     for (const shipping of order.shipping ?? []) builder.addShipping({
-      name: shipping.name, ...(shipping.entered ? { amountMinor: shipping.entered.amountMinor, amountIncludesTax: shipping.entered.amountIncludesTax } : { amountMinor: shipping.amountMinor }),
+      name: shipping.name, amountMinor: shipping.taxedEntry?.amountMinor ?? shipping.entered?.amountMinor ?? shipping.amountMinor,
+      amountIncludesTax: shipping.taxedEntry?.amountIncludesTax ?? shipping.entered?.amountIncludesTax,
+      ...(shipping.taxedEntry && order.taxExempt && !deps.taxContext.pricesIncludeTax ? { exemptMinor: shipping.amountMinor } : {}),
       ...(shipping.taxClass !== undefined ? { taxClass: shipping.taxClass } : {}),
       ...(shipping.taxStatus !== undefined ? { taxStatus: shipping.taxStatus } : {}),
       ...(shipping.methodId !== undefined ? { methodId: shipping.methodId } : {}),
@@ -148,6 +153,8 @@ export async function reopenRefusedOrder(orderId: string, deps: {
     // ADR-083 condition 1: the note holds only the cashier's own note, since order.create 7 sends it. The refusal stays
     // on this refused row (`error`), the till's record of it; the draft's id is this row's id.
     if (order.note) builder.setNote(order.note);
+    if (order.taxExempt && !deps.taxContext.pricesIncludeTax) builder.setTaxExempt(true);
+    const notice = order.taxExempt && deps.taxContext.pricesIncludeTax ? { taxExemptDropped: true as const } : {};
     const dropped = builder.getSnapshot();
     if (carry) {
       const coupons = order.coupons!;
@@ -174,9 +181,9 @@ export async function reopenRefusedOrder(orderId: string, deps: {
       builder.setCoupons(coupons.map((coupon) => coupon.code), { kind: 'store-priced', carried: true, priced, basis: couponPricingBasis(dropped) });
       const carried = builder.getSnapshot();
       if (!sameFigures(carried, order)) throw inexact();
-      await writeOrderDraft(deps.drafts, carried);
+      await writeOrderDraft(deps.drafts, { ...carried, ...notice });
     } else {
-      await writeOrderDraft(deps.drafts, dropped);
+      await writeOrderDraft(deps.drafts, { ...dropped, ...notice });
     }
   }
   const document = await deps.orders.findOne(orderId).exec();
