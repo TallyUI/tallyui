@@ -680,7 +680,8 @@ for products that aren't resident is optional:
 - customer edit (#521);
 - variation attributes on the line (#495, needs-paul);
 - coupons (#501);
-- tax exempt;
+- tax exempt (left: slice 4, the switch and the receipt line, and the info
+  read for Vendure, #1441);
 - line split;
 - open orders shown as tabs;
 - server order history in the orders panel (#540).
@@ -691,11 +692,18 @@ parked sales.
 **Connector seam.**
 - **Note:** Woo `customer_note`, Medusa order `metadata`, Vendure
   `addNoteToOrder`.
-- **Tax exempt:**
-  - Woo `is_vat_exempt`;
-  - Medusa customer group tax rules;
-  - Vendure: no direct equivalent, so the connector reports it as
-    unsupported.
+- **Tax exempt** (order-level only, hidden on prices-include-tax stores;
+  the capabilities are `taxExempt` and `taxExemptCoupons`):
+  - Woo: `is_vat_exempt` order meta, which needs no plugin change (#1430).
+    The capability is declared only on stock, non-fork, exclusive stores
+    on 1.10.20+ or 2.0.5+ (`wooTaxExemptGate`), and never with
+    `taxExemptCoupons`, so the till refuses a coupon on an exempt Woo sale;
+  - Medusa: capability absent. Its tax refresh re-taxes a `taxStatus:
+    'none'` line, so customer group tax rules do not carry it (finding of
+    2026-10-06);
+  - Vendure: the vendurepos plugin owns the server half and will declare
+    `taxExempt` in `/tally/v1/info`. TallyUI does not read that field yet
+    (#1441), so until then the Vendure till keeps the switch hidden.
 
 **Size and dependencies.** M, as several S units.
 
@@ -759,7 +767,10 @@ the same as adopted: several merged units have not reached a demo yet.
 - **Partly done:**
   - 28: #609 has no refund, Z or report defaults;
   - 34a: #636.
-- **Not started:** 18, 24, 26, 27, 32, 34b, 34c, 39 and 40+, and tax exempt.
+- **Tax exempt:** slices 1–3 merged (#1420, #1422, #1425, #1430). Still to
+  do: slice 4, the Order details switch and the receipt line, and reading
+  `taxExempt` from `/tally/v1/info` for Vendure (#1441).
+- **Not started:** 18, 24, 26, 27, 32, 34b, 34c, 39 and 40+.
 - **Connector units:**
   - Medusa `listOrders` and `emailReceipt` are not started.
   - Vendure orders are done (#595).
@@ -839,7 +850,7 @@ the same as adopted: several merged units have not reached a demo yet.
 | 38 | ESC/POS encoder transport for thermal printers | pos (or its own package) | A9 | M | 29, Q2 | all | two-way |
 | 39 | Barcode settings section and a test panel | components | A13 | S | 12, 22 | all | two-way |
 | 40+ | i18n extraction, one component area per PR (cart, register, product, settings, reports) | components | A15 | S each | 35 | all | two-way |
-| — | Tax exempt per sale (Woo `is_vat_exempt`; Medusa customer-group rules; Vendure reports unsupported) | core, pos | A14 | M | — | all | one-way |
+| — | Tax exempt per sale, order-level (Woo `is_vat_exempt` order meta; Medusa capability absent; Vendure server half in vendurepos) | core, pos, connectors, components | A14 | M | — | all | one-way |
 | — | Line split (`cart.line.split`) | pos | A14 | S | — | all | two-way |
 
 ### Connector units (this repo's `connectors/`), each S unless marked
