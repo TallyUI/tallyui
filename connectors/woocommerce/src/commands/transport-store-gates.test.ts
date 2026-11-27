@@ -82,6 +82,7 @@ it.each([
   ['P3', 403, undefined, 'multiplePayments', unauthorized, ['status']],
   ['P4', 'list', false, 'multiplePayments', listClosed, []],
   ['P5', 'stock', undefined, 'ordinary', sent, [push]],
+  ['P6', 'stock', true, 'multiplePayments', listClosed, ['status']],
 ] as const)('%s split-tender gate', async (_row, status, acceptsPaymentsList, feature, expected, calls) => {
   const { transport, routes, fetch } = store(status, '1.10.20', { acceptsPaymentsList });
   expect(await transport.send([sale(feature)])).toMatchObject(expected);
