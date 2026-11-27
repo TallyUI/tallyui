@@ -460,6 +460,8 @@ export interface OrderCreatePayload {
   payments: OrderCreatePayment[];
   /** ADR-094: each cash leg's signed rounding, in minor units, already summed into `totalMinor`; sent at the order's content version, only for an order that has one, and only to a store whose connector declares `cashRounding` (a server without it refuses the field). */
   cashRoundings?: Array<{ paymentId: string; minor: number }>;
+  /** Instruction (tax exempt per sale): the store charges no tax on any line, fee or shipping. Sent at the order's content version, only for an exempt order, and only to a store whose connector declares `taxExempt` (ADR-094's capability pattern, no new version). Every tax figure on such a payload is 0. Never sent on order.update. */
+  taxExempt?: true;
   /** Version 3+; both or neither. */
   display?: OrderCreateDisplay;
   /** Version 3+; both or neither. */

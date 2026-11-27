@@ -94,6 +94,8 @@ export interface ServerCapabilities {
   cashRounding?: boolean;
   /** True only when the store takes a fee's or shipping charge's own tax mode as order.create's `amountIncludesTax` (vendurepos 2.10b). Absent: finalize converts every charge to the order's mode and sends no `amountIncludesTax`. */
   chargeTaxMode?: boolean;
+  /** True only when the store's connector honours order.create's `taxExempt` (tax exempt per sale): the store charges no tax on the order's lines, fees or shipping. Absent: the app offers no exemption, and finalize refuses an exempt order. */
+  taxExempt?: boolean;
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */

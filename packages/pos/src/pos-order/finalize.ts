@@ -216,6 +216,22 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.cashRoundings?.length && options.capabilities?.cashRounding !== true) {
     throw new Error('finalize: cash rounding needs a store whose connector declares the cashRounding capability');
   }
+  /** Before the sale is committed:
+   * - finalize refuses with the capability message;
+   * - `useSale` stops saving and shows it as `saleError` (existing path, `packages/pos/src/sale/use-sale.ts` around line 1100);
+   * - the sale stays open on screen with its taken payments, and nothing is written.
+   * After commit, a refused push (the capability dropped between sale and push):
+   * - the order is kept with every payment and listed in Needs attention as "Not accepted", with the `invalid_payload` sentence and Retry;
+   * - the drawer still expects its cash;
+   * - Retry sends it again once the store declares the capability;
+   * - nothing is dropped or re-taxed silently. */
+  if (order.taxExempt) {
+    if (order.storeOrder) throw new Error('finalize: a reopened store order cannot be made tax exempt');
+    if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
+    if (order.taxMinor !== 0 || order.display.taxMinor !== 0 || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))) {
+      throw new Error('finalize: a tax-exempt sale must carry no tax');
+    }
+  }
   if (!order.lineItems.length) throw new Error('finalize: no lines');
   // Defence in depth: the builder already clamps every discount to >= 0, so this should never fire.
   if (order.discountMinor < 0
@@ -391,6 +407,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       if (index === -1) throw new Error('finalize: a cash rounding names no payment on the order');
       return { paymentId: payments[index].id, minor: entry.minor };
     }) } : {}),
+    ...(order.taxExempt ? { taxExempt: true } : {}),
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,

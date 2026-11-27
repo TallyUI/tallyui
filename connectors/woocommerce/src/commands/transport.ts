@@ -310,6 +310,12 @@ export function createWooCommandTransport(options: WooCommandTransportOptions): 
           data: { storeCode: 'cash_rounding_unsupported' } } });
           continue;
         }
+        // Slice 3 opens tax exemption only after the store is proven.
+        if (envelope.payload.taxExempt !== undefined) {
+          results.push({ id: envelope.id, status: 'rejected', error: { code: 'invalid_payload',
+            message: "This store's WooCommerce connector does not carry tax exemption yet; complete the sale without it.", data: { storeCode: 'tax_exempt_unsupported' } } });
+          continue;
+        }
         const mapped = toWooOrderPayload(envelope, context?.local?.orders?.get(envelope.id), { paymentsList, ledger });
         if ('error' in mapped) {
           results.push({ id: envelope.id, status: 'rejected', error: mapped.error });

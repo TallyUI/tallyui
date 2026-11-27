@@ -115,6 +115,8 @@ export interface PosOrder {
   payments: PosOrderPayment[];
   /** ADR-094: the cash rounding entries, keyed by this order's payment ids and counted in totalMinor. Absent when empty. */
   cashRoundings?: CashRounding[];
+  /** pos_orders v24: present only on a tax-exempt sale. */
+  taxExempt?: true;
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
   customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress;
     /** The sale's tax ids (pos_orders v18, ADR-092), sent at order.create 12; `label` is kept on the till and is not sent. */

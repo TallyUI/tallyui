@@ -101,13 +101,13 @@ it('T9 leaves the receipt unchanged', () => {
   expect(withSentForm(snapshot, finalize(snapshot))).toStrictEqual(withSentForm(snapshot, finalize(snapshot, off)));
 });
 
-it('T10 stores the cashier entry in schema 23', async () => {
+it('T10 stores the cashier entry in schema 24', async () => {
   const order = finalize(sale());
   const db = await createRxDatabase({ name: `charge${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
     const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
-    expect(pos_orders.schema.version).toBe(23);
+    expect(pos_orders.schema.version).toBe(24);
     expect((await pos_orders.insert(order)).toJSON()).toStrictEqual(order);
   } finally { await db.remove(); }
 });

@@ -74,6 +74,18 @@ export function payloadShapeErrors(payload: unknown): string[] {
       check(Number.isSafeInteger(entry.minor), `${path}.minor`, 'a safe integer')
     }
   }
+  if (payload.taxExempt !== undefined) check(payload.taxExempt === true, 'taxExempt', 'true when present')
+  if (payload.taxExempt === true) {
+    const expected = '0 on a tax-exempt order'
+    if (payload.taxMinor !== undefined) check(payload.taxMinor === 0, 'taxMinor', expected)
+    for (const field of ['fees', 'shipping', 'taxByRate']) {
+      const rows = payload[field]
+      if (Array.isArray(rows)) rows.forEach((row, index) => {
+        if (object(row) && row.taxMinor !== undefined) check(row.taxMinor === 0, `${field}[${index}].taxMinor`, expected)
+      })
+    }
+    if (object(payload.display) && payload.display.taxMinor !== undefined) check(payload.display.taxMinor === 0, 'display.taxMinor', expected)
+  }
   if (payload.customer !== undefined && payload.customer !== null) {
     check(object(payload.customer), 'customer', 'an object')
     if (object(payload.customer) && payload.customer.email !== undefined) {

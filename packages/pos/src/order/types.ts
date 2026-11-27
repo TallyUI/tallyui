@@ -43,6 +43,8 @@ export interface Order {
   payments: Payment[];
   /** ADR-094: a cash leg that settles the sale at a rounded due records the signed difference here, counted in totalMinor; only entries whose leg counts toward paid are built in. Absent when empty. */
   cashRoundings?: CashRounding[];
+  /** Tax exempt per sale: present only on an exempt sale, every tax figure 0; finalize refuses it unless the store declares `taxExempt`. Nothing sets it yet (the sale switch is a later slice). */
+  taxExempt?: true;
   customer: CustomerSummary | null;
   note: string;
   /** The sale's order meta, WooCommerce's custom fields (ADR-092 6d). Set with `useSale().setMeta`, parked with the draft,
