@@ -38,3 +38,4 @@ This is WCPOS v2's Order details sheet, opening on the left so the cart's note r
 | `onChangeText` | `(text: string) => void` | required | Called on every edit with the untrimmed text |
 | `onOpenChange` | `(open: boolean) => void` | required | Called when the dialog requests an open state change; Close calls it with `false` |
 | `label` | `string` | `'Customer note'` | The field's label and accessible name; the placeholder is "Add" plus the label in lower case |
+| `taxExempt` | `{ checked: boolean; onCheckedChange: (on: boolean) => void; error?: string \| null }` | --- | Shows the controlled Tax exempt switch and its hint, with an alert when `error` is non-empty; omit to hide the row |
