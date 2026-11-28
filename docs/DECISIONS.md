@@ -7260,14 +7260,15 @@ interface OrderCreatePayload {
      base64url, stored only as its SHA-256 hash) and makes it current. The old token becomes *superseded*: it keeps
      working for every token call during a short overlap, so a request already in flight, or a lost answer, does
      not strand the display. The overlap is at least 60 seconds and at most 10 minutes; the reference server uses 5
-     minutes. Renewal does not extend the overlap. Whether a server may refuse to renew the current token while its
-     predecessor is inside the overlap is left open: the contract neither requires nor forbids it, and slice B
-     settles how the client treats such a refusal. The overlap governs a superseded token: reaching its own
+     minutes. Renewal does not extend the overlap. The superseded token works until its overlap ends or the current
+     token is itself renewed, whichever comes first. A server may refuse to renew the current token while its
+     predecessor is inside the overlap, dropping nothing; a server that remembers may instead drop the display when
+     that predecessor is next presented. The overlap governs a superseded token: reaching its own
      expiry does not end the overlap early.
   4. **A lost answer.** `renew` with the superseded token, inside the overlap, while its successor has never been
      presented, issues a fresh successor in place of the unseen one, which is refused from then on. This is the only
      way a token is renewed twice.
-  5. **Reuse is revocation.** The display is dropped (its row, both token hashes and its snapshot, as `forget` does),
+  5. **Reuse is revocation.** The display is dropped (its row, every token hash it holds and its snapshot, as `forget` does),
      and the call gets `token_refused`, when:
      - the superseded token is presented after its overlap, by any token call (`claim` is not a token call: it is
        gated by the code, and a superseded token there neither moves nor revokes the display); or
@@ -7275,14 +7276,18 @@ interface OrderCreatePayload {
 
      The cashier then pairs the display again. A server may also remember each superseded token, a replaced unseen
      successor included, until that token's own expiry, and drop the display when one is presented; the reference
-     server does this, and plugins should. A server that keeps only one generation back treats an older token as
+     server does this, and plugins should. A server that remembers bounds the set for each display: room for at least
+     two entries per day of token lifetime; when it is full the display is dropped, and it never forgets the oldest
+     entry to make room. A server that keeps only one generation back treats an older token as
      unknown. Both answer `token_refused`, and the display client tolerates either: a dropped display shows the
      pairing screen and pairs again, never retrying in a loop.
   6. **Refusals say nothing.** Expired, superseded-after-overlap, unknown and forgotten tokens all give
      `token_refused`, so a caller learns nothing about which case it hit. Every successful `renew` is a token call
      and updates `lastSeenAt`. `claim`'s move (ADR-085 d5) matches the current token only.
   7. **The display client** renews right after `collect`, once at start when it holds a token, and again before half
-     of the time left to `expiresAt` has passed, at most 24 hours apart. It saves the new token before using it. If the save fails, it
+     of the time left to `expiresAt` has passed, at most 24 hours apart. The client never renews a token within 10
+     minutes (the longest overlap) of the renew that issued it, the start renew included, and it adopts only the
+     answer to its latest attempt. It saves the new token before using it. If the save fails, it
      uses the new token from memory, as ADR-085 d5 holds a device key it could not save, and retries the save; once
      it has used the new token it never presents the old one again. One renew is in flight at a time, and the client
      retries a renew with no answer between 30 and 50 seconds after sending it, so the retry lands inside the
@@ -7294,7 +7299,8 @@ interface OrderCreatePayload {
 - **Consequences:** Adding `renew?` is additive, so core takes it as a minor. A display that is offline for longer than
   the overlap, just after the server applied a renew whose answer it never received, must pair again; the overlap is
   kept short on purpose. Rotation detects a copied superseded token: presenting it after its overlap revokes the
-  display, and so does presenting it at any time before its own expiry on a server that remembers it. A copied
+  display, and so does presenting it, once a later renew has replaced it, at any time before its own expiry on a
+  server that remembers it. A copied
   current token is caught only when the real display presents a token the server still remembers. On a server that
   keeps one generation back, a thief who renews twice holds the pairing, and keeps receiving the till's snapshots,
   until the cashier forgets that display. Two residual cases also make a display
