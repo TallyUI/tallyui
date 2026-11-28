@@ -90,7 +90,7 @@ it('X14 preserves pending and applied v23 orders and their metadata, then round-
   const db = await createRxDatabase({ name, storage, multiInstance: false });
   try {
     const orders = await addPosOrderCollection(db);
-    expect(orders.schema.version).toBe(24);
+    expect(orders.schema.version).toBe(25);
     for (const [index, order] of [pending, applied].entries()) {
       const migrated = (await orders.findOne(order.id).exec())!;
       expect(migrated.toJSON()).toStrictEqual(order);
@@ -232,7 +232,7 @@ it('G8 keeps entered but not taxedEntry on a non-exempt sale', () => {
   }
 });
 
-it('G9 rejects an explicit false taxExempt in v24', async () => {
+it('G9 rejects an explicit false taxExempt in v25', async () => {
   const db = await createRxDatabase({ name: `exempt${uuidv7().replaceAll('-', '')}`, multiInstance: false,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }) });
   try {

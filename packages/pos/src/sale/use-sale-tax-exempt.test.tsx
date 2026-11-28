@@ -8,6 +8,7 @@ import type { StoreSettings, woocommerceTax } from '@tallyui/core';
 import { wooProductTraits as traits } from '@tallyui/connector-woocommerce';
 import { couponPricingBasis, createOrderBuilder, orderDraftSchema, writeOrderDraft, type Order } from '../order';
 import { patchSale } from '../order/tax-exempt';
+import { posOrderCollection } from '../pos-order';
 import { receiptRounding } from '../receipt/build-receipt-data';
 import { taxProviderProps } from '../store-settings';
 import { saleTaxContexts, TaxProvider } from '../tax';
@@ -15,6 +16,7 @@ import { catalogueEntries } from './catalogue';
 import { COUPONS_NEED_CONNECTION } from './discount-codes';
 import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_COUPONS, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
+import { TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_NOT_SENDABLE, TAX_EXEMPT_REASON_REMOVED, TAX_EXEMPT_REASON_REQUIRED, TAX_EXEMPT_REASON_UNAVAILABLE } from './use-sale';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
 const wooRate = (id: number, country: string, rate: string): woocommerceTax.WooTaxRate => ({
@@ -450,5 +452,176 @@ it('S24 refuses a converted catalogue line without changing an exempt order', ()
   expect(result.current.error).toBe(TAX_EXEMPT_CONVERTED_LINE);
   expect(result.current.order).toBe(before);
   toggle(result, false);
+  expect(result.current.error).toBeNull();
+});
+
+const optionalReason = { taxExempt: true, taxExemptReason: 'optional', orderCreate: 13 } as const;
+const reason = { text: 'Charity', certificateId: 'ST5-0042' };
+
+function setReason(sale: Sale, input: Parameters<Sale['current']['setTaxExemptReason']>[0], refusal?: string) {
+  const before = sale.current.order;
+  act(() => { expect(sale.current.setTaxExemptReason(input)).toBe(refusal === undefined); });
+  if (refusal) {
+    expect(sale.current.error).toBe(refusal);
+    expect(sale.current.order).toBe(before);
+  }
+}
+
+it('stores an optional reason on completion without changing the note, and refuses edits on the receipt', async () => {
+  const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+  const { result } = renderSale({ capabilities: optionalReason, onSaleCompleted: async order => { await pos_orders.insert(order); } });
+  add(result); toggle(result, true);
+  act(() => result.current.setNote('Collect at counter'));
+  setReason(result, { ...reason, text: ' Charity ' });
+  expect(result.current.taxExemptReason).toStrictEqual(reason);
+  expect(result.current.taxExemptReasonMode).toBe('optional');
+  expect(result.current.taxExemptReasonSent).toBe(true);
+  expect(result.current.taxExemptReasonMissing).toBe(false);
+  takeCash(result, result.current.order.totalMinor);
+  await act(() => result.current.complete());
+  expect(result.current.stage.kind).toBe('receipt');
+  expect((await pos_orders.findOne().exec())?.toJSON()).toMatchObject({ taxExemptReason: reason, note: 'Collect at counter' });
+  setReason(result, null, SALE_FINISHED);
+});
+
+it('refuses a reason without exemption, text or a reason capability', () => {
+  const { result, rerender, options } = renderSale({ capabilities: optionalReason });
+  setReason(result, reason, TAX_EXEMPT_REASON_NOT_EXEMPT);
+  toggle(result, true);
+  setReason(result, { certificateId: reason.certificateId }, TAX_EXEMPT_REASON_NEEDS_TEXT);
+  setReason(result, reason);
+  expect(result.current.error).toBeNull();
+  rerender({ ...options, capabilities: { taxExempt: true, orderCreate: 13 } });
+  expect(result.current.taxExemptReasonMode).toBeNull();
+  setReason(result, reason, TAX_EXEMPT_REASON_UNAVAILABLE);
+  setReason(result, null);
+  expect(result.current.error).toBeNull();
+});
+
+it('refuses a reason change outside the cart', () => {
+  const { result } = renderSale({ capabilities: optionalReason });
+  add(result); toggle(result, true);
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('tender');
+  setReason(result, reason, TAX_EXEMPT_REASON_LOCKED);
+  expect(result.current.taxExemptReason).toBeNull();
+  act(() => result.current.cancelTender());
+  setReason(result, reason);
+  expect(result.current.taxExemptReason).toStrictEqual(reason);
+  act(() => result.current.startTender('cash'));
+  takeCash(result, 300);
+  expect(result.current.stage.kind).toBe('tender');
+  expect(result.current.order.paidMinor).toBe(300);
+  setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
+  act(() => result.current.cancelTender());
+  setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
+  expect(result.current.taxExemptReason).toStrictEqual(reason);
+});
+
+it('C4/C5 reports that a reason can be sent until a replay coupon is added', async () => {
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const { result } = renderSale({ discountCodes, capabilities: { ...optionalReason, coupons: true, taxExemptCoupons: true } });
+  add(result); toggle(result, true); setReason(result, reason);
+  expect(result.current.taxExemptReasonSent).toBe(true);
+  await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+  expect(result.current.order.coupons![0]).not.toHaveProperty('lines');
+  expect(result.current.taxExemptReasonSent).toBe(false);
+});
+
+it('reports a missing required reason and gates sending and exemption by order.create version', () => {
+  const required = { ...optionalReason, taxExemptReason: 'required' } as const;
+  const { result, rerender, options } = renderSale({ capabilities: required });
+  toggle(result, true);
+  expect(result.current.taxExemptReasonMode).toBe('required');
+  expect(result.current.taxExemptReasonMissing).toBe(true);
+  setReason(result, reason);
+  expect(result.current.taxExemptReasonMissing).toBe(false);
+  toggle(result, false);
+  rerender({ ...options, capabilities: { ...optionalReason, orderCreate: 12 } });
+  expect(result.current.taxExemptReasonSent).toBe(false);
+  rerender({ ...options, capabilities: { ...required, orderCreate: 12 } });
+  expect(result.current.taxExemptAvailable).toBe(false);
+  toggle(result, true, false);
+  expect(result.current.error).toBe(TAX_EXEMPT_UNAVAILABLE);
+});
+
+it.each([optionalReason, { taxExempt: true, orderCreate: 13 }, { taxExempt: true, taxExemptReason: 'required', orderCreate: 12 }] as const)(
+  'resumes the reason according to current capabilities: %j', async capabilities => {
+    const { result, rerender, options } = renderSale({ capabilities: optionalReason });
+    add(result); toggle(result, true); setReason(result, reason);
+    const id = result.current.order.id;
+    await act(async () => { expect(await result.current.park()).toBeNull(); });
+    rerender({ ...options, capabilities });
+    await act(async () => { expect(await result.current.resume(id)).toBeNull(); });
+    expect(result.current.taxExempt).toBe(capabilities.orderCreate === 13);
+    expect(result.current.taxExemptReason).toStrictEqual(capabilities === optionalReason ? reason : null);
+    expect(result.current.error).toBe(capabilities === optionalReason ? null : capabilities.orderCreate === 12 ? TAX_EXEMPT_REMOVED : TAX_EXEMPT_REASON_REMOVED);
+  });
+
+const required = { ...optionalReason, taxExemptReason: 'required' } as const;
+
+it('B1a refuses to start a cash or external tender until the required reason is added', () => {
+  const { result } = renderSale({ capabilities: required });
+  add(result); toggle(result, true);
+  for (const method of ['cash', 'external'] as const) {
+    act(() => result.current.startTender(method));
+    expect(result.current.stage.kind).toBe('cart');
+    expect(result.current.order.paidMinor).toBe(0);
+    expect(result.current.error).toBe(TAX_EXEMPT_REASON_REQUIRED);
+  }
+  setReason(result, reason);
+  expect(result.current.error).toBeNull();
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('tender');
+});
+
+it('B1b refuses to set a tender without the required reason but allows clearing', () => {
+  const { result } = renderSale({ capabilities: required });
+  add(result); toggle(result, true);
+  act(() => result.current.setTender({ method: 'cash', amountMinor: 100 }));
+  expect(result.current.order.payments).toHaveLength(0);
+  expect(result.current.error).toBe(TAX_EXEMPT_REASON_REQUIRED);
+  act(() => result.current.setTender(null));
+  expect(result.current.error).toBeNull();
+});
+
+it('B1c refuses to add a cash payment directly from the cart without the required reason', () => {
+  const { result } = renderSale({ capabilities: required });
+  add(result); toggle(result, true);
+  act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: 100 })).toBeNull(); });
+  expect(result.current.order.paidMinor).toBe(0);
+  expect(result.current.error).toBe(TAX_EXEMPT_REASON_REQUIRED);
+});
+
+it('B1d refuses to start a tender when a replay coupon cannot carry the required reason', async () => {
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const { result } = renderSale({ discountCodes, capabilities: { ...required, coupons: true, taxExemptCoupons: true } });
+  add(result); toggle(result, true); setReason(result, reason);
+  await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+  expect(result.current.order.coupons![0]).not.toHaveProperty('lines');
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('cart');
+  expect(result.current.order.paidMinor).toBe(0);
+  expect(result.current.error).toBe(TAX_EXEMPT_REASON_NOT_SENDABLE);
+  toggle(result, false);
+  expect(result.current.error).toBeNull();
+});
+
+it.each([
+  [required, true, true],
+  [required, false, false],
+  [optionalReason, true, false],
+  [{ taxExempt: true, orderCreate: 13 }, true, false],
+] as const)('B1e accepts payment for %j, exempt=%s, reason=%s', (capabilities, exempt, withReason) => {
+  const { result } = renderSale({ capabilities });
+  add(result);
+  if (exempt) toggle(result, true);
+  if (withReason) setReason(result, reason);
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('tender');
+  takeCash(result, result.current.order.totalMinor);
+  expect(result.current.order.paidMinor).toBe(result.current.order.totalMinor);
   expect(result.current.error).toBeNull();
 });

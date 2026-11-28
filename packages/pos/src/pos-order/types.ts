@@ -1,4 +1,4 @@
-import type { CommandError, CommandServerRefs, CommandWarning, OrderAddress, OrderCreateEnvelope, OrderCreateLine, PaymentMethodKind, TaxRounding } from '@tallyui/core';
+import type { CommandError, CommandServerRefs, CommandWarning, OrderAddress, OrderCreateEnvelope, OrderCreateLine, OrderCreateTaxExemptReason, PaymentMethodKind, TaxRounding } from '@tallyui/core';
 import type { CashRounding, DisplayTotals, FeeLine, ShippingLine } from '../order/types';
 
 export type PosOrderSyncStatus = 'pending' | 'applied' | 'rejected';
@@ -123,6 +123,8 @@ export interface PosOrder {
   cashRoundings?: CashRounding[];
   /** pos_orders v24: present only on a tax-exempt sale. */
   taxExempt?: true;
+  /** Staff-only (pos_orders v25); sent at order.create 13; never on a receipt or a display. */
+  taxExemptReason?: OrderCreateTaxExemptReason;
   /** `billing` and `shipping` (#722) are frozen copies of the customer's addresses, stored only with `taxAddress`. */
   customer: { id?: string; name?: string; email?: string; billing?: OrderAddress; shipping?: OrderAddress;
     /** The sale's tax ids (pos_orders v18, ADR-092), sent at order.create 12; `label` is kept on the till and is not sent. */

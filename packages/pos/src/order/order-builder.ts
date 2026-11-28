@@ -1,5 +1,5 @@
 import { BehaviorSubject, type Observable } from 'rxjs';
-import { resolvePrice, woocommerceTax, type woocommerceCoupons, type OrderCreateMeta, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
+import { resolvePrice, woocommerceTax, type woocommerceCoupons, type OrderCreateMeta, type OrderCreateTaxExemptReason, type ProductTraits, type ResolvedPrice, type TaxRounding } from '@tallyui/core';
 import type { TaxContext, WooRate } from '../tax/types';
 import { taxMicros, roundMicrosToMinor, roundedTaxByRate, MICROS_PER_MINOR } from '../tax/exact';
 import { taxLogger } from '../tax/tax-provider';
@@ -207,6 +207,8 @@ export interface OrderBuilder {
   removePayment(paymentId: string): void;
   setCustomer(customer: CustomerSummary | null): void;
   setTaxExempt(on: boolean): void;
+  /** Staff-only reason on a tax-exempt sale; throws when the sale is not exempt. Never on exemptedFrom, a receipt or the display. */
+  setTaxExemptReason(reason: OrderCreateTaxExemptReason | null): void;
   setNote(note: string): void;
   /** Replaces the order meta as given (`[]` removes it); `useSale().setMeta` checks keys before it calls this. */
   setMeta(meta: OrderCreateMeta[]): void;
@@ -220,6 +222,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
   const { taxContext } = options;
   const unavailable = 'order builder: tax exemption is not available on a prices-include-tax store';
   let taxExempt = options.taxExempt === true;
+  let taxExemptReason: OrderCreateTaxExemptReason | null = null;
   if (taxExempt && taxContext.pricesIncludeTax) throw new Error(unavailable);
   let storeOrder = options.storeOrder;
   let afterClose = options.afterClose;
@@ -557,7 +560,10 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     // #709: the store's amounts still apply while stale, so the cart shows the last known prices; finalize refuses it.
     if (store && couponCodes.length && couponPricingBasis(order) !== store.basis) order.couponPricesStale = true;
     if (kept && couponCodes.length && (!keptOn || couponPricingBasis(order) !== kept.basis)) order.couponPricesStale = true;
-    return ownRows ? exemptOrder(order, ownRows) : order;
+    if (!ownRows) return order;
+    const exempt = exemptOrder(order, ownRows);
+    if (taxExemptReason) exempt.taxExemptReason = { ...taxExemptReason };
+    return exempt;
   }
 
   function emit() {
@@ -897,6 +903,13 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
     setTaxExempt(on) {
       if (on && taxContext.pricesIncludeTax) throw new Error(unavailable);
       taxExempt = on;
+      if (!on) taxExemptReason = null;
+      emit();
+    },
+
+    setTaxExemptReason(reason) {
+      if (reason && !taxExempt) throw new Error('A tax-exempt reason needs a tax-exempt sale');
+      taxExemptReason = reason ? { ...reason } : null;
       emit();
     },
 
@@ -944,6 +957,7 @@ export function createOrderBuilder(options: OrderBuilderOptions): OrderBuilder {
 
     clear() {
       taxExempt = false;
+      taxExemptReason = null;
       storeOrder = undefined;
       afterClose = undefined;
       lineItems = [];
