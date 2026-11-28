@@ -333,7 +333,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
                 <Pressable key={tile.id} testID={`tender-method-${tile.id}`} accessibilityRole="button" accessibilityState={{ selected: tile.id === state.methodId }}
                   // react-native-web does not render accessibilityState.selected.
                   disabled={pending} aria-selected={tile.id === state.methodId}
-                  onPress={() => send({ type: 'pick-method', methodId: tile.id, prefillMinor: state.view === 'amount' ? state.entryMinor : thisPaymentMinor, readerId: null })}
+                  onPress={() => send({ type: 'pick-method', methodId: tile.id, prefillMinor: state.view === 'amount' || state.entryMode === 'percent' ? state.entryMinor : thisPaymentMinor, readerId: null })}
                   className={cn('min-h-16 items-center justify-center gap-1 rounded-md border bg-card px-2 py-2', selected ? 'border-primary bg-muted' : 'border-border')}>
                   <Icon size={20} testID={`tender-method-${tile.id}-icon`} />
                   <Text numberOfLines={2} className="text-center font-semibold text-foreground">{tile.title}</Text>
