@@ -35,22 +35,32 @@ beforeEach(async () => {
 });
 afterEach(async () => { cleanup(); await db.remove(); });
 
-async function reopen(settings: StoreSettings, reopenSettings = settings, feeGross?: number, shippingGross = feeGross) {
+async function reopen(settings: StoreSettings, reopenSettings = settings, feeGross?: number, shippingGross = feeGross, reason?: PosOrder['taxExemptReason']) {
   const builder = createOrderBuilder({ currency: settings.currency, taxContext: createTaxContext(taxProviderProps(settings)) });
   builder.addLine({ productId: '10', name: 'Shirt', taxClass: 'standard', unitPrice: { amount: 1000, currency: settings.currency } });
   builder.addFee({ ...(feeGross === undefined ? {} : { amountIncludesTax: true }), name: 'Bag', amountMinor: feeGross ?? 200, taxClass: settings === woo ? 'standard' : 'fee' });
   builder.addShipping({ ...(shippingGross === undefined ? {} : { amountIncludesTax: true }), name: 'Post', amountMinor: shippingGross ?? 103, taxClass: settings === woo ? 'standard' : 'post' });
   const taxed = builder.getSnapshot();
   builder.setTaxExempt(true);
+  if (reason) builder.setTaxExemptReason(reason);
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
-  const stored = finalizeOrder(builder.getSnapshot(), { capabilities });
+  const store = reason ? { ...capabilities, orderCreate: 13, taxExemptReason: 'optional' as const } : capabilities;
+  const stored = finalizeOrder(builder.getSnapshot(), { capabilities: store });
   await db.pos_orders.insert({ ...stored, syncStatus: 'rejected', error: { code: 'total_mismatch', message: 'Total mismatch' } });
   const id = await reopenRefusedOrder(stored.id, { orders: db.pos_orders, drafts: db.order_drafts, sessions: db.register_sessions,
-    taxContext: createTaxContext(taxProviderProps(reopenSettings)), capabilities });
+    taxContext: createTaxContext(taxProviderProps(reopenSettings)), capabilities: store });
   const row = await db.order_drafts.findOne(id).exec();
   const draft: Order = JSON.parse(row!.data);
   return { stored, draft, taxed };
 }
+
+it.each([false, true])('reopens a refused order with its reason only if still exempt (inclusive = %s)', async (pricesIncludeTax) => {
+  const reason = { text: 'Charity', certificateId: 'ST5-0042' };
+  const { stored, draft } = await reopen(generic, { ...generic, pricesIncludeTax }, undefined, undefined, reason);
+  expect(stored.taxExemptReason).toStrictEqual(reason);
+  expect(draft.taxExempt).toBe(pricesIncludeTax ? undefined : true);
+  expect(draft.taxExemptReason).toStrictEqual(pricesIncludeTax ? undefined : reason);
+});
 
 it.each(['B1', 'B2'])('%s preserves both quoted rate codes through a refused exempt sale', async row => {
   const taxContext = createTaxContext(taxProviderProps(generic));

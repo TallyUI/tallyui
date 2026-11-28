@@ -11,9 +11,10 @@ import { sessionTakenLegs } from '../order/order-drafts';
 import type { CashRounding, Payment } from '../order/types';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { patchSale } from '../order/tax-exempt';
+import { normalizeTaxExemptReason } from '../order/tax-exempt-reason';
 import { finalizeOrder, uuidv7, type PosOrder } from '../pos-order';
 import { AFTER_CLOSE_PAYMENTS_CHANGED, afterCloseChanged, MESSAGE_NAME_MAX, referenceError, referenceReason, withSentForm } from '../pos-order/finalize';
-import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX } from '../pos-order/command';
+import { CUSTOMER_REFUSALS, customerRefusal, cutText, PAYLOAD_STRING_MAX, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION } from '../pos-order/command';
 import { cashVoidRefusal, nearestPayableCash, remainderEntriesMinor, roundedPickTarget, roundedRemainder, settlesAtRoundedDue, writeOffLeg } from '../tender/cash-rounding';
 import { useTax, type SaleTaxContext, type SaleTaxLocation, type TaxContext } from '../tax';
 import { recordRegisterFact, stampSession, type RegisterSessionCollection } from '../register';
@@ -91,6 +92,10 @@ export const TAX_EXEMPT_LOCKED = 'Tax exemption cannot change on this sale.';
 export const TAX_EXEMPT_COUPONS = 'This store cannot take a coupon on a tax exempt sale.';
 export const TAX_EXEMPT_CONVERTED_LINE = 'Tax exemption is not available on a sale with a line priced in the other tax mode.';
 export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no longer accepts tax exempt sales, so tax is charged again.';
+export const TAX_EXEMPT_REASON_NEEDS_TEXT = 'Add the reason for the exemption, not only the certificate number.';
+export const TAX_EXEMPT_REASON_NOT_EXEMPT = 'Turn on tax exemption before adding a reason.';
+export const TAX_EXEMPT_REASON_UNAVAILABLE = 'This store does not take an exemption reason.';
+export const TAX_EXEMPT_REASON_REMOVED = 'This sale had an exemption reason, but this store no longer takes one, so the reason was removed.';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
@@ -606,6 +611,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
     return writeOrderDraft(drafts, stale ? patchSale(snapshot, { coupons: keptCoupons.current, couponPricesStale: true }) : snapshot).then(() => null);
   }
+  const reasonMode = opts.capabilities?.taxExempt === true ? opts.capabilities.taxExemptReason : undefined;
+  const reasonBlocked = reasonMode === 'required' && (opts.capabilities?.orderCreate ?? 0) < TAX_EXEMPT_REASON_ORDER_CREATE_VERSION;
   const result = {
     order, stage, error, idle,
     /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
@@ -883,13 +890,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       return true;
     },
     taxExempt: order.taxExempt === true,
-    taxExemptAvailable: opts.capabilities?.taxExempt === true && !taxNow.current.taxContext.pricesIncludeTax && !order.storeOrder,
+    /** Staff-only exemption reason for the current sale, or null when none is recorded. */
+    taxExemptReason: order.taxExemptReason ?? null,
+    /** Whether this store accepts or requires a reason, or null if it takes none. */
+    taxExemptReasonMode: reasonMode ?? null,
+    /** false under 'optional' when this store's order.create is below 13: the reason stays on the till and is not sent */
+    taxExemptReasonSent: reasonMode !== undefined && (opts.capabilities?.orderCreate ?? 0) >= TAX_EXEMPT_REASON_ORDER_CREATE_VERSION,
+    /** True when the exempt sale still needs a reason for this store. */
+    taxExemptReasonMissing: order.taxExempt === true && reasonMode === 'required' && !order.taxExemptReason,
+    taxExemptAvailable: opts.capabilities?.taxExempt === true && !reasonBlocked && !taxNow.current.taxContext.pricesIncludeTax && !order.storeOrder,
     setTaxExempt(on: boolean): boolean {
       if (locked()) return false;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       const snapshot = builderNow.current.getSnapshot();
       if (on === (snapshot.taxExempt === true)) return true;
-      if (on && (opts.capabilities?.taxExempt !== true || taxNow.current.taxContext.pricesIncludeTax || snapshot.storeOrder)) { setError(TAX_EXEMPT_UNAVAILABLE); return false; }
+      if (on && (opts.capabilities?.taxExempt !== true || reasonBlocked || taxNow.current.taxContext.pricesIncludeTax || snapshot.storeOrder)) { setError(TAX_EXEMPT_UNAVAILABLE); return false; }
       if (on && snapshot.lineItems.some((line) => line.priceTaxModeConverted)) { setError(TAX_EXEMPT_CONVERTED_LINE); return false; }
       if (snapshot.payments.some(isInMotion)) { setError(PAYMENT_IN_MOTION); return false; }
       if (on && capturedMinor(snapshot.payments) > 0) { setError(TAX_EXEMPT_PAYMENT_TAKEN); return false; }
@@ -898,6 +913,18 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       builderNow.current.setTaxExempt(on);
       removalEpoch.current++;
       setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_COUPONS || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
+      return true;
+    },
+    /** Sets or clears the staff-only exemption reason in cart or tender without changing money. */
+    setTaxExemptReason(input: { text?: string; certificateId?: string } | null): boolean {
+      if (locked()) return false;
+      if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
+      const normalized = normalizeTaxExemptReason(input);
+      if (normalized === 'needs_text') { setError(TAX_EXEMPT_REASON_NEEDS_TEXT); return false; }
+      if (normalized && !builderNow.current.getSnapshot().taxExempt) { setError(TAX_EXEMPT_REASON_NOT_EXEMPT); return false; }
+      if (normalized && reasonMode === undefined) { setError(TAX_EXEMPT_REASON_UNAVAILABLE); return false; }
+      builderNow.current.setTaxExemptReason(normalized);
+      setError((current) => current === TAX_EXEMPT_REASON_NEEDS_TEXT || current === TAX_EXEMPT_REASON_NOT_EXEMPT || current === TAX_EXEMPT_REASON_UNAVAILABLE ? null : current);
       return true;
     },
     /**
@@ -1272,7 +1299,7 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         if (saved.currency.toUpperCase() !== settings.currency.toUpperCase()) return 'That parked sale is in another currency';
         // Taxed for the customer the draft restores (a refused one isn't).
         const restoredTax = contextFor(saved.customer && !customerRefusal(saved.customer) ? saved.customer : null);
-        const removed = saved.taxExempt && (opts.capabilities?.taxExempt !== true || restoredTax.taxContext.pricesIncludeTax);
+        const removed = saved.taxExempt && (opts.capabilities?.taxExempt !== true || reasonBlocked || restoredTax.taxContext.pricesIncludeTax);
         const source = removed ? saved.exemptedFrom! : saved;
         // A draft whose legs took money keeps the tax rates it was paid against (u19); otherwise class-taxed lines re-derive.
         // ADR-077 d3 amended 2026-11-19: parked coupon amounts, with their prices and rates, given a display row per coupon.
@@ -1295,6 +1322,10 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         }
         const kept = new Map<string, unknown>(), messages: string[] = [];
         if (removed || saved.taxExemptDropped === true) messages.push(TAX_EXEMPT_REMOVED);
+        if (!removed && saved.taxExempt && saved.taxExemptReason && reasonMode === undefined) {
+          builder.setTaxExemptReason(null);
+          messages.push(TAX_EXEMPT_REASON_REMOVED);
+        }
         const codes = !carriedDraft && source.coupons?.length ? codesFor() : null;
         if (n > 0) messages.push(`Prices changed since this sale was parked: ${n} ${n === 1 ? 'line' : 'lines'} updated to today's price.`);
         if (!carriedDraft && source.coupons?.length) {

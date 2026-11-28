@@ -108,6 +108,7 @@ export function restoreOrderDraft(saved: Order, options: { currency: string; tax
     if (!saved.exemptedFrom) throw new Error('restoreOrderDraft: an exempt draft must carry exemptedFrom');
     const builder = restoreOrderDraft(saved.exemptedFrom, options);
     builder.setTaxExempt(true);
+    if (saved.taxExemptReason) builder.setTaxExemptReason(saved.taxExemptReason);
     return builder;
   }
   const { currency, taxContext } = options;
