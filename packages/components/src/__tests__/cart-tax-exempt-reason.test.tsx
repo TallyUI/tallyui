@@ -113,6 +113,26 @@ it('R9 omits the not-sent line for a required reason', { timeout: 20_000 }, () =
   expect(sheet.queryByTestId('order-tax-exempt-reason-not-sent')).toBeNull();
 });
 
+it('R9b omits the not-sent line when a required reason cannot be sent', { timeout: 20_000 }, () => {
+  const onCheckout = vi.fn();
+  const tree = (orderCreate: number) => <><SaleHarness capabilities={{ orderCreate, taxExempt: true, taxExemptReason: 'required' }}>
+    {(sale) => <Cart sale={sale} checkout={{ onCheckout }} noteSheet={{}} />}
+  </SaleHarness><PortalHost /></>;
+  const { rerender } = render(tree(13));
+  act(() => { sale.addCustomLine({ name: 'Item', priceMinor: 1000 }); });
+  const sheet = openDetails(); toggle(); change(reasonId, 'Charity');
+  expect(sale.taxExemptReasonSent).toBe(true);
+  expect(sheet.queryByTestId('order-tax-exempt-reason-not-sent')).toBeNull();
+
+  rerender(tree(12));
+  expect(sale.taxExemptReasonMode).toBe('required');
+  expect(sale.taxExempt).toBe(true);
+  expect(sale.taxExemptReasonSent).toBe(false);
+  const openSheet = within(screen.getByTestId('order-note-sheet'));
+  expect(openSheet.getByTestId<HTMLTextAreaElement>(reasonId).value).toBe('Charity');
+  expect(openSheet.queryByTestId('order-tax-exempt-reason-not-sent')).toBeNull();
+});
+
 it('R10 hides an unrelated sale error after a refused reason edit', { timeout: 20_000 }, () => {
   seed('optional'); const sheet = openDetails(); toggle();
   change(reasonId, 'Charity'); change(certificateId, 'ST5-0042'); change(reasonId, '');
