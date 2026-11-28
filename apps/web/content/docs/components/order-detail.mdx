@@ -49,6 +49,7 @@ The actions row is pinned below the scroll and is drawn only when at least one o
 | `shippingMethod` | `string` | — | Shipping method title, shown beside "Shipping" |
 | `fees` | `string` | — | Formatted fees total; omit to hide the row |
 | `taxLines` | `OrderDetailTaxLine[]` | — | Per-rate tax breakdown, indented under the Tax row |
+| `taxExemptReason` | `{ text: string; certificateId?: string; notSent?: boolean }` | — | Staff-only reason and optional certificate under Tax. Set `notSent` from `taxExemptReasonDelivery(order) === 'not_sent'` in `@tallyui/pos`. |
 | `customerSlot` | `ReactNode` | — | Content shown below the header |
 | `paymentSlot` | `ReactNode` | — | Payment info below the totals |
 | `footerSlot` | `ReactNode` | — | Actions or notes at the bottom |

@@ -1,6 +1,6 @@
-import { useState, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
-import { buildReceiptData } from '@tallyui/pos';
+import { buildReceiptData, TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { useFormatMoney, type PaymentMethodDescriptor } from '@tallyui/core';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
@@ -94,9 +94,27 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const { order } = sale;
   const [noteOpen, setNoteOpen] = useState(false);
   const [taxExemptRefused, setTaxExemptRefused] = useState(false);
+  const [reasonDraft, setReasonDraft] = useState({ text: '', certificateId: '' });
+  const [taxExemptReasonRefused, setTaxExemptReasonRefused] = useState(false);
+  const [reasonAlert, setReasonAlert] = useState(false);
+  useEffect(() => {
+    if (!sale.taxExempt) {
+      setReasonDraft({ text: '', certificateId: '' });
+      setTaxExemptReasonRefused(false);
+    }
+  }, [sale.taxExempt]);
+  useEffect(() => {
+    if (!sale.taxExemptReasonMissing) setReasonAlert(false);
+  }, [sale.taxExemptReasonMissing]);
   const onNoteOpenChange = (open: boolean) => {
+    if (open) setReasonDraft({ text: sale.taxExemptReason?.text ?? '', certificateId: sale.taxExemptReason?.certificateId ?? '' });
+    setTaxExemptReasonRefused(false);
     setTaxExemptRefused(false);
     setNoteOpen(open);
+  };
+  const payWithReason = (onPay: () => void) => {
+    if (sale.taxExemptReasonMissing) setReasonAlert(true);
+    else onPay();
   };
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
@@ -266,21 +284,40 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
         taxLines={taxRows} taxInclusive={order.taxExempt === true ? undefined : totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
-      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} afterVoid={tenderLedger.afterVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
+      {reasonAlert && sale.taxExemptReasonMissing ? <>
+        <Text accessibilityRole="alert" testID="cart-tax-exempt-reason-alert" className="text-destructive">
+          {noteSheet ? 'Add the exemption reason in Order details before payment.' : 'Add the exemption reason before payment.'}
+        </Text>
+        {noteSheet ? <Pressable accessibilityRole="button" onPress={() => onNoteOpenChange(true)} className="min-h-11 justify-center">
+          <Text className="text-primary">Order details</Text>
+        </Pressable> : null}
+      </> : null}
+      {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} afterVoid={tenderLedger.afterVoid} closing /> : checkout ? <CartFoot total={money(totals.totalMinor)} onCheckout={() => payWithReason(checkout.onCheckout)}
         actions={noteSheet ? [{ label: 'Order details', onPress: () => onNoteOpenChange(true) }, ...(checkout.actions ?? [])] : checkout.actions}
-        note={noteSheet ? { text: order.note, onPress: () => onNoteOpenChange(true) } : checkout.note} disabled={!order.lineItems.length} />
-        {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
-          label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable || sale.taxExempt ? {
-            checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
-            error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
-          } : undefined} /> : null}</> : <View className="flex-row gap-3">
-        <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
+        note={noteSheet ? { text: order.note, onPress: () => onNoteOpenChange(true) } : checkout.note} disabled={!order.lineItems.length} /> : <View className="flex-row gap-3">
+        <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => payWithReason(() => sale.startTender('cash'))} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('external')} className={pay}>
+        <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => payWithReason(() => sale.startTender('external'))} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Card terminal</Text>
         </Pressable>
       </View>}
+      {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
+        label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable || sale.taxExempt ? {
+          checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
+          error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
+        } : undefined} taxExemptReason={sale.taxExemptReasonMode !== null ? {
+          ...reasonDraft, required: sale.taxExemptReasonMode === 'required',
+          notSent: sale.taxExemptReasonMode === 'optional' && !sale.taxExemptReasonSent,
+          error: taxExemptReasonRefused && sale.error && [TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT,
+            TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE].includes(sale.error) ? saleErrorText(t, sale.error) : null,
+          onChange: (next) => {
+            setReasonDraft(next);
+            sale.setTaxExemptReason(null);
+            const ok = sale.setTaxExemptReason(next);
+            setTaxExemptReasonRefused(ok === false);
+          },
+        } : undefined} /> : null}
     </View>} />
   </View>;
 }

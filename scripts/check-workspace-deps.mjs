@@ -105,6 +105,9 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'isCarriedCouponLabel',
   // Needs attention's Reopen (desk 2026-11-21): the pure list of refusal codes a till may reopen, never a hook or the store.
   'REOPENABLE_CODES',
+  // the tax-exempt reason field (reason PR 3): the reason setter's four refusal strings the sheet shows, never a hook or the store.
+  'TAX_EXEMPT_REASON_LOCKED', 'TAX_EXEMPT_REASON_NEEDS_TEXT',
+  'TAX_EXEMPT_REASON_NOT_EXEMPT', 'TAX_EXEMPT_REASON_UNAVAILABLE',
 ]);
 const POS_MSG = 'components may import only types and allow-listed pure functions from pos';
 const POS_NAMED_RE = /(?:import|export)\s+(type\s+)?\{([^}]*)\}\s*from\s*['"]@tallyui\/pos['"]/g;
