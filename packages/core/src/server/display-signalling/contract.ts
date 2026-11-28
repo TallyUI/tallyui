@@ -374,6 +374,102 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       await expectRefusal(w.s.list(w.a, old), 'device_refused', 'the key of a pruned device');
       await w.s.list(w.a, { deviceId: 'till-idle', deviceKey: fresh });
     },
+    'R1: renewal returns a fresh usable token and expiry (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const next = await w.s.renew(d, token);
+      check(SECRET.test(next.token) && next.token !== token, 'renew did not issue a fresh base64url token');
+      check(Number.isFinite(Date.parse(next.expiresAt)), 'renew returned an invalid expiry');
+      await w.s.readSnapshot(d, next.token);
+      const stored = await w.h.storedText();
+      check(!stored.includes(token) && !stored.includes(next.token), 'a token is stored in plain text');
+      check(stored.includes(await sha256Hex(next.token)), 'the successor hash is not stored');
+    },
+    'R2: the successor works just before two days (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const next = await w.s.renew(d, token);
+      await w.h.advance(2 * DAY - MINUTE);
+      await w.s.readSnapshot(d, next.token);
+    },
+    'R3: the previous token still works for snapshot and signals at 59 seconds (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      await w.s.renew(d, token);
+      await w.s.postSnapshot(w.a, w.da, displayId, 'overlap');
+      await w.h.advance(59_000);
+      check(await w.s.readSnapshot(d, token) === 'overlap', 'the previous token cannot read the snapshot');
+      await w.s.displaySendSignal(d, token, { type: 'answer', payload: 'a1' });
+      await w.s.displayReceiveSignals(d, token);
+    },
+    'R4: a lost-answer retry replaces only the unseen successor (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const unseen = await w.s.renew(d, token);
+      await w.h.advance(30_000);
+      const fresh = await w.s.renew(d, token);
+      check(fresh.token !== unseen.token && fresh.token !== token, 'the retry did not issue a fresh successor');
+      await expectRefusal(w.s.readSnapshot(d, unseen.token), 'token_refused', 'an unseen replaced successor');
+      await w.s.readSnapshot(d, fresh.token);
+      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'the retry lost the display');
+    },
+    'R5: renewing the previous token after its successor was seen revokes the display (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const next = await w.s.renew(d, token);
+      await w.s.readSnapshot(d, next.token);
+      await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew after successor use');
+      await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the revoked successor');
+      check((await w.s.list(w.a, w.da)).length === 0, 'the revoked display is still listed');
+    },
+    'R6: using the previous token after the overlap drops the display and snapshot (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const next = await w.s.renew(d, token);
+      await w.h.advance(10 * MINUTE + 1000);
+      await w.s.postSnapshot(w.a, w.da, displayId, 'live');
+      await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'the previous token after overlap');
+      await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the revoked successor');
+      check((await w.s.list(w.a, w.da)).length === 0, 'the revoked display is still listed');
+      check((await w.h.storedCounts()).snapshots === 0, 'revocation left a snapshot');
+    },
+    'R7: a lost-answer retry cannot extend the original overlap (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      await w.s.renew(d, token);
+      await w.h.advance(59_000);
+      await w.s.renew(d, token);
+      await w.h.advance(10 * MINUTE + 1000 - 59_000);
+      await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'previous token after the original overlap');
+    },
+    'R8: the successor is refused after its advertised expiry (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const mint = await w.s.mint(w.a, w.da);
+      const next = await w.s.renew(d, token);
+      const elapsed = Date.parse(next.expiresAt) - Date.parse(mint.expiresAt) + 10 * MINUTE + 1000;
+      await w.h.advance(DAY);
+      await w.s.readSnapshot(d, next.token);
+      await w.h.advance(elapsed - DAY);
+      await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the expired successor');
+    },
+    'R9: unknown and forgotten tokens cannot renew (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const before = JSON.stringify(await w.h.storedCounts());
+      const unknown = await expectRefusal(w.s.renew(d, randomKey()).then(() => undefined), 'token_refused', 'renew an unknown token');
+      check(JSON.stringify(await w.h.storedCounts()) === before, 'an unknown token changed the stored counts');
+      await w.s.forget(w.a, w.da, displayId);
+      const forgotten = await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew a forgotten token');
+      sameRefusal(unknown, forgotten, 'unknown and forgotten tokens');
+    },
+    'R10: renewal marks the display seen (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      await w.s.renew(d, token);
+      const row = (await w.s.list(w.a, w.da)).find((entry) => entry.displayId === displayId);
+      check(row && row.lastSeenAt !== null, 'renew did not mark the display seen');
+    },
   };
   return Object.entries(cases).map(([name, run]) => ({ name, run: async () => run(await world(makeHarness)) }));
 }

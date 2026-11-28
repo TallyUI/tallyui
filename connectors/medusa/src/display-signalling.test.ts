@@ -91,6 +91,22 @@ describe('medusaDisplaySignalling contract', () => {
 });
 
 describe('medusaDisplaySignalling requests (#1219)', () => {
+  it('renews with the old token in the header only, then reads with the successor (ADR-096)', async () => {
+    const f = setup(), p = await paired(f);
+    const start = f.requests.length;
+    const next = await s.renew!(p.d, p.token);
+    await s.readSnapshot(p.d, next.token);
+    const [renew, read] = f.requests.slice(start);
+    expect(renew!.method).toBe('POST');
+    expect(renew!.url === `${BASE}/display/renew`).toBe(true);
+    expect(renew!.headers['x-tally-display-token'] === p.token).toBe(true);
+    for (const header of ['authorization', 'x-tally-device-id', 'x-tally-device-key']) expect(header in renew!.headers).toBe(false);
+    expect(renew!.body === '').toBe(true);
+    expect(renew!.credentials).toBe('omit');
+    expect(f.requests.some((req) => req.url.includes(next.token))).toBe(false);
+    expect(read!.headers['x-tally-display-token'] === next.token).toBe(true);
+  });
+
   it('till calls carry the device id and key, register carries neither', async () => {
     const f = setup();
     const { a, device } = await tillRun(f);
@@ -219,6 +235,14 @@ describe('status and code table (#1219)', () => {
     return { f, p: await paired(f) };
   };
   const send = (body: unknown, status: number) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status });
+
+  it('malformed renewal answers are server refusals (ADR-096)', async () => {
+    const { f, p } = await world();
+    for (const body of [{}, { token: 'successor', expiresAt: 'soon' }]) {
+      f.fail(send(body, 200));
+      expect(await codeOf(s.renew!(p.d, p.token))).toBe('server');
+    }
+  });
 
   const rows: Array<[string, number, unknown, Call, DisplaySignallingErrorCode]> = [
     ['code by status', 403, { code: 'forbidden', message: 'x' }, 'mint', 'forbidden'],

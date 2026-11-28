@@ -89,6 +89,7 @@ export function createFakeDisplayServer({ now }: { now: () => number }): {
       return s.claim(dctx, { code: asString(body.code), displayName: asString(body.displayName), ...(claimToken === undefined ? {} : { token: claimToken }) });
     }
     if (route === 'POST /display/collect') return s.collect(dctx, asString(asObject(parse()).claimSecret));
+    if (route === 'POST /display/renew') return s.renew!(dctx, token);
     if (route === 'POST /display/signals') {
       await s.displaySendSignal(dctx, token, asSignal(parse()));
       return {};
