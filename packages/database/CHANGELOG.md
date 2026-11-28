@@ -1,5 +1,11 @@
 # @tallyui/database
 
+## 5.6.0
+
+### Patch Changes
+
+- @tallyui/core@5.6.0
+
 ## 5.5.0
 
 ### Patch Changes
