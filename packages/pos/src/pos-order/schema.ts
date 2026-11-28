@@ -45,6 +45,7 @@ import type { PosOrder } from './types';
  * Version 23 adds a fee's and shipping line's optional `entered`, the cashier's own-mode amount for a `chargeTaxMode` store (vendurepos 2.10b); identity migration, one-way like version 22.
  * `entered` is kept whenever the mode differs, and `sent` marks one sent to a `chargeTaxMode` store (#1391).
  * Version 24 adds the order's optional `taxExempt` and the taxed twin's `taxedRates` on lines and `taxedEntry` on fees and shipping for reopen; identity migration, one-way like version 23.
+ * Version 25 adds the order's optional `taxExemptReason` (staff-only, order.create 13) and lets sentVersion and downgradedFrom be 13; identity migration, one-way like version 24.
  */
 /** A customer's address on an order (#722, OrderAddress): ten optional strings. */
 const orderAddressSchema = { type: 'object', additionalProperties: false, properties: {
@@ -54,7 +55,7 @@ const orderAddressSchema = { type: 'object', additionalProperties: false, proper
 } } as const;
 
 export const posOrderSchema: RxJsonSchema<PosOrder> = {
-  version: 24, primaryKey: 'id', type: 'object', additionalProperties: false,
+  version: 25, primaryKey: 'id', type: 'object', additionalProperties: false,
   properties: {
     id: { type: 'string', maxLength: 36 },
     saleId: { type: 'string', maxLength: 36 },
@@ -168,6 +169,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       }, required: ['id', 'method', 'amountMinor'],
     } },
     taxExempt: { type: 'boolean', enum: [true] },
+    taxExemptReason: { type: 'object', additionalProperties: false, properties: {
+      text: { type: 'string' }, certificateId: { type: 'string' } }, required: ['text'] },
     cashRoundings: { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
       paymentId: { type: 'string', maxLength: 36 }, minor: { type: 'integer' } }, required: ['paymentId', 'minor'] } },
     customer: { type: ['object', 'null'], properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string' },
@@ -194,8 +197,8 @@ export const posOrderSchema: RxJsonSchema<PosOrder> = {
       roundAtSubtotal: { type: 'boolean' },
       mode: { type: 'string', enum: ['half_away_from_zero', 'half_up'] },
     }, required: ['granularity'] },
-    sentVersion: { type: 'integer', minimum: 1, maximum: 12 },
-    downgradedFrom: { type: 'integer', minimum: 1, maximum: 12 },
+    sentVersion: { type: 'integer', minimum: 1, maximum: 13 },
+    downgradedFrom: { type: 'integer', minimum: 1, maximum: 13 },
     // The nested objects are closed too: loosening a schema later is free, tightening one costs a migration.
     display: { type: 'object', additionalProperties: false, properties: {
       currency: { type: 'string' }, exponent: { type: 'integer' }, taxInclusive: { type: 'boolean' },
@@ -259,5 +262,5 @@ export function posOrderCollection(): { schema: RxJsonSchema<PosOrder>; migratio
   // it means no older sale is ever re-rounded (#287).
   const recordRounding = (doc: PosOrder) => { doc.taxRounding ??= { ...DEFAULT_TAX_ROUNDING }; return doc; };
   return { schema: posOrderSchema,
-    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity, 22: identity, 23: identity, 24: identity } };
+    migrationStrategies: { 1: identity, 2: identity, 3: identity, 4: identity, 5: recordSent, 6: recordRounding, 7: identity, 8: identity, 9: identity, 10: identity, 11: identity, 12: identity, 13: identity, 14: identity, 15: identity, 16: identity, 17: identity, 18: identity, 19: identity, 20: identity, 21: identity, 22: identity, 23: identity, 24: identity, 25: identity } };
 }

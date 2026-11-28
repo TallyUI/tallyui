@@ -11,7 +11,7 @@ import type { PosOrder } from './types';
 import { uuidv7 } from './uuidv7';
 
 it('validates schema-19 carried coupon amounts and countedInClosureOf', async () => {
-  expect(posOrderSchema.version).toBe(24);
+  expect(posOrderSchema.version).toBe(25);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -184,7 +184,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   // the `warnings` items above, which declare it explicitly. Adding `taxInclusive` to PosOrderLine
   // needs no matching schema edit, so there is nothing to migrate. (Version 1 is the top-level
   // `sessionId`, ADR-032; version 2 adds `lateSessionId`, `display` and `taxByRate`; version 3 indexes `sessionId`; see migration.test.ts.)
-  expect(posOrderSchema.version).toBe(24);
+  expect(posOrderSchema.version).toBe(25);
   expect(posOrderSchema.properties.lines.items).not.toHaveProperty('additionalProperties');
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
@@ -202,7 +202,7 @@ it("stores a line's taxInclusive (ADR-038 amendment) without a schema version bu
   }
 });
 
-it('stores sentVersion and downgradedFrom, and refuses values outside 1–12', async () => {
+it('stores sentVersion and downgradedFrom, and refuses values outside 1–13', async () => {
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -234,8 +234,11 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–12', a
     const v12 = { ...order, id: uuidv7(), sentVersion: 12 as const, downgradedFrom: 12 as const };
     await pos_orders.insert(v12);
     expect((await pos_orders.findOne(v12.id).exec())?.toJSON()).toStrictEqual(v12);
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 13 as 12 })).rejects.toThrow();
-    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 13 as 12 })).rejects.toThrow();
+    const v13 = { ...order, id: uuidv7(), sentVersion: 13 as const, downgradedFrom: 13 as const };
+    await pos_orders.insert(v13);
+    expect((await pos_orders.findOne(v13.id).exec())?.toJSON()).toStrictEqual(v13);
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 14 as 13 })).rejects.toThrow();
+    await expect(pos_orders.insert({ ...order, id: uuidv7(), downgradedFrom: 14 as 13 })).rejects.toThrow();
     await expect(pos_orders.insert({ ...order, id: uuidv7(), sentVersion: 0 as 1 })).rejects.toThrow();
   } finally {
     await db.remove();
@@ -243,7 +246,7 @@ it('stores sentVersion and downgradedFrom, and refuses values outside 1–12', a
 });
 
 it("stores schema-20's payment takenAt and refuses one over 40 characters", async () => {
-  expect(posOrderSchema.version).toBe(24);
+  expect(posOrderSchema.version).toBe(25);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {
@@ -279,7 +282,7 @@ it('a payment keeps its sessionId through insert and read', async () => {
 });
 
 it("M2 stores schema-18 tax ids, meta, a line's catalogueSku and attentionHandledFor, closed (ADR-092)", async () => {
-  expect(posOrderSchema.version).toBe(24);
+  expect(posOrderSchema.version).toBe(25);
   const db = await createRxDatabase({ name: `posorder${uuidv7().replaceAll('-', '')}`,
     storage: wrappedValidateAjvStorage({ storage: getRxStorageMemory() }), multiInstance: false });
   try {

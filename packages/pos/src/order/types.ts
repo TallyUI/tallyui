@@ -1,4 +1,4 @@
-import type { CustomerAddress, CustomerTaxId, Money, OrderCreateMeta, TaxRounding } from '@tallyui/core';
+import type { CustomerAddress, CustomerTaxId, Money, OrderCreateMeta, OrderCreateTaxExemptReason, TaxRounding } from '@tallyui/core';
 import type { PaymentLegStatus } from '../tender/payment-legs';
 
 /** A store-priced coupon's share of one line (#790, docs/contract/order-create-v9.md), tax-exclusive, in integer minor units. */
@@ -47,6 +47,8 @@ export interface Order {
   taxExempt?: true;
   /** Set by reopenRefusedOrder on the draft of a refused exempt sale reopened where exemption is not available; resume shows TAX_EXEMPT_REMOVED once and never carries it on. */
   taxExemptDropped?: true;
+  /** Present only on a tax-exempt sale whose store declares `taxExemptReason`: staff-only, sent at order.create 13, never on a receipt, the customer display or the note. */
+  taxExemptReason?: OrderCreateTaxExemptReason;
   /** The same sale without exemption, used only to restore and turn exemption off; never stored by finalize. */
   exemptedFrom?: Order;
   customer: CustomerSummary | null;

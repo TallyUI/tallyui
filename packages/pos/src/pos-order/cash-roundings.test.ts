@@ -119,7 +119,7 @@ async function olderDocument(storage: Storage, databaseName: string, id: string)
 describe('from version 20', () => {
   describe('addPosOrderCollection on memory storage', () => addPosOrderCollectionTests(() => getRxStorageMemory(), { from: 20 }));
 
-  it('F3: keeps pending and applied version-20 orders byte for byte at 24, then stores cash roundings', async () => {
+  it('F3: keeps pending and applied version-20 orders byte for byte at 25, then stores cash roundings', async () => {
     const storage = wrappedValidateAjvStorage({ storage: getRxStorageMemory() });
     const builder = createOrderBuilder({ currency: 'EUR', taxContext: { getTaxRatePpm: () => 190000, pricesIncludeTax: true } });
     builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1190, currency: 'EUR' } });
@@ -134,7 +134,7 @@ describe('from version 20', () => {
     const db = await createRxDatabase({ name, storage, multiInstance: false });
     try {
       const orders = await addPosOrderCollection(db);
-      expect(orders.schema.version).toBe(24);
+      expect(orders.schema.version).toBe(25);
       for (const [index, original] of [pending, applied].entries()) {
         const migrated = await orders.findOne(original.id).exec();
         expect(migrated?.toJSON()).toStrictEqual(original);

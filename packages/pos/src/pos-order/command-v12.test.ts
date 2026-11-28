@@ -57,12 +57,12 @@ describe('order.create v12: tax ids, a catalogue line\'s edited SKU and order me
     expect(payloadBoundErrors(sent.payload)).toEqual([]);
   });
 
-  it('pins the stored maxima and golden version to the till maximum of 12', () => {
+  it('pins the stored maxima to 13 and the golden version to the till maximum of 12', () => {
     const { properties } = posOrderCollection().schema;
     expect(ORDER_CREATE_MAX_VERSION).toBe(12);
     expect(INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.sentVersion.maximum).toBe(ORDER_CREATE_MAX_VERSION);
-    expect(properties.downgradedFrom.maximum).toBe(ORDER_CREATE_MAX_VERSION);
+    expect(properties.sentVersion.maximum).toBe(13);
+    expect(properties.downgradedFrom.maximum).toBe(13);
     expect(JSON.parse(readFileSync(fixturePath, 'utf8')).version).toBe(ORDER_CREATE_MAX_VERSION);
   });
 
