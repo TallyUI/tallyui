@@ -5,6 +5,17 @@ const nonEmpty = (value: unknown) => (typeof value === 'string' && value.length 
 // Payments that took no money.
 const UNPAID_PAYMENT_STATES = ['Declined', 'Error', 'Cancelled'];
 
+function snapshotTaxExempt(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      && Object.getOwnPropertyDescriptor(parsed, 'taxExempt')?.value === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Maps a Vendure Admin API order (getVendureOrder's fields) to a `StoreOrder` (ADR-081). */
 export function toVendureStoreOrder(order: VendureOrder, pricesIncludeTax: boolean): StoreOrder {
   if (typeof order.orderPlacedAt !== 'string' || Number.isNaN(new Date(order.orderPlacedAt).getTime())) {
@@ -22,6 +33,7 @@ export function toVendureStoreOrder(order: VendureOrder, pricesIncludeTax: boole
     currency: order.currencyCode,
     // The channel's setting: Vendure's order carries none.
     pricesIncludeTax,
+    ...(snapshotTaxExempt(order.customFields?.tallySnapshot) ? { taxExempt: true as const } : {}),
     customer: order.customer === null ? null : {
       id: order.customer.id, ...(name ? { name } : {}), ...(email ? { email } : {}),
     },

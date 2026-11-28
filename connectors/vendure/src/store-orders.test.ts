@@ -86,6 +86,31 @@ const plainFixture: VendureOrder = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('Vendure store orders', () => {
+  it.each(['{"version":1,"taxExempt":true}', '{"taxExempt":true}'])('maps the exempt marker from %j', (tallySnapshot) => {
+    const customFields = { ...fixture.customFields!, tallySnapshot };
+    expect(toVendureStoreOrder({ ...fixture, customFields }, false).taxExempt).toBe(true);
+  });
+
+  it.each([
+    null, '{"version":1}', '{"taxExempt":false}', '{"taxExempt":"true"}', '{"taxExempt":1}',
+    'not json', 'true', '[{"taxExempt":true}]', 'null', '{"display":{"taxExempt":true}}',
+    { taxExempt: true } as unknown as string,
+  ])('omits taxExempt for snapshot %j', (tallySnapshot) => {
+    const customFields = { ...fixture.customFields!, tallySnapshot };
+    expect(toVendureStoreOrder({ ...fixture, customFields }, false)).not.toHaveProperty('taxExempt');
+  });
+
+  it.each([{}, null])('omits taxExempt for customFields %j', (fields) => {
+    const customFields = fields as unknown as NonNullable<VendureOrder['customFields']>;
+    expect(toVendureStoreOrder({ ...fixture, customFields }, false)).not.toHaveProperty('taxExempt');
+  });
+
+  it('omits taxExempt when customFields is absent', () => {
+    const order = { ...fixture };
+    delete order.customFields;
+    expect(toVendureStoreOrder(order, false)).not.toHaveProperty('taxExempt');
+  });
+
   it('maps a till order with plugin fields', () => {
     const expected: StoreOrder = {
       id: '12', reference: 'ORDER-12', clientOrderId: 'client-12', status: 'PaymentSettled',
