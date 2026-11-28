@@ -3,7 +3,7 @@ import { medusaMajor, medusaMinor } from './money';
 
 type Price = { id: string; amount: number; currency_code: string; min_quantity?: number | null; max_quantity?: number | null; rules?: Record<string, unknown> };
 type Variant = { id: string; prices: Price[] };
-type Preference = { attribute: string; value: string; is_tax_inclusive: boolean };
+type Preference = { attribute: string; value: unknown; is_tax_inclusive: boolean };
 
 async function request(context: SyncContext, path: string, body?: { prices: { id: string; amount?: number }[] }) {
   const init = body ? { method: 'POST', headers: { ...context.headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
@@ -77,8 +77,8 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   if (unruled.length !== 1 || candidate.min_quantity !== null || candidate.max_quantity !== null) return null;
   const amount = medusaMinor(candidate.amount, currency);
   if (!Number.isSafeInteger(amount) || medusaMajor(amount, currency) !== candidate.amount) return null;
-  const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && pref.value.toLowerCase() === currency.toLowerCase())?.is_tax_inclusive ?? false;
-  const region = preferences.find(pref => pref.attribute === 'region_id' && pref.value.toLowerCase() === context.pricingContext?.region_id?.toLowerCase());
+  const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && typeof pref.value === 'string' && pref.value.toLowerCase() === currency.toLowerCase())?.is_tax_inclusive ?? false;
+  const region = preferences.find(pref => pref.attribute === 'region_id' && typeof pref.value === 'string' && pref.value.toLowerCase() === context.pricingContext?.region_id?.toLowerCase());
   if (region && region.is_tax_inclusive !== taxInclusive) return null;
   return { defaults, candidate, snapshot: { basePrice: { amount, currency: currency.toUpperCase(), taxInclusive } } };
 }

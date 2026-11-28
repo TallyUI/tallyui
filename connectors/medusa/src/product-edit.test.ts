@@ -15,7 +15,7 @@ const snapshot = (amount: number, taxInclusive = false) => ({ basePrice: { amoun
 const product = (prices: unknown[]) => Response.json({ product: { variants: [{ id: target.variantId, prices }] } });
 const list = (id: string) => ({ id: `list_${id}`, prices: [{ id }] });
 const lists = (ids: string[] = [], count = ids.length) => Response.json({ price_lists: ids.map(list), count });
-const prefs = (entries = [currencyPref]) => Response.json({ price_preferences: entries });
+const prefs = (entries: unknown[] = [currencyPref]) => Response.json({ price_preferences: entries });
 
 function fixture(...responses: Response[]) {
   const send = vi.fn<typeof fetch>();
@@ -34,6 +34,8 @@ describe('Medusa variant base price', () => {
 
   it.each([
     { name: 'exclusive currency', entries: [currencyPref], expected: snapshot(1500) },
+    { name: 'null currency value', entries: [{ ...currencyPref, value: null, is_tax_inclusive: true }, currencyPref], expected: snapshot(1500) },
+    { name: 'null region value', entries: [{ ...regionPref, value: null }, currencyPref], expected: snapshot(1500) },
     { name: 'inclusive currency and region', entries: [{ ...currencyPref, is_tax_inclusive: true }, regionPref], expected: snapshot(1500, true) },
     { name: 'no preferences', entries: [], expected: snapshot(1500) },
     { name: 'disagreeing region', entries: [regionPref, currencyPref], expected: null },
