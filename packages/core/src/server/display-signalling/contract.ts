@@ -364,9 +364,19 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
     'K9: a device that owns nothing and makes no till call for over 30 days is pruned, and its id registers again': async (w) => {
       const old = { deviceId: 'till-idle', deviceKey: (await w.s.registerDevice(w.a, 'till-idle')).deviceKey };
       const shown = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
-      await w.h.advance(29 * DAY);
-      await expectRefusal(w.s.list(w.a, { deviceId: 'till-idle', deviceKey: randomKey() }), 'device_refused', 'a wrong key on an idle device');
-      await w.s.readSnapshot(shown.d, shown.token);
+      if (w.s.renew) {
+        let token = shown.token;
+        for (let day = 0; day < 29; day += 1) {
+          await w.h.advance(DAY);
+          token = (await w.s.renew(shown.d, token)).token;
+        }
+        await expectRefusal(w.s.list(w.a, { deviceId: 'till-idle', deviceKey: token }), 'device_refused', 'a wrong key on an idle device');
+        await w.s.readSnapshot(shown.d, token);
+      } else {
+        await w.h.advance(29 * DAY);
+        await expectRefusal(w.s.list(w.a, { deviceId: 'till-idle', deviceKey: randomKey() }), 'device_refused', 'a wrong key on an idle device');
+        await w.s.readSnapshot(shown.d, shown.token);
+      }
       await w.h.advance(2 * DAY);
       check((await w.s.list(w.a, w.da)).some((r) => r.displayId === shown.displayId), 'a device that owns a live row was pruned');
       const fresh = (await w.s.registerDevice(w.a, 'till-idle')).deviceKey;
@@ -443,17 +453,20 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       if (!w.s.renew) return;
       const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       await w.s.renew(d, token);
-      for (let retry = 1; retry <= 11; retry += 1) {
+      let elapsed = 0;
+      while (elapsed + 59_000 <= 10 * MINUTE) {
         await w.h.advance(59_000);
+        elapsed += 59_000;
         try {
           await w.s.renew(d, token);
         } catch (error) {
-          check(retry > 1, 'the first retry was refused within the minimum overlap');
+          check(elapsed > 59_000, 'the first retry was refused within the minimum overlap');
           check((error as { code?: unknown } | null)?.code === 'token_refused', 'the retry did not fail with token_refused');
           return;
         }
       }
-      throw new Error('display signalling contract: retries extended the overlap beyond ten minutes');
+      await w.h.advance(10 * MINUTE + 1000 - elapsed);
+      await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'retries extended the overlap beyond ten minutes');
     },
     'R8: the successor is refused after its advertised expiry (ADR-096)': async (w) => {
       if (!w.s.renew) return;
@@ -536,7 +549,37 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
       sameRefusal(older, unknown, 'older and unknown tokens');
       check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'refusing the older token dropped the display');
+      const olderRenew = await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew a token two generations back');
+      const unknownRenew = await expectRefusal(w.s.renew(d, randomKey()).then(() => undefined), 'token_refused', 'renew an unknown token');
+      sameRefusal(olderRenew, unknownRenew, 'older and unknown tokens on renew');
+      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'refusing renewal of the older token dropped the display');
       await w.s.readSnapshot(d, t2.token);
+    },
+    "R14: the overlap outlives the superseded token's own expiry (ADR-096)": async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const t1 = await w.s.renew(d, token);
+      await w.s.readSnapshot(d, t1.token);
+      const row = (await w.s.list(w.a, w.da)).find((entry) => entry.displayId === displayId);
+      check(row && row.lastSeenAt !== null, 'the display has no lastSeenAt after the read');
+      let remaining = Date.parse(t1.expiresAt) - Date.parse(row.lastSeenAt) - 30_000;
+      while (remaining > 0) {
+        const jump = Math.min(remaining, 10 * DAY);
+        await w.h.advance(jump);
+        await w.s.readSnapshot(d, t1.token);
+        remaining -= jump;
+      }
+      const t2 = await w.s.renew(d, t1.token);
+      await w.h.advance(45_000);
+      await w.s.readSnapshot(d, t1.token);
+      check((await w.s.list(w.a, w.da)).some((entry) => entry.displayId === displayId), 'reading inside the overlap dropped the display');
+      await w.s.readSnapshot(d, t2.token);
+    },
+    'R15: a collected token works just before two days (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      await w.h.advance(2 * DAY - MINUTE);
+      await w.s.readSnapshot(d, token);
     },
   };
   return Object.entries(cases).map(([name, run]) => ({ name, run: async () => run(await world(makeHarness)) }));
