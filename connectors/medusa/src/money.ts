@@ -29,5 +29,13 @@ export function medusaSumMinor(currency: string, add: readonly unknown[], subtra
 /** One Medusa amount in minor units. */
 export const medusaMinor = (amount: unknown, currency: string): number => medusaSumMinor(currency, [amount]);
 
+export function medusaMajor(minor: number, currency: string): number {
+  if (!Number.isSafeInteger(minor)) throw new CustomerServiceError('server', 'expected a safe minor-unit integer');
+  const scale = minorUnitDigits(currency);
+  if (scale === 0) return minor;
+  const digits = String(Math.abs(minor)).padStart(scale + 1, '0');
+  return Number(`${minor < 0 ? '-' : ''}${digits.slice(0, -scale)}.${digits.slice(-scale)}`);
+}
+
 /** `gross − tax`, exactly, rounded once: the net such that net + tax is the gross rounded once. */
 export const medusaNetMinor = (gross: unknown, tax: unknown, currency: string): number => medusaSumMinor(currency, [gross], [tax]);

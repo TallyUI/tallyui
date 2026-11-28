@@ -7215,7 +7215,12 @@ interface OrderCreatePayload {
   7. **Who may edit.** The editor needs both the surface and the `editProducts` permission. The store still authorizes
      the write itself.
   8. **Per platform, each its own way.** Each connector slice proves its own fields with fixtures and lists them here:
-     - Medusa (slice C1, this PR): `basePrice` only. The Medusa specifics are added by slice C1.
+     - Medusa (slice C1): `basePrice` binds to exactly one rule-free default price in the till currency, with no tiers
+       and an exact minor-unit amount. Rules, tiers or a region preference that disagrees with the currency tax basis
+       (exclusive by default) can leave it read-only. The write echoes every default price by id because Medusa deletes
+       omitted defaults. It never sends price-list price ids, which the admin variant read includes without a marker.
+       Fixtures prove this echo shape against Medusa 2.23 source, not yet a live store. There is no sale price (a sale
+       is a price list), stock (no store-enforced precondition), or manage-stock (disabling it unlinks inventory items).
      - WooCommerce (slice C2): price, sale price and manage-stock through the plugin's existing push route with its
        base revision, never with `force`; no stock. On a revision conflict, compare the edited field in the fresh
        record with `from`. If equal, retry the write once with the fresh revision; if different, return a conflict.
