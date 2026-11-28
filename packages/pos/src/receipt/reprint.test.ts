@@ -419,6 +419,16 @@ describe('tax exemption on reprints', () => {
     expect(totals.taxMinor).toBe(0);
   });
 
+  it('G3 leaves the exemption key off a finalized till order with charged tax despite its flag', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 190000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } }); // 1 × €10
+    builder.addPayment({ method: 'cash', amountMinor: 1190 }); // 1000 net + 190 tax
+    const stored = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, taxExempt: true } });
+    const { totals } = buildReceiptDataFromPosOrder({ ...stored, taxExempt: true as const }, config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxMinor).toBe(190); // 1000 × 19% = 190
+  });
+
   // One €10 item, no discounts or charges: 1000 net + (1000 × 0%) = 1000 paid.
   const storeOrder: StoreOrder = {
     id: '1', reference: '1', status: 'completed', placedAt: order136.placedAt, currency: 'EUR', pricesIncludeTax: false, customer: null,

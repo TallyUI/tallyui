@@ -537,4 +537,21 @@ describe('tax exemption on the live receipt', () => {
     expect(order.lineItems[0].taxLines).toEqual([]);
     expect(buildReceiptData(order, config).totals.taxExempt).toBe(true);
   });
+
+  it('G1 leaves the exemption key off a non-exempt zero-rate sale', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { ...taxContext, getTaxRatePpm: () => 0 } });
+    builder.addLine(item);
+    const { totals } = buildReceiptData(builder.getSnapshot(), config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxMinor).toBe(0); // 1000 × 0% = 0
+    expect(totals.totalMinor).toBe(1000); // 1000 + 0 tax
+  });
+
+  it('G2 leaves the exemption key off a snapshot with charged tax despite its flag', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+    builder.addLine(item);
+    const { totals } = buildReceiptData({ ...builder.getSnapshot(), taxExempt: true as const }, config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxMinor).toBe(190); // 1000 × 19% = 190
+  });
 });

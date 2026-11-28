@@ -403,4 +403,10 @@ describe('Receipt with a prebuilt receipt', () => {
     expect(screen.queryByText('incl. Tax exempt')).toBeNull();
     expect(screen.queryByText(/Tax 0%/)).toBeNull();
   });
+
+  it('G5 prints the charged tax row even when receipt totals say exempt', () => {
+    render(<Receipt receipt={{ ...receipt, totals: { ...receipt.totals, taxExempt: true as const } }} actions={false} />);
+    expect(screen.queryByLabelText(/^Tax exempt/)).toBeNull();
+    expect(screen.getByLabelText(`Tax 7.25%: ${formatMoney({ amount: 86, currency: receipt.currency })}`)).toBeTruthy(); // 886 total − 800 net
+  });
 });
