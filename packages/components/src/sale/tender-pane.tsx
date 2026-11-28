@@ -125,7 +125,11 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       try {
         if (!mounted.current || stage.kind !== 'tender' || sale.order.id !== orderId) continue;
         if (snapshot() !== frozen) setSaleChanged(true);
-        else taken(sale.addTender(input), units);
+        else {
+          let id: string | null;
+          try { id = sale.addTender(input); } catch { id = null; }
+          taken(id, units);
+        }
       } finally { if (outstanding.current.delete(orderId)) releaseTake(orderId); }
     }
   }, [approvals, stage.kind, sale, taken]);
