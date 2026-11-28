@@ -16,7 +16,7 @@ import { catalogueEntries } from './catalogue';
 import { COUPONS_NEED_CONNECTION } from './discount-codes';
 import { PAYMENT_IN_MOTION, SALE_FINISHED, SALE_SAVING, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_COUPONS, TAX_EXEMPT_LOCKED, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_REMOVED, TAX_EXEMPT_UNAVAILABLE, useSale } from './use-sale';
 import { createDiscountCodes } from './woocommerce/discount-codes';
-import { TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_REMOVED, TAX_EXEMPT_REASON_UNAVAILABLE } from './use-sale';
+import { TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_REMOVED, TAX_EXEMPT_REASON_UNAVAILABLE } from './use-sale';
 
 const entries = catalogueEntries([{ id: 10, name: 'Shirt', price: '10.00' }], traits, { currency: 'AUD' });
 const wooRate = (id: number, country: string, rate: string): woocommerceTax.WooTaxRate => ({
@@ -498,18 +498,35 @@ it('refuses a reason without exemption, text or a reason capability', () => {
   expect(result.current.error).toBeNull();
 });
 
-it('can add the reason in tender after taking cash', () => {
+it('refuses a reason change outside the cart', () => {
   const { result } = renderSale({ capabilities: optionalReason });
   add(result); toggle(result, true);
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('tender');
+  setReason(result, reason, TAX_EXEMPT_REASON_LOCKED);
+  expect(result.current.taxExemptReason).toBeNull();
+  act(() => result.current.cancelTender());
+  setReason(result, reason);
+  expect(result.current.taxExemptReason).toStrictEqual(reason);
   act(() => result.current.startTender('cash'));
   takeCash(result, 300);
   expect(result.current.stage.kind).toBe('tender');
   expect(result.current.order.paidMinor).toBe(300);
-  const before = result.current.order;
-  setReason(result, reason);
+  setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
+  act(() => result.current.cancelTender());
+  setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
   expect(result.current.taxExemptReason).toStrictEqual(reason);
-  expect(result.current.order.payments).toStrictEqual(before.payments);
-  expect(result.current.order.balanceDueMinor).toBe(before.balanceDueMinor);
+});
+
+it('C4/C5 reports that a reason can be sent until a replay coupon is added', async () => {
+  const discountCodes = createDiscountCodes({ find: async code => ({ id: 101, code, discount_type: 'percent', amount: '10' }),
+    productCategories: async () => new Map() });
+  const { result } = renderSale({ discountCodes, capabilities: { ...optionalReason, coupons: true, taxExemptCoupons: true } });
+  add(result); toggle(result, true); setReason(result, reason);
+  expect(result.current.taxExemptReasonSent).toBe(true);
+  await act(async () => { expect(await result.current.applyCoupon('ten')).toBeNull(); });
+  expect(result.current.order.coupons![0]).not.toHaveProperty('lines');
+  expect(result.current.taxExemptReasonSent).toBe(false);
 });
 
 it('reports a missing required reason and gates sending and exemption by order.create version', () => {

@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest';
 import type { ServerCapabilities } from '@tallyui/core';
 import { payloadBoundErrors, payloadShapeErrors, precheckCommand } from '@tallyui/core/server';
 import { createOrderBuilder } from '../order/order-builder';
-import { ORDER_CREATE_MAX_VERSION, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError } from './command';
+import { ORDER_CREATE_MAX_VERSION, sendsTaxExemptReason, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError } from './command';
 import { finalizeOrder } from './finalize';
 import { posOrderCollection } from './schema';
 import { taxExemptReasonDelivery } from './tax-exempt-reason-delivery';
@@ -16,11 +16,17 @@ const reason = { text: 'Charity, form ST-5 on file', certificateId: 'ST5-0042' }
 const optional = { orderCreate: 13, taxExempt: true, taxExemptReason: 'optional' } as const;
 const envelope = (order: PosOrder, maxVersion: number) => toOrderCreateEnvelope(order, 'device_golden', 1, { maxVersion });
 
-function sale(taxExemptReason: PosOrder['taxExemptReason'], capabilities: ServerCapabilities = optional, exempt = true) {
-  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 88750 } });
+function sale(taxExemptReason: PosOrder['taxExemptReason'], capabilities: ServerCapabilities = optional, exempt = true, replayCoupon = false) {
+  const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 88750,
+    ...(replayCoupon ? { rounding: { granularity: 'woocommerce' as const, roundAtSubtotal: false }, getTaxRates: () => [] } : {}) } });
   builder.addLine({ productId: 'p', name: 'Coffee', unitPrice: { amount: 1000, currency: 'EUR' } });
   builder.setTaxExempt(exempt);
   builder.setCustomer({ id: '42', name: 'Ann Lee', email: 'ann@example.com' });
+  if (replayCoupon) builder.setCoupons(['c'], {
+    configs: new Map([['c', { discount_type: 'percent', amount: '10', limit_usage_to_x_items: null,
+      product_ids: [], excluded_product_ids: [], product_categories: [], excluded_product_categories: [], exclude_sale_items: false }]]),
+    couponIds: new Map([['c', '303']]), productCategories: new Map(), calcDiscountsSequentially: false,
+  });
   builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
   let nextId = 0;
   return finalizeOrder({ ...builder.getSnapshot(), ...(taxExemptReason ? { taxExemptReason } : {}) }, { capabilities,
@@ -66,7 +72,7 @@ it.each([
   ['F1', true, reason, 'optional', 13, 13],
   ['F2', true, reason, 'optional', 12, 4],
   ['F3', true, undefined, 'optional', 13, 4],
-  ['F4', true, reason, 'required', 13, 13],
+  ['F4/C1', true, reason, 'required', 13, 13],
   ['F5', true, undefined, 'required', 13, needsReason],
   ['F6 with reason', true, reason, 'required', 12, new UnsupportedOrderVersionError(13, 12)],
   ['F6 without reason', true, undefined, 'required', 12, new UnsupportedOrderVersionError(13, 12)],
@@ -99,6 +105,27 @@ it('V6 reports reason delivery from the stored reason and sent version', () => {
   expect(taxExemptReasonDelivery({ taxExemptReason: reason })).toBe('pending');
   expect(taxExemptReasonDelivery({ taxExemptReason: reason, sentVersion: 13 })).toBe('sent');
   expect(taxExemptReasonDelivery({ taxExemptReason: reason, sentVersion: 12 })).toBe('not_sent');
+});
+
+it('C2 refuses a required reason that a replay coupon prevents sending', () => {
+  expect(() => sale(reason, { ...optional, taxExemptCoupons: true, taxExemptReason: 'required' }, true, true))
+    .toThrow(new Error('finalize: this sale cannot send the tax-exempt reason this store requires'));
+});
+
+it('C3 stores an optional reason without sending it with a replay coupon', () => {
+  const stored = sale(reason, { ...optional, taxExemptCoupons: true }, true, true);
+  expect(stored.coupons![0]).not.toHaveProperty('lines');
+  expect(stored.taxExemptReason).toStrictEqual(reason);
+  const sent = envelope(stored, 13);
+  expect(sent.payload).not.toHaveProperty('taxExemptReason');
+  expect(taxExemptReasonDelivery({ ...stored, sentVersion: sent.version })).toBe('not_sent');
+});
+
+it('probes whether the envelope carries a reason', () => {
+  const stored = sale(reason);
+  expect(sendsTaxExemptReason(stored, 13)).toBe(true);
+  expect(sendsTaxExemptReason(stored, 12)).toBe(false);
+  expect(sendsTaxExemptReason(sale(undefined), 13)).toBe(false);
 });
 
 it('V7 refuses a reopened order carrying a reason', () => {

@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { finalizeOrder, withSentForm } from '../pos-order/finalize';
 import { createOrderBuilder, normalizeTaxExemptReason, restoreOrderDraft } from './index';
 
 const options = { currency: 'USD', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 100000 } };
@@ -51,4 +52,21 @@ it('restores a reason from the serialized exempt draft only', () => {
   builder.setTaxExempt(true);
   builder.setTaxExemptReason(reason);
   expect(restore().taxExemptReason).toStrictEqual(reason);
+});
+
+it('uses only the frozen tax-exempt reason in the sent form', () => {
+  const builder = createOrderBuilder(options);
+  builder.addLine({ productId: '1', name: 'Shirt', unitPrice: { currency: 'USD', amount: 1000 } });
+  builder.setTaxExempt(true);
+  builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+  for (const text of [`  ${'a'.repeat(300)}  `, '  ']) {
+    builder.setTaxExemptReason({ text });
+    const order = builder.getSnapshot();
+    const stored = finalizeOrder(order, { capabilities: { orderCreate: 13, taxExempt: true, taxExemptReason: 'optional' } });
+    const sent = withSentForm(order, stored);
+    if (text.trim()) {
+      expect(stored.taxExemptReason).toStrictEqual({ text: 'a'.repeat(199) + '…' });
+      expect(sent.taxExemptReason).toStrictEqual(stored.taxExemptReason);
+    } else expect(sent).not.toHaveProperty('taxExemptReason');
+  }
 });

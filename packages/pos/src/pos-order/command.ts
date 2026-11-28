@@ -15,6 +15,14 @@ export const UNTAXED_ADDRESS_ORDER_CREATE_VERSION = 11 as const;
 export const INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION = 12 as const;
 /** order.create 13 is 12 plus a staff-only taxExemptReason on a tax-exempt sale. */
 export const TAX_EXEMPT_REASON_ORDER_CREATE_VERSION = 13 as const;
+/** Whether order.create at maxVersion would carry this order's tax-exempt reason; false when it would not or cannot be built. */
+export function sendsTaxExemptReason(order: PosOrder, maxVersion: number): boolean {
+  try {
+    return 'taxExemptReason' in createEnvelope(order, 'probe', 1, { maxVersion }).payload;
+  } catch {
+    return false;
+  }
+}
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;

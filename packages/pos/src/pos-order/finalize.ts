@@ -8,7 +8,7 @@ import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import { outboxLogger } from '../outbox/logger';
-import { cutText, PAYLOAD_STRING_MAX, REVISION_MAX, sendable, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, UnsupportedOrderVersionError } from './command';
+import { cutText, PAYLOAD_STRING_MAX, REVISION_MAX, sendable, sendsTaxExemptReason, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, UnsupportedOrderVersionError } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -74,9 +74,10 @@ export function withSentForm(order: Order, posOrder: PosOrder): SentOrder {
   const keep = { granularity: order.taxRounding?.granularity };
   if (customer && posOrder.customer?.email === undefined) delete customer.email;
   if (customer && posOrder.customer?.id === undefined) delete customer.id;
-  const { exemptedFrom: _exemptedFrom, ...sent } = order;
+  const { exemptedFrom: _exemptedFrom, taxExemptReason: _taxExemptReason, ...sent } = order;
   const twin = order.taxExempt === true ? _exemptedFrom : undefined;
   return { ...sent, customer, note: posOrder.note ?? order.note,
+    ...(posOrder.taxExemptReason !== undefined ? { taxExemptReason: posOrder.taxExemptReason } : {}),
     lineItems: order.lineItems.map((line, i) => ({ ...line, name: posOrder.lines[i].name })),
     ...(order.fees ? { fees: order.fees.map((fee, i) => ({ ...storedCharge(fee, order.pricesIncludeTax, order.display.fees?.[i]?.amountMinor, keep, twin?.fees?.[i]), name: posOrder.fees![i].name })) } : {}),
     ...(order.shipping ? { shipping: order.shipping.map((charge, i) => ({ ...storedCharge(charge, order.pricesIncludeTax, order.display.shipping?.[i]?.amountMinor, keep, twin?.shipping?.[i]),
@@ -431,7 +432,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   const taxIds = order.customer?.taxIds && cleanTaxIds(order.customer.taxIds);
   if (taxIds === null) throw new Error(TAX_IDS_INVALID);
   const now = (options.now ?? new Date()).toISOString();
-  return freezeSentForm({
+  const posOrder = freezeSentForm({
     id, saleId: order.id, createdAt: afterClose?.createdAt ?? now, updatedAt: now, commandId: newId(), syncStatus: 'pending',
     currency: order.currency, pricesIncludeTax: order.pricesIncludeTax, lines, payments,
     ...(order.cashRoundings?.length ? { cashRoundings: order.cashRoundings.map((entry) => {
@@ -468,4 +469,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     ...(options.cashierRef !== undefined ? { cashierRef: options.cashierRef } : {}),
     ...(localWarnings?.length ? { localWarnings } : {}),
   });
+  if (posOrder.taxExempt && options.capabilities?.taxExemptReason === 'required' && !sendsTaxExemptReason(posOrder, options.capabilities.orderCreate)) {
+    throw new Error('finalize: this sale cannot send the tax-exempt reason this store requires');
+  }
+  return posOrder;
 }

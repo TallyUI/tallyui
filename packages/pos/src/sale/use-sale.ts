@@ -95,6 +95,7 @@ export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no l
 export const TAX_EXEMPT_REASON_NEEDS_TEXT = 'Add the reason for the exemption, not only the certificate number.';
 export const TAX_EXEMPT_REASON_NOT_EXEMPT = 'Turn on tax exemption before adding a reason.';
 export const TAX_EXEMPT_REASON_UNAVAILABLE = 'This store does not take an exemption reason.';
+export const TAX_EXEMPT_REASON_LOCKED = 'The exemption reason can only change in the cart. Cancel the payment to change it, or start a new order.';
 export const TAX_EXEMPT_REASON_REMOVED = 'This sale had an exemption reason, but this store no longer takes one, so the reason was removed.';
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
@@ -894,8 +895,9 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     taxExemptReason: order.taxExemptReason ?? null,
     /** Whether this store accepts or requires a reason, or null if it takes none. */
     taxExemptReasonMode: reasonMode ?? null,
-    /** false under 'optional' when this store's order.create is below 13: the reason stays on the till and is not sent */
-    taxExemptReasonSent: reasonMode !== undefined && (opts.capabilities?.orderCreate ?? 0) >= TAX_EXEMPT_REASON_ORDER_CREATE_VERSION,
+    /** Whether this store's order.create can carry a reason with the sale's coupons. */
+    taxExemptReasonSent: reasonMode !== undefined && (opts.capabilities?.orderCreate ?? 0) >= TAX_EXEMPT_REASON_ORDER_CREATE_VERSION
+      && !order.coupons?.some(coupon => !coupon.carried && coupon.lines === undefined),
     /** True when the exempt sale still needs a reason for this store. */
     taxExemptReasonMissing: order.taxExempt === true && reasonMode === 'required' && !order.taxExemptReason,
     taxExemptAvailable: opts.capabilities?.taxExempt === true && !reasonBlocked && !taxNow.current.taxContext.pricesIncludeTax && !order.storeOrder,
@@ -915,16 +917,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_COUPONS || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
       return true;
     },
-    /** Sets or clears the staff-only exemption reason in cart or tender without changing money. */
+    /** Sets or clears the staff-only exemption reason in the cart only, as setMeta; it changes no money. */
     setTaxExemptReason(input: { text?: string; certificateId?: string } | null): boolean {
       if (locked()) return false;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
+      const { payments, taxExempt } = builderNow.current.getSnapshot();
+      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+        setError(TAX_EXEMPT_REASON_LOCKED);
+        return false;
+      }
       const normalized = normalizeTaxExemptReason(input);
       if (normalized === 'needs_text') { setError(TAX_EXEMPT_REASON_NEEDS_TEXT); return false; }
-      if (normalized && !builderNow.current.getSnapshot().taxExempt) { setError(TAX_EXEMPT_REASON_NOT_EXEMPT); return false; }
+      if (normalized && !taxExempt) { setError(TAX_EXEMPT_REASON_NOT_EXEMPT); return false; }
       if (normalized && reasonMode === undefined) { setError(TAX_EXEMPT_REASON_UNAVAILABLE); return false; }
       builderNow.current.setTaxExemptReason(normalized);
-      setError((current) => current === TAX_EXEMPT_REASON_NEEDS_TEXT || current === TAX_EXEMPT_REASON_NOT_EXEMPT || current === TAX_EXEMPT_REASON_UNAVAILABLE ? null : current);
+      setError((current) => current === TAX_EXEMPT_REASON_LOCKED || current === TAX_EXEMPT_REASON_NEEDS_TEXT || current === TAX_EXEMPT_REASON_NOT_EXEMPT || current === TAX_EXEMPT_REASON_UNAVAILABLE ? null : current);
       return true;
     },
     /**

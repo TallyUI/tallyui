@@ -164,7 +164,7 @@ export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
 export { ADDRESS_CHANGE_REFUSED, NOTHING_DUE, NOTHING_TO_ROUND_AGAINST, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, CASH_PICK_LIMIT, CASH_SETTLE_LIMIT, CASH_PICK_ENTRIES_MAX, VOID_LATER_CASH_FIRST, PAYMENT_TAKEN, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, TAX_EXEMPT_UNAVAILABLE, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_LOCKED, TAX_EXEMPT_COUPONS, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_REMOVED, type SaleRemoval } from './sale/use-sale';
 export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
-export { TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE, TAX_EXEMPT_REASON_REMOVED } from './sale/use-sale';
+export { TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE, TAX_EXEMPT_REASON_REMOVED } from './sale/use-sale';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, PosOrderStoreSettlement, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger, cancelOnStore, payRestOnStore, reverseOnStore, type CancelOnStoreDeps, type PayRestOnStoreDeps } from './outbox';
