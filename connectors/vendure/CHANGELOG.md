@@ -1,5 +1,12 @@
 # @tallyui/connector-vendure
 
+## 5.6.1
+
+### Patch Changes
+
+- a0eacac: A Vendure store order now carries `taxExempt: true` when the plugin marked the order exempt in its `tallySnapshot`, so a store reprint prints the Tax exempt line.
+  - @tallyui/core@5.6.1
+
 ## 5.6.0
 
 ### Patch Changes
