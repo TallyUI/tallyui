@@ -13,8 +13,9 @@ export interface CommandEnvelope<P = unknown> {
    *  8 is 7 plus `taxAddress` and the customer's addresses (#722), sent only for a sale taxed on the customer's address.
    *  9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
    *  11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended).
-   *  12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092). */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+   *  12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092).
+   *  13 is 12 plus taxExemptReason, a staff-only reason on a tax-exempt sale. */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
   payload: P;
   createdAt: string; // ISO 8601, client clock
   deviceId: string;
@@ -105,8 +106,9 @@ export interface OrderUpdateReopenRequiredData { orderStatus: string }
  * 7 is 6 plus the sale's note (ADR-083). 8 is 7 plus `taxAddress` and the customer's addresses (#722).
  * 9 is 8 plus each coupon's per-line amounts (`coupons[].lines`, #790), sent only when every coupon carries them; it needs no `taxAddress`.
  * 11 is 10 plus the customer's addresses on a sale with no taxAddress, as informational fields (ADR-086 d2 amended).
- * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092). */
-export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 };
+ * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092).
+ * 13 is 12 plus taxExemptReason, a staff-only reason on a tax-exempt sale. */
+export type OrderCreateEnvelope = CommandEnvelope<OrderCreatePayload> & { type: 'order.create'; version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 };
 
 /** Outcome of processing a command. */
 export type CommandStatus = 'applied' | 'duplicate' | 'rejected';
@@ -462,6 +464,8 @@ export interface OrderCreatePayload {
   cashRoundings?: Array<{ paymentId: string; minor: number }>;
   /** Instruction (tax exempt per sale): the store charges no tax on any line, fee or shipping. Sent at the order's content version, only for an exempt order, and only to a store whose connector declares `taxExempt` (ADR-094's capability pattern, no new version). Every tax figure on such a payload is 0. Never sent on order.update. */
   taxExempt?: true;
+  /** Version 13: sent only on a tax-exempt order to a store whose connector declares `taxExemptReason`, never on order.update, a receipt or a display. */
+  taxExemptReason?: OrderCreateTaxExemptReason;
   /** Version 3+; both or neither. */
   display?: OrderCreateDisplay;
   /** Version 3+; both or neither. */
@@ -494,6 +498,9 @@ export interface OrderCreatePayload {
 /** A customer tax id on order.create 12 (ADR-092): `type` 1–32 UTF-16 units (the connector's scheme id), `value` 1–64,
  *  `country` an ISO 3166-1 alpha-2 code. */
 export interface OrderCreateTaxId { type: string; value: string; country?: string }
+
+/** A staff-only reason on a tax-exempt order.create 13: `text` 1–ORDER_TAX_EXEMPT_REASON_MAX UTF-16 units, `certificateId` 1–ORDER_TAX_EXEMPT_CERTIFICATE_MAX, both trimmed; never on a receipt, a display or in an error (docs/contract/order-create-v13.md). */
+export type OrderCreateTaxExemptReason = { text: string; certificateId?: string };
 
 /** An order custom field on order.create 12 (ADR-092): `key` 1–255 UTF-16 units, not starting with `_`; `value` 0–ORDER_NOTE_MAX. */
 export interface OrderCreateMeta { key: string; value: string }

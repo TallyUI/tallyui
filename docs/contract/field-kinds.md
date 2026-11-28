@@ -265,6 +265,9 @@ must equal the order's tax mode when charges are present; subtotal excludes char
 | `payload.coupons[].lines[].discountMinor` | informational, amount-bearing (#790) | 9 |
 | `payload.coupons[].lines[].discountTaxMinor` | informational, amount-bearing (#790) | 9 |
 | `payload.taxExempt` | instruction (tax exempt per sale): `true` when present; needs the server's `taxExempt` capability, and `taxExemptCoupons` too when the order carries coupons; never on `order.update` | the order's content version (capability, no version of its own) |
+| `payload.taxExemptReason` | informational, staff-only: only on a tax-exempt order; needs the server's `taxExemptReason` capability; never on `order.update` | 13 |
+| `payload.taxExemptReason.text` | informational, staff-only: 1–200 characters, trimmed | 13 |
+| `payload.taxExemptReason.certificateId` | informational, staff-only: 1–64 characters, trimmed, optional | 13 |
 
 - A discount, on the order or a line, is the cashier's price decision:
   the server honours it by applying or recording it, or refuses it.
@@ -322,6 +325,7 @@ must equal the order's tax mode when charges are present; subtotal excludes char
       revert does not recall them.
 - `payload.payments[].methodId` (version 10) is the payment method's own id on the platform, 1–64 characters, no NUL; `method` still decides cash. At 10 a leg may carry it; below 10 none does.
 - `payload.customer.taxIds`, a catalogue line's `payload.lines[].sku` and `payload.meta` (version 12, ADR-092) are the sale's tax ids, an edited SKU and the order's custom fields: informational, stored on the order (`docs/contract/order-create-v12.md`). Below 12 they are dropped, and a payload below 12 that carries one is `invalid_payload` (`<field> requires version 12`).
+- `payload.taxExemptReason` (version 13) is why a tax-exempt sale is exempt, plus an optional certificate number: informational and staff-only, never on a receipt, the customer display, the note or an error (`docs/contract/order-create-v13.md`). It needs the server's `taxExemptReason` capability. Under `'optional'` a cap below 13 drops it; under `'required'` an exempt sale never goes below 13.
 - `payload.sessionId` is the session the server's register figures count
   the sale in (ADR-068 decision 13), and `payload.registerId` is the
   till's device id, never the drawer (ADR-068 decision 7a). A server

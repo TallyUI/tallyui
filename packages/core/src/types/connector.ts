@@ -99,6 +99,8 @@ export interface ServerCapabilities {
   taxExempt?: boolean;
   /** True only when the store charges no tax on a coupon's discount on a tax-exempt order (order.create `taxExempt` with `coupons`). Absent: the till refuses a coupon on an exempt sale, and finalize refuses an exempt order that carries one. */
   taxExemptCoupons?: boolean;
+  /** Absent means the till never asks for or sends a reason; 'optional' sends it at 13; 'required' means the store refuses an exempt order without one; this means something only beside `taxExempt: true`. */
+  taxExemptReason?: 'optional' | 'required';
 }
 
 /** #287, ADR-071. `custom`: the till computes as when absent; that server never emits `figures_mismatch` for subtotal or tax. */

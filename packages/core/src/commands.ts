@@ -24,6 +24,10 @@ export const ORDER_META_MAX = 50;
 export const ORDER_META_KEY_MAX = 255;
 /** The longest order.create 12 catalogue line `sku`, in UTF-16 code units; WooCommerce's product lookup table holds 100 (ADR-092). */
 export const ORDER_LINE_SKU_MAX = 100;
+/** The longest order.create 13 tax exemption reason text, in UTF-16 code units. */
+export const ORDER_TAX_EXEMPT_REASON_MAX = 200;
+/** The longest order.create 13 tax exemption certificate id, in UTF-16 code units. */
+export const ORDER_TAX_EXEMPT_CERTIFICATE_MAX = 64;
 
 /**
  * True if `value` has the shape of a CommandBatchResponse: an object with a

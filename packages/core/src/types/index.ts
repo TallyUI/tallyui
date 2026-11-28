@@ -36,7 +36,7 @@ export type {
   OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
   OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
   OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
-  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateMeta,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateTaxExemptReason, OrderCreateMeta,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
