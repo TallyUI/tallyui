@@ -97,6 +97,8 @@ export const TAX_EXEMPT_REASON_NOT_EXEMPT = 'Turn on tax exemption before adding
 export const TAX_EXEMPT_REASON_UNAVAILABLE = 'This store does not take an exemption reason.';
 export const TAX_EXEMPT_REASON_LOCKED = 'The exemption reason can only change in the cart. Cancel the payment to change it, or start a new order.';
 export const TAX_EXEMPT_REASON_REMOVED = 'This sale had an exemption reason, but this store no longer takes one, so the reason was removed.';
+export const TAX_EXEMPT_REASON_REQUIRED = 'This store needs the reason for the tax exemption before payment. Add it in the cart.';
+export const TAX_EXEMPT_REASON_NOT_SENDABLE = "This store needs the exemption reason, but this sale's coupon cannot carry it. Remove the coupon or turn off tax exemption before payment.";
 /** ADR-092 6d: setMeta's refusal once the sale left the cart or money is live; custom fields change only in the cart. */
 export const META_CHANGE_REFUSED = 'Custom fields can only change in the cart. Cancel the payment to change them, or start a new order.';
 /** ADR-092 6d: setMeta's refusal of an empty, too long or `_` key, or of a new key past ORDER_META_MAX. */
@@ -483,10 +485,21 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     return paymentId;
   }
 
+  const reasonMode = opts.capabilities?.taxExempt === true ? opts.capabilities.taxExemptReason : undefined;
+  const reasonBlocked = reasonMode === 'required' && (opts.capabilities?.orderCreate ?? 0) < TAX_EXEMPT_REASON_ORDER_CREATE_VERSION;
+
   /** #1064: a customer's tax ids cleanTaxIds would refuse (a defaultCustomer, a restored draft) start no tender. */
   function taxIdsRefusal(): string | null {
     const taxIds = builderNow.current.getSnapshot().customer?.taxIds;
     return taxIds && cleanTaxIds(taxIds) === null ? TAX_IDS_INVALID : null;
+  }
+
+  function taxExemptReasonRefusal(): string | null {
+    const snapshot = builderNow.current.getSnapshot();
+    if (!snapshot.taxExempt || reasonMode !== 'required') return null;
+    if (!snapshot.taxExemptReason) return TAX_EXEMPT_REASON_REQUIRED;
+    if (reasonBlocked || snapshot.coupons?.some(coupon => !coupon.carried && coupon.lines === undefined)) return TAX_EXEMPT_REASON_NOT_SENDABLE;
+    return null;
   }
 
   function setTender(tender: { method: 'cash' | 'external'; methodId?: string; amountMinor: number; reference?: string } | null) {
@@ -494,6 +507,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (locked()) return;
     const taxIdsRefused = tender && taxIdsRefusal();
     if (taxIdsRefused) return setError(taxIdsRefused);
+    const reasonRefused = tender && taxExemptReasonRefusal();
+    if (reasonRefused) return setError(reasonRefused);
     // An after-close sale's money is what its closure counted, so the sale takes and gives none (ADR-077).
     if (tender && builderNow.current.getSnapshot().afterClose) return setError(AFTER_CLOSE_PAYMENTS_CHANGED);
     const builder = builderNow.current;
@@ -612,8 +627,6 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
     if (stale && liveLeg()) return COUPONS_REPRICING; // a parked live leg would be re-priced on resume (as main refuses)
     return writeOrderDraft(drafts, stale ? patchSale(snapshot, { coupons: keptCoupons.current, couponPricesStale: true }) : snapshot).then(() => null);
   }
-  const reasonMode = opts.capabilities?.taxExempt === true ? opts.capabilities.taxExemptReason : undefined;
-  const reasonBlocked = reasonMode === 'required' && (opts.capabilities?.orderCreate ?? 0) < TAX_EXEMPT_REASON_ORDER_CREATE_VERSION;
   const result = {
     order, stage, error, idle,
     /** #722: the address the sale's customer is taxed by (WooCommerce's `tax_based_on`), for a "Tax based on" panel; undefined without `taxContextFor`. */
@@ -914,7 +927,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (on && snapshot.coupons?.length && opts.capabilities?.taxExemptCoupons !== true) { setError(TAX_EXEMPT_COUPONS); return false; }
       builderNow.current.setTaxExempt(on);
       removalEpoch.current++;
-      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_COUPONS || current === TAX_EXEMPT_CONVERTED_LINE ? null : current);
+      setError((current) => current === TAX_EXEMPT_UNAVAILABLE || current === TAX_EXEMPT_PAYMENT_TAKEN || current === TAX_EXEMPT_LOCKED || current === TAX_EXEMPT_COUPONS || current === TAX_EXEMPT_CONVERTED_LINE
+        || current === TAX_EXEMPT_REASON_REQUIRED || current === TAX_EXEMPT_REASON_NOT_SENDABLE ? null : current);
       return true;
     },
     /** Sets or clears the staff-only exemption reason in the cart only, as setMeta; it changes no money. */
@@ -931,7 +945,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (normalized && !taxExempt) { setError(TAX_EXEMPT_REASON_NOT_EXEMPT); return false; }
       if (normalized && reasonMode === undefined) { setError(TAX_EXEMPT_REASON_UNAVAILABLE); return false; }
       builderNow.current.setTaxExemptReason(normalized);
-      setError((current) => current === TAX_EXEMPT_REASON_LOCKED || current === TAX_EXEMPT_REASON_NEEDS_TEXT || current === TAX_EXEMPT_REASON_NOT_EXEMPT || current === TAX_EXEMPT_REASON_UNAVAILABLE ? null : current);
+      setError((current) => current === TAX_EXEMPT_REASON_LOCKED || current === TAX_EXEMPT_REASON_NEEDS_TEXT || current === TAX_EXEMPT_REASON_NOT_EXEMPT || current === TAX_EXEMPT_REASON_UNAVAILABLE
+        || current === TAX_EXEMPT_REASON_REQUIRED || current === TAX_EXEMPT_REASON_NOT_SENDABLE ? null : current);
       return true;
     },
     /**
@@ -967,6 +982,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (stageNow.current.kind === 'receipt') return setError(SALE_FINISHED); // never re-tender a finished sale
       const taxIdsRefused = taxIdsRefusal();
       if (taxIdsRefused) return setError(taxIdsRefused);
+      const reasonRefused = taxExemptReasonRefusal();
+      if (reasonRefused) return setError(reasonRefused);
       if (!opts.tenderGate) return begin(method, options);
       if (locked()) return;
       const current = builderNow.current.getSnapshot();
@@ -1000,6 +1017,8 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
       if (builderNow.current.getSnapshot().afterClose) { setError(AFTER_CLOSE_PAYMENTS_CHANGED); return null; }
       const taxIdsRefused = taxIdsRefusal();
       if (taxIdsRefused) { setError(taxIdsRefused); return null; }
+      const reasonRefused = taxExemptReasonRefusal();
+      if (reasonRefused) { setError(reasonRefused); return null; }
       if (tender.method === 'cash' && tender.status !== undefined && tender.status !== 'captured') return null;
       if (tender.units) {
         const { lineItems, payments } = builderNow.current.getSnapshot();
