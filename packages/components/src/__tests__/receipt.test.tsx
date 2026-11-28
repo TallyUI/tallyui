@@ -384,4 +384,23 @@ describe('Receipt with a prebuilt receipt', () => {
     expect(screen.getByTestId('receipt-order').textContent).toBe('Order 12345678 · #136');
     expect(screen.getByText(`date:${receipt.header.date}`)).toBeTruthy();
   });
+
+  // 900 subtotal − 100 discount = 800 net; 800 × 0% = 0 tax, so 800 + 0 = 800 total.
+  const exemptTotals = { ...receipt.totals, taxExempt: true as const, taxInclusive: false, taxMinor: 0, totalMinor: 800,
+    taxLines: [{ label: 'Tax 0%', ratePpm: 0, amountMinor: 0 }] };
+  const zeroTax = formatMoney({ amount: 0, currency: receipt.currency });
+
+  it('R8 prints one exempt row instead of the zero-rate row and keeps the total', () => {
+    render(<Receipt receipt={{ ...receipt, totals: exemptTotals }} actions={false} />);
+    expect(screen.getByLabelText(`Tax exempt: ${zeroTax}`)).toBeTruthy();
+    expect(screen.queryByText(/Tax 0%/)).toBeNull();
+    expect(screen.getByLabelText(`Total: ${formatMoney({ amount: 800, currency: receipt.currency })}`)).toBeTruthy();
+  });
+
+  it('R9 prints the exempt row without an inclusive tax prefix', () => {
+    render(<Receipt receipt={{ ...receipt, totals: { ...exemptTotals, taxInclusive: true } }} actions={false} />);
+    expect(screen.getByLabelText(`Tax exempt: ${zeroTax}`)).toBeTruthy();
+    expect(screen.queryByText('incl. Tax exempt')).toBeNull();
+    expect(screen.queryByText(/Tax 0%/)).toBeNull();
+  });
 });

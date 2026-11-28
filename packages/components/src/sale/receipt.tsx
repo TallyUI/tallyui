@@ -56,7 +56,7 @@ export function Receipt(props: ReceiptProps) {
   </View>;
   const { totals } = receipt;
   const lineDiscountMinor = totals.discountMinor - receipt.orderDiscountMinor;
-  const taxRows = totals.taxLines.map((line, index) =>
+  const taxRows = totals.taxExempt ? row('Tax exempt', money(0)) : totals.taxLines.map((line, index) =>
     row(`${totals.taxInclusive ? 'incl. ' : ''}${taxLabel(line.ratePpm)}`, money(line.amountMinor), false, index));
   return <>
     {topInset > 0 ? <View dataSet={{ print: 'hide' }} style={{ height: topInset, flexShrink: 0 }} /> : null}

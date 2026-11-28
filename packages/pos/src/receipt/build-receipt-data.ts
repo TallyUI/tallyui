@@ -35,6 +35,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
   const label = (d: Discount) => d.label ?? d.couponCode ?? `${d.type} discount`;
   const customer = order.customer?.name || order.customer?.email;
   const refundDueMinor = lockedRefundDueMinor(order);
+  const exempt = order.taxExempt === true && order.display.taxMinor === 0;
 
   return {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
@@ -77,6 +78,7 @@ export function buildReceiptData(order: SentOrder, config: ReceiptConfig): Recei
     ...receiptRounding(order),
     orderDiscountMinor: order.display.orderDiscountMinor,
     totals: {
+      ...(exempt ? { taxExempt: true as const } : {}),
       taxInclusive: order.display.taxInclusive,
       subtotalMinor: order.display.subtotalMinor,
       discountMinor: order.display.discountMinor,

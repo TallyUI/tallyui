@@ -396,3 +396,35 @@ describe('cash rounding on reprint (ADR-094)', () => {
     expect(buildReceiptDataFromPosOrder(cashSale(), config)).not.toHaveProperty('rounding');
   });
 });
+
+describe('tax exemption on reprints', () => {
+  it('R4 marks a reprint from an exempt finalized till order', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 190000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } }); // 1 × €10
+    builder.setTaxExempt(true);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor }); // 1000 net + 0 tax
+    const stored = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, taxExempt: true } });
+    expect(buildReceiptDataFromPosOrder(stored, config).totals.taxExempt).toBe(true);
+  });
+
+  // One €10 item, no discounts or charges: 1000 net + (1000 × 0%) = 1000 paid.
+  const storeOrder: StoreOrder = {
+    id: '1', reference: '1', status: 'completed', placedAt: order136.placedAt, currency: 'EUR', pricesIncludeTax: false, customer: null,
+    lines: [{ id: '1', name: 'Item', quantity: 1, subtotalMinor: 1000, subtotalTaxMinor: 0, totalMinor: 1000, taxMinor: 0 }],
+    fees: [], shipping: [], coupons: [], refunds: [], taxLines: [], discountMinor: 0, discountTaxMinor: 0,
+    taxExempt: true, taxMinor: 0, totalMinor: 1000, payments: [{ method: 'cash', amountMinor: 1000 }],
+  };
+
+  it('R5 marks a reprint from an exempt store order with zero tax', () => {
+    expect(buildReceiptDataFromStoreOrder(storeOrder, config).totals.taxExempt).toBe(true);
+  });
+
+  it('R6 keeps charged tax on a store reprint even when the order says exempt', () => {
+    // 1000 × 19% = 190 charged tax; 1000 + 190 = 1190 paid.
+    const taxLines = [{ label: 'VAT', ratePpm: 190000, amountMinor: 190 }];
+    const { totals } = buildReceiptDataFromStoreOrder({ ...storeOrder, taxLines, taxMinor: 190, totalMinor: 1190,
+      lines: [{ ...storeOrder.lines[0], subtotalTaxMinor: 190, taxMinor: 190 }], payments: [{ method: 'cash', amountMinor: 1190 }] }, config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxLines).toEqual(taxLines);
+  });
+});
