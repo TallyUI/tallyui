@@ -1,4 +1,4 @@
-import { ConnectorUnauthorizedError, CustomerServiceError, decideProductEdit, type ProductEdit, type ProductEditTarget, type SyncContext } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, decideProductEdit, ProductEditPricesChangedError, type ProductEdit, type ProductEditTarget, type SyncContext } from '@tallyui/core';
 import { medusaMajor, medusaMinor } from './money';
 
 type Price = { id: string; amount: number; currency_code: string; min_quantity: number | null; max_quantity: number | null; rules?: Record<string, unknown> };
@@ -92,7 +92,7 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   return { prices: variant.prices, defaults, candidate, snapshot: { basePrice: { amount, currency: currency.toUpperCase(), taxInclusive } } };
 }
 
-function changedPriceIds(before: Price[], after: Price[], editedId: string) {
+function changedPriceIds(before: Price[], after: Price[], editedId: string, sentAmount: number) {
   const remaining = new Map<string, Price | null>();
   for (const price of after) remaining.set(price.id, remaining.has(price.id) ? null : price);
   const reportedDuplicates = new Set<string>();
@@ -104,7 +104,7 @@ function changedPriceIds(before: Price[], after: Price[], editedId: string) {
     const next = remaining.get(price.id);
     if (reportedDuplicates.has(price.id)) continue;
     if (next === null) reportedDuplicates.add(price.id);
-    if (!next || (price.id !== editedId && next.amount !== price.amount) ||
+    if (!next || next.amount !== (price.id === editedId ? sentAmount : price.amount) ||
         (next.currency_code !== price.currency_code && (typeof next.currency_code !== 'string' || typeof price.currency_code !== 'string' ||
           next.currency_code.toLowerCase() !== price.currency_code.toLowerCase())) ||
         next.min_quantity !== price.min_quantity || next.max_quantity !== price.max_quantity || rulesKey(next.rules) !== rulesKey(price.rules)) changed.push(price.id);
@@ -135,7 +135,7 @@ export const medusaProductEdit: ProductEdit = {
     const currency = bound.snapshot.basePrice.currency;
     const major = medusaMajor(change.to, currency);
     if (medusaMinor(JSON.parse(JSON.stringify(major)), currency) !== change.to) return { status: 'refused', code: 'invalid' };
-    // Proven from 2.11.2 to 2.23.2 by running each release's own updatePriceSets_ on the bodies this connector sends.
+    // Proven from 2.11.2 to 2.23.1, and the 2.23.2 snapshot of 27 Nov 2026, by running each release's own updatePriceSets_ on the bodies this connector sends.
     // 2.10.0 to 2.11.1 hash a 0 bound like none; the || key in bind covers them.
     // 2.0 to 2.9 use another write path that replaces the set and are unproven. Only the read-back compare protects them.
     // The server reports no version, so every release is written to. Rerun the proof on every Medusa release the connector adopts.
@@ -149,8 +149,8 @@ export const medusaProductEdit: ProductEdit = {
     if (response.status === 403) return { status: 'refused', code: 'forbidden' };
     if (response.status === 404) return { status: 'refused', code: 'not_found' };
     const variant = await readVariant(response, bound.variantId);
-    const changed = changedPriceIds(bound.prices, variant?.prices ?? [], bound.candidate.id);
-    if (changed.length) throw new CustomerServiceError('server', `Prices on this product changed unexpectedly (${changed.join(', ')}). Check them in the store's admin.`, { status: response.status });
+    const changed = changedPriceIds(bound.prices, variant?.prices ?? [], bound.candidate.id, major);
+    if (changed.length) throw new ProductEditPricesChangedError(changed, { status: response.status });
     const saved = variant && bind(variant, context, bound.listIds, bound.preferences);
     if (!saved) throw unexpected(response);
     return { status: 'saved', snapshot: saved.snapshot };
