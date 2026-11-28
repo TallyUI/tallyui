@@ -7251,13 +7251,14 @@ interface OrderCreatePayload {
   1. **Optional seam call.** `DisplaySignalling.renew?(dctx, token): Promise<{ token; expiresAt }>`, display side,
      gated by the token like every display call. It is optional: a connector without it keeps today's behaviour, and
      the display client only renews when the call exists. A plugin that expires tokens must implement it.
-  2. **Lifetime.** Each token, from `collect` or from `renew`, has its own expiry, set by the plugin. `renew`
-     returns it as `expiresAt`, ISO 8601, at least 2 days ahead, so a client that renews once a day keeps a margin.
+  2. **Lifetime.** Each token, from `collect` or from `renew`, has its own expiry, set by the plugin, at least 2 days
+     after it is issued. `renew` returns it as `expiresAt`, ISO 8601, so a client that renews once a day keeps a
+     margin; `collect` returns no expiry, so the client renews right after it (item 7).
      The reference server uses 30 days. A call with an expired token is `token_refused` and revokes nothing; the
      display pairs again, and its row stays until the till forgets it or pruning removes it.
   3. **One successor, a short overlap.** `renew` with the display's current token issues a new token (128 bits,
      base64url, stored only as its SHA-256 hash) and makes it current. The old token becomes *superseded*: it keeps
-     working for every display call during a short overlap, so a request already in flight, or a lost answer, does
+     working for every token call during a short overlap, so a request already in flight, or a lost answer, does
      not strand the display. The overlap is at least 60 seconds and at most 10 minutes; the reference server uses 5
      minutes. Renewal does not extend the overlap. The overlap governs a superseded token: reaching its own
      expiry does not end the overlap early.
@@ -7266,19 +7267,20 @@ interface OrderCreatePayload {
      way a token is renewed twice.
   5. **Reuse is revocation.** The display is dropped (its row, both token hashes and its snapshot, as `forget` does),
      and the call gets `token_refused`, when:
-     - the superseded token is presented after its overlap, by any display call (`claim` is a till call: a
-       superseded token there neither moves nor revokes the display); or
+     - the superseded token is presented after its overlap, by any token call (`claim` is not a token call: it is
+       gated by the code, and a superseded token there neither moves nor revokes the display); or
      - `renew` is called with the superseded token after its successor has been presented.
 
      The cashier then pairs the display again. Only one generation back is kept: an older token is simply unknown.
   6. **Refusals say nothing.** Expired, superseded-after-overlap, unknown and forgotten tokens all give
      `token_refused`, so a caller learns nothing about which case it hit. Every successful `renew` is a token call
      and updates `lastSeenAt`. `claim`'s move (ADR-085 d5) matches the current token only.
-  7. **The display client** renews once at start when it holds a token, and again before half of the time left to
-     `expiresAt` has passed, at most 24 hours apart. It saves the new token before using it. If the save fails, it
+  7. **The display client** renews right after `collect`, once at start when it holds a token, and again before half
+     of the time left to `expiresAt` has passed, at most 24 hours apart. It saves the new token before using it. If the save fails, it
      uses the new token from memory, as ADR-085 d5 holds a device key it could not save, and retries the save; once
      it has used the new token it never presents the old one again. One renew is in flight at a time, and the client
-     retries a renew with no answer no sooner than 30 seconds after sending it. A `token_refused` for a token the
+     retries a renew with no answer between 30 and 50 seconds after sending it, so the retry lands inside the
+     shortest overlap. A `token_refused` for a token the
      client no longer holds is ignored. (Slice B, its own PR.)
   8. **Conformance.** `displaySignallingContract` checks 1 to 6 whenever the implementation has `renew`, against the
      floors above (60 seconds, 10 minutes, 2 days), never against the reference server's own values.
@@ -7286,7 +7288,7 @@ interface OrderCreatePayload {
   the overlap, just after the server applied a renew whose answer it never received, must pair again; the overlap is
   kept short on purpose, so a copied token is useful for minutes, not days. Two residual cases also make a display
   pair again without an attacker: a renew the network delivers after its own retry's successor was presented, which
-  the server cannot tell from theft; and a display restarted after the overlap while the new token was held only in
-  memory. The Medusa connector calls
+  the server cannot tell from theft; and a display restarted, inside or after the overlap, after it used a new token
+  that it held only in memory. The Medusa connector calls
   `POST /tally/v1/display/renew` with the token in the header, as the other display calls do; the medusapos plugin
   adds the route and turns on expiry only at the release that carries slice B.
