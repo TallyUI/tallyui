@@ -60,8 +60,10 @@ async function priceListIds(context: SyncContext) {
 
 async function pricePreferences(context: SyncContext): Promise<Preference[]> {
   const response = await request(context, 'price-preferences?limit=1000');
-  const preferences = (await json(response))?.price_preferences;
+  const body = await json(response);
+  const preferences = body?.price_preferences;
   if (!Array.isArray(preferences)) throw unexpected(response);
+  if (typeof body.count === 'number' && body.count > preferences.length) throw new CustomerServiceError('server', 'too many price preferences');
   return preferences;
 }
 
@@ -69,13 +71,14 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   const currency = context.pricingContext?.currency_code;
   if (!currency) return null;
   const defaults = variant.prices.filter(price => !listIds.has(price.id));
-  const candidates = defaults.filter(price => price.currency_code.toLowerCase() === currency.toLowerCase() && !Object.keys(price.rules ?? {}).length);
-  const candidate = candidates[0];
-  if (candidates.length !== 1 || candidate.min_quantity != null || candidate.max_quantity != null) return null;
+  const unruled = defaults.filter(price => price.currency_code.toLowerCase() === currency.toLowerCase() &&
+    typeof price.rules === 'object' && price.rules !== null && !Array.isArray(price.rules) && !Object.keys(price.rules).length);
+  const candidate = unruled[0];
+  if (unruled.length !== 1 || candidate.min_quantity !== null || candidate.max_quantity !== null) return null;
   const amount = medusaMinor(candidate.amount, currency);
   if (!Number.isSafeInteger(amount) || medusaMajor(amount, currency) !== candidate.amount) return null;
-  const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && pref.value === currency)?.is_tax_inclusive ?? false;
-  const region = preferences.find(pref => pref.attribute === 'region_id' && pref.value === context.pricingContext?.region_id);
+  const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && pref.value.toLowerCase() === currency.toLowerCase())?.is_tax_inclusive ?? false;
+  const region = preferences.find(pref => pref.attribute === 'region_id' && pref.value.toLowerCase() === context.pricingContext?.region_id?.toLowerCase());
   if (region && region.is_tax_inclusive !== taxInclusive) return null;
   return { defaults, candidate, snapshot: { basePrice: { amount, currency: currency.toUpperCase(), taxInclusive } } };
 }

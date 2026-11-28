@@ -6,10 +6,10 @@ const cases: {
   change: ProductEditChange; before: ProductEditSnapshot; after: ProductEditSnapshot; other: ProductEditSnapshot;
   invalid: readonly unknown[];
 }[] = [
-  { change: { field: 'basePrice', from: 125, to: 0 }, before: { basePrice: { ...price, amount: 125 } },
+  { change: { field: 'basePrice', from: 125, to: 0, basis: price }, before: { basePrice: { ...price, amount: 125 } },
     after: { basePrice: { ...price, amount: 0 } }, other: { basePrice: { ...price, amount: 100 } },
     invalid: [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, null] },
-  { change: { field: 'salePrice', from: 50, to: null }, before: { salePrice: { ...price, amount: 50 } },
+  { change: { field: 'salePrice', from: 50, to: null, basis: price }, before: { salePrice: { ...price, amount: 50 } },
     after: { salePrice: { ...price, amount: null } }, other: { salePrice: { ...price, amount: 75 } },
     invalid: [-1, 1.5, Number.MAX_SAFE_INTEGER + 1] },
   { change: { field: 'stockOnHand', from: null, to: -2 }, before: { stockOnHand: { quantity: null } },
@@ -20,6 +20,23 @@ const cases: {
 ];
 
 describe.each(cases)('decideProductEdit: $change.field', ({ change, before, after, other, invalid }) => {
+  if (change.field === 'basePrice' || change.field === 'salePrice') {
+    const basis = { currency: 'USD', taxInclusive: false };
+    it.each([
+      { ...basis, taxInclusive: true, amount: change.from },
+      { ...basis, currency: 'EUR', amount: change.from },
+      { ...basis, taxInclusive: true, amount: change.to },
+    ])('conflicts with a fresh price on another basis: %o', freshPrice => {
+      const fresh = { [change.field]: freshPrice };
+      expect(decideProductEdit({ ...change, basis }, fresh)).toEqual({ status: 'conflict', snapshot: fresh });
+    });
+
+    it.each([undefined, { ...basis, currency: 1 }, { ...basis, taxInclusive: 0 }])('refuses invalid basis %o before a missing target', invalidBasis => {
+      const invalidChange = { ...change, basis: invalidBasis } as unknown as ProductEditChange;
+      expect(decideProductEdit(invalidChange, null)).toEqual({ status: 'refused', code: 'invalid' });
+    });
+  }
+
   it.each(invalid)('refuses invalid to (%s), even before a missing target', (to) => {
     const invalidChange = { ...change, to } as ProductEditChange;
     expect(decideProductEdit(invalidChange, before)).toEqual({ status: 'refused', code: 'invalid' });

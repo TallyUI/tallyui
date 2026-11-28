@@ -1,12 +1,12 @@
 import { createMedusaAdminUserConnector } from '@tallyui/connector-medusa';
-import { medusaMajor, medusaMinor } from '@tallyui/connector-medusa/money';
 import { describeProductEditConformance, type ProductEditHarness } from './conformance';
 
 const harness: ProductEditHarness = {
   setup(field, value) {
     const target = { productId: 'prod', variantId: 'variant' };
-    const sale = { id: 'p_sale', currency_code: 'usd', amount: 8 };
-    let defaults = [{ id: 'p_base', currency_code: 'usd', amount: field === 'basePrice' ? medusaMajor(Number(value), 'usd') : 15 }];
+    const sale = { id: 'p_sale', currency_code: 'usd', amount: 8, rules: {}, min_quantity: null, max_quantity: null };
+    let defaults = [{ id: 'p_base', currency_code: 'usd', rules: {}, min_quantity: null, max_quantity: null,
+      amount: field === 'basePrice' ? Number(value) / 100 : 15 }];
     let writes = 0;
     const product = () => Response.json({ product: { id: target.productId, variants: [{ id: target.variantId, prices: [...defaults, sale] }] } });
     const send: typeof fetch = async (input, init) => {
@@ -31,10 +31,10 @@ const harness: ProductEditHarness = {
     return {
       edit: createMedusaAdminUserConnector().productEdit!, target,
       context: { connectorId: 'medusa', baseUrl: 'https://medusa.test', headers: {}, pricingContext: { region_id: 'reg', currency_code: 'usd' }, fetch: send },
-      stored: () => medusaMinor(defaults[0].amount, 'usd'), writes: () => writes,
-      changeBehindTheTill(next) { defaults[0].amount = medusaMajor(Number(next), 'usd'); },
+      stored: () => Math.round(defaults[0].amount * 100), writes: () => writes,
+      changeBehindTheTill(next) { defaults[0].amount = Number(next) / 100; },
     };
   },
 };
 
-describeProductEditConformance('medusa', harness, [{ field: 'basePrice', from: 1500, to: 1250, other: 1000 }]);
+describeProductEditConformance('medusa', harness, [{ field: 'basePrice', from: 1500, to: 1250, other: 1000, basis: { currency: 'USD', taxInclusive: false } }]);

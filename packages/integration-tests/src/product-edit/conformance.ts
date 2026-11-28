@@ -59,6 +59,16 @@ export function describeProductEditConformance(name: string, harness: ProductEdi
           expect(writes()).toBe(0);
         });
 
+        if (change.field === 'basePrice' || change.field === 'salePrice') {
+          it('returns the fresh snapshot without writing on a different tax basis', async () => {
+            const { edit, context, target, writes } = harness.setup(field, from);
+            const fresh = await edit.read(context, target);
+            const basis = { ...change.basis, taxInclusive: !change.basis.taxInclusive };
+            expect(await edit.update(context, target, { ...change, basis })).toEqual({ status: 'conflict', snapshot: fresh });
+            expect(writes()).toBe(0);
+          });
+        }
+
         if (field !== 'manageStock') {
           it('refuses an invalid value without writing', async () => {
             const { edit, context, target, writes } = harness.setup(field, from);
@@ -75,7 +85,8 @@ export function describeProductEditConformance(name: string, harness: ProductEdi
         .find(field => !cases.some(change => change.field === field));
       const first = cases[0];
       const field = absent ?? cases[1].field;
-      const change: ProductEditChange = field === 'manageStock' ? { field, from: 'off', to: 'on' } : { field, from: 1, to: 2 };
+      const change: ProductEditChange = field === 'manageStock' ? { field, from: 'off', to: 'on' } : field === 'stockOnHand'
+        ? { field, from: 1, to: 2 } : { field, from: 1, to: 2, basis: { currency: 'USD', taxInclusive: false } };
       const { edit, context, target, writes } = absent ? harness.setup(absent, change.from) : harness.setup(first.field, first.from);
       const fresh = await edit.read(context, target);
       expect(fresh).not.toBeNull();

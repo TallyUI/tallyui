@@ -35,8 +35,8 @@ const reference: ProductEditHarness = {
 };
 
 describeProductEditConformance('reference', reference, [
-  { field: 'basePrice', from: 150, to: 125, other: 100 },
-  { field: 'salePrice', from: null, to: 90, other: 80 },
+  { field: 'basePrice', from: 150, to: 125, other: 100, basis: { currency: 'EUR', taxInclusive: true } },
+  { field: 'salePrice', from: null, to: 90, other: 80, basis: { currency: 'EUR', taxInclusive: true } },
   { field: 'stockOnHand', from: null, to: -1, other: 12 },
   { field: 'manageStock', from: 'inherit', to: 'on', other: 'off' },
 ]);

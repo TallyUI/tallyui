@@ -6,6 +6,9 @@ export interface ProductEditTarget { productId: string; variantId?: string }
 /** A stored price: integer minor units of `currency`, on the stated tax basis. The connector converts; the UI never does. */
 export interface ProductEditPrice { amount: number; currency: string; taxInclusive: boolean }
 
+/** The currency and tax basis a price edit was opened on, copied from the snapshot. */
+export interface ProductEditBasis { currency: string; taxInclusive: boolean }
+
 /**
  * What this one target can edit, read fresh from the store, bound to the one record a write would touch.
  * A key is present only when the target maps to exactly one writable record; otherwise the field is read-only.
@@ -19,10 +22,10 @@ export interface ProductEditSnapshot {
   manageStock?: { value: 'on' | 'off' | 'inherit' };
 }
 
-/** Exactly one field per call: `from` is the value the edit was opened on (from the snapshot), `to` the new value. */
+/** Exactly one field per call: `from` is the value the edit was opened on, `to` the new value. A price change also carries the basis from the snapshot. */
 export type ProductEditChange =
-  | { field: 'basePrice'; from: number; to: number }
-  | { field: 'salePrice'; from: number | null; to: number | null }
+  | { field: 'basePrice'; from: number; to: number; basis: ProductEditBasis }
+  | { field: 'salePrice'; from: number | null; to: number | null; basis: ProductEditBasis }
   | { field: 'stockOnHand'; from: number | null; to: number }
   | { field: 'manageStock'; from: 'on' | 'off' | 'inherit'; to: 'on' | 'off' };
 
@@ -50,6 +53,8 @@ export interface ProductEdit {
 /** Compare against the fresh store value before writing (ADR-095). A resend that finds `to` does not write again. */
 export function decideProductEdit(change: ProductEditChange, fresh: ProductEditSnapshot | null): { action: 'write' } | ProductEditResult {
   let current: ProductEditChange['from'] | undefined;
+  if ((change.field === 'basePrice' || change.field === 'salePrice') &&
+      (typeof change.basis?.currency !== 'string' || typeof change.basis?.taxInclusive !== 'boolean')) return { status: 'refused', code: 'invalid' };
   switch (change.field) {
     case 'basePrice':
       if (!Number.isSafeInteger(change.to) || change.to < 0) return { status: 'refused', code: 'invalid' };
@@ -70,6 +75,10 @@ export function decideProductEdit(change: ProductEditChange, fresh: ProductEditS
   }
   if (fresh === null) return { status: 'refused', code: 'not_found' };
   if (current === undefined) return { status: 'conflict', snapshot: fresh };
+  if (change.field === 'basePrice' || change.field === 'salePrice') {
+    const price = fresh[change.field];
+    if (price?.currency !== change.basis.currency || price.taxInclusive !== change.basis.taxInclusive) return { status: 'conflict', snapshot: fresh };
+  }
   if (current === change.to) return { status: 'already', snapshot: fresh };
   if (current === change.from) return { action: 'write' };
   return { status: 'conflict', snapshot: fresh };

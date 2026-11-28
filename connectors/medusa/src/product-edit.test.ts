@@ -5,8 +5,8 @@ import { createMedusaAdminUserConnector, createMedusaConnector } from './index';
 const edit = createMedusaAdminUserConnector().productEdit!;
 const baseUrl = 'https://medusa.test';
 const target = { productId: 'prod', variantId: 'variant' };
-const change = { field: 'basePrice', from: 1500, to: 1250 } as const;
-const usd = { id: 'p_usd', amount: 15, currency_code: 'USD' };
+const change = { field: 'basePrice', from: 1500, to: 1250, basis: { currency: 'USD', taxInclusive: false } } as const;
+const usd = { id: 'p_usd', amount: 15, currency_code: 'USD', rules: {}, min_quantity: null, max_quantity: null };
 const eur = { id: 'p_eur', amount: 10, currency_code: 'eur' };
 const sale = { ...usd, id: 'p_sale', amount: 8 };
 const currencyPref = { attribute: 'currency_code', value: 'usd', is_tax_inclusive: false };
@@ -37,8 +37,12 @@ describe('Medusa variant base price', () => {
     { name: 'inclusive currency and region', entries: [{ ...currencyPref, is_tax_inclusive: true }, regionPref], expected: snapshot(1500, true) },
     { name: 'no preferences', entries: [], expected: snapshot(1500) },
     { name: 'disagreeing region', entries: [regionPref, currencyPref], expected: null },
+    { name: 'another region', entries: [{ ...regionPref, value: 'reg_other' }, currencyPref], expected: snapshot(1500) },
+    { name: 'inclusive till region only', entries: [regionPref], expected: null },
+    { name: 'uppercase region', entries: [{ ...regionPref, value: 'REG' }], expected: null },
+    { name: 'uppercase inclusive currency', entries: [{ ...currencyPref, value: 'USD', is_tax_inclusive: true }], expected: snapshot(1500, true) },
   ])('reads the tax basis: $name', async ({ entries, expected }) => {
-    const { context } = fixture(product([{ ...usd, rules: {}, min_quantity: null, max_quantity: null }]), lists(), prefs(entries));
+    const { context } = fixture(product([usd]), lists(), prefs(entries));
     expect(await edit.read(context, target)).toEqual(expected);
   });
 
@@ -50,6 +54,11 @@ describe('Medusa variant base price', () => {
   it.each([
     { name: 'two unruled defaults', prices: [usd, { ...usd, id: 'p_second' }] },
     { name: 'region rule', prices: [{ ...usd, rules: { region_id: 'reg' } }] },
+    { name: 'missing rules', prices: [{ ...usd, rules: undefined }] },
+    { name: 'null rules', prices: [{ ...usd, rules: null }] },
+    { name: 'array rules', prices: [{ ...usd, rules: [] }] },
+    { name: 'missing minimum quantity', prices: [{ ...usd, min_quantity: undefined }] },
+    { name: 'missing maximum quantity', prices: [{ ...usd, max_quantity: undefined }] },
     { name: 'minimum quantity', prices: [{ ...usd, min_quantity: 10 }] },
     { name: 'maximum quantity', prices: [{ ...usd, max_quantity: 10 }] },
     { name: 'tier alongside base', prices: [usd, { ...usd, id: 'p_tier', min_quantity: 10 }] },
@@ -104,8 +113,15 @@ describe('Medusa variant base price', () => {
       expect(posts()).toEqual([]);
     });
 
+  it('conflicts without a POST if the currency preference changed since opening', async () => {
+    const { context, posts } = fixture(product([usd]), lists(), prefs(), product([usd]), lists(), prefs([{ ...currencyPref, is_tax_inclusive: true }]));
+    expect(await edit.read(context, target)).toEqual(snapshot(1500));
+    expect(await edit.update(context, target, change)).toEqual({ status: 'conflict', snapshot: snapshot(1500, true) });
+    expect(posts()).toEqual([]);
+  });
+
   it.each([
-    { field: 'salePrice', from: null, to: 100 }, { field: 'stockOnHand', from: 1, to: 2 }, { field: 'manageStock', from: 'off', to: 'on' },
+    { field: 'salePrice', from: null, to: 100, basis: change.basis }, { field: 'stockOnHand', from: 1, to: 2 }, { field: 'manageStock', from: 'off', to: 'on' },
   ] as const)('never writes $field', async unsupported => {
     const { context, posts } = fixture(product([usd]), lists(), prefs());
     expect(await edit.update(context, target, unsupported)).toEqual({ status: 'conflict', snapshot: snapshot(1500) });
@@ -173,10 +189,15 @@ describe('Medusa variant base price', () => {
     }
   });
 
+  it('rejects an incomplete price-preferences list', async () => {
+    const { context } = fixture(product([usd]), lists(), Response.json({ price_preferences: [currencyPref], count: 2 }));
+    await expect(edit.read(context, target)).rejects.toMatchObject({ name: 'CustomerServiceError', code: 'server', message: 'too many price preferences' });
+  });
+
   it('posts JPY in whole units', async () => {
-    const jpy = { id: 'p_jpy', currency_code: 'jpy', amount: 1500 };
+    const jpy = { ...usd, id: 'p_jpy', currency_code: 'jpy', amount: 1500 };
     const { context, posts } = fixture(product([jpy]), lists(), prefs([]), product([{ ...jpy, amount: 1200 }]));
-    const result = await edit.update({ ...context, pricingContext: { currency_code: 'jpy' } }, target, { ...change, to: 1200 });
+    const result = await edit.update({ ...context, pricingContext: { currency_code: 'jpy' } }, target, { ...change, to: 1200, basis: { currency: 'JPY', taxInclusive: false } });
     expect(result).toEqual({ status: 'saved', snapshot: { basePrice: { amount: 1200, currency: 'JPY', taxInclusive: false } } });
     expect(posts()).toEqual([{ prices: [{ id: 'p_jpy', amount: 1200 }] }]);
   });

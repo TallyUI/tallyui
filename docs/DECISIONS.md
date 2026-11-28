@@ -7204,21 +7204,24 @@ interface OrderCreatePayload {
 
      Prices are non-negative safe integers in minor units; a sale price may also be cleared with `null`. Stock is a
      safe integer and may be negative. The manage-stock switch can be set to `on` or `off`.
+     A price change carries `basis`, the currency and tax basis it was opened on; a fresh price on any other basis is a conflict, even when its amount matches.
   4. **No overwrite.** The desk ruled: "a conflict shows the fresh value and nothing else, no overwrite or retry-with-force anywhere in the API (keep it out of the types so nobody adds it later)".
      `already` is never rendered as "saved by you": nothing was written, and it does not prove an earlier send landed.
   5. **Stock.** The desk ruled: "stock is an absolute count with a store-enforced precondition, or it is not offered".
      A count typed as 12 means there are 12. Receiving stock is a different feature.
   6. **Price and manage-stock** use read, compare, then write. That leaves a window. Between the till's fresh read
      and its write, a person editing the same field in the store admin can land first, and the till's write then
-     replaces it. The window is one round trip. It is accepted because only people change these fields: sales never
+     replaces it. The window runs from the till's fresh read to the store applying the write; on Medusa that spans the product read, the price-list and preference reads and the write itself. It is accepted because only people change these fields: sales never
      move a price or the manage-stock switch.
   7. **Who may edit.** The editor needs both the surface and the `editProducts` permission. The store still authorizes
      the write itself.
   8. **Per platform, each its own way.** Each connector slice proves its own fields with fixtures and lists them here:
      - Medusa (slice C1): `basePrice` binds to exactly one rule-free default price in the till currency, with no tiers
-       and an exact minor-unit amount. Rules, tiers or a region preference that disagrees with the currency tax basis
+       and an exact minor-unit amount. A price whose rules or quantity bounds are missing from the read is never bound.
+       Rules, tiers or a region preference that disagrees with the currency tax basis
        (exclusive by default) can leave it read-only. The write echoes every default price by id because Medusa deletes
        omitted defaults. It never sends price-list price ids, which the admin variant read includes without a marker.
+       Because the echo is built from the fresh read, a default price an admin adds to the same variant inside the window is deleted by Medusa when the write lands.
        Fixtures prove this echo shape against Medusa 2.23 source, not yet a live store. There is no sale price (a sale
        is a price list), stock (no store-enforced precondition), or manage-stock (disabling it unlinks inventory items).
      - WooCommerce (slice C2): price, sale price and manage-stock through the plugin's existing push route with its
