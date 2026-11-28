@@ -22,11 +22,11 @@ export interface ProductEditSnapshot {
   manageStock?: { value: 'on' | 'off' | 'inherit' };
 }
 
-/** Exactly one field per call: `from` is the value the edit was opened on, `to` the new value. A price change also carries the basis from the snapshot. */
+/** Exactly one field per call: `from` is the value the edit was opened on, `to` the new value. Copy a price's basis or stock's `location?.id ?? null` from that snapshot. */
 export type ProductEditChange =
   | { field: 'basePrice'; from: number; to: number; basis: ProductEditBasis }
   | { field: 'salePrice'; from: number | null; to: number | null; basis: ProductEditBasis }
-  | { field: 'stockOnHand'; from: number | null; to: number }
+  | { field: 'stockOnHand'; from: number | null; to: number; locationId: string | null }
   | { field: 'manageStock'; from: 'on' | 'off' | 'inherit'; to: 'on' | 'off' };
 
 /** The one field named by a change. */
@@ -65,7 +65,7 @@ export function decideProductEdit(change: ProductEditChange, fresh: ProductEditS
       current = fresh?.salePrice?.amount;
       break;
     case 'stockOnHand':
-      if (!Number.isSafeInteger(change.to)) return { status: 'refused', code: 'invalid' };
+      if ((typeof change.locationId !== 'string' && change.locationId !== null) || !Number.isSafeInteger(change.to)) return { status: 'refused', code: 'invalid' };
       current = fresh?.stockOnHand?.quantity;
       break;
     case 'manageStock':
@@ -75,6 +75,7 @@ export function decideProductEdit(change: ProductEditChange, fresh: ProductEditS
   }
   if (fresh === null) return { status: 'refused', code: 'not_found' };
   if (current === undefined) return { status: 'conflict', snapshot: fresh };
+  if (change.field === 'stockOnHand' && (fresh.stockOnHand?.location?.id ?? null) !== change.locationId) return { status: 'conflict', snapshot: fresh };
   if (change.field === 'basePrice' || change.field === 'salePrice') {
     const price = fresh[change.field];
     if (price?.currency !== change.basis.currency || price.taxInclusive !== change.basis.taxInclusive) return { status: 'conflict', snapshot: fresh };

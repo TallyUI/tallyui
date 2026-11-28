@@ -7,7 +7,9 @@ const baseUrl = 'https://medusa.test';
 const target = { productId: 'prod', variantId: 'variant' };
 const change = { field: 'basePrice', from: 1500, to: 1250, basis: { currency: 'USD', taxInclusive: false } } as const;
 const usd = { id: 'p_usd', amount: 15, currency_code: 'USD', rules: {}, min_quantity: null, max_quantity: null };
-const eur = { id: 'p_eur', amount: 10, currency_code: 'eur' };
+const eur = { id: 'p_eur', amount: 10, currency_code: 'eur', rules: {}, min_quantity: null, max_quantity: null };
+const usdWrite = { id: 'p_usd', currency_code: 'USD', min_quantity: null, max_quantity: null, amount: 12.5 };
+const eurEcho = { id: 'p_eur', currency_code: 'eur', min_quantity: null, max_quantity: null };
 const sale = { ...usd, id: 'p_sale', amount: 8 };
 const currencyPref = { attribute: 'currency_code', value: 'usd', is_tax_inclusive: false };
 const regionPref = { attribute: 'region_id', value: 'reg', is_tax_inclusive: true };
@@ -63,7 +65,6 @@ describe('Medusa variant base price', () => {
     { name: 'missing maximum quantity', prices: [{ ...usd, max_quantity: undefined }] },
     { name: 'minimum quantity', prices: [{ ...usd, min_quantity: 10 }] },
     { name: 'maximum quantity', prices: [{ ...usd, max_quantity: 10 }] },
-    { name: 'tier alongside base', prices: [usd, { ...usd, id: 'p_tier', min_quantity: 10 }] },
     { name: 'sub-cent amount', prices: [{ ...usd, amount: 12.345 }] },
   ])('leaves $name read-only', async ({ prices }) => {
     const { context } = fixture(product(prices), lists(), prefs());
@@ -87,10 +88,19 @@ describe('Medusa variant base price', () => {
     expect(posts()).toEqual([]);
   });
 
-  it('posts only the changed amount and default ids, in order, and reads the response', async () => {
-    const { context, send, posts } = fixture(product([usd, sale, eur]), lists([sale.id]), prefs(), product([{ ...usd, amount: 12.5 }, sale, eur]));
-    expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1250) });
-    expect(posts()).toEqual([{ prices: [{ id: 'p_usd', amount: 12.5 }, { id: 'p_eur' }] }]);
+  it.each([
+    { name: 'USD then EUR', prices: [usd, eur], expected: [usdWrite, eurEcho] },
+    { name: 'EUR then USD', prices: [eur, usd], expected: [eurEcho, usdWrite] },
+    { name: 'price-list price', prices: [usd, sale], expected: [usdWrite] },
+    { name: 'price-list price between defaults', prices: [usd, sale, eur], expected: [usdWrite, eurEcho] },
+    { name: 'ruled EUR', prices: [usd, { ...eur, rules: { region_id: 'reg' } }], expected: [usdWrite, eurEcho] },
+    { name: 'tier alongside base', prices: [usd, { ...usd, id: 'p_tier', min_quantity: 10 }],
+      expected: [usdWrite, { id: 'p_tier', currency_code: 'USD', min_quantity: 10, max_quantity: null }] },
+  ])('posts only the changed amount and echoes defaults in order: $name', async ({ prices, expected }) => {
+    const saved = prices.map(price => price === usd ? { ...usd, amount: 12.51 } : price);
+    const { context, send, posts } = fixture(product(prices), lists([sale.id]), prefs(), product(saved));
+    expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1251) });
+    expect(posts()).toEqual([{ prices: expected }]);
     expect(send.mock.calls.map(([url]) => url)).toEqual([
       'products/prod', 'price-lists?fields=id,prices.id&limit=100&offset=0', 'price-preferences?limit=1000', 'products/prod/variants/variant',
     ].map(path => `${baseUrl}/admin/${path}`));
@@ -101,11 +111,15 @@ describe('Medusa variant base price', () => {
     expect(send.mock.calls[3][1]?.headers).toHaveProperty('Content-Type', 'application/json');
   });
 
-  it('preserves a ruled default by id and reports the returned amount rather than the requested one', async () => {
-    const ruled = { ...usd, id: 'p_region', rules: { region_id: 'reg' } };
-    const { context, posts } = fixture(product([ruled, usd]), lists(), prefs(), product([ruled, { ...usd, amount: 12.51 }]));
-    expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1251) });
-    expect(posts()).toEqual([{ prices: [{ id: 'p_region' }, { id: 'p_usd', amount: 12.5 }] }]);
+  it.each([
+    { name: 'USD region rule collides with the base', prices: [usd, { ...usd, id: 'p_region', currency_code: 'usd', rules: { region_id: 'reg' } }] },
+    { name: 'EUR region rule collides with another default', prices: [usd, eur, { ...eur, id: 'p_region', rules: { region_id: 'reg' } }] },
+    ...['min_quantity', 'max_quantity', 'currency_code'].map(key => ({ name: `missing EUR ${key}`, prices: [usd, { ...eur, [key]: undefined }] })),
+  ])('leaves unsafe defaults read-only without a POST: $name', async ({ prices }) => {
+    const { context, posts } = fixture(product(prices), lists(), prefs(), product(prices), lists(), prefs());
+    expect(await edit.read(context, target)).toBeNull();
+    expect(await edit.update(context, target, change)).toEqual({ status: 'refused', code: 'not_found' });
+    expect(posts()).toEqual([]);
   });
 
   it.each([{ amount: 12.5, status: 'already', minor: 1250 }, { amount: 10, status: 'conflict', minor: 1000 }])(
@@ -123,7 +137,7 @@ describe('Medusa variant base price', () => {
   });
 
   it.each([
-    { field: 'salePrice', from: null, to: 100, basis: change.basis }, { field: 'stockOnHand', from: 1, to: 2 }, { field: 'manageStock', from: 'off', to: 'on' },
+    { field: 'salePrice', from: null, to: 100, basis: change.basis }, { field: 'stockOnHand', from: 1, to: 2, locationId: null }, { field: 'manageStock', from: 'off', to: 'on' },
   ] as const)('never writes $field', async unsupported => {
     const { context, posts } = fixture(product([usd]), lists(), prefs());
     expect(await edit.update(context, target, unsupported)).toEqual({ status: 'conflict', snapshot: snapshot(1500) });
@@ -201,6 +215,6 @@ describe('Medusa variant base price', () => {
     const { context, posts } = fixture(product([jpy]), lists(), prefs([]), product([{ ...jpy, amount: 1200 }]));
     const result = await edit.update({ ...context, pricingContext: { currency_code: 'jpy' } }, target, { ...change, to: 1200, basis: { currency: 'JPY', taxInclusive: false } });
     expect(result).toEqual({ status: 'saved', snapshot: { basePrice: { amount: 1200, currency: 'JPY', taxInclusive: false } } });
-    expect(posts()).toEqual([{ prices: [{ id: 'p_jpy', amount: 1200 }] }]);
+    expect(posts()).toEqual([{ prices: [{ id: 'p_jpy', currency_code: 'jpy', min_quantity: null, max_quantity: null, amount: 1200 }] }]);
   });
 });

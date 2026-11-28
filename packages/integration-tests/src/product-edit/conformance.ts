@@ -69,6 +69,16 @@ export function describeProductEditConformance(name: string, harness: ProductEdi
           });
         }
 
+        if (change.field === 'stockOnHand') {
+          it('returns the fresh snapshot without writing at another location', async () => {
+            const { edit, context, target, writes } = harness.setup(field, from);
+            const fresh = await edit.read(context, target);
+            const locationId = change.locationId === null ? 'loc_other' : null;
+            expect(await edit.update(context, target, { ...change, locationId })).toEqual({ status: 'conflict', snapshot: fresh });
+            expect(writes()).toBe(0);
+          });
+        }
+
         if (field !== 'manageStock') {
           it('refuses an invalid value without writing', async () => {
             const { edit, context, target, writes } = harness.setup(field, from);
@@ -86,7 +96,7 @@ export function describeProductEditConformance(name: string, harness: ProductEdi
       const first = cases[0];
       const field = absent ?? cases[1].field;
       const change: ProductEditChange = field === 'manageStock' ? { field, from: 'off', to: 'on' } : field === 'stockOnHand'
-        ? { field, from: 1, to: 2 } : { field, from: 1, to: 2, basis: { currency: 'USD', taxInclusive: false } };
+        ? { field, from: 1, to: 2, locationId: null } : { field, from: 1, to: 2, basis: { currency: 'USD', taxInclusive: false } };
       const { edit, context, target, writes } = absent ? harness.setup(absent, change.from) : harness.setup(first.field, first.from);
       const fresh = await edit.read(context, target);
       expect(fresh).not.toBeNull();

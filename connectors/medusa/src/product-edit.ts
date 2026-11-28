@@ -1,11 +1,11 @@
 import { ConnectorUnauthorizedError, CustomerServiceError, decideProductEdit, type ProductEdit, type ProductEditTarget, type SyncContext } from '@tallyui/core';
 import { medusaMajor, medusaMinor } from './money';
 
-type Price = { id: string; amount: number; currency_code: string; min_quantity?: number | null; max_quantity?: number | null; rules?: Record<string, unknown> };
+type Price = { id: string; amount: number; currency_code: string; min_quantity: number | null; max_quantity: number | null; rules?: Record<string, unknown> };
 type Variant = { id: string; prices: Price[] };
 type Preference = { attribute: string; value: unknown; is_tax_inclusive: boolean };
 
-async function request(context: SyncContext, path: string, body?: { prices: { id: string; amount?: number }[] }) {
+async function request(context: SyncContext, path: string, body?: { prices: (Pick<Price, 'id' | 'currency_code' | 'min_quantity' | 'max_quantity'> & { amount?: number })[] }) {
   const init = body ? { method: 'POST', headers: { ...context.headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     : { method: 'GET', headers: context.headers };
   let response: Response;
@@ -34,7 +34,7 @@ async function readVariant(response: Response, id: string): Promise<Variant | un
   const variants: Variant[] = (await json(response))?.product?.variants;
   if (!Array.isArray(variants)) throw unexpected(response);
   const variant = variants.find(entry => entry.id === id);
-  if (variant && (!Array.isArray(variant.prices) || variant.prices.some(price => !price?.id || typeof price.currency_code !== 'string'))) throw unexpected(response);
+  if (variant && (!Array.isArray(variant.prices) || variant.prices.some(price => !price?.id))) throw unexpected(response);
   return variant;
 }
 
@@ -71,10 +71,19 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   const currency = context.pricingContext?.currency_code;
   if (!currency) return null;
   const defaults = variant.prices.filter(price => !listIds.has(price.id));
+  const keys = new Set<string>();
+  for (const { currency_code, min_quantity, max_quantity } of defaults) {
+    if (typeof currency_code !== 'string' || (min_quantity !== null && !Number.isFinite(min_quantity)) ||
+        (max_quantity !== null && !Number.isFinite(max_quantity))) return null;
+    const key = `${currency_code.toLowerCase()}|${min_quantity ?? ''}|${max_quantity ?? ''}`;
+    if (keys.has(key)) return null;
+    keys.add(key);
+  }
   const unruled = defaults.filter(price => price.currency_code.toLowerCase() === currency.toLowerCase() &&
+    price.min_quantity === null && price.max_quantity === null &&
     typeof price.rules === 'object' && price.rules !== null && !Array.isArray(price.rules) && !Object.keys(price.rules).length);
   const candidate = unruled[0];
-  if (unruled.length !== 1 || candidate.min_quantity !== null || candidate.max_quantity !== null) return null;
+  if (unruled.length !== 1) return null;
   const amount = medusaMinor(candidate.amount, currency);
   if (!Number.isSafeInteger(amount) || medusaMajor(amount, currency) !== candidate.amount) return null;
   const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && typeof pref.value === 'string' && pref.value.toLowerCase() === currency.toLowerCase())?.is_tax_inclusive ?? false;
@@ -105,7 +114,11 @@ export const medusaProductEdit: ProductEdit = {
     const currency = bound.snapshot.basePrice.currency;
     const major = medusaMajor(change.to, currency);
     if (medusaMinor(JSON.parse(JSON.stringify(major)), currency) !== change.to) return { status: 'refused', code: 'invalid' };
-    const prices = bound.defaults.map(({ id }) => id === bound.candidate.id ? { id, amount: major } : { id });
+    // Proven against @medusajs/pricing normalizePrices in 2.21.0 (hash dedupe) and 2.23.1 (id dedupe).
+    // Every version in that range uses one of those paths; the server reports no version to detect others.
+    // bind leaves shapes the hash would collapse read-only.
+    const prices = bound.defaults.map(({ id, currency_code, min_quantity, max_quantity }) =>
+      ({ id, currency_code, min_quantity, max_quantity, ...(id === bound.candidate.id ? { amount: major } : {}) }));
     const response = await request(context, bound.path, { prices });
     if (response.status === 400) {
       const message = (await response.json().catch(() => null))?.message;

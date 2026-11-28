@@ -10,7 +10,7 @@ const reference: ProductEditHarness = {
       switch (field) {
         case 'basePrice': return { basePrice: { ...price, amount: value as number } };
         case 'salePrice': return { salePrice: { ...price, amount: value as number | null } };
-        case 'stockOnHand': return { stockOnHand: { quantity: value as number | null } };
+        case 'stockOnHand': return { stockOnHand: { quantity: value as number | null, location: { id: 'loc_1', name: 'Shop' } } };
         case 'manageStock': return { manageStock: { value: value as 'on' | 'off' | 'inherit' } };
       }
     }
@@ -37,6 +37,6 @@ const reference: ProductEditHarness = {
 describeProductEditConformance('reference', reference, [
   { field: 'basePrice', from: 150, to: 125, other: 100, basis: { currency: 'EUR', taxInclusive: true } },
   { field: 'salePrice', from: null, to: 90, other: 80, basis: { currency: 'EUR', taxInclusive: true } },
-  { field: 'stockOnHand', from: null, to: -1, other: 12 },
+  { field: 'stockOnHand', from: null, to: -1, other: 12, locationId: 'loc_1' },
   { field: 'manageStock', from: 'inherit', to: 'on', other: 'off' },
 ]);

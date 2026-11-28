@@ -15,10 +15,10 @@ describe('can', () => {
     expect(can(cashier(CASHIER_PERMISSIONS.filter((other) => other !== permission)), permission)).toBe(false);
   });
 
-  it('allows everything for a null or undefined cashier', () => {
+  it('allows everything except editProducts for a null or undefined cashier', () => {
     for (const permission of CASHIER_PERMISSIONS) {
-      expect(can(null, permission)).toBe(true);
-      expect(can(undefined, permission)).toBe(true);
+      expect(can(null, permission)).toBe(permission !== 'editProducts');
+      expect(can(undefined, permission)).toBe(permission !== 'editProducts');
     }
   });
 

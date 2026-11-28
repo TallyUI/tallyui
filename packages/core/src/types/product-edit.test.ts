@@ -12,7 +12,7 @@ const cases: {
   { change: { field: 'salePrice', from: 50, to: null, basis: price }, before: { salePrice: { ...price, amount: 50 } },
     after: { salePrice: { ...price, amount: null } }, other: { salePrice: { ...price, amount: 75 } },
     invalid: [-1, 1.5, Number.MAX_SAFE_INTEGER + 1] },
-  { change: { field: 'stockOnHand', from: null, to: -2 }, before: { stockOnHand: { quantity: null } },
+  { change: { field: 'stockOnHand', from: null, to: -2, locationId: null }, before: { stockOnHand: { quantity: null } },
     after: { stockOnHand: { quantity: -2 } }, other: { stockOnHand: { quantity: 0 } },
     invalid: [1.5, Number.MAX_SAFE_INTEGER + 1, null] },
   { change: { field: 'manageStock', from: 'inherit', to: 'on' }, before: { manageStock: { value: 'inherit' } },
@@ -33,6 +33,27 @@ describe.each(cases)('decideProductEdit: $change.field', ({ change, before, afte
 
     it.each([undefined, { ...basis, currency: 1 }, { ...basis, taxInclusive: 0 }])('refuses invalid basis %o before a missing target', invalidBasis => {
       const invalidChange = { ...change, basis: invalidBasis } as unknown as ProductEditChange;
+      expect(decideProductEdit(invalidChange, null)).toEqual({ status: 'refused', code: 'invalid' });
+    });
+  }
+
+  if (change.field === 'stockOnHand') {
+    const location = { id: 'loc_a', name: 'Shop' };
+    it('writes a count at the location it was opened on', () => {
+      expect(decideProductEdit({ ...change, locationId: location.id }, { stockOnHand: { quantity: change.from, location } })).toEqual({ action: 'write' });
+    });
+
+    it.each([
+      { locationId: 'loc_a', id: 'loc_b', quantity: change.from }, { locationId: 'loc_a', id: 'loc_b', quantity: change.to },
+      { locationId: null, id: 'loc_a', quantity: change.from }, { locationId: 'loc_a', id: null, quantity: change.from },
+    ])('conflicts when the location changes: %o', ({ locationId, id, quantity }) => {
+      const fresh = { stockOnHand: { quantity, ...(id === null ? {} : { location: { id, name: 'Shop' } }) } };
+      expect(decideProductEdit({ ...change, locationId }, fresh)).toEqual({ status: 'conflict', snapshot: fresh });
+    });
+
+    it.each([{}, { locationId: undefined }, { locationId: 1 }])('refuses invalid location %o before a missing target', invalidLocation => {
+      const { field, from, to } = change;
+      const invalidChange = { field, from, to, ...invalidLocation } as unknown as ProductEditChange;
       expect(decideProductEdit(invalidChange, null)).toEqual({ status: 'refused', code: 'invalid' });
     });
   }
