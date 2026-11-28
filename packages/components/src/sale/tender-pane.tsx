@@ -6,7 +6,7 @@
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type JSX } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
   activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, percentOfMinor, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses, writeOffLeg,
@@ -366,7 +366,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
         <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">
           {typed ? t('pos_checkout.after_this_payment', { amount: money(restMinor) }) : t('pos_checkout.split_the_rest')}
         </Text>
-        <ScrollView horizontal testID="tender-split-ways" showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerClassName="grow gap-2">
+        <View testID="tender-split-ways" className="flex-row flex-wrap justify-center gap-2">
           {percentSplit === true && pick === null && state.plan === null ? <View className="min-w-28 flex-1">
             <Pressable testID="tender-percent" accessibilityRole="button" disabled={pending} onPress={() => send({ type: 'set-entry-mode', mode: 'percent' })}
               className="min-h-16 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-2">
@@ -384,7 +384,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
               <Text className="text-sm text-muted-foreground">{t('pos_checkout.amount_each', { amount: money(evenSplitShareMinor(restMinor, count)) })}</Text>
             </Pressable>
           </View>)}
-        </ScrollView>
+        </View>
       </> : null}
       {chips.length || balanceChip !== null || cashNotPayable ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
         {cashNotPayable ? [cashNotPayable.belowMinor, cashNotPayable.aboveMinor].filter((minor) => minor !== 0).map((minor) => <Pressable key={minor}
