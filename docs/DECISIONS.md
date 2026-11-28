@@ -7175,3 +7175,49 @@ interface OrderCreatePayload {
        stored-reopen exception above still applies.
 - **Consequences:** one-way: one pos_orders bump. Unrounded sales are unchanged on the wire at every order.create
   version.
+
+## ADR-095 Edit products in place: an optional, online `TallyConnector.productEdit?` that refuses conflicts (parity row 11)
+
+- **Date:** 2026-11-28 · **Status:** Accepted (front desk ruling, 2026-11-28) · **Relates to:** ADR-081 and ADR-093,
+  the optional online surface model.
+- **Context:** Parity row 11 asks for a cashier to correct a price or a stock count from the products screen. The
+  products collection is replicated pull-only from the store, so a local write would be lost on the next pull, and
+  a store value can move between the till's pull and the cashier's edit. Each platform keeps prices and stock its own
+  way, so the contract has to say which one record a write touches and what happens when that record has moved.
+- **Decision:**
+  1. **Optional and online.** There is no local write: the till never touches replicated `products` documents.
+     The cell shows the result's snapshot until the next pull. Without the surface, the products screen stays read-only.
+  2. **Snapshot per target, read when the edit opens.** A key is present only when the product or variant binds to
+     exactly one writable record for that field. The displayed value is not the writable value. Stock is the count
+     on hand at one location, never the displayed “available” figure.
+  3. **One field per call.** `from` is the value the edit opened on; `to` is the requested value. `decideProductEdit`
+     checks the following in order. A resend runs the same table: finding `to` ends the call without a second write.
+
+     | First matching condition | Decision |
+     |---|---|
+     | `to` is invalid for this field | Refuse: `invalid`. |
+     | The fresh snapshot is `null` | Refuse: `not_found`. |
+     | The field is absent from the fresh snapshot | `conflict`, with the fresh snapshot. |
+     | The fresh field value equals `to`, including when `from` equals `to` | `already`, with the fresh snapshot; no write. |
+     | The fresh field value equals `from` | Write; `saved` carries the store's values after the write. |
+     | Otherwise | `conflict`, with the fresh snapshot; no write. |
+
+     Prices are non-negative safe integers in minor units; a sale price may also be cleared with `null`. Stock is a
+     safe integer and may be negative. The manage-stock switch can be set to `on` or `off`.
+  4. **No overwrite.** The desk ruled: "a conflict shows the fresh value and nothing else, no overwrite or retry-with-force anywhere in the API (keep it out of the types so nobody adds it later)".
+     `already` is never rendered as "saved by you": nothing was written, and it does not prove an earlier send landed.
+  5. **Stock.** The desk ruled: "stock is an absolute count with a store-enforced precondition, or it is not offered".
+     A count typed as 12 means there are 12. Receiving stock is a different feature.
+  6. **Price and manage-stock** use read, compare, then write. That leaves a window. Between the till's fresh read
+     and its write, a person editing the same field in the store admin can land first, and the till's write then
+     replaces it. The window is one round trip. It is accepted because only people change these fields: sales never
+     move a price or the manage-stock switch.
+  7. **Who may edit.** The editor needs both the surface and the `editProducts` permission. The store still authorizes
+     the write itself.
+  8. **Per platform, each its own way.** Each connector slice proves its own fields with fixtures and lists them here:
+     - Medusa (slice C1, this PR): `basePrice` only. The Medusa specifics are added by slice C1.
+     - WooCommerce (slice C2): price, sale price and manage-stock through the plugin's existing push route with its
+       base revision, never with `force`; no stock. On a revision conflict, compare the edited field in the fresh
+       record with `from`. If equal, retry the write once with the fresh revision; if different, return a conflict.
+     - Vendure: later, fixtures only.
+     - Shopify: none.

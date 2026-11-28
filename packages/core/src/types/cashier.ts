@@ -4,9 +4,10 @@
  * - `manageClosures`: recount and close without an approver;
  * - `approveVariance`: approve another cashier's over-threshold count;
  * - `refund`: take refunds;
- * - `discount`: give discounts.
+ * - `discount`: give discounts;
+ * - `editProducts`: edit product prices and stock in place (ADR-095).
  */
-export const CASHIER_PERMISSIONS = ['viewReports', 'manageClosures', 'approveVariance', 'refund', 'discount'] as const;
+export const CASHIER_PERMISSIONS = ['viewReports', 'manageClosures', 'approveVariance', 'refund', 'discount', 'editProducts'] as const;
 
 /** One of `CASHIER_PERMISSIONS`. */
 export type CashierPermission = (typeof CASHIER_PERMISSIONS)[number];
@@ -21,7 +22,7 @@ export interface Cashier {
   permissions: readonly CashierPermission[];
 }
 
-/** Whether `value` is one of the five permission names. */
+/** Whether `value` is one of the known permission names. */
 export function isCashierPermission(value: unknown): value is CashierPermission {
   return (CASHIER_PERMISSIONS as readonly unknown[]).includes(value);
 }

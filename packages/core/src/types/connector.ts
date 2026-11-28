@@ -11,6 +11,7 @@ import type { PaymentMethodDescriptor } from './payment-methods';
 import type { ReceiptTemplate, ReceiptTemplateKind } from './receipt-templates';
 import type { RegisterInfo } from './registers';
 import type { ClosureReads } from './closures';
+import type { ProductEdit } from './product-edit';
 import type { Cashier } from './cashier';
 import type { PaymentMethodKind } from './commands';
 import type { FailureClass } from '../connectivity';
@@ -510,6 +511,11 @@ export interface TallyConnector {
   listRegisters?: (context: SyncContext) => Promise<RegisterInfo[]>;
   /** The store's Z closures (ADR-093): online only. `undefined` when the connector has none: the app hides its server-closure features. */
   closures?: ClosureReads;
+  /**
+   * Edits one product or variant in place, one field per call, refusing a conflict (ADR-095). Online only; never writes a replicated collection.
+   * `undefined` when the connector cannot edit products: the products screen stays read-only.
+   */
+  productEdit?: ProductEdit;
   /**
    * The signed-in cashier and their neutral POS permissions (v2 parity A12), mapped from the platform's own roles or
    * capabilities. Read-only. `null` when the connector has no cashier to describe; `undefined` (no method) when the

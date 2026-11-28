@@ -8,9 +8,9 @@ describe('Cashier types', () => {
     >();
   });
 
-  it('names the five permissions', () => {
+  it('names the cashier permissions', () => {
     expectTypeOf<CashierPermission>().toEqualTypeOf<
-      'viewReports' | 'manageClosures' | 'approveVariance' | 'refund' | 'discount'
+      'viewReports' | 'manageClosures' | 'approveVariance' | 'refund' | 'discount' | 'editProducts'
     >();
   });
 
