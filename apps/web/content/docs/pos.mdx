@@ -402,7 +402,7 @@ const receipt = buildReceiptData(order, {
 // receipt.header  — store name, address, order number, date, cashier, register
 // receipt.lineItems — name, sku, quantity, unitPriceMinor, lineTotalMinor
 // receipt.discounts — label, amountMinor
-// receipt.totals — taxInclusive, subtotalMinor (before discounts), discountMinor, taxLines[], taxMinor, totalMinor: the display figures (ADR-063)
+// receipt.totals — taxInclusive, subtotalMinor (before discounts), discountMinor, taxLines[], taxMinor, totalMinor: the display figures (ADR-063); taxExempt (optional: an exempt order with zero tax, shown as one "Tax exempt" row)
 // receipt.payments — method, amountMinor, reference
 // receipt.changeDueMinor — change owed to customer in minor units
 // receipt.footer — note, barcode

@@ -112,7 +112,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
 /** Receipt data for reprinting an order read from the store with `getOrders`/`listOrders` (ADR-081). */
 export function buildReceiptDataFromStoreOrder(order: StoreOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
-  const exempt = order.taxExempt === true && order.taxMinor === 0;
+  const exempt = order.taxExempt === true && order.taxMinor === 0 && order.taxLines.every((line) => line.amountMinor === 0);
   const gross = (net: number, tax: number) => order.pricesIncludeTax ? net + tax : net;
   const lineItems = order.lines.map((line): ReceiptLineItem => {
     const displayAmountMinor = gross(line.subtotalMinor, line.subtotalTaxMinor);

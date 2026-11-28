@@ -407,6 +407,18 @@ describe('tax exemption on reprints', () => {
     expect(buildReceiptDataFromPosOrder(stored, config).totals.taxExempt).toBe(true);
   });
 
+  it('R4b marks a reprint from an exempt finalized till order without display figures', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false, getTaxRatePpm: () => 190000 } });
+    builder.addLine({ productId: 'p', name: 'Item', unitPrice: { amount: 1000, currency: 'EUR' } });
+    builder.setTaxExempt(true);
+    builder.addPayment({ method: 'cash', amountMinor: builder.getSnapshot().totalMinor });
+    const stored = finalizeOrder(builder.getSnapshot(), { capabilities: { orderCreate: 12, taxExempt: true } });
+    const { display: _display, ...noDisplay } = stored;
+    const { totals } = buildReceiptDataFromPosOrder(noDisplay, config);
+    expect(totals.taxExempt).toBe(true);
+    expect(totals.taxMinor).toBe(0);
+  });
+
   // One €10 item, no discounts or charges: 1000 net + (1000 × 0%) = 1000 paid.
   const storeOrder: StoreOrder = {
     id: '1', reference: '1', status: 'completed', placedAt: order136.placedAt, currency: 'EUR', pricesIncludeTax: false, customer: null,
@@ -424,6 +436,16 @@ describe('tax exemption on reprints', () => {
     const taxLines = [{ label: 'VAT', ratePpm: 190000, amountMinor: 190 }];
     const { totals } = buildReceiptDataFromStoreOrder({ ...storeOrder, taxLines, taxMinor: 190, totalMinor: 1190,
       lines: [{ ...storeOrder.lines[0], subtotalTaxMinor: 190, taxMinor: 190 }], payments: [{ method: 'cash', amountMinor: 1190 }] }, config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxLines).toEqual(taxLines);
+  });
+
+  it('R6b keeps non-zero store tax rows even when they cancel out on an exempt order', () => {
+    const taxLines = [
+      { label: 'VAT', ratePpm: 190000, amountMinor: 10 },
+      { label: 'VAT', ratePpm: 70000, amountMinor: -10 },
+    ];
+    const { totals } = buildReceiptDataFromStoreOrder({ ...storeOrder, taxLines, taxMinor: 0 }, config);
     expect('taxExempt' in totals).toBe(false);
     expect(totals.taxLines).toEqual(taxLines);
   });
