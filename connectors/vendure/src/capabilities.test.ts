@@ -35,6 +35,24 @@ describe('readVendureCapabilities', () => {
     }
   });
 
+  it('T14 reads a versioned cashRounding and warns once for each malformed advertisement', async () => {
+    let body: { cashRounding?: unknown } = {};
+    stubFetch(() => json(body));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+    for (const version of [1, 2]) {
+      body = { cashRounding: { v: version } };
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1, cashRounding: true });
+    }
+    expect(warn).not.toHaveBeenCalled();
+    for (const cashRounding of [{ v: 0 }, { v: '1' }, { v: 1.5 }, true, [], null]) {
+      body = { cashRounding };
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring a malformed cashRounding');
+      warn.mockClear();
+    }
+  });
+
   it('V1 omits both exempt capabilities when neither is declared', async () => {
     stubFetch(() => json({}));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
