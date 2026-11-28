@@ -1,5 +1,16 @@
 # @tallyui/pos
 
+## 5.7.0
+
+### Minor Changes
+
+- 6815b01: `can` denies `editProducts` to a null or absent cashier (ADR-095).
+
+### Patch Changes
+
+- Updated dependencies [498c8f7]
+  - @tallyui/core@5.7.0
+
 ## 5.6.1
 
 ### Patch Changes
