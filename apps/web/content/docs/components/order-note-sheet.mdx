@@ -43,4 +43,4 @@ This is WCPOS v2's Order details sheet, opening on the left so the cart's note r
 
 ## Exemption reason
 
-The fields appear only while the Tax exempt switch is on. Under `required`, the reason is marked required; the certificate number is always optional. Under `optional` on a store whose `order.create` is below 13, the sheet says the reason stays on this till. Neither field appears on a receipt or the customer display.
+The fields appear only while the Tax exempt switch is on. Under `required`, the reason is marked required; the certificate number is always optional. The sheet says the reason stays on this till when the host sets `notSent`. Under `optional`, `Cart` sets `notSent` whenever `sale.taxExemptReasonSent` is `false`: the store's `order.create` is below `13`, or the order contains a coupon that prevents it from carrying the reason. Under `required`, `Cart` never sets `notSent`; payment waits until the reason can be sent. Neither field appears on a receipt or the customer display.

@@ -285,7 +285,9 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         taxLines={taxRows} taxInclusive={order.taxExempt === true ? undefined : totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
       {reasonAlert && sale.taxExemptReasonMissing ? <>
-        <Text accessibilityRole="alert" testID="cart-tax-exempt-reason-alert" className="text-destructive">Add the exemption reason in Order details before payment.</Text>
+        <Text accessibilityRole="alert" testID="cart-tax-exempt-reason-alert" className="text-destructive">
+          {noteSheet ? 'Add the exemption reason in Order details before payment.' : 'Add the exemption reason before payment.'}
+        </Text>
         {noteSheet ? <Pressable accessibilityRole="button" onPress={() => onNoteOpenChange(true)} className="min-h-11 justify-center">
           <Text className="text-primary">Order details</Text>
         </Pressable> : null}

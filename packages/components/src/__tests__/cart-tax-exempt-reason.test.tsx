@@ -7,10 +7,10 @@ import { click, SaleHarness, sale } from './sale-harness';
 
 afterEach(cleanup);
 
-function seed(mode?: 'optional' | 'required', orderCreate = 13, checkout = true) {
+function seed(mode?: 'optional' | 'required', orderCreate = 13, checkout = true, noteSheet = true) {
   const onCheckout = vi.fn();
   render(<><SaleHarness capabilities={{ orderCreate, taxExempt: true, taxExemptReason: mode }}>
-    {(sale) => <Cart sale={sale} checkout={checkout ? { onCheckout } : undefined} noteSheet={{}} />}
+    {(sale) => <Cart sale={sale} checkout={checkout ? { onCheckout } : undefined} noteSheet={noteSheet ? {} : undefined} />}
   </SaleHarness><PortalHost /></>);
   act(() => { sale.addCustomLine({ name: 'Item', priceMinor: 1000 }); });
   return onCheckout;
@@ -161,4 +161,12 @@ it('R12 clearing a previously supplied reason waits for Pay to show the alert ag
   openDetails(); change(reasonId, ''); click('Close');
   expect(screen.queryByTestId(alertId)).toBeNull();
   pay(); expect(screen.getByTestId(alertId)).toBeTruthy();
+});
+
+it('R13 Pay requests the reason without directing staff to an absent note sheet', { timeout: 20_000 }, () => {
+  seed('required', 13, true, false);
+  act(() => { sale.setTaxExempt(true); });
+  pay();
+  expect(screen.getByTestId(alertId).textContent).toBe('Add the exemption reason before payment.');
+  expect(screen.queryByRole('button', { name: 'Order details' })).toBeNull();
 });
