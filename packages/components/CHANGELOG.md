@@ -1,5 +1,14 @@
 # @tallyui/components
 
+## 5.6.1
+
+### Patch Changes
+
+- @tallyui/core@5.6.1
+- @tallyui/pos@5.6.1
+- @tallyui/primitives@5.6.1
+- @tallyui/theme@5.6.1
+
 ## 5.6.0
 
 ### Minor Changes
