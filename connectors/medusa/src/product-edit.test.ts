@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConnectorUnauthorizedError, CustomerServiceError, type SyncContext } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, ProductEditPricesChangedError, type SyncContext } from '@tallyui/core';
 import { createMedusaAdminUserConnector, createMedusaConnector } from './index';
 
 const edit = createMedusaAdminUserConnector().productEdit!;
@@ -97,9 +97,9 @@ describe('Medusa variant base price', () => {
     { name: 'tier alongside base', prices: [usd, { ...usd, id: 'p_tier', min_quantity: 10 }],
       expected: [usdWrite, { id: 'p_tier', currency_code: 'USD', min_quantity: 10, max_quantity: null }] },
   ])('posts only the changed amount and echoes defaults in order: $name', async ({ prices, expected }) => {
-    const saved = prices.map(price => price === usd ? { ...usd, amount: 12.51 } : price);
+    const saved = prices.map(price => price === usd ? { ...usd, amount: 12.5 } : price);
     const { context, send, posts } = fixture(product(prices), lists([sale.id]), prefs(), product(saved));
-    expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1251) });
+    expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1250) });
     expect(posts()).toEqual([{ prices: expected }]);
     expect(send.mock.calls.map(([url]) => url)).toEqual([
       'products/prod', 'price-lists?fields=id,prices.id&limit=100&offset=0', 'price-preferences?limit=1000', 'products/prod/variants/variant',
@@ -182,22 +182,26 @@ describe('Medusa variant base price', () => {
 
   it.each([{ variants: [], ids: 'p_usd' }, { variants: [{ id: target.variantId, prices: [sale] }], ids: 'p_usd, p_sale' }])('rejects a saved response without a bound price', async ({ variants, ids }) => {
     const { context } = fixture(product([usd]), lists([sale.id]), prefs(), Response.json({ product: { variants } }));
-    await expect(edit.update(context, target, change)).rejects.toMatchObject({ name: 'CustomerServiceError', code: 'server', message: `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.` });
+    await expect(edit.update(context, target, change)).rejects.toMatchObject({ name: 'ProductEditPricesChangedError', code: 'server', message: `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.`, priceIds: ids.split(', ') });
   });
 
   describe('compares the prices returned after a write', () => {
-    const edited = { ...usd, amount: 12.51 };
+    const edited = { ...usd, amount: 12.5 };
     const ruled = { ...eur, rules: { region_id: 'reg', nested: { first: 1, second: 2 } } };
     it.each([
       { name: 'only the edited amount differs', before: eur, after: eur },
       { name: 'rules key order and currency case differ', before: ruled, after: { ...ruled, currency_code: 'EUR', rules: { nested: { second: 2, first: 1 }, region_id: 'reg' } } },
     ])('saves when $name', async ({ before, after }) => {
       const { context } = fixture(product([usd, before]), lists(), prefs(), product([edited, after]));
-      expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1251) });
+      expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1250) });
     });
 
     const added = { ...eur, id: 'p_new' };
     it.each([
+      { name: 'edited amount not applied', prices: [{ ...usd }, eur, sale], ids: 'p_usd' },
+      { name: 'edited amount differs', prices: [{ ...usd, amount: 12.51 }, eur, sale], ids: 'p_usd' },
+      { name: 'edited amount as a string', prices: [{ ...usd, amount: '12.5' }, eur, sale], ids: 'p_usd' },
+      { name: 'edited not applied and EUR missing', prices: [{ ...usd }, sale], ids: 'p_usd, p_eur' },
       { name: 'missing EUR', prices: [edited, sale], ids: 'p_eur' },
       { name: 'EUR amount', prices: [edited, { ...eur, amount: 11 }, sale], ids: 'p_eur' },
       { name: 'EUR rules', prices: [edited, ruled, sale], ids: 'p_eur' },
@@ -218,8 +222,9 @@ describe('Medusa variant base price', () => {
       const { context } = fixture(product([usd, eur, sale]), lists([sale.id]), prefs(), response);
       const result = edit.update(context, target, change);
       const message = `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.`;
+      await expect(result).rejects.toBeInstanceOf(ProductEditPricesChangedError);
       await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
-      await expect(result).rejects.toMatchObject({ code: 'server', message, status: 200 });
+      await expect(result).rejects.toMatchObject({ name: 'ProductEditPricesChangedError', code: 'server', message, status: 200, priceIds: ids.split(', ') });
     });
   });
 

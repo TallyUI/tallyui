@@ -1,4 +1,5 @@
 import type { SyncContext } from './connector';
+import { CustomerServiceError } from './customers';
 
 /** One product, or one of its variants, that a till edits. */
 export interface ProductEditTarget { productId: string; variantId?: string }
@@ -42,7 +43,18 @@ export type ProductEditResult =
   | { status: 'conflict'; snapshot: ProductEditSnapshot }
   | { status: 'refused'; code: 'invalid' | 'forbidden' | 'not_found'; message?: string };
 
-/** Online only. Both methods reject with `ConnectorUnauthorizedError` for credentials and `CustomerServiceError` for transport failures. */
+/** `update` wrote, and the store's answer shows prices other than those sent; nothing is repaired. Show the message and keep it on screen. */
+export class ProductEditPricesChangedError extends CustomerServiceError {
+  /** Each changed, missing or new price id; the edited price is included when it did not show the amount sent. */
+  readonly priceIds: readonly string[];
+  constructor(priceIds: readonly string[], options?: { status?: number }) {
+    super('server', `Prices on this product changed unexpectedly (${priceIds.join(', ')}). Check them in the store's admin.`, options);
+    this.name = 'ProductEditPricesChangedError';
+    this.priceIds = priceIds;
+  }
+}
+
+/** Online only. Both methods reject with `ConnectorUnauthorizedError` for credentials and `CustomerServiceError` for transport failures. A rejection from `update` does not prove nothing was written: `ProductEditPricesChangedError` means the write landed; read again. */
 export interface ProductEdit {
   /** Read when the edit opens. `null` means nothing on this target is editable. */
   read(context: SyncContext, target: ProductEditTarget): Promise<ProductEditSnapshot | null>;

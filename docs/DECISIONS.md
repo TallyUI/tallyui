@@ -7224,11 +7224,11 @@ interface OrderCreatePayload {
        (exclusive by default) can leave it read-only. The write echoes every other default by id with its currency and quantity bounds, but no amount or rules:
        Medusa deletes omitted defaults, and releases before 2.22.1 dedupe by a hash of currency and bounds, not by id.
        A variant whose defaults share currency and bounds, counting a 0 bound as none, is read-only. It never sends price-list price ids, which the admin variant read includes without a marker.
-       This shape is proven from 2.11.2 to 2.23.2 by running each release's own `updatePriceSets_` on the bodies this connector sends, but not yet on a live store.
+       This shape is proven from 2.11.2 to 2.23.1, and the 2.23.2 snapshot of 27 Nov 2026, by running each release's own `updatePriceSets_` on the bodies this connector sends, but not yet on a live store.
        Releases 2.10.0 to 2.11.1 hash a 0 bound like none; the `||` key in `bind` covers them.
        Releases 2.0 to 2.9 use another write path that replaces the set and are unproven. Only the read-back compare protects them.
        The server reports no version, so every release is written to. Rerun the proof on every Medusa release the connector adopts.
-       After the write, the connector compares every response price with the read, except for the edited amount; any changed, missing or new price fails the edit with a message naming the price ids and asking for a check in the store's admin, without repairing anything.
+       After the write, the connector compares every response price with the read, and the edited price with the amount sent; any changed, missing or new price fails the edit with `ProductEditPricesChangedError`, which names the price ids and asks for a check in the store's admin, without repairing anything.
        Because the echo is built from the fresh read, a default price an admin adds to the same variant inside the window is deleted by Medusa when the write lands.
        There is no sale price (a sale
        is a price list), stock (no store-enforced precondition), or manage-stock (disabling it unlinks inventory items).
