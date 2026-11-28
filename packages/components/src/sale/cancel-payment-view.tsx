@@ -12,6 +12,7 @@ import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
 import { cancelLine, type TenderLedger } from './tender-ledger';
 import { claimVoid, releaseVoid } from './void-in-flight';
+import { useTakeInFlight } from './take-in-flight';
 
 type Leg = Order['payments'][number];
 /** tender-pane.tsx's button. */
@@ -63,6 +64,7 @@ export function CancelPaymentView({ sale, methods, onClose, beforeVoid, afterVoi
   const t = useT();
   const [voiding, setVoiding] = useState(false);
   const { order } = sale;
+  const taking = useTakeInFlight(order.id);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
   const offered = offeredMethods(methods);
   const legs = cancelLegs(order);
@@ -93,7 +95,7 @@ export function CancelPaymentView({ sale, methods, onClose, beforeVoid, afterVoi
     <Pressable testID="tender-cancel-keep" accessibilityRole="button" onPress={onClose} disabled={voiding} className={`rounded-md bg-primary px-4 py-3${voiding ? ' opacity-50' : ''}`}>
       <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.keep_taking_payment')}</Text>
     </Pressable>
-    {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} disabled={voiding} className={`${button}${voiding ? ' opacity-50' : ''}`}>
+    {voidable.length > 0 ? <Pressable testID="tender-cancel-confirm" accessibilityRole="button" onPress={confirm} disabled={voiding || taking} className={`${button}${voiding || taking ? ' opacity-50' : ''}`}>
       <Text className="text-center text-destructive">{t('pos_checkout.cancel_and_void')}</Text>
     </Pressable> : <Pressable testID="tender-cancel-back" accessibilityRole="button" onPress={sale.cancelTender} className={button}>
       <Text className="text-center text-foreground">{t('common.back')}</Text>
