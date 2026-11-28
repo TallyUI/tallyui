@@ -396,8 +396,8 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       if (!w.s.renew) return;
       const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       await w.s.renew(d, token);
-      await w.s.postSnapshot(w.a, w.da, displayId, 'overlap');
       await w.h.advance(59_000);
+      await w.s.postSnapshot(w.a, w.da, displayId, 'overlap');
       check(await w.s.readSnapshot(d, token) === 'overlap', 'the previous token cannot read the snapshot');
       await w.s.displaySendSignal(d, token, { type: 'answer', payload: 'a1' });
       await w.s.displayReceiveSignals(d, token);
@@ -409,7 +409,9 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       await w.h.advance(30_000);
       const fresh = await w.s.renew(d, token);
       check(fresh.token !== unseen.token && fresh.token !== token, 'the retry did not issue a fresh successor');
-      await expectRefusal(w.s.readSnapshot(d, unseen.token), 'token_refused', 'an unseen replaced successor');
+      const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
+      const replaced = await expectRefusal(w.s.readSnapshot(d, unseen.token), 'token_refused', 'an unseen replaced successor');
+      sameRefusal(replaced, unknown, 'replaced and unknown tokens');
       await w.s.readSnapshot(d, fresh.token);
       check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'the retry lost the display');
     },
@@ -418,7 +420,9 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       const next = await w.s.renew(d, token);
       await w.s.readSnapshot(d, next.token);
-      await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew after successor use');
+      const unknown = await expectRefusal(w.s.renew(d, randomKey()).then(() => undefined), 'token_refused', 'renew an unknown token');
+      const reuse = await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew after successor use');
+      sameRefusal(reuse, unknown, 'reused and unknown tokens on renew');
       await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the revoked successor');
       check((await w.s.list(w.a, w.da)).length === 0, 'the revoked display is still listed');
     },
@@ -428,7 +432,9 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const next = await w.s.renew(d, token);
       await w.h.advance(10 * MINUTE + 1000);
       await w.s.postSnapshot(w.a, w.da, displayId, 'live');
-      await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'the previous token after overlap');
+      const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
+      const reuse = await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'the previous token after overlap');
+      sameRefusal(reuse, unknown, 'reused and unknown tokens on read');
       await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the revoked successor');
       check((await w.s.list(w.a, w.da)).length === 0, 'the revoked display is still listed');
       check((await w.h.storedCounts()).snapshots === 0, 'revocation left a snapshot');
@@ -437,23 +443,40 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       if (!w.s.renew) return;
       const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       await w.s.renew(d, token);
-      await w.h.advance(59_000);
-      await w.s.renew(d, token);
-      await w.h.advance(10 * MINUTE + 1000 - 59_000);
-      await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'previous token after the original overlap');
+      for (let retry = 1; retry <= 11; retry += 1) {
+        await w.h.advance(59_000);
+        try {
+          await w.s.renew(d, token);
+        } catch (error) {
+          check(retry > 1, 'the first retry was refused within the minimum overlap');
+          check((error as { code?: unknown } | null)?.code === 'token_refused', 'the retry did not fail with token_refused');
+          return;
+        }
+      }
+      throw new Error('display signalling contract: retries extended the overlap beyond ten minutes');
     },
     'R8: the successor is refused after its advertised expiry (ADR-096)': async (w) => {
       if (!w.s.renew) return;
       const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       const mint = await w.s.mint(w.a, w.da);
       const next = await w.s.renew(d, token);
-      const elapsed = Date.parse(next.expiresAt) - Date.parse(mint.expiresAt) + 10 * MINUTE + 1000;
-      await w.h.advance(DAY);
-      await w.s.readSnapshot(d, next.token);
-      await w.h.advance(elapsed - DAY);
-      await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the expired successor');
+      const target = Date.parse(next.expiresAt) - Date.parse(mint.expiresAt) + 10 * MINUTE + 5000;
+      let remaining = target;
+      while (remaining > DAY) {
+        const jump = Math.min(remaining - DAY, 10 * DAY);
+        await w.h.advance(jump);
+        await w.s.readSnapshot(d, next.token);
+        remaining -= jump;
+      }
+      await w.h.advance(remaining);
+      const expiredRead = await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the expired successor');
+      const expiredRenew = await expectRefusal(w.s.renew(d, next.token).then(() => undefined), 'token_refused', 'renew with the expired successor');
       const [original] = await w.s.list(w.a, w.da);
       check(original, 'refusing the expired successor dropped the display');
+      const unknownRenew = await expectRefusal(w.s.renew(d, randomKey()).then(() => undefined), 'token_refused', 'renew an unknown token');
+      sameRefusal(expiredRenew, unknownRenew, 'expired and unknown tokens on renew');
+      const unknownRead = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
+      sameRefusal(expiredRead, unknownRead, 'expired and unknown tokens on read');
       const fresh = await paired(w, w.a, w.da, '192.0.2.9', 'Counter', next.token);
       check(fresh.displayId !== original.displayId, 'claim with an expired token moved the display');
       const ids = (await w.s.list(w.a, w.da)).map((row) => row.displayId);
@@ -501,6 +524,19 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const secondMint = await w.s.mint(w.a, w.da);
       const fresh = await w.s.renew(d, next.token);
       check(Date.parse(fresh.expiresAt) >= Date.parse(secondMint.expiresAt) - 10 * MINUTE + 2 * DAY, 'the renewed expiry is less than two days ahead');
+    },
+    'R13: a token two generations back is refused and revokes nothing (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const t1 = await w.s.renew(d, token);
+      await w.s.readSnapshot(d, t1.token);
+      const t2 = await w.s.renew(d, t1.token);
+      await w.s.readSnapshot(d, t2.token);
+      const older = await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'a token two generations back');
+      const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
+      sameRefusal(older, unknown, 'older and unknown tokens');
+      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'refusing the older token dropped the display');
+      await w.s.readSnapshot(d, t2.token);
     },
   };
   return Object.entries(cases).map(([name, run]) => ({ name, run: async () => run(await world(makeHarness)) }));
