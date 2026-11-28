@@ -68,7 +68,8 @@ const COMPONENTS_POS_ALLOWLIST = new Set([
   'UI_SCALES', 'UI_THEMES',
   // the tender pane (plan unit 16): the pure tender reducer, plan, rounding, quick-cash and leg-status maths the pane shows, never a hook or the store.
   // initialTenderState is a pure constant that useTender resets to.
-  'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
+  // percentOfMinor is pure: the tender pane's Percent split converts a whole percent of the rest to money once.
+  'tenderReducer', 'initTenderState', 'initialTenderState', 'activePlan', 'planLegs', 'evenSplitShareMinor', 'percentOfMinor', 'changeMinor', 'quickTenderedAmounts', 'tenderRounding',
   // inMotionMinor is pure, and the tender pane's pick target needs it.
   // cashVoidRefusal (ADR-094 item 6, #1292): pure; the ledger and the cancel view check it before beforeVoid.
   'legStatus', 'countsTowardPaid', 'isInMotion', 'inMotionMinor', 'canVoidLeg', 'cashVoidRefusal',

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Compone
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
-  activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses, writeOffLeg,
+  activePlan, CASH_PICK_ENTRIES_MAX, changeMinor, countsTowardPaid, evenSplitShareMinor, inMotionMinor, isInMotion, legStatus, lockedRefundDueMinor, nearestPayableCash, percentOfMinor, planLegs, quickTenderedAmounts, remainderEntriesMinor, roundedPickTarget, tenderRounding, tillLegsTheStoreRefuses, writeOffLeg,
   type TenderAction, type TenderKey, type TenderPlan, type TenderState, type useSale,
 } from '@tallyui/pos';
 import { cn } from '@tallyui/theme';
@@ -53,6 +53,8 @@ export interface TenderPaneProps {
   onTaken?: (paymentId: string) => void;
   /** Marks every method tile "Offline". Advisory: nothing is disabled. */
   offline?: boolean;
+  /** Adds WCPOS v2's Percent tile to the split strip: the cashier pays a whole percent of the rest. Default false. */
+  percentSplit?: boolean;
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -65,6 +67,8 @@ const keypadRows = (t: ReturnType<typeof useT>) => [...DIGIT_ROWS,
 const button = 'min-h-11 justify-center rounded-md border border-border bg-card px-4 py-2';
 /** v2 tender-pane.tsx "Split the rest" strip: 2 to 6 equal ways. */
 const SPLIT_WAYS = [2, 3, 4, 5, 6];
+/** v2 tender-pane.tsx:177: preset whole percentages of the rest. */
+const PERCENTS = [10, 20, 25, 50];
 
 /** The captured legs in ledger order excluding `plan.before`, or sliced from `plan.from` when `before` is absent. */
 const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
@@ -74,7 +78,7 @@ const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
     .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 };
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid, afterVoid, beforeTake, onTaken, offline }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid, afterVoid, beforeTake, onTaken, offline, percentSplit }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
@@ -94,13 +98,16 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     return () => { mounted.current = false; for (const id of held) { held.delete(id); releaseTake(id); } };
   }, []);
   const balance = order.balanceDueMinor;
+  const percentHeld = percentSplit === true && state.entryMode === 'percent';
+  const percentStale = (percentHeld && (state.plan !== null || Object.keys(state.pickedUnits).length > 0)) || (percentSplit !== true && state.entryMode === 'percent');
   // Leaving the tender stage ends the cancel-payment view (state adjusted while rendering, so it never outlives the stage).
   if (stage.kind !== 'tender' && cancelling) setCancelling(false);
   if (stage.kind !== 'tender' && saleChanged) setSaleChanged(false);
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
-    if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
-  }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
+    if (!state.entryDirty && !percentHeld) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
+  }, [order.payments, balance, state.entryDirty, state.plan, percentHeld, dispatch]);
+  useLayoutEffect(() => { if (percentStale) dispatch({ type: 'set-entry-mode', mode: 'money' }); }, [percentStale, dispatch]);
   const legsKey = order.payments.map((leg) => `${leg.id}:${legStatus(leg)}`).join(',');
   useEffect(() => { setRefusal(false); }, [legsKey]);
   useLayoutEffect(() => { setSaleChanged(false); }, [legsKey]);
@@ -135,6 +142,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   }, [approvals, stage.kind, sale, taken]);
   if (stage.kind !== 'tender') return null;
 
+  const percent = percentHeld && !percentStale;
+  const percentRest = Math.max(0, balance - inMotionMinor(order.payments));
+  const share = percent ? percentOfMinor(percentRest, state.entryMinor) : 0;
   const offered = offeredMethods(methods);
   const descriptorOf = (id: string) => offered.find((method) => method.id === id);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
@@ -151,7 +161,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const entries = remainderEntriesMinor(order);
   const pickTarget = partPick ? roundedPickTarget(target, pickRounding, entries) : target;
   const entry = state.entryDirty ? state.entryMinor : pickTarget;
-  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, pickTarget, null) : tenderRounding(state, balance, rounds ? method : null, entries);
+  const figures = partPick ? tenderRounding({ entryMinor: entry, entryDirty: state.entryDirty }, pickTarget, null) : tenderRounding(percent ? { entryMinor: share, entryDirty: share !== balance } : state, balance, rounds ? method : null, entries);
   // Promotion: a carried pick at the whole-settle due is taken as that settle (addTender), so it meets the settle's 16-entry cap.
   const promoted = partPick && pickRounding !== null && pickTarget === tenderRounding(state, balance, method, entries).roundedDueMinor;
   // "Rounded from": a pick's own goods when its amount differs from them; a settle's balance.
@@ -187,7 +197,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const noChange = !partPick && method !== null && !givesChange && figures.entryMinor > balance;
   // Take records only dueNow here (pos caps the leg), so the hint names it without blocking.
   const capped = !partPick && method !== null && !givesChange && dueNow > 0 && figures.entryMinor > dueNow;
-  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0);
+  const cannotTake = (figures.appliedMinor <= 0 && !zeroDue) || (partPick && pickTarget === 0) || noChange || pickRefused || cashNotPayable !== null || cashWaits || pickLimit || settleLimit || (!partPick && balance - inMotionMinor(order.payments) <= 0) || percentStale || (percent && share === 0);
   const changeLeads = !cannotTake && entryChange > 0;
   // v2 tender-pane.tsx:405-410: the caption names the balance only when it differs from the figure shown.
   const balanceInCaption = balance === 0 || figures.entryMinor !== balance;
@@ -201,7 +211,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const restMinor = balance - (typed ? (partPick ? target : figures.appliedMinor) : 0);
   const thisPaymentMinor = planned ? planned.thisPaymentMinor : balance;
   const dueMinor = partPick ? pickTarget : planned && planned.thisPaymentMinor < balance ? planned.thisPaymentMinor : figures.roundedDueMinor;
-  const chips = givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
+  const chips = !percent && givesChange ? quickTenderedAmounts(dueMinor, QUICK_CASH_STEPS.map((step) => step * 10 ** minorUnitDigits(order.currency))) : [];
   // v2 tender-pane.tsx:942-954: a method that gives no change gets one chip setting the entry to the due figure; hidden in percent entry, as v2 does.
   const balanceChip = method !== null && !givesChange && state.entryMode !== 'percent' ? dueMinor : null;
   const unstamped = order.payments.filter((leg) => leg.takenAt === undefined && !sale.tenderHeld(leg.id));
@@ -215,6 +225,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : settleLimit ? (otherWay ? t('pos_checkout.cash_settle_limit')
       : lastRounded && voidableLeg(order, offered, lastRounded) ? t('pos_checkout.cash_settle_limit_void', { amount: money(lastRounded.amountMinor) })
         : t('pos_checkout.cash_settle_limit_park', { amount: lastRounded ? money(lastRounded.amountMinor) : '' }))
+    : percent ? (share === 0 ? t('pos_checkout.percent_takes_nothing', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) })
+      : zeroDue || figures.roundingMinor !== 0 || figures.appliedMinor >= percentRest ? t('pos_checkout.percent_of_amount', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) })
+      : t('pos_checkout.percent_of_amount_type', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) }))
     : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')
@@ -334,11 +347,33 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
       {method && wireMethodOf(method) === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
         value={reference} onChangeText={setReference} editable={!pending} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
-      {state.splitView && !plan ? <>
+      {state.splitView && !plan ? percent ? <>
+        <Text testID="tender-percent-heading" className="text-center text-sm text-muted-foreground">{t('pos_checkout.percent_of_the_rest')}</Text>
+        <View testID="tender-percent-chips" className="flex-row flex-wrap justify-center gap-2">
+          {PERCENTS.map((value) => {
+            const on = state.entryDirty && state.entryMinor === value;
+            return <Pressable key={value} testID={`tender-percent-${value}`} accessibilityRole="button" aria-pressed={on} disabled={pending}
+              onPress={() => send({ type: 'set-entry', minor: value })} className={cn(button, on && 'border-primary')}>
+              <Text className="font-semibold text-foreground">{t('pos_checkout.split_percent_value', { percent: value })}</Text>
+            </Pressable>;
+          })}
+          <Pressable testID="tender-percent-type" accessibilityRole="button" aria-pressed={state.entryDirty && !PERCENTS.includes(state.entryMinor)} disabled={pending}
+            onPress={() => send({ type: 'set-entry', minor: 0 })} className={cn(button, state.entryDirty && !PERCENTS.includes(state.entryMinor) && 'border-primary')}>
+            <Text className="font-semibold text-foreground">{t('pos_checkout.percent_type')}</Text>
+          </Pressable>
+        </View>
+      </> : <>
         <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">
           {typed ? t('pos_checkout.after_this_payment', { amount: money(restMinor) }) : t('pos_checkout.split_the_rest')}
         </Text>
         <ScrollView horizontal testID="tender-split-ways" showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerClassName="grow gap-2">
+          {percentSplit === true && pick === null && state.plan === null ? <View className="min-w-28 flex-1">
+            <Pressable testID="tender-percent" accessibilityRole="button" disabled={pending} onPress={() => send({ type: 'set-entry-mode', mode: 'percent' })}
+              className="min-h-16 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-2">
+              <Text className="font-semibold text-foreground">{t('pos_checkout.percent_tile')}</Text>
+              <Text className="text-sm text-muted-foreground">{t('pos_checkout.percent_tile_sub')}</Text>
+            </Pressable>
+          </View> : null}
           {SPLIT_WAYS.map((count) => <View key={count} className="min-w-28 flex-1">
             <Pressable testID={`tender-split-even-${count}`} accessibilityRole="button" disabled={pending}
               onPress={() => send({ type: 'set-plan', balanceMinor: balance, plan: typed
@@ -353,7 +388,10 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : null}
       {chips.length || balanceChip !== null || cashNotPayable ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
         {cashNotPayable ? [cashNotPayable.belowMinor, cashNotPayable.aboveMinor].filter((minor) => minor !== 0).map((minor) => <Pressable key={minor}
-          testID={minor === cashNotPayable.belowMinor ? 'tender-payable-below' : 'tender-payable-above'} accessibilityRole="button" onPress={() => send({ type: 'set-entry', minor })} className={button}>
+          testID={minor === cashNotPayable.belowMinor ? 'tender-payable-below' : 'tender-payable-above'} accessibilityRole="button" onPress={() => {
+            if (percent) send({ type: 'set-entry-mode', mode: 'money' });
+            send({ type: 'set-entry', minor });
+          }} className={button}>
           <Text className="font-semibold text-foreground">{money(minor)}</Text>
         </Pressable>) : null}
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"

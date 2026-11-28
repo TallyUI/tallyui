@@ -32,6 +32,8 @@ While a balance remains, the cashier picks Cash or Card terminal and sets the en
 
 While something is due, Split on the headline shows Split the rest with 2 to 6 equal ways; after a typed amount, the ways divide what is left after this payment. A way sets the plan and the entry is pre-typed with each share. A method tile keeps the share that is due, and pressing Split again clears the plan.
 
+With `percentSplit`, the split strip starts with Percent. Tap it to choose 10, 20, 25 or 50 %, or use the keypad to type a whole percent. The percent is of what is still due: a payment in motion is not counted again. The pane rounds the share half-up to the cent: 50 % of €10.01 takes €5.01. A share over 100 % takes the rest; a share of 0 takes nothing and says so. Cash rounding applies to the share as it does to a typed amount. After each take, or when you press Split again, the entry is money again. If `percentSplit` turns off while a percent is entered, the entry is money again.
+
 Complete sale is enabled once nothing is due and no leg is in motion, and calls `sale.complete`. Back calls `sale.cancelTender`. When money was taken here, it first opens the cancel-payment view, WCPOS v2's. The view lists each payment: Return cash to the customer (the amount the payment kept, after its change), Void on its method, or Refund from the order for a payment the till cannot void. Keep taking payment closes it. Cancel and void voids the payments it can and returns to the cart; a payment that can only be refunded stays on the sale, which completes at a later checkout or is parked. With nothing to void, the view offers Back instead. The sale's error and its Continue control show as the sale state requires.
 
 A held leg, one taken before the sale was reopened or one the store or a closed register's closure already holds, shows no Cancel payment and no terminal reference input. On a reopened sale the store already covers, each payment taken here shows Cancel payment when its method can void it, or a Refund line when it cannot, and then the sale can only be parked.
@@ -52,6 +54,7 @@ A held leg, one taken before the sale was reopened or one the store or a closed 
 | `beforeTake` | `(take: { methodId: string; amountMinor: number }) => boolean \| Promise<boolean>` | --- | Checks the selected method and the amount shown on Take before recording a leg. |
 | `onTaken` | `(paymentId: string) => void` | --- | Reports the new leg's payment ID. |
 | `offline` | `boolean` | `false` | Marks each method tile “Offline” without disabling it. |
+| `percentSplit` | `boolean` | `false` | Adds Percent to the split strip. |
 
 Only a strict `true` from `beforeTake` takes payment. Any other answer, a throw or a rejection takes nothing. The host must always settle `beforeTake`, with its own timeout; the pane never times out on its own, and a `true` that arrives after the sale changed takes nothing. If `beforeTake` never settles, Take, Back, the method tiles, Complete sale and Cancel payment stay disabled on that order until the app reloads, even after tender is cancelled and restarted or the pane remounts. A zero-due cash settle writes off the remainder without calling either hook. `onTaken` fires only for new legs this pane records.
 
