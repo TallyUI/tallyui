@@ -95,7 +95,7 @@ export const TAX_EXEMPT_REMOVED = 'This sale was tax exempt, but this store no l
 export const TAX_EXEMPT_REASON_NEEDS_TEXT = 'Add the reason for the exemption, not only the certificate number.';
 export const TAX_EXEMPT_REASON_NOT_EXEMPT = 'Turn on tax exemption before adding a reason.';
 export const TAX_EXEMPT_REASON_UNAVAILABLE = 'This store does not take an exemption reason.';
-export const TAX_EXEMPT_REASON_LOCKED = 'The exemption reason can only change in the cart. Cancel the payment to change it, or start a new order.';
+export const TAX_EXEMPT_REASON_LOCKED = 'The exemption reason cannot change while a payment is in progress or after one is taken. Start a new order to change it.';
 export const TAX_EXEMPT_REASON_REMOVED = 'This sale had an exemption reason, but this store no longer takes one, so the reason was removed.';
 export const TAX_EXEMPT_REASON_REQUIRED = 'This store needs the reason for the tax exemption before payment. Add it in the cart.';
 export const TAX_EXEMPT_REASON_NOT_SENDABLE = "This store needs the exemption reason, but this sale's coupon cannot carry it. Remove the coupon or turn off tax exemption before payment.";
@@ -931,12 +931,12 @@ export function useSale(settings: Pick<StoreSettings, 'currency' | 'calcDiscount
         || current === TAX_EXEMPT_REASON_REQUIRED || current === TAX_EXEMPT_REASON_NOT_SENDABLE ? null : current);
       return true;
     },
-    /** Sets or clears the staff-only exemption reason in the cart only, as setMeta; it changes no money. */
+    /** Sets or clears the staff-only exemption reason; it changes no money and refuses once a payment is captured or in motion. */
     setTaxExemptReason(input: { text?: string; certificateId?: string } | null): boolean {
       if (locked()) return false;
       if (stageNow.current.kind === 'receipt') { setError(SALE_FINISHED); return false; }
       const { payments, taxExempt } = builderNow.current.getSnapshot();
-      if (stageNow.current.kind !== 'cart' || capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
+      if (capturedMinor(payments) !== 0 || payments.some(isInMotion)) {
         setError(TAX_EXEMPT_REASON_LOCKED);
         return false;
       }

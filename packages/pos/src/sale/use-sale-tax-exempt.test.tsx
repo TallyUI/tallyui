@@ -498,24 +498,30 @@ it('refuses a reason without exemption, text or a reason capability', () => {
   expect(result.current.error).toBeNull();
 });
 
-it('refuses a reason change outside the cart', () => {
+it('refuses a reason change once a payment is captured or in motion', () => {
   const { result } = renderSale({ capabilities: optionalReason });
   add(result); toggle(result, true);
   act(() => result.current.startTender('cash'));
   expect(result.current.stage.kind).toBe('tender');
-  setReason(result, reason, TAX_EXEMPT_REASON_LOCKED);
-  expect(result.current.taxExemptReason).toBeNull();
-  act(() => result.current.cancelTender());
   setReason(result, reason);
   expect(result.current.taxExemptReason).toStrictEqual(reason);
-  act(() => result.current.startTender('cash'));
   takeCash(result, 300);
   expect(result.current.stage.kind).toBe('tender');
   expect(result.current.order.paidMinor).toBe(300);
   setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
   act(() => result.current.cancelTender());
+  expect(result.current.stage.kind).toBe('cart');
+  expect(result.current.order.paidMinor).toBe(300);
   setReason(result, null, TAX_EXEMPT_REASON_LOCKED);
   expect(result.current.taxExemptReason).toStrictEqual(reason);
+
+  const { result: pending } = renderSale({ capabilities: optionalReason });
+  add(pending); toggle(pending, true);
+  act(() => pending.current.startTender('cash'));
+  act(() => { expect(pending.current.addTender({ method: 'external', amountMinor: 500, status: 'pending' })).not.toBeNull(); });
+  expect(pending.current.stage.kind).toBe('tender');
+  expect(pending.current.order.paidMinor).toBe(0);
+  setReason(pending, reason, TAX_EXEMPT_REASON_LOCKED);
 });
 
 it('C4/C5 reports that a reason can be sent until a replay coupon is added', async () => {
@@ -560,6 +566,24 @@ it.each([optionalReason, { taxExempt: true, orderCreate: 13 }, { taxExempt: true
   });
 
 const required = { ...optionalReason, taxExemptReason: 'required' } as const;
+
+it('F5 an exemption switched on after Pay takes its required reason in tender and completes', async () => {
+  const { pos_orders } = await db.addCollections({ pos_orders: posOrderCollection() });
+  const { result } = renderSale({ capabilities: required, onSaleCompleted: async order => { await pos_orders.insert(order); } });
+  add(result);
+  act(() => result.current.startTender('cash'));
+  expect(result.current.stage.kind).toBe('tender');
+  toggle(result, true);
+  expect(result.current.taxExemptReasonMissing).toBe(true);
+  act(() => { expect(result.current.addTender({ method: 'cash', amountMinor: result.current.order.totalMinor })).toBeNull(); });
+  expect(result.current.error).toBe(TAX_EXEMPT_REASON_REQUIRED);
+  setReason(result, reason);
+  expect(result.current.error).toBeNull();
+  takeCash(result, result.current.order.totalMinor);
+  await act(() => result.current.complete());
+  expect(result.current.stage.kind).toBe('receipt');
+  expect((await pos_orders.findOne().exec())?.toJSON()).toMatchObject({ taxExempt: true, taxMinor: 0, taxExemptReason: reason });
+});
 
 it('B1a refuses to start a cash or external tender until the required reason is added', () => {
   const { result } = renderSale({ capabilities: required });
