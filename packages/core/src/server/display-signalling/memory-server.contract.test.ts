@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryDisplaySignalling } from './memory-server';
+import { createMemoryDisplaySignalling, sha256Hex } from './memory-server';
 import { displaySignallingContract } from './contract';
 
 describe('the in-memory display signalling server meets the ADR-085 contract', () => {
@@ -84,5 +84,89 @@ describe('the in-memory server keeps the original renewal overlap', () => {
     // The reference server's five-minute overlap starts at the first renewal.
     now += 60_000 + 1000;
     await expect(s.readSnapshot(display, result.token)).rejects.toMatchObject({ code: 'token_refused' });
+  });
+});
+
+describe('the in-memory server revokes on a remembered superseded token (ADR-096 item 5)', () => {
+  const paired = async () => {
+    let now = Date.UTC(2026, 10, 11, 9);
+    const { signalling: s, harness: h } = createMemoryDisplaySignalling({ now: () => now });
+    const till = await h.till({ cashierId: 'cashier-a', canPair: true });
+    const device = { deviceId: 'till-a', deviceKey: (await s.registerDevice(till, 'till-a')).deviceKey };
+    const display = h.display('192.0.2.1');
+    const { code } = await s.mint(till, device);
+    const claim = await s.claim(display, { code, displayName: 'Counter' });
+    const [entry] = await s.pending(till, device);
+    await s.confirm(till, device, entry!.claimId);
+    const result = await s.collect(display, claim.claimSecret);
+    if (result.status !== 'paired') throw new Error('not paired');
+    return { s, h, till, device, display, ...result, advance: (ms: number) => { now += ms; } };
+  };
+
+  it('drops the display when the original token is used after a thief renews twice', async () => {
+    const { s, h, till, device, display, token } = await paired();
+    const thief = h.display('198.51.100.9');
+    const t1 = await s.renew!(thief, token);
+    const t2 = await s.renew!(thief, t1.token);
+    await expect(s.readSnapshot(display, token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect(await s.list(till, device)).toEqual([]);
+    await expect(s.readSnapshot(thief, t2.token)).rejects.toMatchObject({ code: 'token_refused' });
+  });
+
+  it('drops the display when a thief replaced the successor before the display used it', async () => {
+    const { s, h, till, device, display, token } = await paired();
+    const thief = h.display('198.51.100.9');
+    const t1 = await s.renew!(display, token);
+    const t1b = await s.renew!(thief, token);
+    await expect(s.readSnapshot(display, t1.token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect(await s.list(till, device)).toEqual([]);
+    await expect(s.readSnapshot(thief, t1b.token)).rejects.toMatchObject({ code: 'token_refused' });
+  });
+
+  it('drops the display and its snapshot on reuse two generations back in R13', async () => {
+    const { s, h, till, device, display, displayId, token, advance } = await paired();
+    const t1 = await s.renew!(display, token);
+    await s.readSnapshot(display, t1.token);
+    advance(10 * 60_000 + 1000);
+    await s.readSnapshot(display, t1.token);
+    const t2 = await s.renew!(display, t1.token);
+    await s.postSnapshot(till, device, displayId, 'live');
+    expect(await s.readSnapshot(display, t2.token)).toBe('live');
+    await expect(s.readSnapshot(display, token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect(await s.list(till, device)).toEqual([]);
+    await expect(s.readSnapshot(display, t2.token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect((await h.storedCounts()).snapshots).toBe(0);
+  });
+
+  it('prunes a retired hash at its own expiry and treats the token as unknown', async () => {
+    const { s, h, till, device, display, displayId, token, advance } = await paired();
+    const day = 24 * 60 * 60_000;
+    advance(day);
+    const t1 = await s.renew!(display, token);
+    await s.readSnapshot(display, t1.token);
+    advance(day);
+    const t2 = await s.renew!(display, t1.token);
+    await s.readSnapshot(display, t2.token);
+    const hash = await sha256Hex(token);
+    expect(await h.storedText()).toContain(hash);
+    for (const jump of [10 * day, 10 * day, 8 * day + 60_000]) {
+      advance(jump);
+      await s.readSnapshot(display, t2.token);
+    }
+    await expect(s.readSnapshot(display, token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect((await s.list(till, device)).map((row) => row.displayId)).toEqual([displayId]);
+    await s.readSnapshot(display, t2.token);
+    expect(await h.storedText()).not.toContain(hash);
+  });
+
+  it('drops the display when the replaced successor is presented after a lost-answer retry', async () => {
+    const { s, till, device, display, token, advance } = await paired();
+    const unseen = await s.renew!(display, token);
+    advance(30_000);
+    const fresh = await s.renew!(display, token);
+    await s.readSnapshot(display, fresh.token);
+    await expect(s.readSnapshot(display, unseen.token)).rejects.toMatchObject({ code: 'token_refused' });
+    expect(await s.list(till, device)).toEqual([]);
+    await expect(s.readSnapshot(display, fresh.token)).rejects.toMatchObject({ code: 'token_refused' });
   });
 });

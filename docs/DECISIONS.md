@@ -7260,7 +7260,9 @@ interface OrderCreatePayload {
      base64url, stored only as its SHA-256 hash) and makes it current. The old token becomes *superseded*: it keeps
      working for every token call during a short overlap, so a request already in flight, or a lost answer, does
      not strand the display. The overlap is at least 60 seconds and at most 10 minutes; the reference server uses 5
-     minutes. Renewal does not extend the overlap. The overlap governs a superseded token: reaching its own
+     minutes. Renewal does not extend the overlap. Whether a server may refuse to renew the current token while its
+     predecessor is inside the overlap is left open: the contract neither requires nor forbids it, and slice B
+     settles how the client treats such a refusal. The overlap governs a superseded token: reaching its own
      expiry does not end the overlap early.
   4. **A lost answer.** `renew` with the superseded token, inside the overlap, while its successor has never been
      presented, issues a fresh successor in place of the unseen one, which is refused from then on. This is the only
@@ -7271,7 +7273,11 @@ interface OrderCreatePayload {
        gated by the code, and a superseded token there neither moves nor revokes the display); or
      - `renew` is called with the superseded token after its successor has been presented.
 
-     The cashier then pairs the display again. Only one generation back is kept: an older token is simply unknown.
+     The cashier then pairs the display again. A server may also remember each superseded token, a replaced unseen
+     successor included, until that token's own expiry, and drop the display when one is presented; the reference
+     server does this, and plugins should. A server that keeps only one generation back treats an older token as
+     unknown. Both answer `token_refused`, and the display client tolerates either: a dropped display shows the
+     pairing screen and pairs again, never retrying in a loop.
   6. **Refusals say nothing.** Expired, superseded-after-overlap, unknown and forgotten tokens all give
      `token_refused`, so a caller learns nothing about which case it hit. Every successful `renew` is a token call
      and updates `lastSeenAt`. `claim`'s move (ADR-085 d5) matches the current token only.
@@ -7283,10 +7289,15 @@ interface OrderCreatePayload {
      shortest overlap. A `token_refused` for a token the
      client no longer holds is ignored. (Slice B, its own PR.)
   8. **Conformance.** `displaySignallingContract` checks 1 to 6 whenever the implementation has `renew`, against the
-     floors above (60 seconds, 10 minutes, 2 days), never against the reference server's own values.
+     floors above (60 seconds, 10 minutes, 2 days), never against the reference server's own values. The cases
+     accept a server that keeps one generation back and a server that remembers more.
 - **Consequences:** Adding `renew?` is additive, so core takes it as a minor. A display that is offline for longer than
   the overlap, just after the server applied a renew whose answer it never received, must pair again; the overlap is
-  kept short on purpose, so a copied token is useful for minutes, not days. Two residual cases also make a display
+  kept short on purpose. Rotation detects a copied superseded token: presenting it after its overlap revokes the
+  display, and so does presenting it at any time before its own expiry on a server that remembers it. A copied
+  current token is caught only when the real display presents a token the server still remembers. On a server that
+  keeps one generation back, a thief who renews twice holds the pairing, and keeps receiving the till's snapshots,
+  until the cashier forgets that display. Two residual cases also make a display
   pair again without an attacker: a renew the network delivers after its own retry's successor was presented, which
   the server cannot tell from theft; and a display restarted, inside or after the overlap, after it used a new token
   that it held only in memory. The Medusa connector calls

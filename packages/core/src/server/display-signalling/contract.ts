@@ -412,18 +412,18 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       await w.s.displaySendSignal(d, token, { type: 'answer', payload: 'a1' });
       await w.s.displayReceiveSignals(d, token);
     },
-    'R4: a lost-answer retry replaces only the unseen successor (ADR-096)': async (w) => {
+    'R4: a lost-answer retry issues a working successor and the replaced one is refused (ADR-096)': async (w) => {
       if (!w.s.renew) return;
       const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       const unseen = await w.s.renew(d, token);
       await w.h.advance(30_000);
       const fresh = await w.s.renew(d, token);
       check(fresh.token !== unseen.token && fresh.token !== token, 'the retry did not issue a fresh successor');
+      await w.s.readSnapshot(d, fresh.token);
+      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'the retry lost the display');
       const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
       const replaced = await expectRefusal(w.s.readSnapshot(d, unseen.token), 'token_refused', 'an unseen replaced successor');
       sameRefusal(replaced, unknown, 'replaced and unknown tokens');
-      await w.s.readSnapshot(d, fresh.token);
-      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'the retry lost the display');
     },
     'R5: renewing the previous token after its successor was seen revokes the display (ADR-096)': async (w) => {
       if (!w.s.renew) return;
@@ -538,22 +538,21 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const fresh = await w.s.renew(d, next.token);
       check(Date.parse(fresh.expiresAt) >= Date.parse(secondMint.expiresAt) - 10 * MINUTE + 2 * DAY, 'the renewed expiry is less than two days ahead');
     },
-    'R13: a token two generations back is refused and revokes nothing (ADR-096)': async (w) => {
+    'R13: a token two generations back is refused like an unknown token (ADR-096)': async (w) => {
       if (!w.s.renew) return;
-      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       const t1 = await w.s.renew(d, token);
+      await w.s.readSnapshot(d, t1.token);
+      await w.h.advance(10 * MINUTE + 1000);
       await w.s.readSnapshot(d, t1.token);
       const t2 = await w.s.renew(d, t1.token);
       await w.s.readSnapshot(d, t2.token);
       const older = await expectRefusal(w.s.readSnapshot(d, token), 'token_refused', 'a token two generations back');
       const unknown = await expectRefusal(w.s.readSnapshot(d, randomKey()), 'token_refused', 'read with an unknown token');
       sameRefusal(older, unknown, 'older and unknown tokens');
-      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'refusing the older token dropped the display');
       const olderRenew = await expectRefusal(w.s.renew(d, token).then(() => undefined), 'token_refused', 'renew a token two generations back');
       const unknownRenew = await expectRefusal(w.s.renew(d, randomKey()).then(() => undefined), 'token_refused', 'renew an unknown token');
       sameRefusal(olderRenew, unknownRenew, 'older and unknown tokens on renew');
-      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'refusing renewal of the older token dropped the display');
-      await w.s.readSnapshot(d, t2.token);
     },
     "R14: the overlap outlives the superseded token's own expiry (ADR-096)": async (w) => {
       if (!w.s.renew) return;
@@ -580,6 +579,21 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
       await w.h.advance(2 * DAY - MINUTE);
       await w.s.readSnapshot(d, token);
+    },
+    'R16: a renew is bound to the display that made it (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const one = await paired(w, w.a, w.da, '192.0.2.1', 'One');
+      const two = await paired(w, w.a, w.da, '192.0.2.2', 'Two');
+      await w.s.postSnapshot(w.a, w.da, one.displayId, 'one');
+      await w.s.postSnapshot(w.a, w.da, two.displayId, 'two');
+      const first = await w.s.renew(one.d, one.token);
+      check(await w.s.readSnapshot(one.d, first.token) === 'one', 'the first successor cannot read its snapshot');
+      check(await w.s.readSnapshot(two.d, two.token) === 'two', 'renewing the first display affected the second');
+      const rows = await w.s.list(w.a, w.da);
+      check([one, two].every(({ displayId }) => rows.some((row) => row.displayId === displayId)), 'renewing the first display lost a row');
+      const second = await w.s.renew(two.d, two.token);
+      check(await w.s.readSnapshot(two.d, second.token) === 'two', 'the second successor cannot read its snapshot');
+      check(await w.s.readSnapshot(one.d, first.token) === 'one', 'renewing the second display affected the first');
     },
   };
   return Object.entries(cases).map(([name, run]) => ({ name, run: async () => run(await world(makeHarness)) }));

@@ -75,7 +75,9 @@ interface Code { deviceId: string; expiresAt: number; spent: boolean }
 interface Pending { deviceId: string; secretHash: string; displayName: string; checkCode: string; expiresAt: number; movingDisplayId: string | null }
 interface Row {
   deviceId: string; name: string; cashierId: string; confirmedAt: number; lastSeenAt: number | null; tokenHash: string | null; secretHash: string | null;
-  tokenExpiresAt: number | null; previous: { tokenHash: string; overlapEndsAt: number } | null; currentSeen: boolean;
+  tokenExpiresAt: number | null; previous: { tokenHash: string; overlapEndsAt: number; expiresAt: number } | null; currentSeen: boolean;
+  // ADR-096 item 5: the reference remembers each superseded token until its own expiry and revokes on reuse; a conforming server may keep only one generation.
+  retired: Array<{ tokenHash: string; expiresAt: number }>;
 }
 interface Window { openedAt: number; failures: number }
 /** A till device; `keyHash` is null only for a pre-migration id, until it adopts. */
@@ -100,7 +102,10 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     for (const [code, entry] of codes) if (now >= entry.expiresAt) codes.delete(code);
     for (const [claimId, entry] of pending) if (now >= entry.expiresAt) pending.delete(claimId);
     for (const [displayId, entry] of snapshots) if (now >= entry.postedAt + SNAPSHOT_TTL) snapshots.delete(displayId);
-    for (const [displayId, row] of displays) if (now >= (row.lastSeenAt ?? row.confirmedAt) + ROW_TTL) dropDisplay(displayId);
+    for (const [displayId, row] of displays) {
+      if (now >= (row.lastSeenAt ?? row.confirmedAt) + ROW_TTL) dropDisplay(displayId);
+      else row.retired = row.retired.filter((entry) => now < entry.expiresAt);
+    }
     for (const [key, window] of sources) if (now >= window.openedAt + SOURCE_WINDOW) sources.delete(key);
     if (storeWindow && now >= storeWindow.openedAt + STORE_WINDOW) storeWindow = null;
     const owns = (id: string) => [...displays.values(), ...codes.values(), ...pending.values()].some((entry) => entry.deviceId === id);
@@ -142,6 +147,9 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
         row.currentSeen = true;
       } else if (row.previous?.tokenHash === tokenHash) {
         if (now >= row.previous.overlapEndsAt) { dropDisplay(displayId); throw fail('token_refused'); }
+      } else if (row.retired.some((entry) => entry.tokenHash === tokenHash)) {
+        dropDisplay(displayId);
+        throw fail('token_refused');
       } else continue;
       row.lastSeenAt = now;
       return { displayId, row, now };
@@ -190,7 +198,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       const moving = entry.movingDisplayId !== null && displays.has(entry.movingDisplayId) ? entry.movingDisplayId : null;
       if (moving !== null) dropDisplay(moving);
       // The token itself is made at the first collect, so only its hash is ever stored; the claim secret's hash waits here.
-      const row: Row = { deviceId, name: entry.displayName, cashierId, confirmedAt: now, lastSeenAt: null, tokenHash: null, secretHash: entry.secretHash, tokenExpiresAt: null, previous: null, currentSeen: false };
+      const row: Row = { deviceId, name: entry.displayName, cashierId, confirmedAt: now, lastSeenAt: null, tokenHash: null, secretHash: entry.secretHash, tokenExpiresAt: null, previous: null, retired: [], currentSeen: false };
       displays.set(moving ?? newId(), row);
     },
     async decline(ctx, device, claimId) {
@@ -262,8 +270,11 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     async renew(_dctx, token) {
       const successor = newSecret(), successorHash = await sha256Hex(successor), tokenHash = await sha256Hex(token);
       const { displayId, row, now } = byToken(tokenHash);
-      if (row.tokenHash === tokenHash) row.previous = { tokenHash, overlapEndsAt: now + RENEW_OVERLAP };
-      else if (row.currentSeen) { dropDisplay(displayId); throw fail('token_refused'); }
+      if (row.tokenHash === tokenHash) {
+        if (row.previous) row.retired.push({ tokenHash: row.previous.tokenHash, expiresAt: row.previous.expiresAt });
+        row.previous = { tokenHash, overlapEndsAt: now + RENEW_OVERLAP, expiresAt: row.tokenExpiresAt! };
+      } else if (row.currentSeen) { dropDisplay(displayId); throw fail('token_refused'); }
+      else row.retired.push({ tokenHash: row.tokenHash!, expiresAt: row.tokenExpiresAt! });
       row.tokenHash = successorHash;
       row.currentSeen = false;
       row.tokenExpiresAt = now + TOKEN_TTL;
@@ -310,7 +321,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     async seedLegacyDevice(deviceId) {
       const token = newSecret(), displayId = newId(), now = clock();
       devices.set(deviceId, { keyHash: null, adopted: false, lastCallAt: now });
-      displays.set(displayId, { deviceId, name: 'Legacy', cashierId: 'cashier-legacy', confirmedAt: now, lastSeenAt: null, tokenHash: await sha256Hex(token), secretHash: null, tokenExpiresAt: now + TOKEN_TTL, previous: null, currentSeen: false });
+      displays.set(displayId, { deviceId, name: 'Legacy', cashierId: 'cashier-legacy', confirmedAt: now, lastSeenAt: null, tokenHash: await sha256Hex(token), secretHash: null, tokenExpiresAt: now + TOKEN_TTL, previous: null, retired: [], currentSeen: false });
       return { displayId, token };
     },
     adoptionLog: async () => adoptions.map((entry) => ({ ...entry })),
