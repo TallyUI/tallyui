@@ -75,7 +75,7 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   for (const { currency_code, min_quantity, max_quantity } of defaults) {
     if (typeof currency_code !== 'string' || (min_quantity !== null && !Number.isFinite(min_quantity)) ||
         (max_quantity !== null && !Number.isFinite(max_quantity))) return null;
-    const key = `${currency_code.toLowerCase()}|${min_quantity ?? ''}|${max_quantity ?? ''}`;
+    const key = `${currency_code.toLowerCase()}|${min_quantity || ''}|${max_quantity || ''}`;
     if (keys.has(key)) return null;
     keys.add(key);
   }
@@ -89,7 +89,24 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
   const taxInclusive = preferences.find(pref => pref.attribute === 'currency_code' && typeof pref.value === 'string' && pref.value.toLowerCase() === currency.toLowerCase())?.is_tax_inclusive ?? false;
   const region = preferences.find(pref => pref.attribute === 'region_id' && typeof pref.value === 'string' && pref.value.toLowerCase() === context.pricingContext?.region_id?.toLowerCase());
   if (region && region.is_tax_inclusive !== taxInclusive) return null;
-  return { defaults, candidate, snapshot: { basePrice: { amount, currency: currency.toUpperCase(), taxInclusive } } };
+  return { prices: variant.prices, defaults, candidate, snapshot: { basePrice: { amount, currency: currency.toUpperCase(), taxInclusive } } };
+}
+
+function changedPriceIds(before: Price[], after: Price[], editedId: string) {
+  const remaining = new Map(after.map(price => [price.id, price]));
+  const rulesKey = (rules: Price['rules']) => JSON.stringify(rules, (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+  const changed: string[] = [];
+  for (const price of before) {
+    const next = remaining.get(price.id);
+    if (!next || (price.id !== editedId && next.amount !== price.amount) ||
+        (next.currency_code !== price.currency_code && (typeof next.currency_code !== 'string' || typeof price.currency_code !== 'string' ||
+          next.currency_code.toLowerCase() !== price.currency_code.toLowerCase())) ||
+        next.min_quantity !== price.min_quantity || next.max_quantity !== price.max_quantity || rulesKey(next.rules) !== rulesKey(price.rules)) changed.push(price.id);
+    remaining.delete(price.id);
+  }
+  return [...changed, ...remaining.keys()];
 }
 
 async function readBound(context: SyncContext, target: ProductEditTarget) {
@@ -114,9 +131,10 @@ export const medusaProductEdit: ProductEdit = {
     const currency = bound.snapshot.basePrice.currency;
     const major = medusaMajor(change.to, currency);
     if (medusaMinor(JSON.parse(JSON.stringify(major)), currency) !== change.to) return { status: 'refused', code: 'invalid' };
-    // Proven against @medusajs/pricing normalizePrices in 2.21.0 (hash dedupe) and 2.23.1 (id dedupe).
-    // Every version in that range uses one of those paths; the server reports no version to detect others.
-    // bind leaves shapes the hash would collapse read-only.
+    // Proven from 2.11.2 to 2.23.2 by running each release's own updatePriceSets_ on the bodies this connector sends.
+    // 2.10.0 to 2.11.1 hash a 0 bound like none; the || key in bind covers them.
+    // 2.0 to 2.9 use another write path that replaces the set and are unproven. Only the read-back compare protects them.
+    // The server reports no version, so every release is written to. Rerun the proof on every Medusa release the connector adopts.
     const prices = bound.defaults.map(({ id, currency_code, min_quantity, max_quantity }) =>
       ({ id, currency_code, min_quantity, max_quantity, ...(id === bound.candidate.id ? { amount: major } : {}) }));
     const response = await request(context, bound.path, { prices });
@@ -127,6 +145,8 @@ export const medusaProductEdit: ProductEdit = {
     if (response.status === 403) return { status: 'refused', code: 'forbidden' };
     if (response.status === 404) return { status: 'refused', code: 'not_found' };
     const variant = await readVariant(response, bound.variantId);
+    const changed = changedPriceIds(bound.prices, variant?.prices ?? [], bound.candidate.id);
+    if (changed.length) throw new CustomerServiceError('server', `Prices on this product changed unexpectedly (${changed.join(', ')}). Check them in the store's admin.`, { status: response.status });
     const saved = variant && bind(variant, context, bound.listIds, bound.preferences);
     if (!saved) throw unexpected(response);
     return { status: 'saved', snapshot: saved.snapshot };

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConnectorUnauthorizedError, type SyncContext } from '@tallyui/core';
+import { ConnectorUnauthorizedError, CustomerServiceError, type SyncContext } from '@tallyui/core';
 import { createMedusaAdminUserConnector, createMedusaConnector } from './index';
 
 const edit = createMedusaAdminUserConnector().productEdit!;
@@ -113,6 +113,7 @@ describe('Medusa variant base price', () => {
 
   it.each([
     { name: 'USD region rule collides with the base', prices: [usd, { ...usd, id: 'p_region', currency_code: 'usd', rules: { region_id: 'reg' } }] },
+    ...['min_quantity', 'max_quantity'].map(key => ({ name: `USD region rule with zero ${key}`, prices: [usd, { ...usd, id: 'p_region', [key]: 0, rules: { region_id: 'reg' } }] })),
     { name: 'EUR region rule collides with another default', prices: [usd, eur, { ...eur, id: 'p_region', rules: { region_id: 'reg' } }] },
     ...['min_quantity', 'max_quantity', 'currency_code'].map(key => ({ name: `missing EUR ${key}`, prices: [usd, { ...eur, [key]: undefined }] })),
   ])('leaves unsafe defaults read-only without a POST: $name', async ({ prices }) => {
@@ -179,9 +180,45 @@ describe('Medusa variant base price', () => {
     await expect(edit.update(context, target, change)).rejects.toBeInstanceOf(ConnectorUnauthorizedError);
   });
 
-  it.each([{ variants: [] }, { variants: [{ id: target.variantId, prices: [sale] }] }])('rejects a saved response without a bound price', async ({ variants }) => {
+  it.each([{ variants: [], ids: 'p_usd' }, { variants: [{ id: target.variantId, prices: [sale] }], ids: 'p_usd, p_sale' }])('rejects a saved response without a bound price', async ({ variants, ids }) => {
     const { context } = fixture(product([usd]), lists([sale.id]), prefs(), Response.json({ product: { variants } }));
-    await expect(edit.update(context, target, change)).rejects.toMatchObject({ name: 'CustomerServiceError', code: 'server', message: 'unexpected response' });
+    await expect(edit.update(context, target, change)).rejects.toMatchObject({ name: 'CustomerServiceError', code: 'server', message: `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.` });
+  });
+
+  describe('compares the prices returned after a write', () => {
+    const edited = { ...usd, amount: 12.51 };
+    const ruled = { ...eur, rules: { region_id: 'reg', nested: { first: 1, second: 2 } } };
+    it.each([
+      { name: 'only the edited amount differs', before: eur, after: eur },
+      { name: 'rules key order and currency case differ', before: ruled, after: { ...ruled, currency_code: 'EUR', rules: { nested: { second: 2, first: 1 }, region_id: 'reg' } } },
+    ])('saves when $name', async ({ before, after }) => {
+      const { context } = fixture(product([usd, before]), lists(), prefs(), product([edited, after]));
+      expect(await edit.update(context, target, change)).toEqual({ status: 'saved', snapshot: snapshot(1251) });
+    });
+
+    const added = { ...eur, id: 'p_new' };
+    it.each([
+      { name: 'missing EUR', prices: [edited, sale], ids: 'p_eur' },
+      { name: 'EUR amount', prices: [edited, { ...eur, amount: 11 }, sale], ids: 'p_eur' },
+      { name: 'EUR rules', prices: [edited, ruled, sale], ids: 'p_eur' },
+      { name: 'absent EUR rules', prices: [edited, { ...eur, rules: undefined }, sale], ids: 'p_eur' },
+      { name: 'EUR minimum', prices: [edited, { ...eur, min_quantity: 0 }, sale], ids: 'p_eur' },
+      { name: 'EUR currency', prices: [edited, { ...eur, currency_code: 'gbp' }, sale], ids: 'p_eur' },
+      { name: 'sale amount', prices: [edited, eur, { ...sale, amount: 9 }], ids: 'p_sale' },
+      { name: 'new price', prices: [edited, eur, sale, added], ids: 'p_new' },
+      { name: 'edited rules', prices: [{ ...edited, rules: ruled.rules }, eur, sale], ids: 'p_usd' },
+      { name: 'edited maximum', prices: [{ ...edited, max_quantity: 1 }, eur, sale], ids: 'p_usd' },
+      { name: 'missing and changed before new', prices: [added, { ...sale, amount: 9 }, edited], ids: 'p_eur, p_sale, p_new' },
+      { name: 'missing variant', prices: undefined, ids: 'p_usd, p_eur, p_sale' },
+    ])('rejects $name', async ({ prices, ids }) => {
+      const response = prices ? product(prices) : Response.json({ product: { variants: [] } });
+      const { context } = fixture(product([usd, eur, sale]), lists([sale.id]), prefs(), response);
+      const result = edit.update(context, target, change);
+      const message = `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.`;
+      await expect(result).rejects.toThrow(new CustomerServiceError('server', message));
+      await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
+      await expect(result).rejects.toMatchObject({ code: 'server', message, status: 200 });
+    });
   });
 
   it('excludes price-list ids from both pages', async () => {

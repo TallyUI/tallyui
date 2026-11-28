@@ -7218,13 +7218,17 @@ interface OrderCreatePayload {
   7. **Who may edit.** The editor needs both the surface and the `editProducts` permission. The store still authorizes
      the write itself. `editProducts` is opt-in: a connector without `cashier()`, or a `null` cashier, never grants it; the other permissions keep allow-all in those cases.
   8. **Per platform, each its own way.** Each connector slice proves its own fields with fixtures and lists them here:
-     - Medusa (slice C1): `basePrice` binds to exactly one rule-free default price in the till currency, with no tiers
-       and an exact minor-unit amount. A price whose rules or quantity bounds are missing from the read is never bound.
+     - Medusa (slice C1): `basePrice` binds to exactly one rule-free default price in the till currency with an exact minor-unit amount;
+       the bound price itself has no quantity bounds; other tiers are echoed untouched. A price whose rules or quantity bounds are missing from the read is never bound.
        Rules, tiers or a region preference that disagrees with the currency tax basis
        (exclusive by default) can leave it read-only. The write echoes every other default by id with its currency and quantity bounds, but no amount or rules:
-       Medusa deletes omitted defaults, and 2.21.0–2.22.0 dedupe by a hash of currency and bounds, not by id.
-       A variant whose defaults share currency and bounds is read-only. It never sends price-list price ids, which the admin variant read includes without a marker.
-       This shape is proven against Medusa's own `normalizePrices` in 2.21.0 and 2.23.1, covering every version from 2.21.0 to 2.23.1, but not yet on a live store. The server reports no version.
+       Medusa deletes omitted defaults, and releases before 2.22.1 dedupe by a hash of currency and bounds, not by id.
+       A variant whose defaults share currency and bounds, counting a 0 bound as none, is read-only. It never sends price-list price ids, which the admin variant read includes without a marker.
+       This shape is proven from 2.11.2 to 2.23.2 by running each release's own `updatePriceSets_` on the bodies this connector sends, but not yet on a live store.
+       Releases 2.10.0 to 2.11.1 hash a 0 bound like none; the `||` key in `bind` covers them.
+       Releases 2.0 to 2.9 use another write path that replaces the set and are unproven. Only the read-back compare protects them.
+       The server reports no version, so every release is written to. Rerun the proof on every Medusa release the connector adopts.
+       After the write, the connector compares every response price with the read, except for the edited amount; any changed, missing or new price fails the edit with a message naming the price ids and asking for a check in the store's admin, without repairing anything.
        Because the echo is built from the fresh read, a default price an admin adds to the same variant inside the window is deleted by Medusa when the write lands.
        There is no sale price (a sale
        is a price list), stock (no store-enforced precondition), or manage-stock (disabling it unlinks inventory items).
