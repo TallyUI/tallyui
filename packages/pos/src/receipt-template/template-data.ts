@@ -85,7 +85,7 @@ export function receiptTemplateData(receipt: ReceiptData, options: ReceiptTempla
     charges: [...receipt.fees, ...receipt.shipping, ...(receipt.rounding ? [receipt.rounding] : [])].map((charge) => ({
       label: charge.name, amount: money(charge.amountMinor),
     })),
-    taxes: totals.taxLines.map((tax) => ({
+    taxes: totals.taxExempt === true && totals.taxMinor === 0 ? [{ label: 'Tax exempt', amount: money(0) }] : totals.taxLines.map((tax) => ({
       label: (totals.taxInclusive ? 'incl. ' : '') + tax.label, amount: money(tax.amountMinor),
     })),
     total: money(totals.totalMinor),

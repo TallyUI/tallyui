@@ -49,6 +49,8 @@ export interface ReceiptData {
   discounts: { label: string; amountMinor: number }[];
   orderDiscountMinor: number;   // the order discounts as one row, in the display mode; + Σ displayDiscounts = totals.discountMinor
   totals: {
+    /** Present only on a tax-exempt order whose tax total is 0 (TallyUI tax exempt slice 4b); readers show one "Tax exempt" row in place of taxLines. */
+    taxExempt?: true;
     taxInclusive: boolean;      // from order.display: tax is added (false) or included (true)
     subtotalMinor: number;      // order.display.subtotalMinor: before discounts, in the display mode
     discountMinor: number;      // order.display.discountMinor: every discount, in the display mode (>= 0)

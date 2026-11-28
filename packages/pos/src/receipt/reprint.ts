@@ -37,6 +37,7 @@ const sum = (amounts: number[]) => amounts.reduce((total, amount) => total + amo
 export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
   const { display, taxRounding: rounding } = order;
+  const exempt = order.taxExempt === true && (display ? display.taxMinor : order.taxMinor) === 0;
   const refundDueMinor = refundDueOf(order);
   const lineTaxMicros = (line: PosOrder['lines'][number]) => line.taxLines.reduce((total, row) => total + BigInt(row.taxMicros), 0n);
   let taxSoFar = order.pricesIncludeTax ? 0n : order.lines.reduce((total, line) => line.taxInclusive === undefined ? total + lineTaxMicros(line) : total, 0n);
@@ -89,10 +90,12 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
     orderDiscountMinor: display ? display.orderDiscountMinor : 0,
     totals: display
       ? {
+        ...(exempt ? { taxExempt: true as const } : {}),
         taxInclusive: display.taxInclusive, subtotalMinor: display.subtotalMinor, discountMinor: display.discountMinor,
         taxLines, taxMinor: display.taxMinor, totalMinor: display.totalMinor,
       }
       : {
+        ...(exempt ? { taxExempt: true as const } : {}),
         taxInclusive: order.pricesIncludeTax,
         subtotalMinor: sum(lineItems.map((line) => line.displayAmountMinor)),
         discountMinor: sum(order.lines.map((line) => line.discountMinor)),
@@ -109,6 +112,7 @@ export function buildReceiptDataFromPosOrder(order: PosOrder, config: ReceiptCon
 /** Receipt data for reprinting an order read from the store with `getOrders`/`listOrders` (ADR-081). */
 export function buildReceiptDataFromStoreOrder(order: StoreOrder, config: ReceiptConfig): ReceiptData {
   const { header, ...blocks } = reprintBlocks(config, order.customer);
+  const exempt = order.taxExempt === true && order.taxMinor === 0 && order.taxLines.every((line) => line.amountMinor === 0);
   const gross = (net: number, tax: number) => order.pricesIncludeTax ? net + tax : net;
   const lineItems = order.lines.map((line): ReceiptLineItem => {
     const displayAmountMinor = gross(line.subtotalMinor, line.subtotalTaxMinor);
@@ -136,6 +140,7 @@ export function buildReceiptDataFromStoreOrder(order: StoreOrder, config: Receip
     shipping: charges(order.shipping),
     orderDiscountMinor: 0,
     totals: {
+      ...(exempt ? { taxExempt: true as const } : {}),
       taxInclusive: order.pricesIncludeTax,
       subtotalMinor: sum(lineItems.map((line) => line.displayAmountMinor)),
       discountMinor: sum(lineItems.map((line) => line.discountMinor ?? 0)),

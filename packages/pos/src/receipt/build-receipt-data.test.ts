@@ -504,3 +504,54 @@ it('C15 (ADR-094 carry): two cash picks of 3.33, at 3.35 (+0.02) and 3.30 (-0.03
   expect(receipt.rounding).toEqual({ name: 'Rounding', amountMinor: -1 });
   expect(receipt.totals.totalMinor).toBe(665);
 });
+
+describe('tax exemption on the live receipt', () => {
+  const item = { productId: 'p', name: 'Item', taxClass: 'standard', unitPrice: { amount: 1000, currency: 'EUR' } }; // 1 × €10
+  const taxContext = { pricesIncludeTax: false, rounding: { granularity: 'per_line_items', mode: 'half_up' }, getTaxRatePpm: () => 190000 } as const;
+
+  it('R1 marks the exempt per-line sale and leaves the item net unchanged', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+    builder.addLine(item);
+    builder.setTaxExempt(true);
+    const { totals } = buildReceiptData(builder.getSnapshot(), config);
+    expect(totals.taxExempt).toBe(true);
+    expect(totals.taxMinor).toBe(0); // 1000 × 0% = 0
+    expect(totals.totalMinor).toBe(1000); // 1000 + 0 tax
+  });
+
+  it('R2 leaves the exemption key off the same item sold with tax', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+    builder.addLine(item);
+    const { totals } = buildReceiptData(builder.getSnapshot(), config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.totalMinor).toBe(1190); // 1000 + (1000 × 19%) = 1190
+  });
+
+  it('R3 marks the exempt Woo sale even with no line tax rows', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { pricesIncludeTax: false,
+      rounding: { granularity: 'woocommerce', roundAtSubtotal: false }, getTaxRatePpm: () => { throw new Error('Woo uses the rate list'); },
+      getTaxRates: () => [{ id: 1, code: 'standard', label: 'VAT', rate: '19.0000', priority: 1, compound: false, shipping: true }] } });
+    builder.addLine(item);
+    builder.setTaxExempt(true);
+    const order = builder.getSnapshot();
+    expect(order.lineItems[0].taxLines).toEqual([]);
+    expect(buildReceiptData(order, config).totals.taxExempt).toBe(true);
+  });
+
+  it('G1 leaves the exemption key off a non-exempt zero-rate sale', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext: { ...taxContext, getTaxRatePpm: () => 0 } });
+    builder.addLine(item);
+    const { totals } = buildReceiptData(builder.getSnapshot(), config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxMinor).toBe(0); // 1000 × 0% = 0
+    expect(totals.totalMinor).toBe(1000); // 1000 + 0 tax
+  });
+
+  it('G2 leaves the exemption key off a snapshot with charged tax despite its flag', () => {
+    const builder = createOrderBuilder({ currency: 'EUR', taxContext });
+    builder.addLine(item);
+    const { totals } = buildReceiptData({ ...builder.getSnapshot(), taxExempt: true as const }, config);
+    expect('taxExempt' in totals).toBe(false);
+    expect(totals.taxMinor).toBe(190); // 1000 × 19% = 190
+  });
+});
