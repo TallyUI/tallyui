@@ -15,6 +15,7 @@ import { heldTillLeg } from './held-leg';
 import { offeredMethods } from './offered-methods';
 import { shortTime } from './since-text';
 import { claimVoid, releaseVoid } from './void-in-flight';
+import { useTakeInFlight } from './take-in-flight';
 
 /** v2 labels.ts statusLabel, as catalogue keys. */
 const STATUS_LABEL: Record<PaymentLegStatus, string> = {
@@ -53,6 +54,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
   /** The ids of the legs whose beforeVoid is in flight here: drives their disabled Cancel payment. The guard is the shared set in void-in-flight.ts. */
   const [voiding, setVoiding] = useState<ReadonlySet<string>>(new Set());
   const { order, stage } = sale;
+  const taking = useTakeInFlight(order.id);
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
@@ -87,7 +89,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
       const status = legStatus(leg);
       const voided = status === 'voided';
       const descriptor = descriptorOf(leg);
-      const inFlight = voiding.has(leg.id);
+      const inFlight = taking || voiding.has(leg.id);
       return <View key={leg.id} testID={`tender-leg-${leg.id}`} className="gap-1 border-b border-border py-2">
         <View className="flex-row items-center gap-2">
           <Text className={cn('flex-1 font-semibold text-foreground', voided && 'line-through')}>{descriptor?.title ?? leg.methodId ?? leg.method}</Text>
@@ -111,7 +113,7 @@ export function TenderLedger({ sale, methods, closing = false, confirmVoid = fal
     </View>)}
     {!closing && balance === 0 && settled ? <Text className="text-sm text-success">{paidInFull}</Text> : null}
     {confirmVoid ? <ConfirmDialog testID="tender-leg-void-dialog" tone="destructive" title={t('pos_checkout.cancel_payment_question')} description={question}
-      confirmLabel={t('pos_checkout.cancel_payment')} open={asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}
+      confirmLabel={t('pos_checkout.cancel_payment')} open={!taking && asking !== null} onOpenChange={(open) => { if (!open) setAsking(null); }}
       onConfirm={() => { if (askedLeg) void cancel(askedLeg); }} /> : null}
   </View>;
   if (!closing) return legs;

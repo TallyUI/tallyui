@@ -132,6 +132,8 @@
 	"tender.complete_sale": "Complete sale",
 	"tender.continue": "Continue",
 	"tender.not_taken": "That payment wasn't taken: nothing is due, or the amount isn't valid.",
+	"tender.offline_tile": "Offline",
+	"tender.sale_changed": "The sale changed while the check ran. Take the payment again.",
 	"tender.stored_will_send": "This sale is stored and will be sent. Continue to the next sale.",
 	"tender.terminal_reference": "Terminal reference"
 }

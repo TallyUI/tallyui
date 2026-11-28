@@ -5,7 +5,7 @@
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
-import { useEffect, useState, type ComponentProps, type JSX } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
@@ -21,12 +21,15 @@ import { offeredMethods, tenderOf } from './offered-methods';
 import { heldTillLeg } from './held-leg';
 import { CancelPaymentView, cancelLegs, legDescriptor, voidableLeg } from './cancel-payment-view';
 import { cancelLine, TenderLedger } from './tender-ledger';
+import { claimTake, releaseTake, useTakeInFlight } from './take-in-flight';
+import { useVoidInFlight } from './void-in-flight';
 import { pickFigure } from './use-tender';
 import { BanknoteIcon } from '../ui/icon/banknote-icon';
 import { CreditCardIcon } from '../ui/icon/credit-card-icon';
 
 type Sale = ReturnType<typeof useSale>;
 type Leg = Sale['order']['payments'][number];
+type Approval = { orderId: string; frozen: string; input: Parameters<Sale['addTender']>[0]; units: TenderState['pickedUnits'] };
 
 export interface TenderPaneProps {
   sale: Sale;
@@ -44,6 +47,12 @@ export interface TenderPaneProps {
   beforeVoid?: ComponentProps<typeof TenderLedger>['beforeVoid'];
   /** Passed to the ledger: runs after a void `beforeVoid` approved, with whether the leg was voided; `false` means the host reverses its journal entry. */
   afterVoid?: ComponentProps<typeof TenderLedger>['afterVoid'];
+  /** Asks before the pane takes a leg. Only `true` takes; `false`, any other value, a throw or a rejection takes nothing. The host must always settle it (its own timeout): the pane never times out. */
+  beforeTake?: (take: { methodId: string; amountMinor: number }) => boolean | Promise<boolean>;
+  /** After the pane records a new leg, with addTender's id. */
+  onTaken?: (paymentId: string) => void;
+  /** Marks every method tile "Offline". Advisory: nothing is disabled. */
+  offline?: boolean;
 }
 
 /** order.create's bound on `payments[].reference`, in UTF-16 units. */
@@ -65,22 +74,61 @@ const rowsSince = (payments: readonly Leg[], plan: TenderPlan | null) => {
     .map((leg) => ({ title: leg.method, amountMinor: leg.amountMinor }));
 };
 
-export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid, afterVoid }: TenderPaneProps): JSX.Element | null {
+export function TenderPane({ sale, state, dispatch, methods, ledger = true, back = true, confirmVoid, beforeVoid, afterVoid, beforeTake, onTaken, offline }: TenderPaneProps): JSX.Element | null {
   const formatMoney = useFormatMoney();
   const { order, stage } = sale;
   const t = useT();
   const [reference, setReference] = useState('');
   const [refusal, setRefusal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [saleChanged, setSaleChanged] = useState(false);
+  const pending = useTakeInFlight(order.id);
+  const voiding = useVoidInFlight(order.id);
+  const send = (action: TenderAction) => { if (!pending) dispatch(action); };
+  const mounted = useRef(false);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const outstanding = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    mounted.current = true;
+    const held = outstanding.current;
+    return () => { mounted.current = false; for (const id of held) { held.delete(id); releaseTake(id); } };
+  }, []);
   const balance = order.balanceDueMinor;
   // Leaving the tender stage ends the cancel-payment view (state adjusted while rendering, so it never outlives the stage).
   if (stage.kind !== 'tender' && cancelling) setCancelling(false);
+  if (stage.kind !== 'tender' && saleChanged) setSaleChanged(false);
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
     if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
   const legsKey = order.payments.map((leg) => `${leg.id}:${legStatus(leg)}`).join(',');
-  useEffect(() => setRefusal(false), [legsKey]);
+  useEffect(() => { setRefusal(false); }, [legsKey]);
+  useLayoutEffect(() => { setSaleChanged(false); }, [legsKey]);
+  const latest = useRef({ sale, state, legsKey, input: null as Parameters<Sale['addTender']>[0] | null });
+  latest.current = { sale, state, legsKey, input: null };
+  const snapshot = () => {
+    const { sale: current, state: entry, legsKey: legs, input } = latest.current;
+    return JSON.stringify([current.order.id, current.stage.kind, legs, current.order.balanceDueMinor, entry.methodId, entry.entryMinor, entry.entryMode, entry.entryDirty, entry.pickedUnits, entry.plan, input]);
+  };
+  const taken = useCallback((id: string | null, units: TenderState['pickedUnits'], zeroDue = false) => {
+    if (id === null) { setRefusal(true); return; }
+    setRefusal(false);
+    setReference('');
+    dispatch({ type: 'tender-started', paymentId: id, units });
+    if (!zeroDue) { try { onTaken?.(id); } catch { /* the leg stays taken */ } }
+  }, [dispatch, onTaken]);
+  useLayoutEffect(() => {
+    if (!approvals.length) return;
+    setApprovals([]);
+    for (const { orderId, frozen, input, units } of approvals) {
+      if (!outstanding.current.has(orderId)) continue;
+      try {
+        if (!mounted.current || stage.kind !== 'tender' || sale.order.id !== orderId) continue;
+        if (snapshot() !== frozen) setSaleChanged(true);
+        else taken(sale.addTender(input), units);
+      } finally { if (outstanding.current.delete(orderId)) releaseTake(orderId); }
+    }
+  }, [approvals, stage.kind, sale, taken]);
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
@@ -177,25 +225,37 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const refusedMinor = refusedLegs.reduce((total, leg) => total + leg.amountMinor, 0);
   // A refused leg the till cannot void (held, or refund-only) leaves the sale only able to park (ADR-072 d3, amended 2026-11-22).
   const kept = refusedLegs.filter((leg) => !voidableLeg(order, offered, leg));
-  const canComplete = balance === 0 && !order.payments.some(isInMotion) && refused.length === 0;
+  const canComplete = !pending && balance === 0 && !order.payments.some(isInMotion) && refused.length === 0;
   // ADR-090 gate 36 (desk Q4): changeDueMinor counts locked legs; what they hold beyond the total is the store's refund due, never till change.
   const refundDue = Math.min(order.changeDueMinor, lockedRefundDueMinor(order));
   const tillChange = order.changeDueMinor - refundDue + order.payments.reduce((sum, leg) => sum + (!leg.locked && countsTowardPaid(leg) ? leg.changeMinor ?? 0 : 0), 0);
 
-  function take() {
-    if (!method || pickRefused) return;
+  function takeInput(method: PaymentMethodDescriptor) {
     const tender = tenderOf(method);
     // No pick stands (a plan is set, or nothing is picked): the leg carries no units. Otherwise it carries the picks that stand (pickFigure), never the raw ones.
     const units = pick === null ? {} : { units: pick.picks };
-    const id = tender.method === 'cash'
-      ? sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry, ...(method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) } : {}),
-        ...(!partPick && method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) })
-      : sale.addTender({ ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) });
-    if (id === null) { setRefusal(true); return; }
-    setRefusal(false);
-    setReference('');
-    // A zero-due settle returns the leg its entry went on, which already holds its own units.
-    dispatch({ type: 'tender-started', paymentId: id, units: pick === null || zeroDue ? {} : pick.picks });
+    return tender.method === 'cash'
+      ? { ...tender, ...units, amountMinor: partPick ? target : figures.entryMinor, ...(partPick ? { tenderedMinor: entry, ...(method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) } : {}),
+        ...(!partPick && method.capture.mode === 'manual' && method.defaults.rounding ? { rounding: method.defaults.rounding } : {}) }
+      : { ...tender, ...units, amountMinor: partPick ? target : figures.appliedMinor, ...(reference ? { reference } : {}) };
+  }
+  if (method && (beforeTake || pending)) latest.current.input = takeInput(method);
+
+  function take() {
+    if (!method || pickRefused || pending || voiding) return;
+    if (saleChanged) setSaleChanged(false);
+    const input = latest.current.input ?? takeInput(method);
+    if (!beforeTake || zeroDue) return taken(sale.addTender(input), pick === null || zeroDue ? {} : pick.picks, zeroDue);
+    const frozen = snapshot();
+    if (!claimTake(order.id)) return;
+    void (async () => {
+      let answer: boolean;
+      try { answer = await beforeTake({ methodId: method.id, amountMinor: figures.appliedMinor }); }
+      catch { answer = false; }
+      if (answer !== true || !mounted.current) { releaseTake(order.id); return; }
+      outstanding.current.add(order.id);
+      setApprovals((previous) => [...previous, { orderId: order.id, frozen, input, units: pick === null ? {} : pick.picks }]);
+    })();
   }
 
   if (cancelling) return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
@@ -209,12 +269,12 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
           {order.paidMinor > 0 ? t('pos_checkout.remaining') : t('pos_checkout.to_pay')}
           {balanceInCaption ? <>{' '}<Text testID="tender-balance">{money(balance)}</Text></> : null}
         </Text>
-        {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
+        {balance > 0 ? <Pressable testID="tender-split-chip" accessibilityRole="button" disabled={pending} aria-pressed={splitOn} className={cn(button, splitOn && 'border-primary bg-muted')}
           onPress={() => {
             if (splitOn) {
-              dispatch({ type: 'clear-plan', balanceMinor: balance });
-              for (const lineId of Object.keys(state.pickedUnits)) dispatch({ type: 'set-split-units', lineId, units: 0, unpaidUnits: 0 });
-            } else dispatch({ type: 'open-split' });
+              send({ type: 'clear-plan', balanceMinor: balance });
+              for (const lineId of Object.keys(state.pickedUnits)) send({ type: 'set-split-units', lineId, units: 0, unpaidUnits: 0 });
+            } else send({ type: 'open-split' });
           }}>
           <Text className="font-semibold text-foreground">{t('pos_checkout.split')}</Text>
         </Pressable> : null}
@@ -255,11 +315,12 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
               return <View key={tile.id} className="min-w-0 flex-1">
                 <Pressable key={tile.id} testID={`tender-method-${tile.id}`} accessibilityRole="button" accessibilityState={{ selected: tile.id === state.methodId }}
                   // react-native-web does not render accessibilityState.selected.
-                  aria-selected={tile.id === state.methodId}
-                  onPress={() => dispatch({ type: 'pick-method', methodId: tile.id, prefillMinor: state.view === 'amount' ? state.entryMinor : thisPaymentMinor, readerId: null })}
+                  disabled={pending} aria-selected={tile.id === state.methodId}
+                  onPress={() => send({ type: 'pick-method', methodId: tile.id, prefillMinor: state.view === 'amount' ? state.entryMinor : thisPaymentMinor, readerId: null })}
                   className={cn('min-h-16 items-center justify-center gap-1 rounded-md border bg-card px-2 py-2', selected ? 'border-primary bg-muted' : 'border-border')}>
                   <Icon size={20} testID={`tender-method-${tile.id}-icon`} />
                   <Text numberOfLines={2} className="text-center font-semibold text-foreground">{tile.title}</Text>
+                  {offline ? <Text testID={`tender-method-${tile.id}-offline`} className="text-sm text-muted-foreground">{t('tender.offline_tile')}</Text> : null}
                 </Pressable>
               </View>;
             })}
@@ -268,15 +329,15 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
       {method && wireMethodOf(method) === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
-        value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
+        value={reference} onChangeText={setReference} editable={!pending} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {state.splitView && !plan ? <>
         <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">
           {typed ? t('pos_checkout.after_this_payment', { amount: money(restMinor) }) : t('pos_checkout.split_the_rest')}
         </Text>
         <ScrollView horizontal testID="tender-split-ways" showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerClassName="grow gap-2">
           {SPLIT_WAYS.map((count) => <View key={count} className="min-w-28 flex-1">
-            <Pressable testID={`tender-split-even-${count}`} accessibilityRole="button"
-              onPress={() => dispatch({ type: 'set-plan', balanceMinor: balance, plan: typed
+            <Pressable testID={`tender-split-even-${count}`} accessibilityRole="button" disabled={pending}
+              onPress={() => send({ type: 'set-plan', balanceMinor: balance, plan: typed
                 ? { kind: 'fixed', firstMinor: figures.appliedMinor, title: null, thenWays: count, from: counted, before: order.payments.map((leg) => leg.id) }
                 : { kind: 'even', ways: count, from: counted, before: order.payments.map((leg) => leg.id) } })}
               className="min-h-16 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-2">
@@ -288,32 +349,33 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </> : null}
       {chips.length || balanceChip !== null || cashNotPayable ? <View testID="tender-quick" className="flex-row flex-wrap justify-center gap-2">
         {cashNotPayable ? [cashNotPayable.belowMinor, cashNotPayable.aboveMinor].filter((minor) => minor !== 0).map((minor) => <Pressable key={minor}
-          testID={minor === cashNotPayable.belowMinor ? 'tender-payable-below' : 'tender-payable-above'} accessibilityRole="button" onPress={() => dispatch({ type: 'set-entry', minor })} className={button}>
+          testID={minor === cashNotPayable.belowMinor ? 'tender-payable-below' : 'tender-payable-above'} accessibilityRole="button" onPress={() => send({ type: 'set-entry', minor })} className={button}>
           <Text className="font-semibold text-foreground">{money(minor)}</Text>
         </Pressable>) : null}
         {chips.map((minor, index) => <Pressable key={minor} testID={index === 0 ? 'tender-quick-exact' : `tender-quick-${minor}`} accessibilityRole="button"
-          onPress={() => dispatch({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
+          onPress={() => send({ type: 'set-entry', minor })} className={cn(button, state.entryDirty && figures.entryMinor === minor && 'border-primary')}>
           <Text className="font-semibold text-foreground">{index === 0 ? t('pos_checkout.exact_amount', { amount: money(minor) }) : money(minor)}</Text>
         </Pressable>)}
         {balanceChip !== null ? <Pressable testID="tender-quick-balance" accessibilityRole="button"
-          onPress={() => dispatch({ type: 'set-entry', minor: balanceChip })} className={cn(button, state.entryDirty && figures.entryMinor === balanceChip && 'border-primary')}>
+          onPress={() => send({ type: 'set-entry', minor: balanceChip })} className={cn(button, state.entryDirty && figures.entryMinor === balanceChip && 'border-primary')}>
           <Text className="font-semibold text-foreground">{plan ? t('pos_checkout.exact_amount', { amount: money(balanceChip) })
             : figures.entryMinor === balanceChip ? t('pos_checkout.full_balance_label') : t('pos_checkout.full_balance', { amount: money(balanceChip) })}</Text>
         </Pressable> : null}
       </View> : null}
-      <Keypad testID="tender-keypad" rows={keypadRows(t)} onPress={(name) => dispatch({ type: 'key', key: name as TenderKey })} />
+      <Keypad testID="tender-keypad" rows={keypadRows(t)} onPress={(name) => send({ type: 'key', key: name as TenderKey })} />
       {refusal ? <Text accessibilityRole="alert" className="text-destructive">{t('tender.not_taken')}</Text> : null}
-      {method ? <Pressable testID="tender-take" accessibilityRole="button" disabled={cannotTake}
+      {method ? <Pressable testID="tender-take" accessibilityRole="button" aria-busy={pending || undefined} disabled={cannotTake || pending || voiding}
         onPress={take} className={cn('rounded-md bg-primary px-4 py-3', cannotTake && 'opacity-50')}>
         <Text className="text-center font-semibold text-primary-foreground">{t('pos_checkout.take_amount_in', { amount: money(figures.appliedMinor), method: method.title })}</Text>
       </Pressable> : null}
     </View> : null}
 
+    {saleChanged ? <Text accessibilityRole="alert" testID="tender-sale-changed" className="text-destructive">{t('tender.sale_changed')}</Text> : null}
     {refused.length > 0 ? <>
       <Text testID="tender-store-holds" className="text-foreground">{kept.length ? t('pos_checkout.store_holds_park', { amount: money(kept.reduce((total, leg) => total + leg.amountMinor, 0)) })
         : t('pos_checkout.store_holds_payment', { amount: money(refusedMinor) })}</Text>
       {refusedLegs.filter((leg) => !heldTillLeg(order, leg)).map((leg) => voidableLeg(order, offered, leg)
-        ? <Pressable key={leg.id} testID={`tender-leg-${leg.id}-refused-void`} accessibilityRole="button" onPress={() => sale.voidTender(leg.id)} className={button}>
+        ? <Pressable key={leg.id} testID={`tender-leg-${leg.id}-refused-void`} accessibilityRole="button" disabled={pending} onPress={() => sale.voidTender(leg.id)} className={button}>
           <Text className="text-center text-foreground">{t('pos_checkout.cancel_payment')}</Text>
         </Pressable>
         : <Text key={leg.id} testID={`tender-leg-${leg.id}-refused-refund`} className="text-foreground">{cancelLine(t, money, leg, legDescriptor(offered, leg), false, leg.amountMinor)}</Text>)}
@@ -329,6 +391,6 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
         <Text className="text-center font-semibold text-primary-foreground">{t('tender.continue')}</Text>
       </Pressable>
     </> : null}
-    {back ? <Pressable accessibilityRole="button" onPress={() => (cancelLegs(order).length ? setCancelling(true) : sale.cancelTender())} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable> : null}
+    {back ? <Pressable accessibilityRole="button" disabled={pending} onPress={() => (cancelLegs(order).length ? setCancelling(true) : sale.cancelTender())} className={button}><Text className="text-center text-foreground">{t('common.back')}</Text></Pressable> : null}
   </View>;
 }
