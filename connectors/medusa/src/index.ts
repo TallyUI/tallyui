@@ -12,6 +12,7 @@ import { fetchByIds, fetchPages, MAX_IDS_PER_REQUEST, variantIds } from './recon
 import { fetchPages as fetchPricePages, fingerprint as priceFingerprint } from './reconcile/prices';
 import { fetchPages as fetchCalculatedPricePages, fingerprint as calculatedPriceFingerprint } from './reconcile/calculated-prices';
 import { medusaStoreSettings } from './store-settings';
+import { medusaProductEdit } from './product-edit';
 import { createMedusaOrders, MEDUSA_ORDER_FILTERS } from './orders';
 import { medusaDisplaySignalling } from './display-signalling';
 
@@ -170,6 +171,7 @@ const medusaConnectorParts = {
 /** Medusa connector using an admin user's Bearer JWT; like createMedusaConnector(), one per store session with its own feed. */
 export const createMedusaAdminUserConnector = (): TallyConnector => ({
   ...createMedusaConnector(), auth: medusaAdminUserAuth, capabilities: medusaCapabilities,
+  productEdit: medusaProductEdit,
   searchCustomers: medusaSearchCustomers, createCustomer: medusaCreateCustomer, getCustomer: medusaGetCustomer, updateCustomer: medusaUpdateCustomer,
   ...createMedusaOrders(), orderFilters: MEDUSA_ORDER_FILTERS, displaySignalling: medusaDisplaySignalling,
 });

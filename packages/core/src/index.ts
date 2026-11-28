@@ -60,6 +60,8 @@ export type {
 export { ORDER_FILTER_FIELDS, UnsupportedOrderFilterError, StoreRefundsUnsupportedError, orderFilterFields, assertOrderFiltersSupported, assertOrderDateRange } from './order-filters';
 export type { RegisterInfo } from './types/registers';
 export type { ApproverCredentials, Correction, StoreClosure, ClosureReads } from './types/closures';
+export { decideProductEdit, type ProductEdit, type ProductEditBasis, type ProductEditChange, type ProductEditField, type ProductEditPrice,
+  type ProductEditResult, type ProductEditSnapshot, type ProductEditTarget } from './types/product-edit';
 export { CASHIER_PERMISSIONS, cashierPermissions, isCashierPermission, type Cashier, type CashierPermission } from './types/cashier';
 export type { StoreSettingsErrorCode, StoreSettingsChoices } from './store-settings';
 
