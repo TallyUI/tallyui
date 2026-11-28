@@ -5,9 +5,13 @@ import { signedOut } from './session-probe';
 /** The plugin's capability endpoint on Vendure's REST server (ADR-062), relative to the base URL. */
 export const CAPABILITIES_PATH = '/tally/v1/info';
 
+// order.create 13 carries taxExemptReason (core versions.ts)
+const TAX_EXEMPT_REASON_ORDER_CREATE = 13;
+
 /**
- * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287), `chargeTaxMode`, `cashRounding`, `taxExempt`
- * and `taxExemptCoupons` with the connector's own headers. A 404 means an old plugin and gives the default; a network failure,
+ * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287), `chargeTaxMode`, `cashRounding`, `taxExempt`,
+ * `taxExemptCoupons` and `taxExemptReason` with the connector's own headers, ignoring tax exemption when a reason is required below order.create 13.
+ * A 404 means an old plugin and gives the default; a network failure,
  * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
  * `undefined`. The route answers a dead session and a missing
  * `CreateOrder` permission alike with 403, so a 401/403 asks who is signed in (#279): nobody
@@ -55,12 +59,21 @@ export async function readVendureCapabilities(
       && typeof cashRounding.v === 'number' && Number.isSafeInteger(cashRounding.v) && cashRounding.v >= 1) capabilities.cashRounding = true;
     else warn('ignoring a malformed cashRounding');
   }
-  const { taxExempt, taxExemptCoupons } = body as { taxExempt?: unknown; taxExemptCoupons?: unknown };
+  const { taxExempt, taxExemptCoupons, taxExemptReason } = body as { taxExempt?: unknown; taxExemptCoupons?: unknown; taxExemptReason?: unknown };
+  const unsupportedReason = taxExempt === true && taxExemptReason === 'required' && capabilities.orderCreate < TAX_EXEMPT_REASON_ORDER_CREATE;
   if (taxExempt === true) capabilities.taxExempt = true;
   else if (taxExempt !== undefined) warn('ignoring a malformed taxExempt');
   if (taxExemptCoupons === true) {
     if (taxExempt === true) capabilities.taxExemptCoupons = true;
     else warn('ignoring taxExemptCoupons without taxExempt');
-  } else if (taxExemptCoupons !== undefined) warn('ignoring a malformed taxExemptCoupons');
+  } else if (taxExemptCoupons !== undefined && !unsupportedReason) warn('ignoring a malformed taxExemptCoupons');
+  if (unsupportedReason) {
+    delete capabilities.taxExempt;
+    delete capabilities.taxExemptCoupons;
+    warn('ignoring taxExempt: taxExemptReason is required but order.create is below 13');
+  } else if (taxExemptReason === 'optional' || taxExemptReason === 'required') {
+    if (taxExempt === true) capabilities.taxExemptReason = taxExemptReason;
+    else warn('ignoring taxExemptReason without taxExempt');
+  } else if (taxExemptReason !== undefined) warn('ignoring a malformed taxExemptReason');
   return capabilities;
 }

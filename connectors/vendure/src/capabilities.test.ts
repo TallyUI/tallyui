@@ -120,6 +120,72 @@ describe('readVendureCapabilities', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('V9 keeps both exemption capabilities when no reason is advertised', async () => {
+    stubFetch(() => json({ contracts: { 'order.create': [1, 12] }, taxExempt: true, taxExemptCoupons: true }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 12, taxExempt: true, taxExemptCoupons: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V10 reads an optional reason at order.create 13', async () => {
+    stubFetch(() => json({ contracts: { 'order.create': [1, 13] }, taxExempt: true, taxExemptReason: 'optional' }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 13, taxExempt: true, taxExemptReason: 'optional' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V11 keeps an optional reason at order.create 12', async () => {
+    stubFetch(() => json({ contracts: { 'order.create': [1, 12] }, taxExempt: true, taxExemptReason: 'optional' }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 12, taxExempt: true, taxExemptReason: 'optional' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V12 reads a required reason at order.create 13', async () => {
+    stubFetch(() => json({ contracts: { 'order.create': [1, 13] }, taxExempt: true, taxExemptReason: 'required' }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(read()).resolves.toStrictEqual({ orderCreate: 13, taxExempt: true, taxExemptReason: 'required' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('V13 omits all exemption capabilities when order.create cannot carry a required reason', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const contracts of [{ 'order.create': [1, 12] }, undefined]) {
+      stubFetch(() => json({ contracts, taxExempt: true, taxExemptCoupons: true, taxExemptReason: 'required' }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: contracts ? 12 : 1 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring taxExempt: taxExemptReason is required but order.create is below 13');
+      warn.mockClear();
+    }
+  });
+
+  it('V14 warns and ignores a reason without taxExempt', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExemptReason of ['optional', 'required']) {
+      for (const taxExempt of [undefined, false, 1, 'true', { v: 1 }, null, []]) {
+        stubFetch(() => json({ taxExempt, taxExemptReason }));
+        await expect(read()).resolves.toStrictEqual({ orderCreate: 1 });
+        if (taxExempt === undefined) {
+          expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring taxExemptReason without taxExempt');
+        } else {
+          expect(warn).toHaveBeenCalledTimes(2);
+          expect(warn).toHaveBeenNthCalledWith(1, '@tallyui/connector-vendure: ignoring a malformed taxExempt');
+          expect(warn).toHaveBeenNthCalledWith(2, '@tallyui/connector-vendure: ignoring taxExemptReason without taxExempt');
+        }
+        warn.mockClear();
+      }
+    }
+  });
+
+  it('V15 keeps taxExempt but warns for malformed taxExemptReason', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExemptReason of ['Required', true, 1, null, {}, '']) {
+      stubFetch(() => json({ contracts: { 'order.create': [1, 13] }, taxExempt: true, taxExemptReason }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 13, taxExempt: true });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring a malformed taxExemptReason');
+      warn.mockClear();
+    }
+  });
+
   // The plugin's exact bodies (vendurepos/app#60): it always sends taxRounding.
   it.each([
     '{"contracts":{"order.create":[1,2,3]},"taxRounding":{"granularity":"per_line_items","mode":"half_up"}}',
