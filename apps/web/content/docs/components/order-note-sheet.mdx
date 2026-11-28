@@ -39,3 +39,8 @@ This is WCPOS v2's Order details sheet, opening on the left so the cart's note r
 | `onOpenChange` | `(open: boolean) => void` | required | Called when the dialog requests an open state change; Close calls it with `false` |
 | `label` | `string` | `'Customer note'` | The field's label and accessible name; the placeholder is "Add" plus the label in lower case |
 | `taxExempt` | `{ checked: boolean; onCheckedChange: (on: boolean) => void; error?: string \| null }` | --- | Shows the controlled Tax exempt switch and its hint, with an alert when `error` is non-empty; omit to hide the row |
+| `taxExemptReason` | `{ required: boolean; text: string; certificateId: string; onChange: (next: { text: string; certificateId: string }) => void; notSent?: boolean; error?: string \| null }` | --- | Controls the staff-only reason and certificate fields; omit to hide them |
+
+## Exemption reason
+
+The fields appear only while the Tax exempt switch is on. Under `required`, the reason is marked required; the certificate number is always optional. Under `optional` on a store whose `order.create` is below 13, the sheet says the reason stays on this till. Neither field appears on a receipt or the customer display.

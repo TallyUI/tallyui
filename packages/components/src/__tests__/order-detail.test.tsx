@@ -97,6 +97,20 @@ describe('OrderDetail', () => {
     order.forEach((at, i) => expect(at).toBeGreaterThan(i === 0 ? -1 : order[i - 1]));
   });
 
+  it('D1 shows the staff-only reason and certificate under Tax', () => {
+    render(<OrderDetail {...base} taxExemptReason={{ text: 'Charity', certificateId: 'ST5-0042' }} />);
+    expect(screen.getByTestId('order-detail-tax-exempt-reason').textContent).toBe('Exemption reasonCharityCertificateST5-0042');
+  });
+  it('D2 marks a reason kept on this till', () => {
+    render(<OrderDetail {...base} taxExemptReason={{ text: 'Charity', notSent: true }} />);
+    expect(screen.getByText('Kept on this till; not sent to the store.')).toBeDefined();
+    expect(screen.queryByText('Certificate')).toBeNull();
+  });
+  it('D3 omits the exemption reason when not supplied', () => {
+    render(<OrderDetail {...base} />);
+    expect(screen.queryByTestId('order-detail-tax-exempt-reason')).toBeNull();
+  });
+
   it('draws no actions row when no action is passed', () => {
     render(<OrderDetail {...base} footerSlot={<Text>Note</Text>} />);
     expect(screen.queryByTestId('order-detail-actions')).toBeNull();

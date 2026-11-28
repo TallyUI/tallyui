@@ -41,6 +41,9 @@ export interface OrderDetailProps extends Omit<ViewProps, 'children'> {
   fees?: string;
   /** Per-rate tax breakdown, indented under the Tax row. */
   taxLines?: OrderDetailTaxLine[];
+  /** Staff-only tax exemption reason, drawn under the Tax row. Never pass it to a customer-facing view.
+   * Hosts set `notSent` from `taxExemptReasonDelivery(order) === 'not_sent'` in `@tallyui/pos`. */
+  taxExemptReason?: { text: string; certificateId?: string; notSent?: boolean };
   customerSlot?: ReactNode;
   paymentSlot?: ReactNode;
   footerSlot?: ReactNode;
@@ -73,6 +76,7 @@ export function OrderDetail({
   shippingMethod,
   fees,
   taxLines,
+  taxExemptReason,
   customerSlot,
   paymentSlot,
   footerSlot,
@@ -157,6 +161,17 @@ export function OrderDetail({
               <Text className="text-xs text-muted-foreground">{line.amount}</Text>
             </View>
           ))}
+          {taxExemptReason ? <View testID="order-detail-tax-exempt-reason" className="pl-3">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs text-muted-foreground">Exemption reason</Text>
+              <Text className="shrink text-xs text-muted-foreground">{taxExemptReason.text}</Text>
+            </View>
+            {taxExemptReason.certificateId ? <View className="flex-row items-center justify-between">
+              <Text className="text-xs text-muted-foreground">Certificate</Text>
+              <Text className="shrink text-xs text-muted-foreground">{taxExemptReason.certificateId}</Text>
+            </View> : null}
+            {taxExemptReason.notSent ? <Text className="text-xs text-muted-foreground">Kept on this till; not sent to the store.</Text> : null}
+          </View> : null}
           <View className="flex-row items-center justify-between border-t border-border pt-2 mt-1">
             <Text className="text-sm font-bold text-foreground">Total</Text>
             <Text className="text-sm font-bold text-foreground">{total}</Text>
