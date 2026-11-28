@@ -91,10 +91,11 @@ function unsupportedOptional(envelope: { id: string; type: string; version: numb
  * carrying `cashRoundings` is refused as `invalid_payload`, never sent on with the field dropped, which would be a wrong total.
  * `taxExempt` likewise requires the server's `taxExempt` capability on order.create and is always refused on order.update.
  * A tax-exempt order.create carrying coupons also requires `taxExemptCoupons`.
+ * `taxExemptReason` permits a reason at 13 when 'optional' or 'required', and 'required' refuses an exempt sale without one.
  * Likewise, a fee or shipping charge carrying `amountIncludesTax` is refused unless the server declares `chargeTaxMode: true`.
  */
 export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCommandEnvelope, 'id' | 'type' | 'version' | 'payload'>,
-  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean; chargeTaxMode?: boolean; taxExempt?: boolean; taxExemptCoupons?: boolean }): CommandResult | undefined {
+  supported: { orderCreate: readonly number[]; register: readonly number[]; orderRefund?: readonly number[]; orderReopen?: readonly number[]; orderUpdate?: readonly number[]; cashRounding?: boolean; chargeTaxMode?: boolean; taxExempt?: boolean; taxExemptCoupons?: boolean; taxExemptReason?: 'optional' | 'required' }): CommandResult | undefined {
   // An empty list would send Math.max() of nothing (-Infinity, null in JSON) as the server's version.
   for (const key of ['orderCreate', 'register'] as const) {
     if (!supported[key]?.length) throw new TypeError(`precheckCommand: supported.${key} must list at least one version`)
@@ -112,6 +113,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     if (refusal) return refusal
     const payload = envelope.payload as Record<string, unknown>
     const createPayload = orderCreatePart(payload)
+    if (createPayload.taxExemptReason !== undefined) return rejected(envelope.id, 'invalid_payload', 'taxExemptReason is not accepted on order.update')
     const shape = payloadShapeErrors(createPayload)
     const errors = updatePayloadErrors(payload).filter(error => !shape.includes(error))
     if (errors.length) return rejected(envelope.id, 'invalid_payload', firstTen(errors))
@@ -140,6 +142,12 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
   }
   if (command.payload.taxExempt && command.payload.coupons?.length && supported.taxExemptCoupons !== true) {
     return rejected(command.id, 'invalid_payload', 'taxExempt with coupons requires the taxExemptCoupons capability, which this server does not declare')
+  }
+  if (command.payload.taxExemptReason !== undefined && supported.taxExemptReason !== 'optional' && supported.taxExemptReason !== 'required') {
+    return rejected(command.id, 'invalid_payload', 'taxExemptReason requires the taxExemptReason capability, which this server does not declare')
+  }
+  if (command.payload.taxExempt === true && command.payload.taxExemptReason === undefined && supported.taxExemptReason === 'required') {
+    return rejected(command.id, 'invalid_payload', 'taxExempt requires taxExemptReason on this server')
   }
   if (supported.chargeTaxMode !== true && [command.payload.fees, command.payload.shipping].some(items =>
     Array.isArray(items) && items.some(entry => entry?.amountIncludesTax !== undefined))) {
@@ -183,6 +191,7 @@ export function precheckCommand(envelope: Pick<AnyCommandEnvelope | ValidatedCom
     : command.version < 9 && couponLines.length ? 'coupons[].lines requires version 9'
     : command.version < 10 && paymentsWithMethodId ? 'payments[].methodId requires version 10'
     : command.version < 12 && v12Fields.length ? v12Fields.map(field => `${field} requires version 12`).join('; ')
+    : command.version < 13 && payload.taxExemptReason !== undefined ? 'taxExemptReason requires version 13'
     : command.version >= 9 && couponsWithoutLines.length ? 'version 9 requires coupons[].lines'
     : command.version === 8 && payload.taxAddress === undefined ? 'version 8 requires taxAddress'
     : command.version >= 9 && command.version < 11 && payload.taxAddress === undefined && (payload.customer?.billing !== undefined || payload.customer?.shipping !== undefined)

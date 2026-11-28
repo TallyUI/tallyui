@@ -9,8 +9,9 @@
  * 10 adds each payment's methodId (ruling A, 2026-11-18).
  * 11 is 10 plus the customer's billing and shipping on a sale not taxed by address (ADR-086 d2 as amended 2026-11-19).
  * 12 is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields (ADR-092).
+ * 13 is 12 plus taxExemptReason, a staff-only reason on a tax-exempt sale.
  */
-export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+export const SUPPORTED_ORDER_CREATE_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 /**
  * The till's capability for the contract versions shared by all five register commands; a server passes its own.
  * The till builds 1 (every command), 2 (session.open, contract ≥ 2) and 3 (session.open and closure.submit,

@@ -73,7 +73,7 @@ export type {
   OrderReopenPayload, OrderReopenEnvelope, OrderReopenResult, OrderReopenRejectionCode,
   OrderReopenPaymentInMotionData, OrderReopenOrderStateData,
   OrderUpdateLine, OrderUpdateFee, OrderUpdateShipping, OrderUpdatePayment, OrderUpdatePayload, OrderUpdateEnvelope, OrderUpdateRejectionCode, OrderUpdateReopenRequiredData,
-  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateMeta,
+  CommandWarning, CommandError, CommandResult, OrderCreateLine, OrderCreateTaxId, OrderCreateTaxExemptReason, OrderCreateMeta,
   PaymentMethodKind, OrderCreatePayment, OrderCreatePayload, OrderCreateEnvelope,
   OrderCreateDisplay, OrderCreateTaxRate,
   OrderCreateCoupon, OrderCreateCouponInvalidData, OrderCreateTotalMismatchData,
@@ -88,6 +88,7 @@ export type { OrderAddress, OrderCreateCouponLine } from './types/commands';
 export {
   COMMANDS_PATH, PROTOCOL_HEADER, PROTOCOL_VERSION, MAX_COMMANDS_PER_BATCH, ORDER_NOTE_MAX, NEEDS_ADMIN_MESSAGE_MAX,
   ORDER_TAX_IDS_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_META_MAX, ORDER_META_KEY_MAX, ORDER_LINE_SKU_MAX,
+  ORDER_TAX_EXEMPT_REASON_MAX, ORDER_TAX_EXEMPT_CERTIFICATE_MAX,
   isCommandBatchResponse,
 } from './commands';
 

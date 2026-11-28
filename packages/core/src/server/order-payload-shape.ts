@@ -1,4 +1,4 @@
-import { ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '../commands'
+import { ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_META_MAX, ORDER_NOTE_MAX, ORDER_TAX_EXEMPT_CERTIFICATE_MAX, ORDER_TAX_EXEMPT_REASON_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, ORDER_TAX_IDS_MAX } from '../commands'
 
 /** Shape errors of an order.create payload, e.g. ['lines: expected a non-empty array',
  * 'payments[0].method: expected a string']; [] when the shape is valid, at most ten. Checks
@@ -93,6 +93,19 @@ export function payloadShapeErrors(payload: unknown): string[] {
         if (object(line) && line.discountTaxMinor !== undefined) check(line.discountTaxMinor === 0, `${path}.lines[${lineIndex}].discountTaxMinor`, expected)
       })
     })
+  }
+  const reason = payload.taxExemptReason
+  if (reason !== undefined) {
+    check(payload.taxExempt === true, 'taxExemptReason', 'present only on a tax-exempt order')
+    check(object(reason), 'taxExemptReason', 'an object')
+    if (object(reason)) {
+      for (const key of Object.keys(reason)) check(['text', 'certificateId'].includes(key), `taxExemptReason.${key}`, 'no unknown key')
+      for (const key of ['text', 'certificateId']) {
+        const value = reason[key]
+        if (key === 'certificateId' && value === undefined) continue
+        check(typeof value === 'string' && value.length > 0 && value === value.trim(), `taxExemptReason.${key}`, 'a non-empty trimmed string')
+      }
+    }
   }
   if (payload.customer !== undefined && payload.customer !== null) {
     check(object(payload.customer), 'customer', 'an object')
@@ -277,6 +290,7 @@ const ORDER_ADDRESS_KEYS = ['firstName', 'lastName', 'company', 'address1', 'add
  * characters']; [] when every bound holds, at most ten. Bounds in UTF-16 code units:
  * `note` ORDER_NOTE_MAX (1000), `customer.email` 254, v8 address fields 255, v5 ids 36 and class/sku/method 64, other strings 255 (`customerId` and `sessionId` keep theirs in
  * payloadShapeErrors); v12 (ADR-092) tax id type 32, value 64 and country 2, a line's `sku` 100, meta key 255 and value ORDER_NOTE_MAX.
+ * v13 taxExemptReason text ORDER_TAX_EXEMPT_REASON_MAX (200) and certificateId ORDER_TAX_EXEMPT_CERTIFICATE_MAX (64).
  * Each coupon's lines array is also capped at payload.lines.length, `customer.taxIds` at 10 entries and `meta` at 50. A plugin calls it through precheckCommand, after
  * its replay lookup, so a bound tightened later never turns an applied command's resend into
  * `invalid_payload`. */
@@ -306,6 +320,8 @@ function payloadStrings(payload: Record<string, unknown>): Array<[string, string
     typeof value === 'object' && value !== null && !Array.isArray(value)
   for (const field of ['clientOrderId', 'createdAt', 'currency', 'registerId', 'cashierRef', 'locationId']) found.push([payload[field], field, 255])
   found.push([payload.note, 'note', ORDER_NOTE_MAX])
+  if (object(payload.taxExemptReason)) found.push([payload.taxExemptReason.text, 'taxExemptReason.text', ORDER_TAX_EXEMPT_REASON_MAX],
+    [payload.taxExemptReason.certificateId, 'taxExemptReason.certificateId', ORDER_TAX_EXEMPT_CERTIFICATE_MAX])
   for (const field of ['lines', 'payments']) {
     const items = payload[field]
     if (Array.isArray(items)) items.forEach((item, index) => {
