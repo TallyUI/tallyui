@@ -64,3 +64,25 @@ describe('the in-memory server keeps check codes unique per till', () => {
     expect([claimOne.checkCode, claimTwo.checkCode]).toEqual(['0042', '0007']);
   });
 });
+
+describe('the in-memory server keeps the original renewal overlap', () => {
+  it('refuses the previous token after five minutes despite a lost-answer retry', async () => {
+    let now = Date.UTC(2026, 10, 11, 9);
+    const { signalling: s, harness: h } = createMemoryDisplaySignalling({ now: () => now });
+    const till = await h.till({ cashierId: 'cashier-a', canPair: true });
+    const device = { deviceId: 'till-a', deviceKey: (await s.registerDevice(till, 'till-a')).deviceKey };
+    const display = h.display('192.0.2.1');
+    const { code } = await s.mint(till, device);
+    const claim = await s.claim(display, { code, displayName: 'Counter' });
+    const [entry] = await s.pending(till, device);
+    await s.confirm(till, device, entry!.claimId);
+    const result = await s.collect(display, claim.claimSecret);
+    if (result.status !== 'paired') throw new Error('not paired');
+    await s.renew!(display, result.token);
+    now += 4 * 60_000;
+    await s.renew!(display, result.token);
+    // The reference server's five-minute overlap starts at the first renewal.
+    now += 60_000 + 1000;
+    await expect(s.readSnapshot(display, result.token)).rejects.toMatchObject({ code: 'token_refused' });
+  });
+});

@@ -452,6 +452,12 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       await w.s.readSnapshot(d, next.token);
       await w.h.advance(elapsed - DAY);
       await expectRefusal(w.s.readSnapshot(d, next.token), 'token_refused', 'the expired successor');
+      const [original] = await w.s.list(w.a, w.da);
+      check(original, 'refusing the expired successor dropped the display');
+      const fresh = await paired(w, w.a, w.da, '192.0.2.9', 'Counter', next.token);
+      check(fresh.displayId !== original.displayId, 'claim with an expired token moved the display');
+      const ids = (await w.s.list(w.a, w.da)).map((row) => row.displayId);
+      check(ids.includes(original.displayId) && ids.includes(fresh.displayId), 'the till does not list both displays');
     },
     'R9: unknown and forgotten tokens cannot renew (ADR-096)': async (w) => {
       if (!w.s.renew) return;
@@ -469,6 +475,32 @@ export function displaySignallingContract(makeHarness: () => Promise<DisplaySign
       await w.s.renew(d, token);
       const row = (await w.s.list(w.a, w.da)).find((entry) => entry.displayId === displayId);
       check(row && row.lastSeenAt !== null, 'renew did not mark the display seen');
+    },
+    'R11: claim with a superseded token does not move the display (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token, displayId } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const next = await w.s.renew(d, token);
+      await w.h.advance(59_000);
+      const fresh = await paired(w, w.b, w.db, '192.0.2.9', 'Counter', token);
+      check(fresh.displayId !== displayId, 'claim with a superseded token moved the display');
+      check((await w.s.list(w.a, w.da)).some((row) => row.displayId === displayId), 'the original till lost its display');
+      await w.s.readSnapshot(d, next.token);
+    },
+    'R12: renewing near expiry gives the new token at least two more days (ADR-096)': async (w) => {
+      if (!w.s.renew) return;
+      const { d, token } = await paired(w, w.a, w.da, '192.0.2.1', 'Counter');
+      const mint = await w.s.mint(w.a, w.da);
+      const next = await w.s.renew(d, token);
+      let remaining = Date.parse(next.expiresAt) - (Date.parse(mint.expiresAt) - 10 * MINUTE) - DAY;
+      while (remaining > 0) {
+        const jump = Math.min(remaining, 10 * DAY);
+        await w.h.advance(jump);
+        await w.s.readSnapshot(d, next.token);
+        remaining -= jump;
+      }
+      const secondMint = await w.s.mint(w.a, w.da);
+      const fresh = await w.s.renew(d, next.token);
+      check(Date.parse(fresh.expiresAt) >= Date.parse(secondMint.expiresAt) - 10 * MINUTE + 2 * DAY, 'the renewed expiry is less than two days ahead');
     },
   };
   return Object.entries(cases).map(([name, run]) => ({ name, run: async () => run(await world(makeHarness)) }));
