@@ -215,7 +215,6 @@ describe('Medusa variant base price', () => {
       const { context } = fixture(product([usd, eur, sale]), lists([sale.id]), prefs(), response);
       const result = edit.update(context, target, change);
       const message = `Prices on this product changed unexpectedly (${ids}). Check them in the store's admin.`;
-      await expect(result).rejects.toThrow(new CustomerServiceError('server', message));
       await expect(result).rejects.toBeInstanceOf(CustomerServiceError);
       await expect(result).rejects.toMatchObject({ code: 'server', message, status: 200 });
     });
