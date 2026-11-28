@@ -1,5 +1,15 @@
 # @tallyui/pos
 
+## 5.6.0
+
+### Minor Changes
+
+- 77b1bf9: Receipts, reprints and receipt templates now show one “Tax exempt” row in place of the tax rows on exempt sales with zero tax.
+
+### Patch Changes
+
+- @tallyui/core@5.6.0
+
 ## 5.5.0
 
 ### Minor Changes

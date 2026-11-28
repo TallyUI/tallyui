@@ -1,5 +1,21 @@
 # @tallyui/components
 
+## 5.6.0
+
+### Minor Changes
+
+- 77b1bf9: Receipts, reprints and receipt templates now show one “Tax exempt” row in place of the tax rows on exempt sales with zero tax.
+- 7b6ba87: Order details offers a Tax exempt switch on eligible sales, and the Cart shows a single zero-valued tax row labeled "Tax exempt" for exempt orders.
+
+### Patch Changes
+
+- 6abc694: Editing a fee or shipping charge in the Cart now sends only the fields the cashier changed, so renaming a charge on a tax-exempt sale keeps its entered gross.
+- Updated dependencies [77b1bf9]
+  - @tallyui/pos@5.6.0
+  - @tallyui/core@5.6.0
+  - @tallyui/primitives@5.6.0
+  - @tallyui/theme@5.6.0
+
 ## 5.5.0
 
 ### Minor Changes

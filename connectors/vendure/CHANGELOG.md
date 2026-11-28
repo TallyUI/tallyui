@@ -1,5 +1,11 @@
 # @tallyui/connector-vendure
 
+## 5.6.0
+
+### Patch Changes
+
+- @tallyui/core@5.6.0
+
 ## 5.5.0
 
 ### Minor Changes
