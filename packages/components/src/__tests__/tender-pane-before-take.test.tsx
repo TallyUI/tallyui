@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatMoney, paymentMethodOf } from '@tallyui/core';
@@ -52,6 +53,42 @@ it('row 1: true takes the press-time amount and reports its id once', async () =
   await settle(true);
   expect(sale.order.payments).toMatchObject([{ methodId: 'till', amountMinor: 1000, tenderedMinor: 1200 }]);
   expect(onTaken.mock.calls).toEqual([[sale.order.payments[0].id]]);
+});
+
+it('an approved Take that throws shows the refusal and allows one later payment', async () => {
+  const { hook, settle } = later(), onTaken = vi.fn();
+  start({ beforeTake: hook, onTaken });
+  const addTender = vi.spyOn(sale, 'addTender').mockImplementationOnce(() => { throw new Error('boom'); });
+  take();
+  await settle(true);
+  expect(screen.getByTestId('tender-take')).not.toBeNull();
+  expect(sale.order.payments).toHaveLength(0);
+  expect(onTaken).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert').textContent).toBe("That payment wasn't taken: nothing is due, or the amount isn't valid.");
+  addTender.mockRestore();
+  take();
+  await settle(true);
+  expect(sale.order.payments).toHaveLength(1);
+  expect(onTaken.mock.calls).toEqual([[sale.order.payments[0].id]]);
+});
+
+it.each(['approved', 'synchronous'])('dispatches tender-started before onTaken on the %s path', async (path) => {
+  const log: string[] = [];
+  function LoggingPane() {
+    const { state, dispatch } = useTender(sale);
+    const loggedDispatch = useCallback<TenderPaneProps['dispatch']>((action) => {
+      log.push(action.type);
+      dispatch(action);
+    }, [dispatch]);
+    return <TenderPane sale={sale} state={state} dispatch={loggedDispatch}
+      beforeTake={path === 'approved' ? () => true : undefined} onTaken={() => log.push('onTaken')} />;
+  }
+  render(<SaleHarness>{() => <LoggingPane />}</SaleHarness>);
+  act(() => sale.add(blue, traits));
+  act(() => sale.startTender('cash'));
+  log.length = 0;
+  await act(async () => { take(); });
+  expect(log.filter((event) => event === 'tender-started' || event === 'onTaken')).toEqual(['tender-started', 'onTaken']);
 });
 
 it('row 2: false keeps the entry without a leg, callback or alert', async () => {
