@@ -38,7 +38,7 @@ function start(props: Props = {}, wrapper = false) {
 function later() {
   let resolve!: (value: boolean) => void;
   const hook = vi.fn<NonNullable<Props['beforeTake']>>(() => new Promise<boolean>((done) => { resolve = done; }));
-  return { hook, settle: async (value: boolean) => { await act(async () => { resolve(value); }); } };
+  return { hook, resolve: (value: boolean) => resolve(value), settle: async (value: boolean) => { await act(async () => { resolve(value); }); } };
 }
 
 it('row 1: true takes the press-time amount and reports its id once', async () => {
@@ -220,4 +220,73 @@ it('row 16: Tender passes beforeTake, onTaken and offline to the pane', async ()
   expect(sale.order.payments).toHaveLength(0);
   await settle(true);
   expect(onTaken.mock.calls).toEqual([[sale.order.payments[0].id]]);
+});
+
+it('row 17 (A): cancelling and approving together leaves the cart unpaid', async () => {
+  const { hook, resolve } = later(), onTaken = vi.fn();
+  start({ beforeTake: hook, onTaken });
+  take();
+  await act(async () => { sale.cancelTender(); resolve(true); });
+  expect(sale.stage.kind).toBe('cart');
+  expect(sale.order.payments).toHaveLength(0);
+  expect(onTaken).not.toHaveBeenCalled();
+});
+
+it('row 18 (B): a host leg added alongside approval is the only payment', async () => {
+  const { hook, resolve } = later(), onTaken = vi.fn();
+  start({ beforeTake: hook, onTaken });
+  take();
+  await act(async () => { sale.addTender({ method: 'external', amountMinor: 400 }); resolve(true); });
+  expect(sale.order.payments).toMatchObject([{ method: 'external', amountMinor: 400 }]);
+  expect(screen.getByRole('alert')).toBe(screen.getByTestId('tender-sale-changed'));
+  expect(onTaken).not.toHaveBeenCalled();
+});
+
+it('row 19 (C): a timer cancelling and approving outside act leaves the cart unpaid', async () => {
+  const { hook, resolve } = later();
+  start({ beforeTake: hook });
+  take();
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', false);
+  try {
+    setTimeout(() => { sale.cancelTender(); resolve(true); });
+    await vi.waitFor(() => expect(sale.stage.kind).toBe('cart'));
+    for (let turn = 0; turn < 3; turn++) await new Promise((done) => setTimeout(done, 0));
+    expect(sale.order.payments).toHaveLength(0);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('row 20 (D): re-entering tender after a cancelled approval shows no stale alert', async () => {
+  const { hook, settle } = later();
+  start({ beforeTake: hook });
+  take();
+  act(() => sale.cancelTender());
+  await settle(true);
+  act(() => sale.startTender('cash'));
+  expect(sale.stage.kind).toBe('tender');
+  expect(sale.order.payments).toHaveLength(0);
+  expect(screen.queryByTestId('tender-sale-changed')).toBeNull();
+});
+
+it('row 21 (E): unmounting alongside approval releases Take for the remount', async () => {
+  const { hook, resolve, settle } = later();
+  const show = start({ beforeTake: hook });
+  take();
+  await act(async () => { show(false); resolve(true); });
+  show(true);
+  expect(sale.order.payments).toHaveLength(0);
+  expect(disabled('tender-take')).toBe(false);
+  take();
+  expect(hook).toHaveBeenCalledTimes(2);
+  await settle(false);
+});
+
+it('row 22 (F): the external reference is read-only while Take is pending', async () => {
+  const { hook, settle } = later();
+  start({ beforeTake: hook, methods: [cash, card] });
+  press(`tender-method-${card.id}`);
+  const reference = screen.getByRole('textbox', { name: 'Terminal reference' });
+  take();
+  expect(reference.hasAttribute('readonly')).toBe(true);
+  await settle(false);
+  expect(reference.hasAttribute('readonly')).toBe(false);
 });

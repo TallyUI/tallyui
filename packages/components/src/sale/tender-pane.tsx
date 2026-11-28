@@ -5,7 +5,7 @@
  * comes from pos (useSale's captured-only totals, tenderRounding, quickTenderedAmounts, planLegs).
  * The caption row and the hero figure follow tender-pane.tsx's caption row and AmountFigure (v2 :390-459).
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type JSX } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type JSX } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFormatMoney, minorUnitDigits, wireMethodOf, type PaymentMethodDescriptor } from '@tallyui/core';
 import {
@@ -29,6 +29,7 @@ import { CreditCardIcon } from '../ui/icon/credit-card-icon';
 
 type Sale = ReturnType<typeof useSale>;
 type Leg = Sale['order']['payments'][number];
+type Approval = { orderId: string; frozen: string; input: Parameters<Sale['addTender']>[0]; units: TenderState['pickedUnits'] };
 
 export interface TenderPaneProps {
   sale: Sale;
@@ -85,22 +86,49 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   const voiding = useVoidInFlight(order.id);
   const send = (action: TenderAction) => { if (!pending) dispatch(action); };
   const mounted = useRef(false);
-  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const outstanding = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    mounted.current = true;
+    const held = outstanding.current;
+    return () => { mounted.current = false; for (const id of held) { held.delete(id); releaseTake(id); } };
+  }, []);
   const balance = order.balanceDueMinor;
   // Leaving the tender stage ends the cancel-payment view (state adjusted while rendering, so it never outlives the stage).
   if (stage.kind !== 'tender' && cancelling) setCancelling(false);
+  if (stage.kind !== 'tender' && saleChanged) setSaleChanged(false);
   // The ledger changed (a leg taken or voided) and the entry is untouched: pre-type the next leg or plan share.
   useEffect(() => {
     if (!state.entryDirty) dispatch({ type: 'tender-recorded', rowsSinceFrom: rowsSince(order.payments, state.plan), balanceMinor: balance });
   }, [order.payments, balance, state.entryDirty, state.plan, dispatch]);
   const legsKey = order.payments.map((leg) => `${leg.id}:${legStatus(leg)}`).join(',');
-  useEffect(() => { setRefusal(false); setSaleChanged(false); }, [legsKey]);
+  useEffect(() => { setRefusal(false); }, [legsKey]);
+  useLayoutEffect(() => { setSaleChanged(false); }, [legsKey]);
   const latest = useRef({ sale, state, legsKey, input: null as Parameters<Sale['addTender']>[0] | null });
   latest.current = { sale, state, legsKey, input: null };
   const snapshot = () => {
     const { sale: current, state: entry, legsKey: legs, input } = latest.current;
     return JSON.stringify([current.order.id, current.stage.kind, legs, current.order.balanceDueMinor, entry.methodId, entry.entryMinor, entry.entryMode, entry.entryDirty, entry.pickedUnits, entry.plan, input]);
   };
+  const taken = useCallback((id: string | null, units: TenderState['pickedUnits'], zeroDue = false) => {
+    if (id === null) { setRefusal(true); return; }
+    setRefusal(false);
+    setReference('');
+    dispatch({ type: 'tender-started', paymentId: id, units });
+    if (!zeroDue) { try { onTaken?.(id); } catch { /* the leg stays taken */ } }
+  }, [dispatch, onTaken]);
+  useLayoutEffect(() => {
+    if (!approvals.length) return;
+    setApprovals([]);
+    for (const { orderId, frozen, input, units } of approvals) {
+      if (!outstanding.current.has(orderId)) continue;
+      try {
+        if (!mounted.current || stage.kind !== 'tender' || sale.order.id !== orderId) continue;
+        if (snapshot() !== frozen) setSaleChanged(true);
+        else taken(sale.addTender(input), units);
+      } finally { if (outstanding.current.delete(orderId)) releaseTake(orderId); }
+    }
+  }, [approvals, stage.kind, sale, taken]);
   if (stage.kind !== 'tender') return null;
 
   const offered = offeredMethods(methods);
@@ -217,26 +245,17 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     if (!method || pickRefused || pending || voiding) return;
     if (saleChanged) setSaleChanged(false);
     const input = latest.current.input ?? takeInput(method);
-    if (!beforeTake || zeroDue) return taken(sale.addTender(input));
+    if (!beforeTake || zeroDue) return taken(sale.addTender(input), pick === null || zeroDue ? {} : pick.picks, zeroDue);
     const frozen = snapshot();
     if (!claimTake(order.id)) return;
     void (async () => {
-      try {
-        try { if (await beforeTake({ methodId: method.id, amountMinor: figures.appliedMinor }) !== true) return; } catch { return; }
-        if (!mounted.current) return;
-        if (latest.current.sale.stage.kind !== 'tender' || snapshot() !== frozen) { setSaleChanged(true); return; }
-        taken(latest.current.sale.addTender(input));
-      } finally { releaseTake(order.id); }
+      let answer: boolean;
+      try { answer = await beforeTake({ methodId: method.id, amountMinor: figures.appliedMinor }); }
+      catch { answer = false; }
+      if (answer !== true || !mounted.current) { releaseTake(order.id); return; }
+      outstanding.current.add(order.id);
+      setApprovals((previous) => [...previous, { orderId: order.id, frozen, input, units: pick === null ? {} : pick.picks }]);
     })();
-  }
-
-  function taken(id: string | null) {
-    if (id === null) { setRefusal(true); return; }
-    setRefusal(false);
-    setReference('');
-    // A zero-due settle returns the leg its entry went on, which already holds its own units.
-    dispatch({ type: 'tender-started', paymentId: id, units: pick === null || zeroDue ? {} : pick.picks });
-    if (!zeroDue) { try { onTaken?.(id); } catch { /* the leg stays taken */ } }
   }
 
   if (cancelling) return <View dataSet={{ print: 'hide' }} testID="tender-pane" className="gap-4 p-4">
@@ -310,7 +329,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
       </View>
       {planned ? <Text testID="tender-plan" className="text-sm text-muted-foreground">{t('pos_checkout.n_of_ways', { n: planned.label.n, ways: planned.label.ways })}</Text> : null}
       {method && wireMethodOf(method) === 'external' ? <TextInput accessibilityLabel={t('tender.terminal_reference')} placeholder={t('tender.terminal_reference')} maxLength={REFERENCE_MAX}
-        value={reference} onChangeText={setReference} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
+        value={reference} onChangeText={setReference} editable={!pending} className="rounded-md border border-border px-3 py-2 text-foreground" /> : null}
       {state.splitView && !plan ? <>
         <Text testID="tender-split-heading" className="text-center text-sm text-muted-foreground">
           {typed ? t('pos_checkout.after_this_payment', { amount: money(restMinor) }) : t('pos_checkout.split_the_rest')}

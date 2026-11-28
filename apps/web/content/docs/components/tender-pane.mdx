@@ -54,3 +54,5 @@ A held leg, one taken before the sale was reopened or one the store or a closed 
 | `offline` | `boolean` | `false` | Marks each method tile “Offline” without disabling it. |
 
 Only a strict `true` from `beforeTake` takes payment. Any other answer, a throw or a rejection takes nothing. The host must always settle `beforeTake`, with its own timeout; the pane never times out on its own, and a `true` that arrives after the sale changed takes nothing. A zero-due cash settle writes off the remainder without calling either hook. `onTaken` fires only for new legs this pane records.
+
+`beforeTake` must not move money itself: a `true` that is followed by no `onTaken` was not taken.
