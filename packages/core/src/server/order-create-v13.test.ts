@@ -40,6 +40,11 @@ describe('order.create version 13: staff-only tax exemption reason', () => {
     ['H12', required, 12, nonExempt, undefined], ['H13', required, 13, nonExempt, undefined],
     ['I', optional, 13, { ...nonExempt, taxExemptReason: reason }, 'taxExemptReason: expected present only on a tax-exempt order'],
     ['J', required, 12, payload, version], ['K', invalid, 13, payload, capability],
+    ['L', server, 12, payload, capability],
+    ['M', server, 13, { ...nonExempt, taxExemptReason: reason }, capability],
+    ['N', required, 13, { ...nonExempt, taxExemptReason: reason }, 'taxExemptReason: expected present only on a tax-exempt order'],
+    ['O', invalid, 13, base, undefined],
+    ['P', server, 13, { ...base, taxExemptReason: { text: '' } }, capability],
   ] as const)('R1 row %s', (_row, supported, wireVersion, body, message) => {
     expect(precheckCommand(create(wireVersion, body), supported)).toEqual(message === undefined ? undefined : refused(message))
   })
@@ -53,7 +58,7 @@ describe('order.create version 13: staff-only tax exemption reason', () => {
   })
   it.each([
     ...['', '   ', ' leading', 'trailing ', '\n', 1].map(value => ({ key: 'text', value })),
-    ...['', ' x', 1].map(value => ({ key: 'certificateId', value })),
+    ...['', ' x', 'x ', '   ', 1].map(value => ({ key: 'certificateId', value })),
   ])('R2 rejects invalid $key %#', ({ key, value }) => {
     expect(payloadShapeErrors({ ...base, taxExemptReason: { ...reason, [key]: value } })).toEqual([`taxExemptReason.${key}: expected a non-empty trimmed string`])
   })
@@ -76,8 +81,11 @@ describe('order.create version 13: staff-only tax exemption reason', () => {
     const body = { ...base, taxExemptReason: { ...reason, [key]: 'a\u0000b' } }
     expect(precheckCommand(create(13, body), optional)).toEqual(refused(`taxExemptReason.${key}: expected no NUL character`))
   })
-  it.each([base, nonExempt])('R5 refuses a reason on order.update %#', body => {
-    expect(precheckCommand(update({ ...body, taxExemptReason: reason }), optional)).toEqual(refused('taxExemptReason is not accepted on order.update'))
+  it.each([
+    [base, server], [base, optional], [base, required],
+    [nonExempt, server], [nonExempt, optional], [nonExempt, required],
+  ] as const)('R5 refuses a reason on order.update %#', (body, supported) => {
+    expect(precheckCommand(update({ ...body, taxExemptReason: reason }), supported)).toEqual(refused('taxExemptReason is not accepted on order.update'))
   })
 
   it('R6 refusals and validator errors never include the reason or certificate number', () => {
