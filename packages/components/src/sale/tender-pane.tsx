@@ -99,7 +99,7 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   }, []);
   const balance = order.balanceDueMinor;
   const percentHeld = percentSplit === true && state.entryMode === 'percent';
-  const percentStale = percentHeld && (state.plan !== null || Object.keys(state.pickedUnits).length > 0);
+  const percentStale = (percentHeld && (state.plan !== null || Object.keys(state.pickedUnits).length > 0)) || (percentSplit !== true && state.entryMode === 'percent');
   // Leaving the tender stage ends the cancel-payment view (state adjusted while rendering, so it never outlives the stage).
   if (stage.kind !== 'tender' && cancelling) setCancelling(false);
   if (stage.kind !== 'tender' && saleChanged) setSaleChanged(false);
@@ -143,7 +143,8 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
   if (stage.kind !== 'tender') return null;
 
   const percent = percentHeld && !percentStale;
-  const share = percent ? percentOfMinor(balance, state.entryMinor) : 0;
+  const percentRest = Math.max(0, balance - inMotionMinor(order.payments));
+  const share = percent ? percentOfMinor(percentRest, state.entryMinor) : 0;
   const offered = offeredMethods(methods);
   const descriptorOf = (id: string) => offered.find((method) => method.id === id);
   const money = (minor: number) => formatMoney({ amount: minor, currency: order.currency }) ?? '';
@@ -224,8 +225,9 @@ export function TenderPane({ sale, state, dispatch, methods, ledger = true, back
     : settleLimit ? (otherWay ? t('pos_checkout.cash_settle_limit')
       : lastRounded && voidableLeg(order, offered, lastRounded) ? t('pos_checkout.cash_settle_limit_void', { amount: money(lastRounded.amountMinor) })
         : t('pos_checkout.cash_settle_limit_park', { amount: lastRounded ? money(lastRounded.amountMinor) : '' }))
-    : percent ? (share === 0 ? t('pos_checkout.percent_takes_nothing', { percent: Math.min(state.entryMinor, 100), amount: money(balance) })
-      : t('pos_checkout.percent_of_amount_type', { percent: Math.min(state.entryMinor, 100), amount: money(balance) }))
+    : percent ? (share === 0 ? t('pos_checkout.percent_takes_nothing', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) })
+      : zeroDue || figures.roundingMinor !== 0 || figures.appliedMinor >= percentRest ? t('pos_checkout.percent_of_amount', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) })
+      : t('pos_checkout.percent_of_amount_type', { percent: Math.min(state.entryMinor, 100), amount: money(percentRest) }))
     : partPick ? (pickTarget === 0 ? t('pos_checkout.pick_rounds_to_nothing')
     : pickRefused || entry === pickTarget ? t('pos_checkout.pick_amount_due', { amount: money(pickTarget) })
     : givesChange && entry > pickTarget ? (cannotTake ? '' : t('pos_checkout.change_due', { amount: money(entry - pickTarget) })) : '')

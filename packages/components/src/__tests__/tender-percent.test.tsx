@@ -15,12 +15,13 @@ function Pane(props: Props) {
   return <Tender sale={sale} methods={methods} tender={tender} {...props} />;
 }
 function start(rest: number, props: Props = { percentSplit: true }) {
-  render(<SaleHarness settings={{ ...pricing, taxRatesPpm: { default: 0 } }} capabilities={{ orderCreate: 12, cashRounding: true }}>
+  const result = render(<SaleHarness settings={{ ...pricing, taxRatesPpm: { default: 0 } }} capabilities={{ orderCreate: 12, cashRounding: true }}>
     {() => <Pane {...props} />}
   </SaleHarness>);
   act(() => sale.add(blue, traits));
   act(() => sale.setUnitPrice(sale.order.lineItems[0].id, rest));
   act(() => sale.startTender('cash'));
+  return result;
 }
 afterEach(cleanup);
 
@@ -65,7 +66,7 @@ it.each<[string, number, number, number, boolean, number | null, number | null]>
   expect(takeDisabled()).toBe(!enabled);
   if (enabled) expect(text('tender-take')).toBe(`Take ${money(entry)} in Cash`);
   const hint = above !== null ? `Cash cannot pay that exactly. Take ${below !== null ? `${money(below)} or ` : ''}${money(above)}.`
-    : entry === 0 ? nothing(value, rest) : `${Math.min(value, 100)} % of ${money(rest)} · type another share`;
+    : entry === 0 ? nothing(value, rest) : `${Math.min(value, 100)} % of ${money(rest)}${value >= 100 ? '' : ' · type another share'}`;
   expect(text('tender-entry-hint')).toBe(hint);
   for (const [id, amount] of [['below', below], ['above', above]] as const) {
     if (amount === null) expect(screen.queryByTestId(`tender-payable-${id}`)).toBeNull();
@@ -125,6 +126,59 @@ describe.each([['P5', 1001], ['P15', 1002]] as const)('%s', (row, total) => {
     expect(sale.order.payments).toHaveLength(row === 'P15' ? 1 : 0);
     expect(sale.order.balanceDueMinor).toBe(rest);
   });
+});
+
+it.each([['P16', 'external', 'Card terminal'], ['P17', 'cash', 'Cash']] as const)('%s: %s takes half of what is still due', async (_row, method, title) => {
+  const beforeTake = vi.fn().mockResolvedValue(true);
+  start(1000, { percentSplit: true, beforeTake: method === 'external' ? beforeTake : undefined });
+  act(() => { sale.addTender({ method: 'external', amountMinor: 600, status: 'pending' }); });
+  press(`tender-method-${method}`);
+  openPercent();
+  press('tender-percent-50');
+  expect(takeDisabled()).toBe(false);
+  expect(text('tender-take')).toBe(`Take ${money(200)} in ${title}`);
+  expect(text('tender-entry-hint')).toBe(`50 % of ${money(400)} · type another share`);
+  await act(async () => { press('tender-take'); });
+  if (method === 'external') expect(beforeTake).toHaveBeenCalledWith({ methodId: method, amountMinor: 200 });
+  expect(sale.order.payments).toMatchObject([{ method: 'external', amountMinor: 600, status: 'pending' }, { method, amountMinor: 200 }]);
+});
+
+it('turning percentSplit off ends percent mode', () => {
+  const { rerender } = start(1001);
+  press('tender-method-external');
+  openPercent();
+  press('tender-percent-25');
+  expect(text('tender-take')).toBe(`Take ${money(250)} in Card terminal`);
+  rerender(<SaleHarness settings={{ ...pricing, taxRatesPpm: { default: 0 } }} capabilities={{ orderCreate: 12, cashRounding: true }}>
+    {() => <Pane percentSplit={false} />}
+  </SaleHarness>);
+  expect(tender.state.entryMode).toBe('money');
+  expect(screen.queryByTestId('tender-percent-heading')).toBeNull();
+  expect(text('tender-entry-amount')).toBe(money(1001));
+  expect(text('tender-take')).toBe(`Take ${money(1001)} in Card terminal`);
+  expect(sale.order.payments).toHaveLength(0);
+});
+
+it('P19: a share at the rounded cash due settles the sale', () => {
+  start(102);
+  openPercent();
+  press('tender-percent-type');
+  enter(98);
+  expect(takeDisabled()).toBe(false);
+  expect(text('tender-take')).toBe(`Take ${money(100)} in Cash`);
+  expect(text('tender-entry-hint')).toBe(`98 % of ${money(102)}`);
+});
+
+it('P20: a share of a zero-due cash rest does not prompt for another share', () => {
+  start(1002);
+  press('tender-method-external');
+  enter(1000);
+  press('tender-take');
+  press('tender-method-cash');
+  openPercent();
+  press('tender-percent-50');
+  expect(takeDisabled()).toBe(false);
+  expect(text('tender-entry-hint')).toBe(`50 % of ${money(2)}`);
 });
 
 it('percent survives a typed entry', () => {

@@ -92,6 +92,7 @@
 	"pos_checkout.pick_amount_due": "This payment is {amount} for the picked items",
 	"pos_checkout.pick_rounds_to_nothing": "Cash cannot pay for these items: they round to nothing. Take them by another method.",
 	"pos_checkout.payments_tab": "Payments",
+	"pos_checkout.percent_of_amount": "{percent} % of {amount}",
 	"pos_checkout.percent_of_amount_type": "{percent} % of {amount} · type another share",
 	"pos_checkout.percent_of_the_rest": "Percent of the rest",
 	"pos_checkout.percent_takes_nothing": "{percent} % of {amount} takes nothing · type a larger share",
