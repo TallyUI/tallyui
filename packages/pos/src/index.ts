@@ -157,12 +157,13 @@ export type { SaleStage, OpenSale, CatalogueEntry, SaleDiscountCodes, SaleDiscou
 export { uuidv7, AFTER_CLOSE_PAYMENTS_CHANGED, finalizeOrder, toOrderCreateEnvelope, toOrderUpdateEnvelope, UnsupportedOrderVersionError, posOrderSchema, posOrderCollection, addPosOrderCollection, PosOrderOpenClosedError, posOrdersLogger, getDeviceId, needsAttention, storeOrderLeft, canCancelOnStore, canPayRestOnStore, canReverseOnStore, recordedLegs, settledOnStore, TILL_SESSION_CLOSED, unrecordedLegs, markAttentionHandled, moneyDivergence, UPDATE_UNSENDABLE, UPDATE_UNSENDABLE_MESSAGE, isReopened, replacedOrderIds, sameSale, OrderContentMismatchError } from './pos-order';
 export { REOPENABLE_CODES, ReopenRefusedOrderError, reopenRefusedOrder, type ReopenRefusal } from './pos-order';
 export { noteDelivery, type NoteDelivery } from './pos-order';
+export { taxExemptReasonDelivery, type TaxExemptReasonDelivery } from './pos-order';
 export { settledAwayOnStore, tillPayments } from './pos-order';
 export { extrasNotSent, type ExtrasNotSent } from './pos-order';
 export { refundDueOf } from './pos-order';
 export { lockedRefundDueMinor, tillLegsTheStoreRefuses } from './pos-order/refund-due';
 export { ADDRESS_CHANGE_REFUSED, NOTHING_DUE, NOTHING_TO_ROUND_AGAINST, CASH_NOT_PAYABLE, CASH_WAITS_FOR_PAYMENT, CASH_PICK_LIMIT, CASH_SETTLE_LIMIT, CASH_PICK_ENTRIES_MAX, VOID_LATER_CASH_FIRST, PAYMENT_TAKEN, CUSTOMER_RETAX_REFUSED, LINE_EDIT_REFUSED, META_CHANGE_REFUSED, META_INVALID, RESTORE_STALE, TAX_IDS_CHANGE_REFUSED, TAX_IDS_INVALID, TAX_EXEMPT_UNAVAILABLE, TAX_EXEMPT_PAYMENT_TAKEN, TAX_EXEMPT_LOCKED, TAX_EXEMPT_COUPONS, TAX_EXEMPT_CONVERTED_LINE, TAX_EXEMPT_REMOVED, type SaleRemoval } from './sale/use-sale';
-export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
+export { INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION, TAX_ADDRESS_ORDER_CREATE_VERSION, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, UNTAXED_ADDRESS_ORDER_CREATE_VERSION } from './pos-order/command';
 export type { PosOrderSyncStatus, PosOrderLine, PosOrderCoupon, PosOrderPayment, PosOrderLocalWarning, PosOrderServerFailures, PosOrder, PosOrderStoreSettlement, FinalizeOptions, MoneyDivergence } from './pos-order';
 export type { PosOrderCouponLine } from './pos-order/types';
 export { createHttpCommandTransport, createOrderOutbox, isRequeueable, isRequeueableOrder, useOrderOutbox, outboxLogger, cancelOnStore, payRestOnStore, reverseOnStore, type CancelOnStoreDeps, type PayRestOnStoreDeps } from './outbox';

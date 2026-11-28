@@ -6,13 +6,15 @@ import type { LineTaxLine } from '../order/types';
 import type { PosOrder, PosOrderLine } from './types';
 
 /** The highest order.create version this till sends; pos_orders' sentVersion and downgradedFrom maxima must equal it. */
-export const ORDER_CREATE_MAX_VERSION = 12 as const;
+export const ORDER_CREATE_MAX_VERSION = 13 as const;
 /** order.create 10 (ruling A, 2026-11-18) is 9 plus each payment's `methodId`, the payment method's own id on the platform. */
 export const PAYMENT_METHOD_ID_ORDER_CREATE_VERSION = 10 as const;
 /** order.create 11 (ADR-086 d2, amended 2026-11-19) is 10 plus the customer's addresses on a sale not taxed by address, as informational fields. */
 export const UNTAXED_ADDRESS_ORDER_CREATE_VERSION = 11 as const;
 /** order.create 12 (ADR-092) is 11 plus the customer's tax ids, a catalogue line's edited SKU and order meta, as informational fields. */
 export const INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION = 12 as const;
+/** order.create 13 is 12 plus a staff-only taxExemptReason on a tax-exempt sale. */
+export const TAX_EXEMPT_REASON_ORDER_CREATE_VERSION = 13 as const;
 /** order.create 8 (#722) tells the server which customer address the sale was taxed on (`taxAddress`) and carries the
  *  addresses; below it a server taxes on the store's base, so `saleTaxContexts` re-taxes by address only from here. */
 export const TAX_ADDRESS_ORDER_CREATE_VERSION = 8 as const;
@@ -155,6 +157,7 @@ function wireChargeMinor(order: PosOrder, charge: { id: string; amountMinor: num
  * Version 10 is 9 plus each payment's `methodId`: only at a cap of 10 or more, for an order with figures (4+) whose coupons all have lines and a leg with an id.
  * Version 11 is 10 plus the customer's addresses on a sale with no `taxAddress`: only at a cap of 11 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
  * Version 12 is 11 plus the customer's tax ids (without `label`), order meta and a catalogue line's edited `sku` (ADR-092): only at a cap of 12 or more, for an order with figures (4+) whose coupons all have lines; otherwise they are dropped.
+ * Version 13 is 12 plus `taxExemptReason`, on 12's terms, only for an exempt sale that stores one; below 13 the reason is not sent.
  * Orders with Any picks (#495) need version 6 too, carrying a line's `anyAttributes`, and coupons only when they have some.
  * A reopened sale (`storeOrderId`) throws: it goes as `order.update` (`toOrderUpdateEnvelope`).
  */
@@ -198,7 +201,10 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
   const sentTaxIds = sendableTaxIds(order.customer?.taxIds), sentMeta = sendableMeta(order.meta);
   const extras = !!(sentTaxIds.length || sentMeta.length || order.lines.some(editedSku))
     && cap !== undefined && cap >= INFORMATIONAL_EXTRAS_ORDER_CREATE_VERSION && base >= 4 && (!redeemable.length || couponLines);
-  const version = (extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
+  const { taxExemptReason } = order;
+  const reasonSent = order.taxExempt === true && taxExemptReason !== undefined && cap !== undefined
+    && cap >= TAX_EXEMPT_REASON_ORDER_CREATE_VERSION && base >= 4 && (!redeemable.length || couponLines);
+  const version = (reasonSent ? 13 : extras ? 12 : untaxedAddresses ? 11 : methodIds ? 10 : couponLines && base === 6 && cap !== undefined && cap >= 9 ? 9 : taxAddress ? TAX_ADDRESS_ORDER_CREATE_VERSION
     : note && base >= 3 && cap !== undefined && cap >= 7 ? 7 : base) as OrderCreateEnvelope['version'];
   const withTaxAddress = version === 8 || (version >= 9 && taxAddress !== undefined);
   const withAddresses = withTaxAddress || version >= UNTAXED_ADDRESS_ORDER_CREATE_VERSION;
@@ -273,6 +279,8 @@ function createEnvelope(order: PosOrder, deviceId: string, attempt: number, opti
       ...(order.cashRoundings?.length
         ? { cashRoundings: order.cashRoundings.map(({ paymentId, minor }) => ({ paymentId, minor })) } : {}),
       ...(order.taxExempt ? { taxExempt: true } : {}),
+      ...(reasonSent ? { taxExemptReason: { text: taxExemptReason.text,
+        ...(taxExemptReason.certificateId !== undefined ? { certificateId: taxExemptReason.certificateId } : {}) } } : {}),
       ...(base >= 3 ? {
         display: { ...storedDisplay, lines: order.display!.lines.map(({ lineId, amountMinor, discounts }) => ({
           clientLineId: lineId, amountMinor, discounts,
@@ -325,6 +333,7 @@ export function pairStoreIds(payload: OrderCreatePayload, order: PosOrder): Pick
 /** Builds at order.create version 5 or more (a store's cap below 5 throws UnsupportedOrderVersionError(5, cap)).
  * Refuses a row without baseRevision or figures, and pairs store ids by client id. */
 export function toOrderUpdateEnvelope(order: PosOrder, deviceId: string, attempt = 1, options?: { maxVersion?: number }): OrderUpdateEnvelope {
+  if (order.taxExemptReason !== undefined) throw new Error(`Order ${order.id}: a tax-exempt reason is never sent on order.update`);
   if (order.storeOrderId === undefined) throw new Error(`Order ${order.id} has no storeOrderId: it is sent as order.create`);
   if (order.baseRevision === undefined) throw new Error(`Order ${order.id} reopened store order ${order.storeOrderId} without its base revision: order.update needs it (ADR-090)`);
   if (!order.display || !order.taxByRate) throw new Error(`Order ${order.id} has no figures: order.update goes at order.create version 5 or more, which needs them (ADR-090)`);

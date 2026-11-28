@@ -1,5 +1,5 @@
 import { minorUnitDigits, ORDER_LINE_SKU_MAX, ORDER_META_KEY_MAX, ORDER_NOTE_MAX, ORDER_TAX_ID_TYPE_MAX, ORDER_TAX_ID_VALUE_MAX, type CustomerAddress, type OrderAddress, type ServerCapabilities, type TaxRounding,
-  type woocommerceTax } from '@tallyui/core';
+  ORDER_TAX_EXEMPT_REASON_MAX, ORDER_TAX_EXEMPT_CERTIFICATE_MAX, type woocommerceTax } from '@tallyui/core';
 import { chargeOrderModeMinor } from '../order/order-builder';
 import { cleanTaxIds, TAX_IDS_INVALID } from '../order/tax-ids';
 import { isTakenAt } from '../order/taken-at';
@@ -8,7 +8,7 @@ import { legStatus } from '../tender/payment-legs';
 import { DEFAULT_TAX_ROUNDING, taxLinesByRate } from '../tax/exact';
 import { taxedLinesFor } from '../tax/taxed-lines';
 import { outboxLogger } from '../outbox/logger';
-import { cutText, PAYLOAD_STRING_MAX, REVISION_MAX, sendable } from './command';
+import { cutText, PAYLOAD_STRING_MAX, REVISION_MAX, sendable, TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, UnsupportedOrderVersionError } from './command';
 import type { PosOrder, PosOrderLocalWarning, PosOrderPayment } from './types';
 import { uuidv7 } from './uuidv7';
 
@@ -191,6 +191,15 @@ export function afterCloseChanged(order: Order): boolean {
     || order.taxMinor !== afterClose.taxMinor || !sameCharges(order.fees, afterClose.fees) || !sameCharges(order.shipping, afterClose.shipping));
 }
 
+function freezeTaxExemptReason(reason: Order['taxExemptReason']): PosOrder['taxExemptReason'] {
+  if (!reason) return undefined;
+  const text = cutText(reason.text.replaceAll('\u0000', '').trim(), ORDER_TAX_EXEMPT_REASON_MAX);
+  if (!text) return undefined;
+  const certificateId = reason.certificateId === undefined ? undefined
+    : cutText(reason.certificateId.replaceAll('\u0000', '').trim(), ORDER_TAX_EXEMPT_CERTIFICATE_MAX);
+  return { text, ...(certificateId ? { certificateId } : {}) };
+}
+
 /**
  * Turns a fully paid builder Order into a pending PosOrder without mutating it. The PosOrder holds the sent form,
  * frozen: line names and v3 discount labels are cut to PAYLOAD_STRING_MAX with NUL stripped (`cutText`), and a
@@ -221,6 +230,8 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
   if (order.cashRoundings?.length && options.capabilities?.cashRounding !== true) {
     throw new Error('finalize: cash rounding needs a store whose connector declares the cashRounding capability');
   }
+  const taxExemptReason = freezeTaxExemptReason(order.taxExemptReason);
+  if (taxExemptReason && !order.taxExempt) throw new Error('finalize: a tax-exempt reason needs a tax-exempt sale');
   /** Before the sale is committed:
    * - finalize refuses with the capability message;
    * - an exempt sale with a coupon also requires the taxExemptCoupons capability;
@@ -237,6 +248,12 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
     if (order.lineItems.some(line => line.priceTaxModeConverted)) throw new Error('finalize: a tax-exempt sale cannot carry a line priced in the other tax mode');
     if (options.capabilities?.taxExempt !== true) throw new Error('finalize: a tax-exempt sale needs a store whose connector declares the taxExempt capability');
     if (order.coupons?.length && options.capabilities?.taxExemptCoupons !== true) throw new Error('finalize: a tax-exempt sale with a coupon needs a store whose connector declares the taxExemptCoupons capability');
+    const { taxExemptReason: capability, orderCreate } = options.capabilities;
+    if (capability === 'required' && orderCreate < TAX_EXEMPT_REASON_ORDER_CREATE_VERSION) {
+      throw new UnsupportedOrderVersionError(TAX_EXEMPT_REASON_ORDER_CREATE_VERSION, orderCreate);
+    }
+    if (taxExemptReason && capability === undefined) throw new Error('finalize: a tax-exempt reason needs a store whose connector declares the taxExemptReason capability');
+    if (!taxExemptReason && capability === 'required') throw new Error('finalize: a tax-exempt sale needs a reason on this store');
     if (order.taxMinor !== 0 || order.display.taxMinor !== 0
       || [order.lineItems, order.fees, order.shipping].some(rows => rows?.some(row => BigInt(row.taxMicros) !== 0n))
       || order.coupons?.some(coupon => coupon.discountTaxMinor !== 0 || coupon.lines?.some(line => line.discountTaxMinor !== 0))) {
@@ -423,6 +440,7 @@ export function finalizeOrder(order: Order, options: FinalizeOptions = {}): PosO
       return { paymentId: payments[index].id, minor: entry.minor };
     }) } : {}),
     ...(order.taxExempt ? { taxExempt: true } : {}),
+    ...(taxExemptReason !== undefined ? { taxExemptReason } : {}),
     ...(fees?.length ? { fees } : {}), ...(shipping?.length ? { shipping } : {}),
     subtotalMinor: order.subtotalMinor, discountMinor: order.discountMinor,
     taxMinor: order.taxMinor, totalMinor: order.totalMinor, taxRounding,
