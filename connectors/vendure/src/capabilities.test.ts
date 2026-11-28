@@ -186,6 +186,16 @@ describe('readVendureCapabilities', () => {
     }
   });
 
+  it('V16 skips the malformed taxExemptCoupons warning when order.create cannot carry a required reason', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const taxExemptCoupons of ['yes', 1, null, {}]) {
+      stubFetch(() => json({ contracts: { 'order.create': [1, 12] }, taxExempt: true, taxExemptCoupons, taxExemptReason: 'required' }));
+      await expect(read()).resolves.toStrictEqual({ orderCreate: 12 });
+      expect(warn).toHaveBeenCalledExactlyOnceWith('@tallyui/connector-vendure: ignoring taxExempt: taxExemptReason is required but order.create is below 13');
+      warn.mockClear();
+    }
+  });
+
   // The plugin's exact bodies (vendurepos/app#60): it always sends taxRounding.
   it.each([
     '{"contracts":{"order.create":[1,2,3]},"taxRounding":{"granularity":"per_line_items","mode":"half_up"}}',
