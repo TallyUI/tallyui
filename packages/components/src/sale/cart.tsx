@@ -270,7 +270,7 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         actions={noteSheet ? [{ label: 'Order details', onPress: () => onNoteOpenChange(true) }, ...(checkout.actions ?? [])] : checkout.actions}
         note={noteSheet ? { text: order.note, onPress: () => onNoteOpenChange(true) } : checkout.note} disabled={!order.lineItems.length} />
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
-          label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable ? {
+          label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable || sale.taxExempt ? {
             checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
             error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
           } : undefined} /> : null}</> : <View className="flex-row gap-3">

@@ -14,11 +14,13 @@ const money = (amount: number) => formatMoney({ amount, currency: 'EUR' })!;
 afterEach(cleanup);
 
 function seed(caps: ServerCapabilities = capabilities, store = settings, taxDisplay: 'itemized' | 'single' = 'itemized') {
-  render(<><SaleHarness settings={store} capabilities={caps}>
+  const tree = (currentCaps: ServerCapabilities) => <><SaleHarness settings={store} capabilities={currentCaps}>
     {(sale) => <Cart sale={sale} checkout={{ onCheckout: vi.fn() }} noteSheet={{}} taxDisplay={taxDisplay} />}
-  </SaleHarness><PortalHost /></>);
+  </SaleHarness><PortalHost /></>;
+  const { rerender } = render(tree(caps));
   // One €10.00 item = 1000 minor units before tax.
   act(() => { sale.addCustomLine({ name: 'Item', priceMinor: 1000, taxClass: 'standard' }); });
+  return (nextCaps: ServerCapabilities) => rerender(tree(nextCaps));
 }
 
 function openDetails() {
@@ -130,4 +132,18 @@ it('S11 restores the taxed total and footer tax after a partial cash payment', {
   const row = within(footer.getByTestId('cart-total-tax-0'));
   expect(row.getByText('Tax 19%')).toBeTruthy();
   expect(row.getByText(money(190))).toBeTruthy();
+});
+
+it('S12 lets the cashier turn exemption off after the capability is removed', { timeout: 20_000 }, () => {
+  const rerender = seed();
+  const sheet = openDetails();
+  toggle();
+  expect(sale.order.totalMinor).toBe(1000);
+  fireEvent.click(sheet.getByTestId('order-note-close'));
+  rerender({ orderCreate: 12 });
+  expect(sale.taxExempt).toBe(true);
+  expect(openDetails().getByRole('switch', { name: 'Tax exempt', checked: true })).toBeTruthy();
+  toggle();
+  expect(sale.taxExempt).toBe(false);
+  expect(sale.order.totalMinor).toBe(1190);
 });
