@@ -181,6 +181,19 @@ it('P20: a share of a zero-due cash rest does not prompt for another share', () 
   expect(text('tender-entry-hint')).toBe(`50 % of ${money(2)}`);
 });
 
+it.each([['P21', 1000], ['P22', 400]] as const)('%s: a card share of the whole rest says no more share', (row, rest) => {
+  start(1000);
+  if (row === 'P22') act(() => { sale.addTender({ method: 'external', amountMinor: 600, status: 'pending' }); });
+  press('tender-method-external');
+  openPercent();
+  press('tender-percent-type');
+  enter(150);
+  expect(text('tender-entry-amount')).toBe(money(rest));
+  expect(takeDisabled()).toBe(false);
+  expect(text('tender-take')).toBe(`Take ${money(rest)} in Card terminal`);
+  expect(text('tender-entry-hint')).toBe(`100 % of ${money(rest)}`);
+});
+
 it('percent survives a typed entry', () => {
   start(1001);
   enter(30);
