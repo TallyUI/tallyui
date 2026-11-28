@@ -93,12 +93,17 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
   const t = useT();
   const { order } = sale;
   const [noteOpen, setNoteOpen] = useState(false);
+  const [taxExemptRefused, setTaxExemptRefused] = useState(false);
+  const onNoteOpenChange = (open: boolean) => {
+    setTaxExemptRefused(false);
+    setNoteOpen(open);
+  };
   // v2's empty cart: an icon and a line, no heads and no foot. A fee or shipping row alone keeps the cart.
   const empty = !order.lineItems.length && !order.fees?.length && !order.shipping?.length;
   const money = (amount: number) => ({ amount, currency: order.currency });
   // order.display's figures (TallyUI ADR-063), with its tax split by rate; never app arithmetic (medusapos ADR 0008).
   const { totals, fees, shipping } = buildReceiptData(order, { storeName: '' });
-  const taxRows = taxDisplay === 'single'
+  const taxRows = order.taxExempt === true ? [{ label: 'Tax exempt', amount: money(0) }] : taxDisplay === 'single'
     ? totals.taxMinor !== 0 ? [{ label: 'Total Tax', amount: money(totals.taxMinor) }] : []
     : totals.taxLines.map((line) => ({ label: taxLabel(line.ratePpm, { code: line.code, ratePpm: line.ratePpm }), amount: money(line.amountMinor) }));
   // Each line before its discounts, with its own discounts' amounts. The order discounts are one figure: a single
@@ -259,13 +264,16 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
         discount={money(couponDiscountMinor === undefined ? totals.discountMinor : Math.max(0, totals.discountMinor - couponDiscountMinor))}
         fees={money(fees.reduce((sum, row) => sum + row.amountMinor, 0))}
         shipping={money(shipping.reduce((sum, row) => sum + row.amountMinor, 0))}
-        taxLines={taxRows} taxInclusive={totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
+        taxLines={taxRows} taxInclusive={order.taxExempt === true ? undefined : totals.taxInclusive} afterSubtotal={afterSubtotal} showTotal={showTotal} />
       {sale.error ? <Text accessibilityRole="alert" className="text-destructive">{saleErrorText(t, sale.error)}</Text> : null}
       {tenderLedger && sale.stage.kind === 'tender' ? <TenderLedger sale={sale} methods={tenderLedger.methods} confirmVoid={tenderLedger.confirmVoid} beforeVoid={tenderLedger.beforeVoid} afterVoid={tenderLedger.afterVoid} closing /> : checkout ? <><CartFoot total={money(totals.totalMinor)} onCheckout={checkout.onCheckout}
-        actions={noteSheet ? [{ label: 'Order details', onPress: () => setNoteOpen(true) }, ...(checkout.actions ?? [])] : checkout.actions}
-        note={noteSheet ? { text: order.note, onPress: () => setNoteOpen(true) } : checkout.note} disabled={!order.lineItems.length} />
+        actions={noteSheet ? [{ label: 'Order details', onPress: () => onNoteOpenChange(true) }, ...(checkout.actions ?? [])] : checkout.actions}
+        note={noteSheet ? { text: order.note, onPress: () => onNoteOpenChange(true) } : checkout.note} disabled={!order.lineItems.length} />
         {noteSheet && noteOpen ? <OrderNoteSheet value={order.note} onChangeText={sale.setNote}
-          label={noteSheet.label} onOpenChange={setNoteOpen} /> : null}</> : <View className="flex-row gap-3">
+          label={noteSheet.label} onOpenChange={onNoteOpenChange} taxExempt={sale.taxExemptAvailable || sale.taxExempt ? {
+            checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
+            error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
+          } : undefined} /> : null}</> : <View className="flex-row gap-3">
         <Pressable accessibilityRole="button" disabled={!order.lineItems.length} onPress={() => sale.startTender('cash')} className={pay}>
           <Text className="text-center font-semibold text-primary-foreground">Cash</Text>
         </Pressable>
