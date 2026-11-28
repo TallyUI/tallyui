@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PortalHost } from '@tallyui/primitives';
+import { META_INVALID } from '@tallyui/pos';
 import { Cart } from '../sale/cart';
 import { click, SaleHarness, sale } from './sale-harness';
 
@@ -104,4 +105,40 @@ it.each(['Cash', 'Card terminal'])('%s also refuses payment until the required r
   expect(screen.getByTestId(alertId)).toBeTruthy();
   click('Order details'); change(reasonId, 'Charity'); click('Close'); click(button);
   expect(sale.stage.kind).toBe('tender');
+});
+
+it('R9 omits the not-sent line for a required reason', { timeout: 20_000 }, () => {
+  seed('required'); const sheet = openDetails(); toggle(); change(reasonId, 'Charity');
+  expect(sale.taxExemptReasonSent).toBe(true);
+  expect(sheet.queryByTestId('order-tax-exempt-reason-not-sent')).toBeNull();
+});
+
+it('R10 hides an unrelated sale error after a refused reason edit', { timeout: 20_000 }, () => {
+  seed('optional'); const sheet = openDetails(); toggle();
+  change(reasonId, 'Charity'); change(certificateId, 'ST5-0042'); change(reasonId, '');
+  expect(sheet.getByTestId('order-tax-exempt-reason-error').getAttribute('role')).toBe('alert');
+  act(() => { sale.setMeta('', 'invalid'); });
+  expect(sale.error).toBe(META_INVALID);
+  expect(sheet.queryByTestId('order-tax-exempt-reason-error')).toBeNull();
+});
+
+it('R11 opens Order details with the saved reason and certificate', { timeout: 20_000 }, () => {
+  seed('optional');
+  act(() => {
+    sale.setTaxExempt(true);
+    sale.setTaxExemptReason({ text: 'Charity', certificateId: 'ST5-0042' });
+  });
+  const sheet = openDetails();
+  expect(sheet.getByTestId<HTMLTextAreaElement>(reasonId).value).toBe('Charity');
+  expect(sheet.getByTestId<HTMLInputElement>(certificateId).value).toBe('ST5-0042');
+});
+
+it('R12 clearing a previously supplied reason waits for Pay to show the alert again', { timeout: 20_000 }, () => {
+  seed('required'); openDetails(); toggle(); click('Close'); pay();
+  expect(screen.getByTestId(alertId)).toBeTruthy();
+  click('Order details'); change(reasonId, 'Charity'); click('Close');
+  expect(screen.queryByTestId(alertId)).toBeNull();
+  openDetails(); change(reasonId, ''); click('Close');
+  expect(screen.queryByTestId(alertId)).toBeNull();
+  pay(); expect(screen.getByTestId(alertId)).toBeTruthy();
 });

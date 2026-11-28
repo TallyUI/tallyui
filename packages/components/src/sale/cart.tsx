@@ -1,6 +1,6 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { Pressable, Text, View, useWindowDimensions } from 'react-native';
-import { buildReceiptData } from '@tallyui/pos';
+import { buildReceiptData, TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT, TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE } from '@tallyui/pos';
 import type { useSale } from '@tallyui/pos';
 import { useFormatMoney, type PaymentMethodDescriptor } from '@tallyui/core';
 import { CartColumnHeads, CartFoot, CartLine, CartLineActions, CartPanel, CartTotal, type CartFootAction } from '../cart';
@@ -305,8 +305,10 @@ export function Cart({ sale, taxLabel = (ratePpm: number) => `Tax ${ratePpm / 10
           checked: sale.taxExempt, onCheckedChange: (on) => setTaxExemptRefused(sale.setTaxExempt(on) === false),
           error: taxExemptRefused && sale.error ? saleErrorText(t, sale.error) : null,
         } : undefined} taxExemptReason={sale.taxExemptReasonMode !== null ? {
-          ...reasonDraft, required: sale.taxExemptReasonMode === 'required', notSent: !sale.taxExemptReasonSent,
-          error: taxExemptReasonRefused && sale.error ? saleErrorText(t, sale.error) : null,
+          ...reasonDraft, required: sale.taxExemptReasonMode === 'required',
+          notSent: sale.taxExemptReasonMode === 'optional' && !sale.taxExemptReasonSent,
+          error: taxExemptReasonRefused && sale.error && [TAX_EXEMPT_REASON_LOCKED, TAX_EXEMPT_REASON_NEEDS_TEXT,
+            TAX_EXEMPT_REASON_NOT_EXEMPT, TAX_EXEMPT_REASON_UNAVAILABLE].includes(sale.error) ? saleErrorText(t, sale.error) : null,
           onChange: (next) => {
             setReasonDraft(next);
             sale.setTaxExemptReason(null);
