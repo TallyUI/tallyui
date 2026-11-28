@@ -1,5 +1,17 @@
 # @tallyui/connector-medusa
 
+## 5.8.0
+
+### Minor Changes
+
+- b9381a5: Core adds optional display token renewal and its reference server and contract cases (ADR-096).
+  The Medusa connector implements the display token renewal route (ADR-096).
+
+### Patch Changes
+
+- Updated dependencies [b9381a5]
+  - @tallyui/core@5.8.0
+
 ## 5.7.0
 
 ### Minor Changes

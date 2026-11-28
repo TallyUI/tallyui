@@ -1,5 +1,16 @@
 # @tallyui/connector-vendure
 
+## 5.8.0
+
+### Minor Changes
+
+- d4cee85: readVendureCapabilities maps the plugin's /info cashRounding advertisement to the cashRounding capability in the same read (ADR-094).
+
+### Patch Changes
+
+- Updated dependencies [b9381a5]
+  - @tallyui/core@5.8.0
+
 ## 5.7.0
 
 ### Patch Changes
