@@ -499,6 +499,7 @@ export interface OrderCreatePayload {
  *  `country` an ISO 3166-1 alpha-2 code. */
 export interface OrderCreateTaxId { type: string; value: string; country?: string }
 
+/** A staff-only reason on a tax-exempt order.create 13: `text` 1–ORDER_TAX_EXEMPT_REASON_MAX UTF-16 units, `certificateId` 1–ORDER_TAX_EXEMPT_CERTIFICATE_MAX, both trimmed; never on a receipt, a display or in an error (docs/contract/order-create-v13.md). */
 export type OrderCreateTaxExemptReason = { text: string; certificateId?: string };
 
 /** An order custom field on order.create 12 (ADR-092): `key` 1–255 UTF-16 units, not starting with `_`; `value` 0–ORDER_NOTE_MAX. */
