@@ -143,6 +143,22 @@ it.each([['P16', 'external', 'Card terminal'], ['P17', 'cash', 'Cash']] as const
   expect(sale.order.payments).toMatchObject([{ method: 'external', amountMinor: 600, status: 'pending' }, { method, amountMinor: 200 }]);
 });
 
+it.each([['Q1', 0], ['Q2', 250], ['Q3', 1001]] as const)('%s: a method tile pressed after a host view change keeps the percent', (row, entry) => {
+  start(1001);
+  if (row !== 'Q3') openPercent();
+  if (row === 'Q2') press('tender-percent-25');
+  act(() => tender.dispatch({ type: 'request-cancel' }));
+  press('tender-method-external');
+  expect(text('tender-entry-amount')).toBe(money(entry));
+  expect(takeDisabled()).toBe(row === 'Q1');
+  if (row === 'Q1') {
+    expect(tender.state.entryMode).toBe('percent');
+    expect(text('tender-take')).not.toBe(`Take ${money(1001)} in Card terminal`);
+  } else {
+    expect(text('tender-take')).toBe(`Take ${money(entry)} in Card terminal`);
+  }
+});
+
 it('turning percentSplit off ends percent mode', () => {
   const { rerender } = start(1001);
   press('tender-method-external');
