@@ -30,6 +30,8 @@ const CODE_TTL = 10 * MINUTE, MAX_UNSPENT = 5, SNAPSHOT_TTL = MINUTE, SNAPSHOT_M
 const SOURCE_WINDOW = MINUTE, SOURCE_MAX = 10, STORE_WINDOW = 10 * MINUTE, STORE_MAX = 100;
 /** `CONNECTED_MS` is the reference server's rule for `connected`; a plugin may be stricter. */
 const CONNECTED_MS = 30_000, ROW_TTL = 30 * 24 * 60 * MINUTE;
+const TOKEN_TTL = 30 * 24 * 60 * MINUTE; // ADR-096: lifetime from issue.
+const RENEW_OVERLAP = 5 * MINUTE; // ADR-096: fixed from the first successor.
 const SESSION_HEADER = 'x-memory-display-session', BASE_URL = 'memory://display-signalling';
 
 const randomBytes = (length: number): Uint8Array => globalThis.crypto.getRandomValues(new Uint8Array(length));
@@ -71,7 +73,12 @@ const drain = <T>(map: Map<string, T[]>, key: string): T[] => {
 
 interface Code { deviceId: string; expiresAt: number; spent: boolean }
 interface Pending { deviceId: string; secretHash: string; displayName: string; checkCode: string; expiresAt: number; movingDisplayId: string | null }
-interface Row { deviceId: string; name: string; cashierId: string; confirmedAt: number; lastSeenAt: number | null; tokenHash: string | null; secretHash: string | null }
+interface Row {
+  deviceId: string; name: string; cashierId: string; confirmedAt: number; lastSeenAt: number | null; tokenHash: string | null; secretHash: string | null;
+  tokenExpiresAt: number | null; previous: { tokenHash: string; overlapEndsAt: number; expiresAt: number } | null; currentSeen: boolean;
+  // ADR-096 item 5: the reference remembers each superseded token until its own expiry and revokes on reuse; a conforming server may keep only one generation.
+  retired: Array<{ tokenHash: string; expiresAt: number }>;
+}
 interface Window { openedAt: number; failures: number }
 /** A till device; `keyHash` is null only for a pre-migration id, until it adopts. */
 interface Device { keyHash: string | null; adopted: boolean; lastCallAt: number }
@@ -95,7 +102,10 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     for (const [code, entry] of codes) if (now >= entry.expiresAt) codes.delete(code);
     for (const [claimId, entry] of pending) if (now >= entry.expiresAt) pending.delete(claimId);
     for (const [displayId, entry] of snapshots) if (now >= entry.postedAt + SNAPSHOT_TTL) snapshots.delete(displayId);
-    for (const [displayId, row] of displays) if (now >= (row.lastSeenAt ?? row.confirmedAt) + ROW_TTL) dropDisplay(displayId);
+    for (const [displayId, row] of displays) {
+      if (now >= (row.lastSeenAt ?? row.confirmedAt) + ROW_TTL) dropDisplay(displayId);
+      else row.retired = row.retired.filter((entry) => now < entry.expiresAt);
+    }
     for (const [key, window] of sources) if (now >= window.openedAt + SOURCE_WINDOW) sources.delete(key);
     if (storeWindow && now >= storeWindow.openedAt + STORE_WINDOW) storeWindow = null;
     const owns = (id: string) => [...displays.values(), ...codes.values(), ...pending.values()].some((entry) => entry.deviceId === id);
@@ -128,15 +138,23 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     if (!entry || entry.deviceId !== deviceId) throw fail('not_found');
     return entry;
   };
-  const findByTokenHash = (tokenHash: string): [string, Row] | undefined => [...displays].find(([, row]) => row.tokenHash === tokenHash);
   /** The display a token names; a successful call marks it seen. */
-  const byToken = async (token: string): Promise<[string, Row]> => {
-    const tokenHash = await sha256Hex(token);
+  const byToken = (tokenHash: string) => {
     const now = prune();
-    const found = findByTokenHash(tokenHash);
-    if (!found) throw fail('token_refused');
-    found[1].lastSeenAt = now;
-    return found;
+    for (const [displayId, row] of displays) {
+      if (row.tokenHash === tokenHash) {
+        if (now >= row.tokenExpiresAt!) throw fail('token_refused');
+        row.currentSeen = true;
+      } else if (row.previous?.tokenHash === tokenHash) {
+        if (now >= row.previous.overlapEndsAt) { dropDisplay(displayId); throw fail('token_refused'); }
+      } else if (row.retired.some((entry) => entry.tokenHash === tokenHash)) {
+        dropDisplay(displayId);
+        throw fail('token_refused');
+      } else continue;
+      row.lastSeenAt = now;
+      return { displayId, row, now };
+    }
+    throw fail('token_refused');
   };
   /** Counts a failed claim in its source's window and the store-wide one, each opened by its first failure; gives the refusal. */
   const failedClaim = (key: string, now: number): DisplaySignallingError => {
@@ -180,7 +198,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       const moving = entry.movingDisplayId !== null && displays.has(entry.movingDisplayId) ? entry.movingDisplayId : null;
       if (moving !== null) dropDisplay(moving);
       // The token itself is made at the first collect, so only its hash is ever stored; the claim secret's hash waits here.
-      const row: Row = { deviceId, name: entry.displayName, cashierId, confirmedAt: now, lastSeenAt: null, tokenHash: null, secretHash: entry.secretHash };
+      const row: Row = { deviceId, name: entry.displayName, cashierId, confirmedAt: now, lastSeenAt: null, tokenHash: null, secretHash: entry.secretHash, tokenExpiresAt: null, previous: null, retired: [], currentSeen: false };
       displays.set(moving ?? newId(), row);
     },
     async decline(ctx, device, claimId) {
@@ -231,7 +249,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       let checkCode: string;
       // Unique per till: a till lists only its own pending pairings, so only those must differ.
       do checkCode = randomDigits(4); while ([...pending.values()].some((other) => other.deviceId === entry.deviceId && other.checkCode === checkCode));
-      const movingDisplayId = tokenHash === null ? null : (findByTokenHash(tokenHash)?.[0] ?? null);
+      const movingDisplayId = tokenHash === null ? null : ([...displays].find(([, row]) => row.tokenHash === tokenHash && now < row.tokenExpiresAt!)?.[0] ?? null);
       pending.set(newId(), { deviceId: entry.deviceId, secretHash, displayName, checkCode, expiresAt: entry.expiresAt, movingDisplayId });
       return { claimSecret, checkCode };
     },
@@ -239,25 +257,39 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
       const secretHash = await sha256Hex(claimSecret);
       const token = newSecret();
       const tokenHash = await sha256Hex(token);
-      prune();
+      const now = prune();
       const waiting = [...pending.values()].find((entry) => entry.secretHash === secretHash);
       if (waiting) return { status: 'pending', checkCode: waiting.checkCode };
       const found = [...displays].find(([, row]) => row.secretHash === secretHash && row.tokenHash === null);
       if (!found) throw fail('collect_refused');
       found[1].secretHash = null;
       found[1].tokenHash = tokenHash;
+      found[1].tokenExpiresAt = now + TOKEN_TTL;
       return { status: 'paired', displayId: found[0], token };
     },
+    async renew(_dctx, token) {
+      const successor = newSecret(), successorHash = await sha256Hex(successor), tokenHash = await sha256Hex(token);
+      const { displayId, row, now } = byToken(tokenHash);
+      if (row.tokenHash === tokenHash) {
+        if (row.previous) row.retired.push({ tokenHash: row.previous.tokenHash, expiresAt: row.previous.expiresAt });
+        row.previous = { tokenHash, overlapEndsAt: now + RENEW_OVERLAP, expiresAt: row.tokenExpiresAt! };
+      } else if (row.currentSeen) { dropDisplay(displayId); throw fail('token_refused'); }
+      else row.retired.push({ tokenHash: row.tokenHash!, expiresAt: row.tokenExpiresAt! });
+      row.tokenHash = successorHash;
+      row.currentSeen = false;
+      row.tokenExpiresAt = now + TOKEN_TTL;
+      return { token: successor, expiresAt: iso(row.tokenExpiresAt) };
+    },
     async displaySendSignal(_dctx, token, message) {
-      const [displayId, row] = await byToken(token);
+      const { displayId, row } = byToken(await sha256Hex(token));
       tillInbox.set(row.deviceId, [...(tillInbox.get(row.deviceId) ?? []), { type: message.type, payload: message.payload, displayId }]);
     },
     async displayReceiveSignals(_dctx, token) {
-      const [displayId] = await byToken(token);
+      const { displayId } = byToken(await sha256Hex(token));
       return drain(displayInbox, displayId);
     },
     async readSnapshot(_dctx, token) {
-      const [displayId] = await byToken(token);
+      const { displayId } = byToken(await sha256Hex(token));
       const held = snapshots.get(displayId);
       return held ? (JSON.parse(held.text) as unknown) : null;
     },
@@ -289,7 +321,7 @@ export function createMemoryDisplaySignalling(options: { now?: () => number } = 
     async seedLegacyDevice(deviceId) {
       const token = newSecret(), displayId = newId(), now = clock();
       devices.set(deviceId, { keyHash: null, adopted: false, lastCallAt: now });
-      displays.set(displayId, { deviceId, name: 'Legacy', cashierId: 'cashier-legacy', confirmedAt: now, lastSeenAt: null, tokenHash: await sha256Hex(token), secretHash: null });
+      displays.set(displayId, { deviceId, name: 'Legacy', cashierId: 'cashier-legacy', confirmedAt: now, lastSeenAt: null, tokenHash: await sha256Hex(token), secretHash: null, tokenExpiresAt: now + TOKEN_TTL, previous: null, retired: [], currentSeen: false });
       return { displayId, token };
     },
     adoptionLog: async () => adoptions.map((entry) => ({ ...entry })),

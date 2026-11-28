@@ -27,7 +27,7 @@ export type DisplaySignallingErrorCode =
   | 'not_found'
   /** Till side: a missing, wrong or unknown device key, or `registerDevice` for an id that already holds a key or has already adopted. One code for all of them. */
   | 'device_refused'
-  /** Display side: a token that is unknown, forgotten or pruned. */
+  /** Display side: a token that is unknown, forgotten, pruned, expired or superseded. */
   | 'token_refused'
   /** A snapshot whose JSON is over 200 KiB. */
   | 'too_large'
@@ -130,6 +130,18 @@ export interface DisplaySignalling {
   claim(dctx: DisplaySignallingContext, request: { code: string; displayName: string; token?: string }): Promise<{ claimSecret: string; checkCode: string }>;
   /** Pending: `pending` with the check code. After the confirm the first collect gives `paired` with the token; later, declined, expired or unknown gives `collect_refused`. */
   collect(dctx: DisplaySignallingContext, claimSecret: string): Promise<{ status: 'pending'; checkCode: string } | { status: 'paired'; displayId: string; token: string }>;
+  /**
+   * ADR-096: optional unless tokens expire. Collected and renewed tokens have individual lifetimes; renewal returns
+   * an ISO 8601 expiry at least 2 days ahead. Expiry refuses without revoking. Renewing the current token issues a
+   * 128-bit base64url successor stored only as SHA-256. The previous token works for all calls for 60 s to 10 min;
+   * renewing it replaces an unseen successor without extending the overlap. Renewing it after the successor was seen,
+   * or using it after the overlap, drops the display and snapshot. A server may remember each superseded token
+   * (a replaced unseen successor included) until that token's own expiry and drop the display when one is presented,
+   * as the reference server does; a server that keeps one generation treats older tokens as unknown. Either way the
+   * call is `token_refused`, and the client must tolerate both: a dropped display pairs again. Refusals are uniformly
+   * `token_refused`; success updates `lastSeenAt`. Only the current unexpired token can move a display in `claim`.
+   */
+  renew?(dctx: DisplaySignallingContext, token: string): Promise<{ token: string; expiresAt: string }>;
   /** Queues a message in the owning till's inbox. */
   displaySendSignal(dctx: DisplaySignallingContext, token: string, message: SignalMessage): Promise<void>;
   /** Drains this display's own inbox: each message once, in send order. */

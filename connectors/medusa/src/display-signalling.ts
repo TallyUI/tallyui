@@ -177,6 +177,12 @@ export const medusaDisplaySignalling: DisplaySignalling = {
     if (body.status === 'paired') return { status: 'paired', displayId: text(body.displayId), token: text(body.token) };
     throw refuse('server');
   },
+  async renew(dctx, token) {
+    const body = await read(await request(shown(dctx, token), 'POST', '/display/renew'));
+    const expiresAt = text(body.expiresAt);
+    if (Number.isNaN(Date.parse(expiresAt))) throw refuse('server');
+    return { token: text(body.token), expiresAt };
+  },
   async displaySendSignal(dctx, token, message) {
     await request(shown(dctx, token), 'POST', '/display/signals', { type: message.type, payload: message.payload });
   },
