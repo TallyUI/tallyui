@@ -6,7 +6,7 @@ import { signedOut } from './session-probe';
 export const CAPABILITIES_PATH = '/tally/v1/info';
 
 /**
- * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287), `chargeTaxMode`, `taxExempt`
+ * Reads the store's contract capabilities (ADR-062), `taxRounding` (#287), `chargeTaxMode`, `cashRounding`, `taxExempt`
  * and `taxExemptCoupons` with the connector's own headers. A 404 means an old plugin and gives the default; a network failure,
  * non-2xx other than 404/401/403, non-JSON 2xx or malformed `taxRounding` is unknown and gives
  * `undefined`. The route answers a dead session and a missing
@@ -44,11 +44,16 @@ export async function readVendureCapabilities(
   const warn = (reason: string) => console.warn(`@tallyui/connector-vendure: ${reason}`);
   const capabilities = parseInfoCapabilities(body, warn);
   if (!capabilities) return undefined;
-  const { chargeTaxMode } = body as { chargeTaxMode?: unknown };
+  const { chargeTaxMode, cashRounding } = body as { chargeTaxMode?: unknown; cashRounding?: unknown };
   if (chargeTaxMode !== undefined) {
     if (chargeTaxMode && typeof chargeTaxMode === 'object' && !Array.isArray(chargeTaxMode) && 'v' in chargeTaxMode
       && typeof chargeTaxMode.v === 'number' && Number.isSafeInteger(chargeTaxMode.v) && chargeTaxMode.v >= 1) capabilities.chargeTaxMode = true;
     else warn('ignoring a malformed chargeTaxMode');
+  }
+  if (cashRounding !== undefined) {
+    if (cashRounding && typeof cashRounding === 'object' && !Array.isArray(cashRounding) && 'v' in cashRounding
+      && typeof cashRounding.v === 'number' && Number.isSafeInteger(cashRounding.v) && cashRounding.v >= 1) capabilities.cashRounding = true;
+    else warn('ignoring a malformed cashRounding');
   }
   const { taxExempt, taxExemptCoupons } = body as { taxExempt?: unknown; taxExemptCoupons?: unknown };
   if (taxExempt === true) capabilities.taxExempt = true;
