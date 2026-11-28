@@ -1,5 +1,12 @@
 # @tallyui/pos
 
+## 5.8.0
+
+### Patch Changes
+
+- Updated dependencies [b9381a5]
+  - @tallyui/core@5.8.0
+
 ## 5.7.0
 
 ### Minor Changes
