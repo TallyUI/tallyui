@@ -35,4 +35,15 @@ describe('OrderNoteSheet', () => {
     const field = screen.getByRole('textbox', { name: 'Order note' }) as HTMLTextAreaElement;
     expect(field.placeholder).toBe('Add order note');
   });
+
+  it('S9 omits the exemption row by default and reports changes to a controlled switch', { timeout: 20_000 }, () => {
+    const props = { value: '', onChangeText: vi.fn(), onOpenChange: vi.fn() };
+    const { rerender } = render(<><OrderNoteSheet {...props} /><PortalHost /></>);
+    expect(screen.queryByText('Tax exempt')).toBeNull();
+    expect(screen.queryByTestId('order-tax-exempt-switch')).toBeNull();
+    const onCheckedChange = vi.fn();
+    rerender(<><OrderNoteSheet {...props} taxExempt={{ checked: true, onCheckedChange }} /><PortalHost /></>);
+    fireEvent.click(screen.getByRole('switch', { name: 'Tax exempt', checked: true }));
+    expect(onCheckedChange).toHaveBeenCalledWith(false);
+  });
 });
