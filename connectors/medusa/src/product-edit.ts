@@ -93,13 +93,17 @@ function bind(variant: Variant, context: SyncContext, listIds: Set<string>, pref
 }
 
 function changedPriceIds(before: Price[], after: Price[], editedId: string) {
-  const remaining = new Map(after.map(price => [price.id, price]));
+  const remaining = new Map<string, Price | null>();
+  for (const price of after) remaining.set(price.id, remaining.has(price.id) ? null : price);
+  const reportedDuplicates = new Set<string>();
   const rulesKey = (rules: Price['rules']) => JSON.stringify(rules, (_key, value) =>
     value && typeof value === 'object' && !Array.isArray(value)
       ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
   const changed: string[] = [];
   for (const price of before) {
     const next = remaining.get(price.id);
+    if (reportedDuplicates.has(price.id)) continue;
+    if (next === null) reportedDuplicates.add(price.id);
     if (!next || (price.id !== editedId && next.amount !== price.amount) ||
         (next.currency_code !== price.currency_code && (typeof next.currency_code !== 'string' || typeof price.currency_code !== 'string' ||
           next.currency_code.toLowerCase() !== price.currency_code.toLowerCase())) ||
